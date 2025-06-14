@@ -1,0 +1,259 @@
+<div class="app-container" style="background: #010a13; color: #f0e6d2; min-height: 100vh; padding: 20px;">
+  <h1 style="color: #c89b3c;">LoL Matchmaking</h1>
+  <p>Aplicação carregada com sucesso!</p>
+  <p>View atual: {{ currentView }}</p>
+
+  <!-- Navigation simples para teste -->
+  <div style="margin: 20px 0;">
+    <button style="margin-right: 10px; padding: 10px; background: #0596aa; color: white; border: none; border-radius: 4px;"
+            (click)="setCurrentView('dashboard')">Dashboard</button>
+    <button style="margin-right: 10px; padding: 10px; background: #0596aa; color: white; border: none; border-radius: 4px;"
+            (click)="setCurrentView('queue')">Fila</button>
+    <button style="margin-right: 10px; padding: 10px; background: #0596aa; color: white; border: none; border-radius: 4px;"
+            (click)="setCurrentView('history')">Histórico</button>
+  </div>
+
+  <!-- Content simples -->
+  <div style="background: #1e2328; padding: 20px; border-radius: 8px; border: 1px solid #463714;">
+    <ng-container [ngSwitch]="currentView">
+      <div *ngSwitchCase="'dashboard'">
+        <h2>Dashboard</h2>
+        <p>Bem-vindo ao sistema de matchmaking!</p>
+      </div>
+      <div *ngSwitchCase="'queue'">
+        <h2>Fila</h2>
+        <p>Sistema de filas em desenvolvimento.</p>
+      </div>
+      <div *ngSwitchCase="'history'">
+        <h2>Histórico</h2>
+        <p>Histórico de partidas.</p>
+      </div>
+    </ng-container>
+  </div>
+</div>
+  <!-- Header -->
+  <header class="app-header">
+    <div class="header-content">
+      <div class="logo-section">
+        <h1>LoL Matchmaking</h1>
+        <span class="version">v1.0.0</span>
+      </div>
+
+      <div class="user-section" *ngIf="currentPlayer">
+        <div class="player-info">
+          <img [src]="'https://ddragon.leagueoflegends.com/cdn/14.1.1/img/profileicon/' + currentPlayer.profileIconId + '.png'"
+               alt="Profile Icon" class="profile-icon">
+          <div class="player-details">
+            <span class="summoner-name">{{ currentPlayer.summonerName }}</span>
+            <span class="mmr">{{ currentPlayer.currentMMR }} MMR</span>
+            <span class="rank">{{ currentPlayer.rank?.display }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="window-controls" *ngIf="isElectron">
+        <button class="control-btn minimize" (click)="minimizeWindow()">−</button>
+        <button class="control-btn maximize" (click)="maximizeWindow()">□</button>
+        <button class="control-btn close" (click)="closeWindow()">×</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Navigation -->
+  <nav class="app-nav">
+    <button class="nav-btn"
+            [class.active]="currentView === 'dashboard'"
+            (click)="setCurrentView('dashboard')">
+      <i class="icon-dashboard"></i>
+      Dashboard
+    </button>
+
+    <button class="nav-btn"
+            [class.active]="currentView === 'queue'"
+            (click)="setCurrentView('queue')">
+      <i class="icon-queue"></i>
+      Fila
+      <span class="queue-badge" *ngIf="queueStatus.playersInQueue > 0">
+        {{ queueStatus.playersInQueue }}
+      </span>
+    </button>
+
+    <button class="nav-btn"
+            [class.active]="currentView === 'history'"
+            (click)="setCurrentView('history')">
+      <i class="icon-history"></i>
+      Histórico
+    </button>
+
+    <button class="nav-btn"
+            [class.active]="currentView === 'settings'"
+            (click)="setCurrentView('settings')">
+      <i class="icon-settings"></i>
+      Configurações
+    </button>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="app-main">
+    <div class="content-container">
+      <!-- Dashboard -->
+      <app-dashboard *ngIf="currentView === 'dashboard'"
+                     [player]="currentPlayer"
+                     [queueStatus]="queueStatus">
+      </app-dashboard>
+
+      <!-- Queue -->
+      <app-queue *ngIf="currentView === 'queue'"
+                 [isInQueue]="isInQueue"
+                 [queueStatus]="queueStatus"
+                 [currentPlayer]="currentPlayer"
+                 (joinQueue)="joinQueue()"
+                 (leaveQueue)="leaveQueue()">
+      </app-queue>
+
+      <!-- Match History -->
+      <app-match-history *ngIf="currentView === 'history'"
+                         [player]="currentPlayer">
+      </app-match-history>
+
+      <!-- Settings -->
+      <div *ngIf="currentView === 'settings'" class="settings-view">
+        <h2>Configurações</h2>
+
+        <div class="settings-section">
+          <h3>Conta</h3>
+          <div class="form-group">
+            <label for="summonerName">Nome do Invocador:</label>
+            <input type="text"
+                   id="summonerName"
+                   [(ngModel)]="settingsForm.summonerName"
+                   placeholder="Digite seu nome no LoL">
+          </div>
+
+          <div class="form-group">
+            <label for="region">Região:</label>
+            <select id="region" [(ngModel)]="settingsForm.region">
+              <option value="br1">Brasil</option>
+              <option value="na1">América do Norte</option>
+              <option value="euw1">Europa Oeste</option>
+              <option value="eun1">Europa Norte/Leste</option>
+              <option value="kr">Coreia</option>
+              <option value="jp1">Japão</option>
+              <option value="la1">América Latina Norte</option>
+              <option value="la2">América Latina Sul</option>
+              <option value="oc1">Oceania</option>
+              <option value="tr1">Turquia</option>
+              <option value="ru">Rússia</option>
+            </select>
+          </div>
+
+          <button class="btn btn-primary" (click)="savePlayerSettings()">
+            Salvar Configurações
+          </button>
+        </div>
+
+        <div class="settings-section">
+          <h3>Riot API</h3>
+          <div class="form-group">
+            <label for="riotApiKey">Chave da API (opcional):</label>
+            <input type="password"
+                   id="riotApiKey"
+                   [(ngModel)]="settingsForm.riotApiKey"
+                   placeholder="Sua chave de desenvolvedor da Riot">
+            <small>Para funcionalidades avançadas como importar dados do rank atual</small>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Cliente LoL</h3>
+          <div class="lcu-status">
+            <span class="status-indicator" [class.connected]="lcuStatus.isConnected"></span>
+            <span>{{ lcuStatus.isConnected ? 'Conectado' : 'Desconectado' }}</span>
+            <button class="btn btn-secondary" (click)="refreshLCUConnection()">
+              Reconectar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Status Bar -->
+  <footer class="app-footer">
+    <div class="status-items">
+      <div class="status-item">
+        <span class="status-indicator" [class.connected]="isConnected"></span>
+        <span>{{ isConnected ? 'Online' : 'Offline' }}</span>
+      </div>
+
+      <div class="status-item" *ngIf="queueStatus.playersInQueue > 0">
+        <i class="icon-users"></i>
+        <span>{{ queueStatus.playersInQueue }} na fila</span>
+      </div>
+
+      <div class="status-item" *ngIf="lcuStatus.gameflowPhase && lcuStatus.gameflowPhase !== 'None'">
+        <i class="icon-game"></i>
+        <span>{{ getGameflowDisplayText(lcuStatus.gameflowPhase) }}</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Notifications -->
+  <div class="notifications" *ngIf="notifications.length > 0">
+    <div class="notification"
+         *ngFor="let notification of notifications; trackBy: trackNotification"
+         [class]="'notification-' + notification.type">
+      <div class="notification-content">
+        <strong>{{ notification.title }}</strong>
+        <p>{{ notification.message }}</p>
+      </div>
+      <button class="notification-close" (click)="dismissNotification(notification.id)">×</button>
+    </div>
+  </div>
+
+  <!-- Match Found Modal -->
+  <div class="modal-overlay" *ngIf="matchFound">
+    <div class="modal match-found-modal">
+      <h2>🎉 Partida Encontrada!</h2>
+
+      <div class="teams-display">
+        <div class="team team-blue">
+          <h3>Time Azul ({{ matchFound.averageMMR1 }} MMR)</h3>
+          <div class="team-players">
+            <div class="player" *ngFor="let player of matchFound.team1">
+              <span class="player-name">{{ player.summonerName }}</span>
+              <span class="player-mmr">{{ player.mmr }} MMR</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="vs-divider">VS</div>
+
+        <div class="team team-red">
+          <h3>Time Vermelho ({{ matchFound.averageMMR2 }} MMR)</h3>
+          <div class="team-players">
+            <div class="player" *ngFor="let player of matchFound.team2">
+              <span class="player-name">{{ player.summonerName }}</span>
+              <span class="player-mmr">{{ player.mmr }} MMR</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="your-team">
+        <p>Você está no <strong>Time {{ matchFound.yourTeam === 1 ? 'Azul' : 'Vermelho' }}</strong></p>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-primary" (click)="acceptMatch()">
+          Aceitar Partida
+        </button>
+        <button class="btn btn-secondary" (click)="declineMatch()">
+          Recusar
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<router-outlet />

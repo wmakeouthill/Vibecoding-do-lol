@@ -1,0 +1,173 @@
+<div class="match-history">
+  <!-- Header -->
+  <div class="history-header">
+    <h2>Histórico de Partidas</h2>
+    <div class="history-stats" *ngIf="matches.length > 0">
+      <div class="stat-summary">
+        <span class="total-matches">{{ matches.length }} partidas</span>
+        <span class="win-rate">{{ (getTotalStats().totalWins / matches.length * 100).toFixed(1) }}% de vitória</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Current Game Status -->
+  <div *ngIf="isInGame || gamePhase === 'ChampSelect'" class="current-game-container">
+    <div class="current-game-header">
+      <div class="current-game-icon">🎮</div>
+      <h3>Partida em Andamento</h3>
+    </div>
+    <div class="current-game-details">
+      <div class="current-game-phase">
+        <span class="label">Status:</span>
+        <span class="value" [class.in-game]="isInGame" [class.in-champ-select]="gamePhase === 'ChampSelect'">
+          {{ isInGame ? 'Em Jogo' : (gamePhase === 'ChampSelect' ? 'Seleção de Campeões' : gamePhase) }}
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading State -->
+  <div *ngIf="loading" class="loading-container">
+    <div class="loading-spinner"></div>
+    <p>Carregando histórico...</p>
+  </div>
+
+  <!-- Error State -->
+  <div *ngIf="error && !loading" class="error-container">
+    <div class="error-icon">⚠️</div>
+    <h3>Erro ao carregar histórico</h3>
+    <p>{{ error }}</p>
+    <button class="btn btn-primary" (click)="loadMatches()">Tentar Novamente</button>
+  </div>
+  <!-- Empty State -->
+  <div *ngIf="!loading && !error && matches.length === 0" class="empty-container">
+    <div class="empty-icon">🎮</div>
+    <h3>Nenhuma partida encontrada</h3>
+    <p>Você ainda não jogou nenhuma partida ranqueada.</p>
+    <button class="btn btn-primary" (click)="loadMatches()">Recarregar</button>
+  </div>
+
+  <!-- Match List -->
+  <div *ngIf="!loading && !error && matches.length > 0" class="matches-container">
+    <!-- Summary Stats -->
+    <div class="summary-stats">
+      <div class="summary-card">
+        <div class="summary-value">{{ getTotalStats().totalWins }}/{{ matches.length }}</div>
+        <div class="summary-label">Vitórias</div>
+      </div>
+
+      <div class="summary-card">
+        <div class="summary-value">{{ getWinStreakInfo().current }}</div>
+        <div class="summary-label">Sequência Atual</div>
+      </div>
+
+      <div class="summary-card">
+        <div class="summary-value">{{ getWinStreakInfo().longest }}</div>
+        <div class="summary-label">Maior Sequência</div>
+      </div>
+
+      <div class="summary-card">
+        <div class="summary-value" [class.positive]="getTotalStats().totalMMRGained > 0">
+          {{ getTotalStats().totalMMRGained > 0 ? '+' : '' }}{{ getTotalStats().totalMMRGained }}
+        </div>
+        <div class="summary-label">MMR Total</div>
+      </div>
+    </div>
+
+    <!-- Match Items -->
+    <div class="match-list">
+      <div *ngFor="let match of matches; trackBy: trackMatch"
+           class="match-item"
+           [class.win]="match.playerStats?.isWin"
+           [class.loss]="!match.playerStats?.isWin">
+
+        <!-- Match Result -->
+        <div class="match-result">
+          <div class="result-indicator">
+            <span class="result-text">{{ match.playerStats?.isWin ? 'V' : 'D' }}</span>
+          </div>
+          <div class="match-duration">{{ getMatchDuration(match) }}</div>
+        </div>
+
+        <!-- Champion Info -->
+        <div class="champion-info">
+          <div class="champion-icon">
+            <!-- Placeholder for champion icon -->
+            <div class="champion-placeholder">{{ match.playerStats?.champion?.charAt(0) || '?' }}</div>
+          </div>
+          <div class="champion-name">{{ match.playerStats?.champion }}</div>
+        </div>
+
+        <!-- KDA -->
+        <div class="kda-section">
+          <div class="kda-stats">
+            <span class="kda">{{ getKDA(match) }}</span>
+            <span class="kda-ratio">{{ getKDARatio(match).toFixed(2) }} KDA</span>
+          </div>
+        </div>        <!-- MMR Change -->
+        <div class="mmr-change">
+          <span class="mmr-value"
+                [class.positive]="(match.playerStats?.mmrChange || 0) > 0"
+                [class.negative]="(match.playerStats?.mmrChange || 0) < 0">
+            {{ (match.playerStats?.mmrChange || 0) > 0 ? '+' : '' }}{{ match.playerStats?.mmrChange || 0 }} MMR
+          </span>
+        </div>
+
+        <!-- Match Info -->
+        <div class="match-info">
+          <div class="teams-mmr">
+            <span class="team-mmr">{{ match.averageMMR1 || 0 }} vs {{ match.averageMMR2 || 0 }}</span>
+          </div>
+          <div class="match-time">{{ match.createdAt ? getTimeAgo(match.createdAt) : 'Data indisponível' }}</div>
+        </div>
+
+        <!-- Expand Button -->
+        <div class="match-actions">
+          <button class="expand-btn" (click)="toggleMatchDetails(match.id.toString())">
+            <i class="icon-chevron-down"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Load More -->
+    <div class="load-more" *ngIf="hasMoreMatches()">
+      <button class="btn btn-secondary"
+              (click)="loadMoreMatches()"
+              [disabled]="loading">
+        {{ loading ? 'Carregando...' : 'Carregar Mais' }}
+      </button>
+    </div>
+  </div>
+
+  <!-- Performance Analysis -->
+  <div *ngIf="matches.length > 0" class="performance-analysis">
+    <h3>Análise de Performance</h3>
+
+    <div class="performance-grid">
+      <div class="performance-card">
+        <h4>KDA Médio</h4>
+        <div class="performance-value">
+          {{ (getTotalStats().totalKills / matches.length).toFixed(1) }} /
+          {{ (getTotalStats().totalDeaths / matches.length).toFixed(1) }} /
+          {{ (getTotalStats().totalAssists / matches.length).toFixed(1) }}
+        </div>
+      </div>
+
+      <div class="performance-card">
+        <h4>MMR por Partida</h4>
+        <div class="performance-value"
+             [class.positive]="getTotalStats().totalMMRGained > 0">
+          {{ (getTotalStats().totalMMRGained / matches.length).toFixed(1) }}
+        </div>
+      </div>
+
+      <div class="performance-card">
+        <h4>Champion Favorito</h4>
+        <div class="performance-value">
+          {{ getMostPlayedChampion() }}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

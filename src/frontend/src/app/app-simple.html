@@ -1,0 +1,200 @@
+<div class="app-container">
+  <header class="app-header">
+    <h1>⚔️ LoL Matchmaking</h1>
+    <div class="status-indicators">
+      <span class="status" [class.connected]="isConnected" [class.disconnected]="!isConnected">
+        🔗 {{ isConnected ? 'Conectado' : 'Desconectado' }}
+      </span>
+      <span class="status" [class.connected]="lcuStatus.isConnected" [class.disconnected]="!lcuStatus.isConnected">
+        🎮 {{ lcuStatus.isConnected ? 'LoL Cliente' : 'LoL Offline' }}
+      </span>
+    </div>
+  </header>
+
+  <!-- Navigation -->
+  <nav class="nav-buttons">
+    <button
+      [class.active]="currentView === 'dashboard'"
+      (click)="setCurrentView('dashboard')">
+      🏠 Dashboard
+    </button>
+    <button
+      [class.active]="currentView === 'queue'"
+      (click)="setCurrentView('queue')">
+      ⏱️ Fila ({{ queueStatus.playersInQueue }})
+    </button>
+    <button
+      [class.active]="currentView === 'history'"
+      (click)="setCurrentView('history')">
+      📊 Histórico
+    </button>
+    <button
+      [class.active]="currentView === 'settings'"
+      (click)="setCurrentView('settings')">
+      ⚙️ Configurações
+    </button>
+  </nav>
+
+  <!-- Content -->
+  <main class="content">
+    <ng-container [ngSwitch]="currentView">
+      <!-- Dashboard -->
+      <div *ngSwitchCase="'dashboard'" class="view-container">
+        <app-dashboard
+          [player]="currentPlayer"
+          [queueStatus]="queueStatus"
+          (joinQueue)="setCurrentView('queue')"
+          (viewHistory)="setCurrentView('history')"
+          (openSettings)="setCurrentView('settings')">
+        </app-dashboard>
+      </div>
+
+      <!-- Queue -->
+      <div *ngSwitchCase="'queue'" class="view-container">
+        <app-queue
+          [isInQueue]="isInQueue"
+          [queueStatus]="queueStatus"
+          [currentPlayer]="currentPlayer"
+          (joinQueue)="joinQueue($event)"
+          (leaveQueue)="leaveQueue()">
+        </app-queue>
+      </div>
+
+      <!-- History -->
+      <div *ngSwitchCase="'history'" class="view-container">
+        <h2>📊 Histórico de Partidas</h2>
+        <p>Em breve: Histórico completo de suas partidas, estatísticas e evolução do MMR.</p>
+      </div>
+
+      <!-- Settings -->
+      <div *ngSwitchCase="'settings'" class="view-container">
+        <h2>⚙️ Configurações</h2>
+
+        <div class="auto-detect-section">
+          <h3>🤖 Detecção Automática</h3>
+          <p>O aplicativo pode detectar automaticamente suas informações do League of Legends:</p>
+
+          <button
+            type="button"
+            (click)="refreshLCUConnection()"
+            class="btn-primary"
+            [disabled]="!isConnected">
+            🔄 Detectar do LoL Cliente
+          </button>
+
+          <div class="lcu-status" *ngIf="lcuStatus.isConnected">
+            <p>✅ Cliente do LoL conectado</p>
+            <p *ngIf="currentPlayer">
+              Jogador detectado: <strong>{{ currentPlayer.summonerName }}</strong>
+            </p>
+          </div>
+        </div>
+
+        <div class="manual-config-section" *ngIf="!currentPlayer">
+          <h3>📝 Configuração Manual</h3>
+          <p>Se a detecção automática não funcionar, configure manualmente:</p>
+
+          <form class="settings-form">
+            <div class="form-group">
+              <label for="summonerName">Nome do Invocador:</label>
+              <input
+                id="summonerName"
+                type="text"
+                [(ngModel)]="settingsForm.summonerName"
+                placeholder="Seu nome no LoL"
+                name="summonerName">
+            </div>
+
+            <div class="form-group">
+              <label for="region">Região:</label>
+              <select id="region" [(ngModel)]="settingsForm.region" name="region">
+                <option value="br1">Brasil</option>
+                <option value="na1">América do Norte</option>
+                <option value="euw1">Europa Oeste</option>
+                <option value="eun1">Europa Nordeste</option>
+              </select>
+            </div>
+
+            <button type="button" (click)="savePlayerSettings()" class="btn-primary">
+              💾 Salvar Configurações
+            </button>
+          </form>
+        </div>
+
+        <div class="current-config" *ngIf="currentPlayer">
+          <h3>👤 Configuração Atual</h3>
+          <div class="player-summary">            <img [src]="'https://ddragon.leagueoflegends.com/cdn/15.12.1/img/profileicon/' + (currentPlayer.profileIconId || 29) + '.png'"
+                 alt="Profile Icon"
+                 class="profile-icon-small"
+                 (error)="onProfileIconError($event)">
+            <div class="player-info">
+              <h4>{{ currentPlayer.summonerName }}{{ currentPlayer.tagLine ? '#' + currentPlayer.tagLine : '' }}</h4>
+              <p>Nível {{ currentPlayer.summonerLevel || 'N/A' }} • Região: {{ currentPlayer.region }}</p>
+              <p>MMR: {{ currentPlayer.currentMMR }}</p>
+              <p *ngIf="currentPlayer.rank" class="ranked-info">
+                Ranqueada: {{ currentPlayer.rank.tier }} {{ currentPlayer.rank.rank }}
+                ({{ currentPlayer.rank.lp }} LP)
+              </p>
+            </div>
+          </div>
+
+          <div class="action-buttons">
+            <button type="button" (click)="refreshPlayerData()" class="btn-primary">
+              🔄 Atualizar Dados
+            </button>
+            <button type="button" (click)="clearPlayerData()" class="btn-secondary">
+              🗑️ Limpar Dados
+            </button>
+          </div>
+        </div>
+
+        <!-- Riot API Key Configuration -->
+        <div class="riot-api-config">
+          <h3>🔑 Configuração da Riot API</h3>
+          <p>Para acessar dados completos do Riot Games, configure sua API key:</p>
+
+          <div class="form-group">
+            <label for="riotApiKey">Riot API Key:</label>
+            <input type="password"
+                   id="riotApiKey"
+                   [(ngModel)]="settingsForm.riotApiKey"
+                   name="riotApiKey"
+                   placeholder="RGAPI-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+            <small>Obtenha sua API key em: <a href="https://developer.riotgames.com" target="_blank">developer.riotgames.com</a></small>
+          </div>
+
+          <button type="button" (click)="updateRiotApiKey()" class="btn-primary">
+            🔑 Configurar API Key
+          </button>
+        </div>
+      </div>
+
+    </ng-container>
+  </main>
+
+  <!-- Match Found Modal -->
+  <div *ngIf="matchFound" class="modal-overlay">
+    <div class="modal-content">
+      <h2>🎉 Partida Encontrada!</h2>
+      <p>Uma partida foi encontrada. Aceitar?</p>
+      <div class="modal-actions">
+        <button (click)="acceptMatch()" class="btn-success">✅ Aceitar</button>
+        <button (click)="declineMatch()" class="btn-danger">❌ Recusar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notifications -->
+  <div class="notifications">
+    <div
+      *ngFor="let notification of notifications; trackBy: trackNotification"
+      class="notification"
+      [class]="'notification-' + notification.type">
+      <div class="notification-content">
+        <strong>{{ notification.title }}</strong>
+        <p>{{ notification.message }}</p>
+      </div>
+      <button (click)="dismissNotification(notification.id)" class="notification-close">✕</button>
+    </div>
+  </div>
+</div>
