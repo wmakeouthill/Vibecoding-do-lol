@@ -197,15 +197,15 @@ export class RiotAPIService {
           }
 
           const summonerUrl = `${baseUrl}/lol/summoner/v4/summoners/by-name/${encodeURIComponent(summonerName)}`;
-          const summonerResponse = await axios.get(summonerUrl, {
-            headers: { 'X-Riot-Token': this.apiKey },
+          const summonerResponse = await this.axiosInstance.get(summonerUrl, { // MODIFIED: Use this.axiosInstance
+            // headers: { 'X-Riot-Token': this.apiKey }, // Header is now set by default in axiosInstance
             timeout: 10000
           });
           const summoner = summonerResponse.data;
 
           const rankedUrl = `${baseUrl}/lol/league/v4/entries/by-summoner/${summoner.id}`;
-          const rankedResponse = await axios.get(rankedUrl, {
-            headers: { 'X-Riot-Token': this.apiKey },
+          const rankedResponse = await this.axiosInstance.get(rankedUrl, { // MODIFIED: Use this.axiosInstance
+            // headers: { 'X-Riot-Token': this.apiKey },
             timeout: 10000
           });
           const rankedData = rankedResponse.data;
@@ -215,8 +215,8 @@ export class RiotAPIService {
             // Account API usa roteamento regional (americas, asia, europe)
             const accountRegionalUrl = this.getRegionalUrl(region);
             const accountUrl = `${accountRegionalUrl}/riot/account/v1/accounts/by-puuid/${summoner.puuid}`;
-            const accountResponse = await axios.get(accountUrl, {
-              headers: { 'X-Riot-Token': this.apiKey },
+            const accountResponse = await this.axiosInstance.get(accountUrl, { // MODIFIED: Use this.axiosInstance
+              // headers: { 'X-Riot-Token': this.apiKey },
               timeout: 10000
             });
             accountData = accountResponse.data;
@@ -267,9 +267,9 @@ export class RiotAPIService {
         }
 
         try {
-          const response = await axios.get(
+          const response = await this.axiosInstance.get( // MODIFIED: Use this.axiosInstance
             `${baseUrl}/lol/summoner/v4/summoners/by-puuid/${puuid}`,
-            { headers: { 'X-Riot-Token': this.apiKey }, timeout: 10000 }
+            { /* headers: { 'X-Riot-Token': this.apiKey } */ timeout: 10000 } // Header is now set by default in axiosInstance
           );
           return response.data;        } catch (error: any) {
           if (error.response?.status === 404) {
@@ -296,9 +296,9 @@ export class RiotAPIService {
         }
         const regionalUrl = this.getRegionalUrl(region);
         try {
-          const response = await axios.get(
+          const response = await this.axiosInstance.get( // MODIFIED: Use this.axiosInstance
             `${regionalUrl}/riot/account/v1/accounts/by-puuid/${puuid}`,
-            { headers: { 'X-Riot-Token': this.apiKey }, timeout: 10000 }
+            { /* headers: { 'X-Riot-Token': this.apiKey } */ timeout: 10000 } // Header is now set by default in axiosInstance
           );
           return response.data;
         } catch (error: any) {
@@ -331,9 +331,9 @@ export class RiotAPIService {
           throw new Error(`Região não suportada: ${region}`);
         }
         try {
-          const response = await axios.get(
+          const response = await this.axiosInstance.get( // MODIFIED: Use this.axiosInstance
             `${baseUrl}/lol/league/v4/entries/by-summoner/${summonerId}`,
-            { headers: { 'X-Riot-Token': this.apiKey }, timeout: 10000 }
+            { /* headers: { 'X-Riot-Token': this.apiKey } */ timeout: 10000 } // Header is now set by default in axiosInstance
           );
           return response.data;
         } catch (error: any) {
@@ -361,9 +361,9 @@ export class RiotAPIService {
           if (endTime) params.endTime = endTime;
           if (queue) params.queue = queue;
 
-          const response = await axios.get(
+          const response = await this.axiosInstance.get( // MODIFIED: Use this.axiosInstance
             `${regionalUrl}/lol/match/v5/matches/by-puuid/${puuid}/ids`,
-            { headers: { 'X-Riot-Token': this.apiKey }, params, timeout: 15000 }
+            { /* headers: { 'X-Riot-Token': this.apiKey } */ params, timeout: 15000 } // Header is now set by default in axiosInstance
           );
           return response.data;
         } catch (error: any) {
@@ -386,9 +386,9 @@ export class RiotAPIService {
         }
         const regionalUrl = this.getRegionalUrl(region);
         try {
-          const response = await axios.get(
+          const response = await this.axiosInstance.get( // MODIFIED: Use this.axiosInstance
             `${regionalUrl}/lol/match/v5/matches/${matchId}`,
-            { headers: { 'X-Riot-Token': this.apiKey }, timeout: 15000 }
+            { /* headers: { 'X-Riot-Token': this.apiKey } */ timeout: 15000 } // Header is now set by default in axiosInstance
           );
           return response.data;
         } catch (error: any) {

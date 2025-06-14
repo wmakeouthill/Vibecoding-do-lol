@@ -138,7 +138,7 @@ export class DatabaseManager {
       { key: 'min_players_for_match', value: '10' },
       { key: 'max_mmr_difference', value: '200' },
       { key: 'app_version', value: '1.0.0' },
-      { key: 'riot_api_key', value: '' },
+      { key: 'riot_api_key', value: '' }, // Mantido como string vazia por padrão
       { key: 'enable_lcu_integration', value: 'true' }
     ];
 
@@ -292,6 +292,7 @@ export class DatabaseManager {
       'INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)',
       [key, value]
     );
+    console.log(`[DatabaseManager] Configuração '${key}' atualizada para '${value}'`);
   }
 
   // Métodos de estatísticas

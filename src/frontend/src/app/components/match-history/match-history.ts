@@ -58,7 +58,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     if (!this.player) return;
 
     this.apiService.getCurrentGame().subscribe({
-      next: (response) => {
+      next: (response: any) => { // Adicionar tipagem explícita
         if (response && response.success && response.currentGame) {
           this.currentGame = response.currentGame;
           this.isInGame = response.currentGame.isInGame;
@@ -68,7 +68,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           this.currentGame = null;
         }
       },
-      error: (err) => {
+      error: (err: any) => { // Adicionar tipagem explícita
         console.error('Failed to get current game:', err);
         this.isInGame = false;
         this.currentGame = null;
@@ -83,8 +83,10 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     try {
       // First try to load real match history from Riot API if player has PUUID
       if (this.player.puuid) {
-        this.apiService.getPlayerMatchHistoryFromRiot(this.player.puuid, 20).subscribe({
-          next: (response) => {
+        // Certifique-se de que this.player.region existe e é uma string válida
+        const region = this.player.region || 'br1'; // Fallback para uma região padrão se necessário
+        this.apiService.getPlayerMatchHistoryFromRiot(this.player.puuid, region, 20).subscribe({
+          next: (response: any) => { // Adicionar tipagem explícita
             if (response && response.success && response.matches) {
               // Process real match data from Riot API
               this.processRiotMatches(response.matches);
@@ -94,7 +96,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
               this.fallbackToLocalMatches();
             }
           },
-          error: (error) => {
+          error: (error: any) => { // Adicionar tipagem explícita
             console.log('Failed to load Riot API matches, trying local:', error);
             this.fallbackToLocalMatches();
           }

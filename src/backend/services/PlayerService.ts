@@ -126,6 +126,48 @@ export class PlayerService {
     }
   }
 
+  async getPlayerBySummonerNameWithDetails(riotId: string, region: string): Promise<any> {
+    if (!riotId.includes('#')) {
+      throw new Error('Formato de Riot ID inválido. Use gameName#tagLine.');
+    }
+    const [gameName, tagLine] = riotId.split('#');
+
+    if (!gameName || !tagLine) {
+        throw new Error('gameName e tagLine são obrigatórios do Riot ID.');
+    }
+
+    try {
+      // RiotAPIService.getSummonerByName espera o gameName (nome antes do #)
+      // e internamente busca os detalhes da conta, incluindo o tagLine completo.
+      const summonerDetails = await this.riotAPI.getSummonerByName(gameName, region);
+
+      // Verifique se o tagLine retornado corresponde ao tagLine fornecido, se necessário.
+      // A API da Riot para /riot/account/v1/accounts/by-puuid/{puuid} retorna gameName e tagLine.
+      // A getSummonerByName já faz essa busca e retorna os dados combinados.
+      if (summonerDetails.tagLine && summonerDetails.tagLine.toLowerCase() !== tagLine.toLowerCase()) {
+        // Isso pode acontecer se houver várias contas com o mesmo gameName mas tags diferentes.
+        // A API getSummonerByName pode retornar a primeira que encontrar ou a mais provável.
+        // Se uma correspondência exata de tagLine for crucial, uma lógica adicional pode ser necessária aqui,
+        // ou a API da Riot pode precisar ser consultada de forma diferente (por exemplo, usando /riot/account/v1/accounts/by-riot-id/{gameName}/{tagLine})
+        // Por enquanto, vamos assumir que getSummonerByName faz o melhor esforço.
+        console.warn(`TagLine retornado (${summonerDetails.tagLine}) não corresponde exatamente ao fornecido (${tagLine}) para ${gameName}. Verifique a lógica de busca se isso for um problema.`);
+        // Poderia lançar um erro se a correspondência exata for crítica:
+        // throw new Error(`Jogador ${gameName}#${tagLine} não encontrado com a tag exata.`);
+      }
+
+      // O objeto summonerDetails já deve conter todas as informações necessárias
+      // como puuid, summonerId, name (legado), gameName, tagLine, profileIconId, summonerLevel, rank, etc.
+      return summonerDetails;
+
+    } catch (error: any) {
+      console.error(`Erro em getPlayerBySummonerNameWithDetails para ${riotId} na região ${region}:`, error);
+      if (error.message.includes('não encontrado') || error.response?.status === 404) {
+        throw new Error(`Jogador com Riot ID '${riotId}' não encontrado na região ${region.toUpperCase()}`);
+      }
+      throw new Error('Falha ao buscar dados do jogador por Riot ID na Riot API.');
+    }
+  }
+
   async getPlayerByPuuid(puuid: string, region: string): Promise<any> {
     try {
       // Step 1: Get Account data by PUUID (for gameName, tagLine)

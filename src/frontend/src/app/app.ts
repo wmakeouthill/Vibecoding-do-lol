@@ -72,13 +72,13 @@ export class App implements OnInit, OnDestroy {
     if (storedApiKey) {
       this.settingsForm.riotApiKey = storedApiKey;
       // Send stored API key to backend for configuration
-      this.apiService.updateRiotApiKey(storedApiKey).subscribe({
+      this.apiService.setRiotApiKey(storedApiKey).subscribe({
         next: () => {
           console.log('API Key configurada automaticamente no backend');
-          this.apiService.setApiKey(storedApiKey);
+          // this.apiService.setApiKey(storedApiKey); // Não é mais necessário chamar setApiKey aqui, pois o backend gerencia a chave.
         },
-        error: (error) => {
-          console.warn('Falha ao configurar API Key automaticamente:', error);
+        error: (error: HttpErrorResponse) => { // Adicionar tipagem explícita para o erro
+          console.warn('Falha ao configurar API Key automaticamente:', error.message);
           // Remove invalid key from storage
           localStorage.removeItem('riotApiKey');
           this.settingsForm.riotApiKey = '';
@@ -541,20 +541,22 @@ export class App implements OnInit, OnDestroy {
 
     try {
       // Send API key to backend for validation and configuration
-      await this.apiService.updateRiotApiKey(this.settingsForm.riotApiKey).toPromise();
+      // Usar o novo método setRiotApiKey
+      await this.apiService.setRiotApiKey(this.settingsForm.riotApiKey).toPromise();
 
       // Save the API key to local storage for persistence
       localStorage.setItem('riotApiKey', this.settingsForm.riotApiKey);
-      this.apiService.setApiKey(this.settingsForm.riotApiKey);
+      // this.apiService.setApiKey(this.settingsForm.riotApiKey); // Não é mais necessário
       this.addNotification('success', 'API Key Configurada', 'Riot API Key foi configurada e validada com sucesso.');
 
       // Optionally, refresh player data if a player is already loaded
       if (this.currentPlayer) {
         this.refreshPlayerData();
       }
-    } catch (error: any) {
+    } catch (error: any) { // Manter any aqui ou tipar especificamente se souber a estrutura do erro do toPromise()
       console.error('Erro ao configurar API Key:', error);
-      this.addNotification('error', 'Erro na API Key', 'Falha ao configurar a Riot API Key. Verifique se a chave está válida.');
+      const errorMessage = error.error?.error || error.message || 'Falha ao configurar a Riot API Key. Verifique se a chave está válida.';
+      this.addNotification('error', 'Erro na API Key', errorMessage);
     }
   }
 

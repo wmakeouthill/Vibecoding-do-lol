@@ -126,17 +126,128 @@ app.get('/api/player/:playerId', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/api/player/:playerId/stats', async (req: Request, res: Response) => {
+app.get('/api/player/:playerId/stats', (async (req: Request, res: Response) => {
   try {
     const playerId = parseInt(req.params.playerId);
+    // Ensure matchHistoryService.getPlayerStats exists and is appropriate
+    // If it's more about general player stats, PlayerService might be better.
     const stats = await matchHistoryService.getPlayerStats(playerId);
     res.json({ success: true, stats });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
-});
+}) as RequestHandler);
 
-// NEW ROUTE FOR GETTING PLAYER DATA BY PUUID
+// PRIMARY ENDPOINT for fetching current player data (LCU + Riot API)
+app.get('/api/player/current-details', (async (req: Request, res: Response) => {
+  try {
+    if (!lcuService.isClientConnected()) {
+      return res.status(503).json({ error: 'Cliente do LoL não conectado' });
+    }
+
+    const lcuSummoner = await lcuService.getCurrentSummoner();
+    if (!lcuSummoner || !lcuSummoner.puuid) {
+      return res.status(404).json({ error: 'Não foi possível obter PUUID do jogador no LCU.' });
+    }
+
+    // Assume a default region or implement logic to determine it if possible from LCU
+    const region = 'br1'; // TODO: Determine region more dynamically if possible
+
+    // Get gameName and tagLine using puuid
+    const accountData = await globalRiotAPI.getAccountByPuuid(lcuSummoner.puuid, region);
+    if (!accountData || !accountData.gameName || !accountData.tagLine) {
+      return res.status(404).json({ error: 'Não foi possível obter gameName e tagLine da Riot API.' });
+    }
+
+    const riotId = `${accountData.gameName}#${accountData.tagLine}`;
+
+    // Fetch comprehensive data using PlayerService
+    const playerData = await playerService.getPlayerBySummonerNameWithDetails(riotId, region);
+    
+    // Combine LCU basic info with rich Riot API data
+    const comprehensiveData = {
+      lcu: lcuSummoner, // Contains LCU specific details like displayName, summonerId, level etc.
+      riotAccount: accountData, // Contains gameName, tagLine, puuid from Riot Account API
+      riotApi: playerData, // Contains full profile, rank, etc. from other Riot APIs via PlayerService
+    };
+
+    res.json({ success: true, data: comprehensiveData });
+
+  } catch (error: any) {
+    console.error(`Erro ao buscar dados detalhados do jogador atual:`, error.message);
+    if (error.message.includes('não encontrado') || error.message.includes('Não foi possível obter')) {
+      res.status(404).json({ error: error.message });
+    } else if (error.message.includes('Chave da Riot API')) {
+      res.status(503).json({ error: `Erro na API da Riot: ${error.message}` });
+    } else {
+      res.status(500).json({ error: 'Erro interno ao processar a solicitação para current-details' });
+    }
+  }
+}) as RequestHandler);
+
+
+// Endpoint to refresh player data using Riot ID (gameName#tagLine)
+// The frontend will call this when "Atualizar Dados" is clicked.
+// It expects a 'riotId' and 'region' in the request body.
+app.post('/api/player/refresh-by-riot-id', (async (req: Request, res: Response) => {
+  try {
+    const { riotId, region } = req.body;
+
+    if (!riotId || !region) {
+      return res.status(400).json({ error: 'Riot ID e região são obrigatórios para atualização.' });
+    }
+     if (!riotId.includes('#')) {
+      return res.status(400).json({ error: 'Formato de Riot ID inválido. Use gameName#tagLine.' });
+    }
+
+    const playerData = await playerService.getPlayerBySummonerNameWithDetails(riotId, region);
+    res.json({ success: true, data: playerData, message: 'Dados do jogador atualizados com sucesso.' });
+
+  } catch (error: any) {
+    console.error(`Erro ao atualizar dados do jogador por Riot ID (${req.body.riotId}):`, error.message);
+    if (error.message.includes('não encontrado')) {
+      res.status(404).json({ error: error.message });
+    } else if (error.message.includes('Chave da Riot API')) {
+      res.status(503).json({ error: `Erro na API da Riot: ${error.message}` });
+    } else {
+      res.status(500).json({ error: 'Erro interno ao atualizar dados do jogador.' });
+    }
+  }
+}) as RequestHandler);
+
+
+// GET PLAYER BY RIOT ID (previously /api/player/by-name/:riotId)
+// This can be used for looking up any player, not just the current one.
+app.get('/api/player/details/:riotId', (async (req: Request, res: Response) => {
+  const riotId = req.params.riotId;
+  const region = (req.query.region as string) || 'br1';
+
+  if (!riotId) {
+    return res.status(400).json({ error: 'Riot ID (gameName#tagLine) é obrigatório' });
+  }
+  if (!riotId.includes('#')) {
+    return res.status(400).json({ error: 'Formato de Riot ID inválido. Use gameName#tagLine.' });
+  }
+
+  try {
+    const playerData = await playerService.getPlayerBySummonerNameWithDetails(riotId, region);
+    res.json(playerData);
+  } catch (error: any) {
+    console.error(`Erro ao buscar jogador por Riot ID (${riotId}):`, error.message);
+    if (error.message.includes('não encontrado')) {
+      res.status(404).json({ error: error.message });
+    } else if (error.message.includes('Chave da Riot API')) {
+      res.status(503).json({ error: error.message });
+    } else if (error.message.includes('inválido') || error.message.includes('corrompido')) {
+      res.status(400).json({ error: error.message });
+    } else {
+      res.status(500).json({ error: 'Erro interno ao processar a solicitação' });
+    }
+  }
+}) as RequestHandler);
+
+
+// GET PLAYER BY PUUID (still available if needed for specific use cases)
 app.get('/api/player/puuid/:puuid', (async (req: Request, res: Response) => {
   const puuid = req.params.puuid;
   const region = (req.query.region as string) || 'br1'; // Default to br1 if no region is provided
@@ -236,217 +347,74 @@ app.get('/api/lcu/status', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/api/lcu/current-summoner', async (req: Request, res: Response) => {
+app.get('/api/lcu/current-summoner', (async (req: Request, res: Response) => {
   try {
-    const summoner = await lcuService.getCurrentSummoner();
+    const summoner = await lcuService.getCurrentSummoner(); // This gets basic LCU data
     res.json(summoner);
   } catch (error: any) {
-    res.status(503).json({ error: 'Não foi possível obter dados do invocador atual' });
+    res.status(503).json({ error: 'Não foi possível obter dados do invocador atual do LCU' });
   }
-});
-
-// NEW: Get comprehensive player data with Riot API integration
-app.get('/api/player/current-comprehensive', async (req: Request, res: Response) => {
-  try {
-    if (!lcuService.isClientConnected()) {
-      res.status(503).json({ error: 'Cliente do LoL não conectado' });
-      return;
-    }
-
-    const comprehensiveData = await lcuService.getCurrentSummonerWithRiotData();
-    res.json({ success: true, data: comprehensiveData });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// NEW: Refresh player data endpoint
-app.post('/api/player/refresh', async (req: Request, res: Response) => {
-  try {
-    if (!lcuService.isClientConnected()) {
-      res.status(503).json({ error: 'Cliente do LoL não conectado' });
-      return;
-    }
-
-    const refreshedData = await lcuService.getCurrentSummonerWithRiotData();
-    res.json({ success: true, data: refreshedData, message: 'Dados atualizados com sucesso' });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// NEW: Get real match history from Riot API
-app.get('/api/player/match-history-riot/:puuid', async (req: Request, res: Response) => {
-  try {
-    const { puuid } = req.params;
-    const count = parseInt(req.query.count as string) || 20;
-    
-    const matchHistory = await globalRiotAPI.getMatchHistory(puuid, 'americas', count);
-    
-    res.json({ success: true, matches: matchHistory });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// NEW: Get detailed match data from Riot API
-app.get('/api/match/:matchId', async (req: Request, res: Response) => {
-  try {
-    const { matchId } = req.params;
-    
-    const matchData = await globalRiotAPI.getMatchDetails(matchId, 'americas');
-    
-    res.json({ success: true, match: matchData });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+}) as RequestHandler);
 
 // NEW: Update Riot API key in settings
-app.post('/api/settings/riot-api-key', async (req: Request, res: Response) => {
+app.post('/api/settings/riot-api-key', (async (req: Request, res: Response) => {
   try {
     const { apiKey } = req.body;
-    
-    if (!apiKey || typeof apiKey !== 'string') {
-      res.status(400).json({ error: 'API key inválida' });
-      return;
+
+    if (!apiKey || typeof apiKey !== 'string' || apiKey.trim() === '') { // Added trim check
+      return res.status(400).json({ error: 'API key inválida ou vazia' });
     }
-    
+
     // Set API key on global instance
     globalRiotAPI.setApiKey(apiKey);
-    
-    // Test the API key by making a simple request
+
     try {
-      await globalRiotAPI.validateApiKey('br1');
-      res.json({ success: true, message: 'API key configurada com sucesso' });
-    } catch (error) {
-      res.status(400).json({ error: 'API key inválida ou sem permissões' });
+      await globalRiotAPI.validateApiKey('br1'); // Or a default/configurable region
+      await dbManager.setSetting('riot_api_key', apiKey);
+      console.log('[Server] Riot API Key salva no banco de dados e validada.');
+      // Re-initialize services that depend on the API key if necessary,
+      // or ensure they use the updated globalRiotAPI instance.
+      // For now, PlayerService and others use the globalRiotAPI instance, which is updated.
+      res.json({ success: true, message: 'API key configurada, validada e salva com sucesso' });
+    } catch (validationError: any) {
+      console.error('[Server] Erro ao validar a nova API Key:', validationError.message);
+      // Do not save an invalid key.
+      // Optionally, clear the key in globalRiotAPI if validation fails
+      // globalRiotAPI.setApiKey(''); // or null, depending on how RiotAPIService handles it
+      res.status(400).json({ error: `API key inválida ou sem permissões: ${validationError.message}. Não foi salva.` });
     }
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('[Server] Erro ao configurar API key:', error.message);
+    res.status(500).json({ error: 'Erro interno ao configurar a API key.' });
   }
-});
+}) as RequestHandler);
 
-// NEW: Browser-compatible endpoint for player data (bypasses CORS)
-app.get('/api/player/current-browser', async (req: Request, res: Response) => {
-  console.log('🌐 [BROWSER] Endpoint /api/player/current-browser chamado');
+// Remove or comment out old/redundant endpoints:
+// app.get('/api/player/current-comprehensive', ...);
+// app.get('/api/player/current-browser', ...);
+// app.post('/api/player/refresh', ...); // Replaced by refresh-by-riot-id
+
+// ... (keep other LCU, Match History, generic Riot API routes if still needed) ...
+
+// LCU specific routes - these are fine if they serve specific LCU interactions
+app.get('/api/lcu/status', async (req: Request, res: Response) => {
   try {
-    console.log('🔍 Buscando dados do jogador via browser endpoint...');
-    console.log('🔗 LCU Service conectado:', lcuService.isClientConnected());
-    
-    // Get LCU data through backend (works in browser)
-    const lcuData = await lcuService.getCurrentSummonerWithRiotData();
-    
-    console.log('📊 LCU Data recebido:', !!lcuData);
-    console.log('📊 LCU Data preview:', JSON.stringify({
-      displayName: lcuData?.displayName,
-      gameName: lcuData?.gameName,
-      tagLine: lcuData?.tagLine,
-      summonerId: lcuData?.summonerId
-    }));
-    
-    if (!lcuData) {
-      console.log('❌ Nenhum dado LCU encontrado');
-      res.status(404).json({ 
-        error: 'Jogador não encontrado',
-        message: 'League of Legends não está aberto ou jogador não está logado',
-        suggestion: 'Abra o League of Legends e faça login'
-      });
-      return;
-    }
-
-    console.log('✅ Dados LCU encontrados, processando...');
-
-    // Try to get additional Riot API data if available
-    let enrichedData = lcuData;
-    if (globalRiotAPI.isApiKeyConfigured() && (lcuData.gameName || lcuData.displayName)) {
-      try {
-        const playerName = lcuData.gameName || lcuData.displayName;
-        console.log('🎮 Tentando buscar dados da Riot API para:', playerName);
-        const riotData = await globalRiotAPI.getSummonerByName(playerName, 'br1');
-        enrichedData = {
-          ...lcuData,
-          riotApiData: riotData
-        };
-        console.log('✅ Dados da Riot API obtidos');
-      } catch (error) {
-        console.log('❌ Não foi possível buscar dados da Riot API:', error);
-        // Continue with LCU data only
-      }
-    } else {
-      console.log('⚠️ Riot API não configurada ou nome não disponível');
-    }
-
-    console.log('🎯 Retornando dados do jogador');
-    res.json({
-      success: true,
-      data: {
-        lcuData: enrichedData,
-        riotData: enrichedData.riotApiData || null
-      },
-      source: 'lcu',
-      hasRiotData: !!enrichedData.riotApiData
-    });
-
+    const status = await lcuService.getClientStatus();
+    res.json(status);
   } catch (error: any) {
-    console.error('❌ Erro ao buscar dados do jogador:', error);
-    res.status(500).json({ 
-      error: 'Erro interno do servidor',
-      details: error.message 
-    });
+    res.status(503).json({ error: 'Cliente do LoL não encontrado' });
   }
 });
 
-// TEST: Simple test endpoint
-app.get('/api/test-browser', (req: Request, res: Response) => {
-  console.log('🧪 Test endpoint chamado');
-  res.json({ message: 'Test endpoint funcionando!' });
-});
-
-// NEW: Debug endpoint to test LCU method directly
-app.get('/api/debug/lcu-summoner', async (req: Request, res: Response) => {
+app.get('/api/lcu/current-summoner', (async (req: Request, res: Response) => {
   try {
-    console.log('🔧 Debug: Testando método getCurrentSummonerWithRiotData...');
-    const result = await lcuService.getCurrentSummonerWithRiotData();
-    res.json({
-      success: true,
-      data: result
-    });
+    const summoner = await lcuService.getCurrentSummoner(); // This gets basic LCU data
+    res.json(summoner);
   } catch (error: any) {
-    console.error('❌ Debug: Erro no método:', error);
-    res.status(500).json({
-      error: error.message,
-      details: error.stack
-    });
+    res.status(503).json({ error: 'Não foi possível obter dados do invocador atual do LCU' });
   }
-});
+}) as RequestHandler);
 
-// NEW: Comprehensive status endpoint (LCU + Riot API)
-app.get('/api/status/comprehensive', async (req: Request, res: Response) => {
-  try {
-    const lcuStatus = await lcuService.getClientStatus();
-    const riotApiStatus = globalRiotAPI.isApiKeyConfigured();
-    
-    res.json({
-      success: true,
-      lcu: {
-        connected: lcuStatus.isConnected,
-        gameflow: lcuStatus.gameflowPhase || 'None',
-        summoner: lcuStatus.summoner || null
-      },
-      riotApi: {
-        configured: riotApiStatus,
-        working: riotApiStatus // Could add validation here
-      },
-      timestamp: new Date().toISOString()
-    });
-  } catch (error: any) {
-    res.status(500).json({ 
-      error: 'Erro ao verificar status',
-      message: error.message 
-    });
-  }
-});
 
 // Middleware de erro
 app.use((error: any, req: Request, res: Response, next: NextFunction) => {
@@ -487,6 +455,26 @@ async function initializeServices() {
     // Banco de dados
     await dbManager.initialize();
     console.log('✅ Banco de dados inicializado');
+
+    // Carregar API Key do Banco de Dados
+    const savedApiKey = await dbManager.getSetting('riot_api_key');
+    if (savedApiKey && savedApiKey.trim() !== '') {
+      globalRiotAPI.setApiKey(savedApiKey);
+      console.log('[Server] Riot API Key carregada do banco de dados.');
+      // Opcionalmente, validar a chave carregada aqui também
+      try {
+        await globalRiotAPI.validateApiKey('br1'); // Use uma região padrão ou a última usada
+        console.log('[Server] Riot API Key carregada do banco validada com sucesso.');
+      } catch (validationError: any) {
+        console.warn('[Server] API Key carregada do banco é inválida ou expirou:', validationError.message);
+        // Você pode querer limpar a chave inválida do banco aqui
+        // await dbManager.setSetting('riot_api_key', '');
+        // E também da instância global para evitar usá-la
+        // globalRiotAPI.setApiKey(''); // ou null
+      }
+    } else {
+      console.log('[Server] Nenhuma Riot API Key encontrada no banco de dados para carregar.');
+    }
 
     // Matchmaking
     await matchmakingService.initialize();

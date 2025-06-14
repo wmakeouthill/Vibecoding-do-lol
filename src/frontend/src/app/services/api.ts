@@ -40,7 +40,6 @@ interface MatchHistory {
 })
 export class ApiService {
   private baseUrl = this.getBaseUrl();
-  private riotApiKey: string | null = null; // Add this line
 
   constructor(private http: HttpClient) {}
 
@@ -114,12 +113,8 @@ export class ApiService {
 
   // Add this method
   getPlayerByPuuid(puuid: string, region: string): Observable<Player> {
-    let headers = {};
-    if (this.riotApiKey) {
-      headers = { 'X-Riot-Token': this.riotApiKey };
-    }
     // Adjust the endpoint as per your backend API structure for fetching by PUUID
-    return this.http.get<Player>(`${this.baseUrl}/player/puuid/${puuid}?region=${region}`, { headers })
+    return this.http.get<Player>(`${this.baseUrl}/player/puuid/${puuid}?region=${region}`)
       .pipe(
         catchError(this.handleError)
       );
@@ -204,202 +199,83 @@ export class ApiService {
       );
   }
 
-  getSettings(): Observable<any> {
-    return this.http.get(`${this.baseUrl}/settings`)
-      .pipe(
-        catchError(this.handleError)
-      );
-  }
-
-  // Match endpoints
-  completeMatch(matchId: number, winnerTeam: number): Observable<any> {
-    return this.http.post(`${this.baseUrl}/matches/${matchId}/complete`, {
-      winnerTeam
-    }).pipe(
-      catchError(this.handleError)
-    );
-  }
-
-  reportMatchResult(matchId: number, playerId: number, won: boolean): Observable<any> {
-    return this.http.post(`${this.baseUrl}/matches/${matchId}/result`, {
-      playerId,
-      won
-    }).pipe(
-      catchError(this.handleError)
-    );
-  }
-
-  // Auto-registration and current game endpoints
-  getCurrentPlayer(): Observable<any> {
-    return this.http.get(`${this.baseUrl}/current-player`)
-      .pipe(
-        catchError(this.handleError)
-      );
-  }
-
-  getCurrentGame(): Observable<any> {
-    return this.http.get(`${this.baseUrl}/current-game`)
-      .pipe(
-        catchError(this.handleError)
-      );
-  }
-
-  autoJoinQueue(): Observable<any> {
-    return this.http.post(`${this.baseUrl}/auto-join-queue`, {})
-      .pipe(
-        catchError(this.handleError)
-      );
-  }
-
-  leaveQueue(): Observable<any> {
-    return this.http.post(`${this.baseUrl}/leave-queue`, {})
-      .pipe(
-        catchError(this.handleError)
-      );
-  }
-
-  getPlayerMatchHistory(playerId: number, limit: number = 10): Observable<any> {
-    return this.http.get(`${this.baseUrl}/player/${playerId}/match-history?limit=${limit}`)
-      .pipe(
-        catchError(this.handleError)
-      );
-  }
-
-  // NEW: Real player data endpoints
-  getCurrentPlayerComprehensive(): Observable<any> {
-    return this.http.get(`${this.baseUrl}/player/current-comprehensive`)
-      .pipe(
-        catchError(this.handleError)
-      );
-  }
-
-  refreshPlayerData(): Observable<any> {
-    return this.http.post(`${this.baseUrl}/player/refresh`, {})
-      .pipe(
-        catchError(this.handleError)
-      );
-  }
-
-  getPlayerMatchHistoryFromRiot(puuid: string, count: number = 20): Observable<any> {
-    return this.http.get(`${this.baseUrl}/player/match-history-riot/${puuid}?count=${count}`)
-      .pipe(
-        catchError(this.handleError)
-      );
-  }
-
-  getMatchDetails(matchId: string): Observable<any> {
-    return this.http.get(`${this.baseUrl}/match/${matchId}`)
-      .pipe(
-        catchError(this.handleError)
-      );
-  }
-
-  updateRiotApiKey(apiKey: string): Observable<any> {
+  // Novo método para configurar a Riot API Key
+  setRiotApiKey(apiKey: string): Observable<any> {
     return this.http.post(`${this.baseUrl}/settings/riot-api-key`, { apiKey })
       .pipe(
         catchError(this.handleError)
       );
   }
 
-  // Add this method
-  setApiKey(apiKey: string): void {
-    this.riotApiKey = apiKey;
-    // Optionally, you could also immediately try to update/validate the key with the backend
-    // or store it in a more persistent way if needed beyond the service instance lifecycle,
-    // though localStorage is handled in app.ts for UI persistence.
-    console.log('Riot API Key set in ApiService');
-  }
-
-  // NEW: Browser-compatible method that bypasses CORS limitations
-  getCurrentPlayerBrowser(): Observable<any> {
-    return this.http.get(`${this.baseUrl}/player/current-browser`)
+  // Mock getCurrentPlayer - REMOVE OR REPLACE WITH ACTUAL IMPLEMENTATION
+  getCurrentPlayer(): Observable<any> {
+    // This should ideally fetch from LCU or a similar source if player is logged in
+    // For now, returning an empty object or a mock response
+    return this.http.get(`${this.baseUrl}/player/current-browser`) // Using existing comprehensive endpoint
       .pipe(
+        map(response => {
+          // Assuming the structure is { success: boolean, data: { lcuData: Player } }
+          // Adjust based on actual response structure
+          if ((response as any).success && (response as any).data?.lcuData) {
+            return { success: true, player: (response as any).data.lcuData };
+          }
+          return { success: false, player: null };
+        }),
         catchError(this.handleError)
       );
   }
 
-  // NEW: Debug method that works correctly (using the working endpoint)
+  // Mock autoJoinQueue - REMOVE OR REPLACE WITH ACTUAL IMPLEMENTATION
+  autoJoinQueue(): Observable<any> {
+    // This needs a proper backend endpoint and logic
+    return throwError(() => new Error('autoJoinQueue not implemented'));
+  }
+
+  // Adicionado para getCurrentPlayerComprehensive
+  getCurrentPlayerComprehensive(): Observable<any> {
+    return this.http.get<any>(`${this.baseUrl}/player/current-comprehensive`)
+      .pipe(catchError(this.handleError));
+  }
+
+  // Adicionado para getCurrentPlayerDebug
   getCurrentPlayerDebug(): Observable<any> {
-    return this.http.get(`${this.baseUrl}/debug/lcu-summoner`)
-      .pipe(
-        catchError(this.handleError)
-      );
+    return this.http.get<any>(`${this.baseUrl}/debug/lcu-summoner`)
+      .pipe(catchError(this.handleError));
   }
 
-  // NEW: Comprehensive status check for both LCU and Riot API
-  getComprehensiveStatus(): Observable<any> {
-    return this.http.get(`${this.baseUrl}/status/comprehensive`)
-      .pipe(
-        catchError(this.handleError)
-      );
+  // Adicionado para setApiKey (se ainda for usado internamente no app.ts, embora não recomendado)
+  setApiKey(apiKey: string): void {
+    // Esta função não envia a chave para o backend.
+    // A configuração da chave no backend é feita por setRiotApiKey.
+    // Esta função poderia ser usada para armazenar a chave no frontend se necessário,
+    // mas geralmente não é uma boa prática.
+    console.warn('ApiService.setApiKey foi chamada. Esta função não configura a chave no backend.');
   }
 
-  // Utility methods
-  testConnection(): Promise<boolean> {
-    return new Promise((resolve) => {
-      this.checkHealth().subscribe({
-        next: () => resolve(true),
-        error: () => resolve(false)
-      });
-    });
+  // Método para buscar detalhes da partida atual (LCU)
+  getCurrentGame(): Observable<any> {
+    // Assumindo que você terá um endpoint no backend como /api/lcu/current-match
+    // Este endpoint chamaria lcuService.getCurrentMatchDetails() ou similar.
+    // Se o endpoint for diferente, ajuste aqui.
+    return this.http.get<any>(`${this.baseUrl}/lcu/current-match-details`) // Verifique se este endpoint existe no backend
+      .pipe(catchError(this.handleError));
   }
 
-  async waitForServer(maxAttempts: number = 10, interval: number = 2000): Promise<boolean> {
-    for (let i = 0; i < maxAttempts; i++) {
-      if (await this.testConnection()) {
-        return true;
-      }
-
-      if (i < maxAttempts - 1) {
-        await new Promise(resolve => setTimeout(resolve, interval));
-      }
-    }
-
-    return false;
+  // Método para buscar histórico de partidas de um jogador pela Riot API
+  getPlayerMatchHistoryFromRiot(puuid: string, region: string, count: number = 20): Observable<any> {
+    // O backend espera a região no path ou query? Ajustar conforme necessário.
+    // O endpoint atual em server.ts é /api/player/match-history-riot/:puuid e não usa region no path.
+    // A região é fixada como 'americas' no backend globalRiotAPI.getMatchHistory. Se precisar ser dinâmica, o backend precisa mudar.
+    return this.http.get<any>(`${this.baseUrl}/player/match-history-riot/${puuid}?count=${count}`)
+      .pipe(catchError(this.handleError));
   }
 
-  // Cache management
-  private cache = new Map<string, { data: any, timestamp: number }>();
-  private cacheTimeout = 30000; // 30 segundos
-
-  private getCachedData(key: string): any | null {
-    const cached = this.cache.get(key);
-    if (cached && (Date.now() - cached.timestamp) < this.cacheTimeout) {
-      return cached.data;
-    }
-
-    this.cache.delete(key);
-    return null;
-  }
-
-  private setCachedData(key: string, data: any): void {
-    this.cache.set(key, {
-      data,
-      timestamp: Date.now()
-    });
-  }
-
-  // Cached versions of frequently called endpoints
-  getQueueStatusCached(): Observable<QueueStatus> {
-    const cacheKey = 'queue_status';
-    const cached = this.getCachedData(cacheKey);
-
-    if (cached) {
-      return new Observable(observer => {
-        observer.next(cached);
-        observer.complete();
-      });
-    }    return this.getQueueStatus().pipe(
-      catchError(this.handleError),
-      // Cache the result
-      map((result: QueueStatus) => {
-        this.setCachedData(cacheKey, result);
-        return result;
-      })
-    );
-  }
-
-  clearCache(): void {
-    this.cache.clear();
+  // Método para buscar detalhes de uma partida específica pela Riot API
+  getMatchDetails(matchId: string): Observable<any> {
+    // O backend espera a região no path ou query? Ajustar conforme necessário.
+    // O endpoint atual em server.ts é /api/match/:matchId e não usa region no path.
+    // A região é fixada como 'americas' no backend globalRiotAPI.getMatchDetails. Se precisar ser dinâmica, o backend precisa mudar.
+    return this.http.get<any>(`${this.baseUrl}/match/${matchId}`)
+      .pipe(catchError(this.handleError));
   }
 }
