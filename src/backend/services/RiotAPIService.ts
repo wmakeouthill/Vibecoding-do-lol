@@ -137,7 +137,14 @@ export class RiotAPIService {
     public isApiKeyConfigured(): boolean {
         // MODIFICADO: Checar se apiKey não é null e não é uma string vazia
         return this.apiKeyConfigured && !!this.apiKey && this.apiKey.trim() !== '';
-    }    public async validateApiKey(region: string = 'br1'): Promise<boolean> {
+    }    // Método privado para validar formato de PUUID
+    private isValidPuuidFormat(puuid: string): boolean {
+      // PUUID deve ter 36 caracteres e seguir o formato UUID v4
+      const puuidRegex = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
+      return !!(puuid && typeof puuid === 'string' && puuid.length === 36 && puuidRegex.test(puuid));
+    }
+
+    public async validateApiKey(region: string = 'br1'): Promise<boolean> {
         // MODIFICADO: Checar se apiKey não é null e não é uma string vazia
         if (!this.apiKey || this.apiKey.trim() === '') {
             console.warn('[RiotAPIService] Tentativa de validar: Nenhuma chave de API está atualmente definida ou é inválida.');
@@ -172,9 +179,8 @@ export class RiotAPIService {
             throw new Error(`Falha na validação da chave da API: ${error.message}`);
           }
         }
-      }
-      
-      private getRegionalUrl(platformRegion: string): string {
+      }      
+      public getRegionalUrl(platformRegion: string): string {
         const regionKey = platformRegion.toLowerCase();
         const regionalGroup = this.regionalRoutingMap[regionKey] || 'americas'; // Default to 'americas' if not mapped
         const url = this.regionalBaseUrls[regionalGroup];
@@ -254,11 +260,14 @@ export class RiotAPIService {
             throw new Error('Erro ao conectar com a Riot API');
           }
         }
-      }
-
-      async getSummonerByPuuid(puuid: string, region: string): Promise<SummonerData> {
+      }      async getSummonerByPuuid(puuid: string, region: string): Promise<SummonerData> {
         if (!this.isApiKeyConfigured()) {
           throw new Error('Chave da Riot API não configurada');
+        }
+
+        // Validar formato do PUUID antes de fazer a requisição
+        if (!this.isValidPuuidFormat(puuid)) {
+          throw new Error(`Formato de PUUID inválido: ${puuid}. O PUUID deve seguir o formato UUID v4.`);
         }
 
         const baseUrl = this.baseUrls[region.toLowerCase()];
@@ -281,8 +290,8 @@ export class RiotAPIService {
           } else if (error.response?.status === 400) {
             // Handle specific case of invalid PUUID format for summoner endpoint too
             const errorMessage = error.response?.data?.status?.message || error.message;
-            if (errorMessage.includes('Exception decrypting')) {
-              throw new Error(`PUUID inválido ou corrompido: ${puuid}`);
+            if (errorMessage.includes('Exception decrypting') || errorMessage.includes('malformed')) {
+              throw new Error(`PUUID rejeitado pela API da Riot: ${puuid}. Verifique se o PUUID está correto.`);
             }
             throw new Error(`Requisição inválida: ${errorMessage}`);
           } else {
@@ -294,6 +303,12 @@ export class RiotAPIService {
         if (!this.isApiKeyConfigured()) {
           throw new Error('Chave da Riot API não configurada');
         }
+
+        // Validar formato do PUUID antes de fazer a requisição
+        if (!this.isValidPuuidFormat(puuid)) {
+          throw new Error(`Formato de PUUID inválido: ${puuid}. O PUUID deve seguir o formato UUID v4.`);
+        }
+
         const regionalUrl = this.getRegionalUrl(region);
         try {
           const response = await this.axiosInstance.get( // MODIFIED: Use this.axiosInstance
@@ -311,8 +326,8 @@ export class RiotAPIService {
           } else if (error.response?.status === 400) {
             // Handle specific case of invalid PUUID format
             const errorMessage = error.response?.data?.status?.message || error.message;
-            if (errorMessage.includes('Exception decrypting')) {
-              throw new Error(`PUUID inválido ou corrompido: ${puuid}`);
+            if (errorMessage.includes('Exception decrypting') || errorMessage.includes('malformed')) {
+              throw new Error(`PUUID rejeitado pela API da Riot: ${puuid}. Verifique se o PUUID está correto.`);
             }
             throw new Error(`Requisição inválida: ${errorMessage}`);
           } else {
@@ -400,6 +415,137 @@ export class RiotAPIService {
             throw new Error('Limite de requisições da Riot API excedido.');
           } else {
             console.error('Erro na Riot API (getMatchDetails):', error.response?.data || error.message);
+            throw new Error('Erro ao conectar com a Riot API');
+          }
+        }
+      }      async getSummonerByRiotId(gameName: string, tagLine: string, region: string): Promise<any> {
+        if (!this.isApiKeyConfigured()) {
+          throw new Error('Chave da Riot API não configurada');
+        }
+
+        try {
+          // Etapa 1: Buscar dados da conta usando Account API (roteamento regional)
+          const accountRegionalUrl = this.getRegionalUrl(region);
+          const accountUrl = `${accountRegionalUrl}/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`;
+          
+          const accountResponse = await this.axiosInstance.get(accountUrl, {
+            timeout: 10000
+          });
+          const accountData: AccountData = accountResponse.data;
+
+          // Etapa 2: Usar o PUUID para buscar dados do summoner
+          const baseUrl = this.baseUrls[region.toLowerCase()];
+          if (!baseUrl) {
+            throw new Error(`Região ${region} não suportada`);
+          }
+
+          const summonerUrl = `${baseUrl}/lol/summoner/v4/summoners/by-puuid/${accountData.puuid}`;
+          const summonerResponse = await this.axiosInstance.get(summonerUrl, {
+            timeout: 10000
+          });
+          const summoner = summonerResponse.data;
+
+          // Etapa 3: Buscar dados ranqueados
+          const rankedUrl = `${baseUrl}/lol/league/v4/entries/by-summoner/${summoner.id}`;
+          const rankedResponse = await this.axiosInstance.get(rankedUrl, {
+            timeout: 10000
+          });
+          const rankedData = rankedResponse.data;
+
+          const soloQueueData = rankedData.find((entry: any) => entry.queueType === 'RANKED_SOLO_5x5');
+          const flexQueueData = rankedData.find((entry: any) => entry.queueType === 'RANKED_FLEX_SR');
+
+          return {
+            id: summoner.id,
+            accountId: summoner.accountId,
+            puuid: summoner.puuid,
+            name: summoner.name, // Este é o summonerName legado
+            profileIconId: summoner.profileIconId,
+            summonerLevel: summoner.summonerLevel,
+            gameName: accountData.gameName || gameName,
+            tagLine: accountData.tagLine || tagLine,
+            soloQueue: soloQueueData ? { ...soloQueueData } : null,
+            flexQueue: flexQueueData ? { ...flexQueueData } : null,
+            region: region,
+            lastUpdated: new Date().toISOString()
+          };
+
+        } catch (error: any) {
+          if (error.response?.status === 404) {
+            throw new Error(`Conta '${gameName}#${tagLine}' não encontrada na região ${region.toUpperCase()}`);
+          } else if (error.response?.status === 403) {
+            throw new Error('Chave da Riot API inválida ou expirada');
+          } else if (error.response?.status === 429) {
+            throw new Error('Limite de requisições da Riot API excedido. Tente novamente em alguns minutos.');
+          } else {
+            console.error('Erro na Riot API (getSummonerByRiotId):', error.response?.data || error.message);
+            throw new Error('Erro ao conectar com a Riot API');
+          }
+        }
+      }
+
+      /**
+       * Método unificado que detecta automaticamente se a entrada é Riot ID ou summoner name legado
+       * @param nameInput - Pode ser "gameName#tagLine" ou "summonerName"
+       * @param region - Região do servidor
+       * @returns Dados do summoner
+       */
+      async getSummoner(nameInput: string, region: string): Promise<any> {
+        if (!nameInput || typeof nameInput !== 'string') {
+          throw new Error('Nome de entrada inválido');
+        }
+
+        const trimmedInput = nameInput.trim();
+        
+        // Detectar se é Riot ID (contém #)
+        if (trimmedInput.includes('#')) {
+          const parts = trimmedInput.split('#');
+          if (parts.length !== 2) {
+            throw new Error('Formato de Riot ID inválido. Use: gameName#tagLine');
+          }
+          
+          const [gameName, tagLine] = parts;
+          if (!gameName.trim() || !tagLine.trim()) {
+            throw new Error('gameName e tagLine não podem estar vazios');
+          }
+          
+          return this.getSummonerByRiotId(gameName.trim(), tagLine.trim(), region);
+        } else {
+          // É um summoner name legado
+          return this.getSummonerByName(trimmedInput, region);
+        }
+      }
+
+      /**
+       * Busca apenas os dados da conta usando a Account API
+       * @param gameName - Nome do jogo
+       * @param tagLine - Tag da conta
+       * @param region - Região do servidor
+       * @returns Dados da conta (AccountDto)
+       */
+      async getAccountByRiotId(gameName: string, tagLine: string, region: string): Promise<AccountData> {
+        if (!this.isApiKeyConfigured()) {
+          throw new Error('Chave da Riot API não configurada');
+        }
+
+        try {
+          const accountRegionalUrl = this.getRegionalUrl(region);
+          const accountUrl = `${accountRegionalUrl}/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`;
+          
+          const accountResponse = await this.axiosInstance.get(accountUrl, {
+            timeout: 10000
+          });
+          
+          return accountResponse.data;
+        } catch (error: any) {
+          if (error.response?.status === 404) {
+            throw new Error(`Conta '${gameName}#${tagLine}' não encontrada na região ${region.toUpperCase()}`);
+          } else if (error.response?.status === 403) {
+            throw new Error('Chave da Riot API inválida ou expirada');
+          } else if (error.response?.status === 429) {
+            throw new Error('Limite de requisições da Riot API excedido. Tente novamente em alguns minutos.');
+          } else {
+            console.error('Erro na Riot API (getAccountByRiotId):', error.response?.data || error.message);
             throw new Error('Erro ao conectar com a Riot API');
           }
         }

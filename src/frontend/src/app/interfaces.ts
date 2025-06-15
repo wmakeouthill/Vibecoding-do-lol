@@ -98,3 +98,9 @@ export interface Match {
     isWin: boolean;
   };
 }
+
+export interface RefreshPlayerResponse {
+  success: boolean;
+  player: Player | null;
+  error?: string;
+}

@@ -556,10 +556,9 @@ export class LCUService {
       
       // Use the stored riotAPI instance
       if (this.riotAPI && this.riotAPI.isApiKeyConfigured()) {
-        try {
-          // Buscar por nome do summoner se tivermos um nome válido
+        try {          // Buscar por nome do summoner se tivermos um nome válido
           if (playerName && playerName !== 'Unknown') {
-            riotApiData = await this.riotAPI.getSummonerByName(playerName, region);
+            riotApiData = await this.riotAPI.getSummoner(playerName, region);
             console.log('🔥 Dados da Riot API obtidos via nome:', playerName);
           } else {
             console.log('⚠️ Nome do jogador não disponível para busca na Riot API');

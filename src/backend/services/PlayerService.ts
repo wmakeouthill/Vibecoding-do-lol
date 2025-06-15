@@ -20,9 +20,8 @@ export class PlayerService {
       // Buscar dados na Riot API
       let summonerId: string | undefined;
       let puuid: string | undefined;
-      
-      try {
-        const summonerData = await this.riotAPI.getSummonerByName(summonerName, region);
+        try {
+        const summonerData = await this.riotAPI.getSummoner(summonerName, region);
         summonerId = summonerData.id;
         puuid = summonerData.puuid;
       } catch (error) {
@@ -102,9 +101,8 @@ export class PlayerService {
       throw new Error('Jogador não encontrado ou sem dados da Riot API');
     }
 
-    try {
-      // Atualizar dados do summoner
-      const summonerData = await this.riotAPI.getSummonerByName(player.summoner_name, player.region);
+    try {      // Atualizar dados do summoner
+      const summonerData = await this.riotAPI.getSummoner(player.summoner_name, player.region);
       
       // Buscar dados ranqueados atualizados
       const rankedData = await this.riotAPI.getRankedData(summonerData.id, player.region);
@@ -134,29 +132,11 @@ export class PlayerService {
 
     if (!gameName || !tagLine) {
         throw new Error('gameName e tagLine são obrigatórios do Riot ID.');
-    }
+    }    try {
+      // Usar o método unificado que suporta tanto Riot ID quanto summoner name legado
+      const summonerDetails = await this.riotAPI.getSummoner(riotId, region);
 
-    try {
-      // RiotAPIService.getSummonerByName espera o gameName (nome antes do #)
-      // e internamente busca os detalhes da conta, incluindo o tagLine completo.
-      const summonerDetails = await this.riotAPI.getSummonerByName(gameName, region);
-
-      // Verifique se o tagLine retornado corresponde ao tagLine fornecido, se necessário.
-      // A API da Riot para /riot/account/v1/accounts/by-puuid/{puuid} retorna gameName e tagLine.
-      // A getSummonerByName já faz essa busca e retorna os dados combinados.
-      if (summonerDetails.tagLine && summonerDetails.tagLine.toLowerCase() !== tagLine.toLowerCase()) {
-        // Isso pode acontecer se houver várias contas com o mesmo gameName mas tags diferentes.
-        // A API getSummonerByName pode retornar a primeira que encontrar ou a mais provável.
-        // Se uma correspondência exata de tagLine for crucial, uma lógica adicional pode ser necessária aqui,
-        // ou a API da Riot pode precisar ser consultada de forma diferente (por exemplo, usando /riot/account/v1/accounts/by-riot-id/{gameName}/{tagLine})
-        // Por enquanto, vamos assumir que getSummonerByName faz o melhor esforço.
-        console.warn(`TagLine retornado (${summonerDetails.tagLine}) não corresponde exatamente ao fornecido (${tagLine}) para ${gameName}. Verifique a lógica de busca se isso for um problema.`);
-        // Poderia lançar um erro se a correspondência exata for crítica:
-        // throw new Error(`Jogador ${gameName}#${tagLine} não encontrado com a tag exata.`);
-      }
-
-      // O objeto summonerDetails já deve conter todas as informações necessárias
-      // como puuid, summonerId, name (legado), gameName, tagLine, profileIconId, summonerLevel, rank, etc.
+      // O método getSummoner já retorna os dados completos incluindo gameName e tagLine
       return summonerDetails;
 
     } catch (error: any) {

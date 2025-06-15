@@ -293,20 +293,21 @@ export class DashboardComponent implements OnInit {
 
     const iconId = this.player?.profileIconId || 29;
     const fallbackUrls = [
+      `https://ddragon.leagueoflegends.com/cdn/14.24.1/img/profileicon/${iconId}.png`,
       `https://ddragon.leagueoflegends.com/cdn/14.23.1/img/profileicon/${iconId}.png`,
-      `https://ddragon.leagueoflegends.com/cdn/14.22.1/img/profileicon/${iconId}.png`,
-      `https://ddragon.leagueoflegends.com/cdn/14.21.1/img/profileicon/${iconId}.png`,
       `https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/${iconId}.jpg`,
+      `https://ddragon.leagueoflegends.com/cdn/13.24.1/img/profileicon/${iconId}.png`,
       'https://ddragon.leagueoflegends.com/cdn/14.24.1/img/profileicon/29.png', // Default icon
       'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iNDAiIGN5PSI0MCIgcj0iNDAiIGZpbGw9IiM0Njc0ODEiLz4KPHN2ZyB4PSIxNiIgeT0iMTYiIHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj4KPHA+PHBhdGggZD0iTTEyIDEyYzIuMjEgMCA0LTEuNzkgNC00cy0xLjc5LTQtNC00LTQgMS43OS00IDQgMS43OSA0IDQgNHptMCA2Yy0yLjY3IDAtOCAxLjM0LTggNHYyaDE2di0yYzAtMi42Ni01LjMzLTQtOC00eiIgZmlsbD0iI0ZGRiIvPgo8L3N2Zz4KPC9zdmc+'
     ];
 
     // Se já tentou todos os fallbacks, usar um ícone SVG genérico
-    if (event.target.dataset.fallbackAttempt >= fallbackUrls.length - 1) {
+    const currentAttempt = parseInt(event.target.dataset.fallbackAttempt || '0');
+    if (currentAttempt >= fallbackUrls.length - 1) {
       return;
     }
 
-    const attemptIndex = parseInt(event.target.dataset.fallbackAttempt || '0') + 1;
+    const attemptIndex = currentAttempt + 1;
     event.target.dataset.fallbackAttempt = attemptIndex.toString();
     event.target.src = fallbackUrls[attemptIndex];
   }
@@ -316,11 +317,10 @@ export class DashboardComponent implements OnInit {
       return ` #${this.player.tagLine}`;
     }
     return '';
-  }
-  getProfileIconUrl(): string {
+  }  getProfileIconUrl(): string {
     const iconId = this.player?.profileIconId || 29;
-    // Usar a versão mais atual do CDN Data Dragon
-    return `https://ddragon.leagueoflegends.com/cdn/14.24.1/img/profileicon/${iconId}.png`;
+    // Usar Community Dragon como primeira opção (mais confiável)
+    return `https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/${iconId}.jpg`;
   }
 
   // Método para mostrar feedback visual quando botões são clicados
