@@ -296,21 +296,18 @@ export class App implements OnInit, OnDestroy {
     } catch (error) {
       this.lcuStatus = { isConnected: false };
     }
-  }
-  private async tryAutoLoadCurrentPlayer(): Promise<void> {
-    // Use the comprehensive endpoint that handles Riot ID properly
+  }  private async tryAutoLoadCurrentPlayer(): Promise<void> {
+    // Use the direct endpoint that combines LCU + Riot API data
     if (this.lcuStatus.isConnected) {
       try {
-        this.apiService.getCurrentPlayerDetails().subscribe({
-          next: (response) => {
-            if (response.success && response.data) {
-              this.currentPlayer = response.data.riotApi;
-              localStorage.setItem('currentPlayer', JSON.stringify(this.currentPlayer));
-              this.addNotification('success', 'Auto Load', 'Dados carregados do League of Legends automaticamente');
-            }
+        this.apiService.getPlayerFromLCU().subscribe({
+          next: (player: Player) => {
+            this.currentPlayer = player;
+            localStorage.setItem('currentPlayer', JSON.stringify(this.currentPlayer));
+            this.addNotification('success', 'Auto Load', 'Dados carregados do League of Legends automaticamente');
           },
           error: (error) => {
-            console.error('Erro ao obter dados do LCU:', error);
+            console.error('Erro ao obter dados do LCU via endpoint direto:', error);
             this.tryLoadFromAPI();
           }
         });

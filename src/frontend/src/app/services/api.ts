@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, throwError } from 'rxjs';
-import { catchError, retry, map } from 'rxjs/operators';
+import { catchError, retry, map, switchMap } from 'rxjs/operators';
 import { Player, RefreshPlayerResponse } from '../interfaces'; // Importar Player e RefreshPlayerResponse
 
 interface QueueStatus {
@@ -127,15 +127,36 @@ export class ApiService {
       .pipe(
         catchError(this.handleError)
       );
-  }
-  // Novo método para buscar dados detalhados do jogador atual
+  }  // Novo método para buscar dados detalhados do jogador atual
   // Endpoint para obter dados completos do jogador logado no LCU
   getCurrentPlayerDetails(): Observable<any> {
-    return this.http.get(`${this.baseUrl}/player/current-details`)
-      .pipe(
-        retry(1), // Tentar novamente uma vez se falhar
-        catchError(this.handleError)
-      );
+    // First get LCU data to extract Riot ID
+    return this.getCurrentSummonerFromLCU().pipe(
+      switchMap((lcuData: any) => {
+        if (lcuData && lcuData.gameName && lcuData.tagLine) {
+          const riotId = `${lcuData.gameName}#${lcuData.tagLine}`;
+          // Use the working refresh endpoint
+          return this.refreshPlayerByRiotId(riotId, 'br1').pipe(
+            map(response => ({
+              success: true,
+              data: {
+                lcu: lcuData,
+                riotAccount: {
+                  gameName: lcuData.gameName,
+                  tagLine: lcuData.tagLine,
+                  puuid: lcuData.puuid
+                },
+                riotApi: response.player
+              }
+            }))
+          );
+        } else {
+          throw new Error('Dados do LCU incompletos');
+        }
+      }),
+      retry(1), // Tentar novamente uma vez se falhar
+      catchError(this.handleError)
+    );
   }
   // Método para buscar dados básicos do jogador (para modo Browser ou fallback)
   // Endpoint alternativo para obter dados do LCU

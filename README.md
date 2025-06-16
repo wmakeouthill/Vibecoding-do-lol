@@ -6,47 +6,63 @@
 ![Electron](https://img.shields.io/badge/electron-latest-blue.svg)
 ![TypeScript](https://img.shields.io/badge/typescript-5+-blue.svg)
 
-## Overview
+## 📋 Visão Geral
 
-A comprehensive League of Legends matchmaking system featuring a desktop application with real-time MMR-based matchmaking, Riot API integration, and automatic lobby creation. Built with modern web technologies for a seamless gaming experience.
+Sistema de matchmaking avançado para League of Legends que oferece uma plataforma completa de partidas customizadas com MMR balanceado, integração profunda com a Riot API e criação automática de lobbies. Desenvolvido como aplicação desktop com tecnologias web modernas para proporcionar uma experiência de jogo otimizada e competitiva.
 
-## 🎯 Key Features
+## 🎯 Objetivo do Projeto
 
-### 🎮 5v5 Matchmaking System
-- **MMR-based matchmaking** using advanced ELO algorithm
-- **Real-time queue management** with WebSocket communication
-- **Automatic team balancing** for fair matches
-- **Estimated wait times** based on queue data
-- **Match acceptance system** with timeout handling
+O projeto tem como objetivo principal **criar um sistema de matchmaking personalizado e balanceado** para League of Legends, oferecendo uma alternativa ao sistema de filas ranqueadas oficial. Principais metas:
 
-### 🏆 Ranking & Statistics
-- **Dynamic MMR calculation** based on match results
-- **Initial MMR** derived from current League rank via Riot API
-- **Comprehensive match history** with detailed analytics
-- **Player statistics** including win rate, average MMR, and performance trends
-- **Leaderboard system** for competitive ranking
+- **🎮 Matchmaking MMR-based**: Sistema próprio de MMR com algoritmo ELO avançado para partidas mais equilibradas
+- **⚡ Experiência Seamless**: Integração automática com o cliente do LoL sem interromper o fluxo de jogo
+- **📊 Analytics Avançados**: Estatísticas detalhadas e histórico de partidas para acompanhar o progresso
+- **🏆 Sistema Competitivo**: Ranking e leaderboard próprios para criar uma comunidade competitiva
+- **🔄 Automação Completa**: Desde detecção do jogador até criação automática de lobbies
 
-### 🔗 League of Legends Integration
-- **Riot Games API** for official player data and match history
-- **League Client (LCU) API** for automatic lobby creation
-- **Auto-invite system** that automatically invites matched players
-- **Client status monitoring** to ensure players are available
-- **Seamless game integration** without disrupting the LoL experience
-- **Auto-registration** that detects your League account automatically
-- **Auto-join queue** for quickly entering matchmaking
-- **Current game detection** that shows your active match status
-- **Real-time match monitoring** throughout your game session
+## 🚀 Principais Funcionalidades
 
-### 💻 Desktop Application
-- **Electron-based executable** for Windows, macOS, and Linux
-- **Modern Angular frontend** with responsive design
-- **Real-time notifications** for match found, lobby created, etc.
-- **System tray integration** for background operation
-- **Auto-updater** for seamless updates
+### 🎮 Sistema de Matchmaking 5v5
+- **MMR dinâmico** com algoritmo ELO personalizado
+- **Balanceamento automático de equipes** baseado em estatísticas detalhadas
+- **Fila em tempo real** com comunicação WebSocket
+- **Tempo estimado de espera** baseado em dados históricos da fila
+- **Sistema de aceitação** com timeout e penalty para rejeições
 
-## 🏗️ Architecture
+### 🏆 Sistema de Ranking e Estatísticas
+- **MMR inicial baseado no rank oficial** da Riot API
+- **Cálculo dinâmico de MMR** baseado em resultados de partidas
+- **Histórico completo de partidas** com analytics detalhados
+- **Estatísticas do jogador**: winrate, MMR médio, tendências de performance
+- **Sistema de leaderboard** para ranking competitivo da comunidade
 
-### Project Structure
+### 🔗 Integração Profunda com League of Legends
+- **Riot Games API**: Dados oficiais de jogadores e histórico de partidas
+- **League Client API (LCU)**: Integração direta com o cliente do LoL
+- **Auto-detecção de jogador**: Identifica automaticamente o jogador logado
+- **Criação automática de lobbies**: Cria e convida jogadores automaticamente
+- **Monitoramento de status**: Verifica disponibilidade dos jogadores
+- **Detecção de partida ativa**: Monitora jogos em andamento
+- **Sistema de auto-registro**: Registra jogadores automaticamente via LCU
+
+### 💻 Aplicação Desktop Moderna
+- **Electron cross-platform**: Disponível para Windows, macOS e Linux
+- **Frontend Angular responsivo** com design moderno
+- **Notificações em tempo real**: Alertas para partidas encontradas, lobbies criados, etc.
+- **Integração com system tray**: Operação em segundo plano
+- **Auto-updater**: Atualizações automáticas e seamless
+
+## 🏗️ Arquitetura Técnica
+
+### Stack Tecnológico
+- **Backend**: Node.js + TypeScript + Express.js
+- **Frontend**: Angular 18+ + TypeScript + SCSS
+- **Desktop**: Electron (empacotamento multiplataforma)
+- **Database**: SQLite (local) com DatabaseManager customizado
+- **APIs**: Riot Games API + League Client API (LCU)
+- **Comunicação**: WebSocket (real-time) + REST API
+
+### Estrutura do Projeto
 ```
 ├── package.json                     # Root build configuration
 ├── README.md                        # This file
@@ -228,26 +244,134 @@ A comprehensive League of Legends matchmaking system featuring a desktop applica
 
 ### REST API Endpoints
 
-#### Player Management
+#### 🎮 Player Management
 ```http
-GET    /api/players/:summonerName     # Get player profile
-POST   /api/players/register          # Register new player
-PUT    /api/players/:id/mmr          # Update player MMR
+# Buscar jogador atual (LCU + Riot API integrado)
+GET    /api/player/current-details           # Dados completos do jogador logado no LoL
+Response: { success: true, data: { lcu: {...}, riotAccount: {...}, riotApi: {...} } }
+
+# Atualizar dados do jogador por Riot ID
+POST   /api/player/refresh-by-riot-id        # Atualiza dados via Riot ID
+Body:  { "riotId": "gameName#tagLine", "region": "br1" }
+Response: { success: true, data: {...}, message: "Dados atualizados" }
+
+# Buscar jogador por ID
+GET    /api/player/:playerId                 # Dados do jogador por ID interno
+GET    /api/player/:playerId/stats           # Estatísticas detalhadas do jogador
+
+# Buscar jogador por Riot ID (detalhado)
+GET    /api/player/details/:riotId           # Dados via Riot ID (formato: gameName%23tagLine)
+GET    /api/player/puuid/:puuid              # Dados via PUUID
 ```
 
-#### Match History
+#### 🏆 Matchmaking & Queue
 ```http
-GET    /api/matches/:playerId         # Get player match history
-POST   /api/matches                   # Record new match
-GET    /api/matches/:matchId          # Get specific match details
+# Status da fila
+GET    /api/queue/status                     # Status atual da fila de matchmaking
+Response: { playersInQueue: 0, averageWaitTime: 0, estimatedMatchTime: 0 }
+
+# Sistema de registro/busca
+POST   /api/player/register                  # Registrar jogador
+Body:  { "riotId": "gameName#tagLine", "region": "br1" }
+POST   /api/player/search                    # Buscar jogadores
 ```
 
-#### Statistics
+#### 📊 League Client Integration (LCU)
 ```http
-GET    /api/stats/leaderboard         # Get top players
-GET    /api/stats/player/:id          # Get detailed player stats
-GET    /api/queue/status              # Current queue status
+# Status do cliente LoL
+GET    /api/lcu/status                       # Status da conexão com o League Client
+Response: { isConnected: true, summoner: {...}, gameflowPhase: "..." }
+
+# Dados do summoner atual
+GET    /api/lcu/current-summoner             # Dados do jogador logado no cliente
+Response: { gameName: "...", tagLine: "...", puuid: "...", summonerLevel: 331 }
+
+# Gestão de lobbies
+POST   /api/lcu/create-lobby                 # Criar lobby customizado
+POST   /api/lcu/invite-player               # Convidar jogador para lobby
+Body:  { "summonerName": "playerName" }
 ```
+
+#### 🔧 System & Configuration
+```http
+# Health check
+GET    /api/health                           # Status do servidor
+Response: { status: "ok", timestamp: "..." }
+
+# Configuração da API Key
+POST   /api/config/riot-api-key              # Configurar chave da Riot API
+Body:  { "apiKey": "RGAPI-..." }
+GET    /api/config/riot-api-key/validate     # Validar chave da API
+```
+
+#### 📈 Match History & Statistics
+```http
+# Histórico de partidas
+GET    /api/matches/:playerId                # Histórico do jogador
+GET    /api/matches/recent                   # Partidas recentes do sistema
+POST   /api/matches                          # Registrar nova partida
+
+# Estatísticas e rankings
+GET    /api/stats/leaderboard                # Ranking dos melhores jogadores
+GET    /api/stats/player/:id                 # Estatísticas detalhadas
+```
+
+### 🔄 WebSocket Events
+
+#### Client → Server
+```javascript
+// Entrar na fila
+{ type: 'join_queue', data: { playerId: 123, preferences: {...} } }
+
+// Sair da fila
+{ type: 'leave_queue' }
+
+// Status da fila
+{ type: 'get_queue_status' }
+
+// Aceitar partida
+{ type: 'accept_match', data: { matchId: "uuid" } }
+
+// Rejeitar partida
+{ type: 'decline_match', data: { matchId: "uuid" } }
+```
+
+#### Server → Client
+```javascript
+// Partida encontrada
+{ type: 'match_found', data: { matchId: "uuid", players: [...], timeoutMs: 30000 } }
+
+// Partida confirmada
+{ type: 'match_ready', data: { matchId: "uuid", lobbyCode: "...", team1: [...], team2: [...] } }
+
+// Partida cancelada
+{ type: 'match_cancelled', data: { reason: "timeout", matchId: "uuid" } }
+
+// Status da fila atualizado
+{ type: 'queue_status', data: { playersInQueue: 5, averageWaitTime: 120 } }
+
+// Lobby criado automaticamente
+{ type: 'lobby_created', data: { success: true, invitesSent: 9 } }
+```
+
+### 🌐 Riot API Integration
+
+O sistema utiliza a **nova implementação de Riot ID** conforme a documentação oficial:
+
+#### Account API (Riot ID)
+- **Endpoint**: `/riot/account/v1/accounts/by-riot-id/{gameName}/{tagLine}`
+- **Uso**: Buscar dados da conta via `gameName#tagLine`
+- **Roteamento**: Regional (americas, europe, asia, sea)
+
+#### Summoner API (PUUID)
+- **Endpoint**: `/lol/summoner/v4/summoners/by-puuid/{puuid}`
+- **Uso**: Dados do summoner via PUUID obtido da Account API
+- **Roteamento**: Específico da plataforma (br1, na1, euw1, etc.)
+
+#### League API (Ranked Data)
+- **Endpoint**: `/lol/league/v4/entries/by-summoner/{summonerId}`
+- **Uso**: Dados ranqueados (solo queue, flex queue)
+- **Retorna**: Tier, rank, LP, wins, losses
 
 ## 🔧 Configuration
 
@@ -325,54 +449,143 @@ Configure in `package.json`:
 
 ## 🧪 Testing
 
-### Unit Tests
+### Testes Automatizados
 ```bash
-# Run all tests
+# Executar todos os testes
 npm test
 
-# Backend tests
+# Testes do backend
 npm run test:backend
 
-# Frontend tests
+# Testes do frontend
 npm run test:frontend
-```
 
-### Integration Tests
-```bash
-# E2E tests
+# Testes end-to-end
 npm run test:e2e
-
-# API tests
-npm run test:api
 ```
 
-### Manual Testing Checklist
-- [ ] Player registration and profile creation
-- [ ] Queue joining and leaving functionality
-- [ ] Matchmaking algorithm with various MMR ranges
-- [ ] WebSocket real-time communication
-- [ ] LCU integration and lobby creation
-- [ ] MMR calculation after matches
-- [ ] Match history accuracy
-- [ ] Electron application packaging
+### Testes de API (Manual)
+```bash
+# Teste do endpoint principal
+curl -X GET http://localhost:3000/api/player/current-details
+
+# Teste de refresh por Riot ID  
+curl -X POST "http://localhost:3000/api/player/refresh-by-riot-id" \
+  -H "Content-Type: application/json" \
+  -d '{"riotId": "gameName#tagLine", "region": "br1"}'
+
+# Status do sistema
+curl -X GET http://localhost:3000/api/health
+curl -X GET http://localhost:3000/api/lcu/status
+```
+
+### Checklist de Testes Manuais
+- [ ] ✅ Registro automático de jogador via LCU
+- [ ] ✅ Busca de dados via Riot ID funcional
+- [ ] ✅ Entrada e saída da fila de matchmaking
+- [ ] ✅ Algoritmo de matchmaking com diferentes MMRs
+- [ ] ✅ Comunicação WebSocket em tempo real
+- [ ] ✅ Integração LCU e criação automática de lobbies
+- [ ] ✅ Cálculo correto de MMR pós-partida
+- [ ] ✅ Precisão do histórico de partidas
+- [ ] ✅ Empacotamento da aplicação Electron
 
 ## 🐛 Troubleshooting
 
-### Common Issues
+### Problemas Comuns
 
-#### 1. LCU Connection Failed
+#### 1. 🔴 LCU Connection Failed
+**Problema**: `Cliente do LoL não conectado`
 ```bash
-# Ensure League Client is running
-# Check LCU port (usually 2999)
-# Verify LCU certificate
+# Soluções:
+1. Verificar se o League of Legends está rodando
+2. Confirmar porta LCU (geralmente 2999)
+3. Verificar certificado LCU no processo LeagueClientUx.exe
+4. Reiniciar o cliente do LoL
 ```
 
-#### 2. WebSocket Connection Issues
+#### 2. 🔴 WebSocket Connection Issues  
+**Problema**: Desconexões frequentes ou falha na conexão
 ```bash
-# Check firewall settings
-# Verify backend server is running
-# Check network connectivity
+# Soluções:
+1. Verificar configurações de firewall
+2. Confirmar que o servidor backend está rodando na porta 3000
+3. Testar conectividade de rede
+4. Verificar se não há conflitos de porta
 ```
+
+#### 3. 🔴 Riot API Errors
+**Problema**: `403 Forbidden` ou `404 Not Found`
+```bash
+# Soluções:
+1. Verificar se a chave da API está válida
+2. Confirmar que o Riot ID está no formato correto (gameName#tagLine)
+3. Verificar se a região está correta (br1, na1, euw1, etc.)
+4. Aguardar rate limits se necessário
+```
+
+#### 4. 🔴 Player Not Found
+**Problema**: `Jogador não encontrado`
+```bash
+# Soluções:
+1. Verificar se o jogador existe na região especificada
+2. Confirmar que o Riot ID está escrito corretamente
+3. Verificar se o jogador tem partidas ranqueadas
+4. Testar com outros Riot IDs conhecidos
+```
+
+## 📚 Documentação Adicional
+
+- **[Implementação Riot ID](./RIOT_ID_IMPLEMENTATION.md)** - Detalhes técnicos da integração com Riot API
+- **[Arquitetura Técnica](./TECHNICAL_ARCHITECTURE.md)** - Visão completa da arquitetura do sistema
+- **[Endpoints API](./RIOT_ID_IMPLEMENTATION.md#endpoints-funcionais-do-backend)** - Documentação completa das APIs
+
+## 🤝 Contribuição
+
+### Como Contribuir
+1. **Fork** o repositório
+2. **Crie** uma branch para sua feature (`git checkout -b feature/amazing-feature`)
+3. **Commit** suas mudanças (`git commit -m 'Add amazing feature'`)
+4. **Push** para a branch (`git push origin feature/amazing-feature`)
+5. **Abra** um Pull Request
+
+### Diretrizes de Desenvolvimento
+- ✅ **TypeScript**: Use tipagem estrita
+- ✅ **ESLint**: Siga as regras de linting
+- ✅ **Commits**: Use mensagens descritivas
+- ✅ **Testes**: Adicione testes para novas funcionalidades
+- ✅ **Documentação**: Atualize documentação relevante
+
+## 📄 Licença
+
+Este projeto está licenciado sob a **MIT License** - veja o arquivo [LICENSE](LICENSE) para detalhes.
+
+## 👥 Autores
+
+- **Wesley Augusto** - *Desenvolvimento inicial* - [@wcaco](https://github.com/wcaco)
+
+## 🙏 Agradecimentos
+
+- **Riot Games** - Pela API oficial do League of Legends
+- **Comunidade Open Source** - Pelas bibliotecas e ferramentas utilizadas
+- **Electron Team** - Pela plataforma de desenvolvimento desktop
+- **Angular Team** - Pelo framework frontend moderno
+
+## 📊 Status do Projeto
+
+- ✅ **Backend**: Funcional e testado
+- ✅ **Frontend**: Interface completa
+- ✅ **Integração Riot API**: Implementada com Riot ID
+- ✅ **Integração LCU**: Conexão automática
+- ✅ **Sistema de Matchmaking**: Algoritmo balanceado
+- ✅ **Aplicação Desktop**: Build para múltiplas plataformas
+- 🔄 **Match History API**: Em desenvolvimento
+- 🔄 **Advanced Statistics**: Planejado
+- 🔄 **Tournament System**: Futuro
+
+---
+
+**Desenvolvido com ❤️ para a comunidade League of Legends**
 
 #### 3. Riot API Rate Limiting
 ```bash
