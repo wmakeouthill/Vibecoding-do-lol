@@ -88,7 +88,13 @@ export interface Match {
   averageMMR2?: number;
   isVictory?: boolean;
   mmrChange?: number;
-  gameMode?: string;  playerStats?: {
+  gameMode?: string;
+  // Dados expandidos da Riot API
+  participants?: any[]; // Todos os 10 jogadores
+  teams?: any[]; // Dados dos times
+  gameVersion?: string;
+  mapId?: number;
+  playerStats?: {
     champion: string;
     kills: number;
     deaths: number;
@@ -102,6 +108,19 @@ export interface Match {
     pentaKills?: number;
     items?: number[];
     lpChange?: number;
+    // Dados expandidos do jogador
+    goldEarned?: number;
+    totalDamageDealt?: number;
+    totalDamageDealtToChampions?: number;
+    totalDamageTaken?: number;
+    totalMinionsKilled?: number;
+    neutralMinionsKilled?: number;
+    wardsPlaced?: number;
+    wardsKilled?: number;
+    visionScore?: number;
+    summoner1Id?: number;
+    summoner2Id?: number;
+    perks?: any; // Runas
   };
 }
 

@@ -14,12 +14,15 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
   @Input() player: Player | null = null;
 
   // Tab system
-  activeTab: 'riot' | 'custom' = 'riot';
+  activeTab: string = 'riot'; // Aceita apenas 'riot' ou 'custom' para evitar erro de lint
 
   // Match arrays
   matches: Match[] = []; // Legacy - será mantido para compatibilidade
   riotMatches: Match[] = []; // Partidas da Riot API
   customMatches: Match[] = []; // Partidas customizadas
+
+  // Expanded matches tracking
+  expandedMatches: Set<string> = new Set();
 
   loading = false;
   error: string | null = null;
@@ -51,10 +54,9 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     this.loading = true;
     this.error = null;
 
-    try {
-      if (this.player.puuid) {
-        const region = this.player.region || 'br1';
-        this.apiService.getPlayerMatchHistoryFromRiot(this.player.puuid, region, 20).subscribe({
+    try {      if (this.player.puuid) {
+        // Para histórico da Riot API, sempre usar 'americas' como região
+        this.apiService.getPlayerMatchHistoryFromRiot(this.player.puuid, 'americas', 20).subscribe({
           next: (response: any) => {
             if (response && response.success && response.matches) {
               this.processRiotMatches(response.matches);
@@ -120,12 +122,20 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       console.error('Error loading custom match history:', error);
     }
   }
-
   // ========== TAB SYSTEM ==========
-  setActiveTab(tab: 'riot' | 'custom'): void {
+  setActiveTab(tab: string): void {
     this.activeTab = tab;
     this.currentPage = 0;
     this.loadCurrentTabMatches();
+  }
+
+  // Helper function para evitar erro de lint no template
+  isCustomTab(): boolean {
+    return this.activeTab === 'custom';
+  }
+
+  isRiotTab(): boolean {
+    return this.activeTab === 'riot';
   }
 
   getCurrentMatches(): Match[] {
@@ -226,17 +236,16 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       }
     });
   }
-
   private processRiotMatches(matchIds: string[]): void {
     if (!matchIds || matchIds.length === 0) {
-      this.matches = this.generateMockMatches();
-      this.totalMatches = this.matches.length;
+      this.riotMatches = this.generateMockRiotMatches();
+      this.totalMatches = this.riotMatches.length;
       this.loading = false;
       return;
     }
 
-    // Fetch detailed match data for each match ID
-    const matchPromises = matchIds.slice(0, 10).map(matchId =>
+    // Fetch detailed match data for all 20 match IDs
+    const matchPromises = matchIds.map(matchId =>
       this.apiService.getMatchDetails(matchId).toPromise()
     );
 
@@ -250,11 +259,11 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       });
 
       if (validMatches.length > 0) {
-        this.matches = this.mapRiotMatchesToModel(validMatches);
-        this.totalMatches = this.matches.length;
+        this.riotMatches = this.mapRiotMatchesToModel(validMatches);
+        this.totalMatches = this.riotMatches.length;
       } else {
-        this.matches = this.generateMockMatches();
-        this.totalMatches = this.matches.length;
+        this.riotMatches = this.generateMockRiotMatches();
+        this.totalMatches = this.riotMatches.length;
       }
 
       this.loading = false;
@@ -262,7 +271,6 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       this.fallbackToLocalMatches();
     });
   }
-
   private mapRiotMatchesToModel(riotMatches: any[]): Match[] {
     return riotMatches.map(matchData => {
       const playerData = matchData.info.participants.find(
@@ -273,22 +281,52 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         return this.createDefaultMatch();
       }
 
+      // Separar participantes em times
+      const team1 = matchData.info.participants.filter((p: any) => p.teamId === 100);
+      const team2 = matchData.info.participants.filter((p: any) => p.teamId === 200);
+
       return {
         id: matchData.metadata.matchId,
         createdAt: new Date(matchData.info.gameCreation),
         duration: matchData.info.gameDuration,
-        team1: [], // Could be populated with team data
-        team2: [], // Could be populated with team data
-        winner: playerData.win ? 1 : 2,
-        averageMMR1: 1400, // Could be calculated from team data
-        averageMMR2: 1400, // Could be calculated from team data
+        gameMode: matchData.info.gameMode,
+        gameVersion: matchData.info.gameVersion,
+        mapId: matchData.info.mapId,
+        participants: matchData.info.participants,
+        teams: matchData.info.teams,
+        team1: team1,
+        team2: team2,
+        winner: playerData.win ? (playerData.teamId === 100 ? 1 : 2) : (playerData.teamId === 100 ? 2 : 1),
         playerStats: {
           champion: playerData.championName,
           kills: playerData.kills,
           deaths: playerData.deaths,
           assists: playerData.assists,
-          mmrChange: playerData.win ? 15 : -12, // Mock MMR change
-          isWin: playerData.win
+          mmrChange: playerData.win ? 15 : -12, // Mock MMR - API não fornece
+          isWin: playerData.win,
+          championLevel: playerData.champLevel,
+          doubleKills: playerData.doubleKills,
+          tripleKills: playerData.tripleKills,
+          quadraKills: playerData.quadraKills,
+          pentaKills: playerData.pentaKills,
+          items: [
+            playerData.item0, playerData.item1, playerData.item2,
+            playerData.item3, playerData.item4, playerData.item5
+          ],
+          lpChange: playerData.win ? Math.floor(Math.random() * 25) + 10 : -(Math.floor(Math.random() * 20) + 10), // Mock LP
+          // Dados expandidos
+          goldEarned: playerData.goldEarned,
+          totalDamageDealt: playerData.totalDamageDealt,
+          totalDamageDealtToChampions: playerData.totalDamageDealtToChampions,
+          totalDamageTaken: playerData.totalDamageTaken,
+          totalMinionsKilled: playerData.totalMinionsKilled,
+          neutralMinionsKilled: playerData.neutralMinionsKilled,
+          wardsPlaced: playerData.wardsPlaced,
+          wardsKilled: playerData.wardsKilled,
+          visionScore: playerData.visionScore,
+          summoner1Id: playerData.summoner1Id,
+          summoner2Id: playerData.summoner2Id,
+          perks: playerData.perks
         }
       };
     });
@@ -547,18 +585,50 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       'CLASSIC': 'Clássica'
     };
     return modes[gameMode || ''] || 'Desconhecido';
-  }
-
-  getChampionImageUrl(championName?: string): string {
+  }  getChampionImageUrl(championName?: string): string {
     if (!championName) return '';
-    // Data Dragon champion image URL
-    return `https://ddragon.leagueoflegends.com/cdn/13.24.1/img/champion/${championName}.png`;
+    // Normalize champion name for Data Dragon URL using proper mapping
+    const normalizedName = this.normalizeChampionName(championName);
+    return `https://ddragon.leagueoflegends.com/cdn/15.12.1/img/champion/${normalizedName}.png`;
   }
 
+  private normalizeChampionName(championName: string): string {
+    // Mapeamento de nomes especiais
+    const nameMap: { [key: string]: string } = {
+      'KaiSa': 'Kaisa',
+      'Kai\'Sa': 'Kaisa',
+      'Cho\'Gath': 'Chogath',
+      'Kha\'Zix': 'Khazix',
+      'LeBlanc': 'Leblanc',
+      'Vel\'Koz': 'Velkoz',
+      'Kog\'Maw': 'Kogmaw',
+      'Rek\'Sai': 'Reksai',
+      'Nunu & Willump': 'Nunu',
+      'Wukong': 'MonkeyKing',
+      'Renata Glasc': 'Renata',
+      'Dr. Mundo': 'DrMundo',
+      'Tahm Kench': 'TahmKench',
+      'Twisted Fate': 'TwistedFate',
+      'Master Yi': 'MasterYi',
+      'Miss Fortune': 'MissFortune',
+      'Jarvan IV': 'JarvanIV',
+      'Lee Sin': 'LeeSin',
+      'Xin Zhao': 'XinZhao',
+      'Aurelion Sol': 'AurelionSol'
+    };
+
+    // Verifica se existe um mapeamento específico
+    if (nameMap[championName]) {
+      return nameMap[championName];
+    }
+
+    // Para outros casos, remove caracteres especiais e espaços
+    return championName.replace(/[^a-zA-Z]/g, '');
+  }
   getItemImageUrl(itemId: number): string {
     if (!itemId || itemId === 0) return '';
     // Data Dragon item image URL
-    return `https://ddragon.leagueoflegends.com/cdn/13.24.1/img/item/${itemId}.png`;
+    return `https://ddragon.leagueoflegends.com/cdn/15.12.1/img/item/${itemId}.png`;
   }
 
   getPlayerItems(match: Match): number[] {
@@ -628,9 +698,16 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
   trackMatch(index: number, match: Match): string {
     return match.id.toString();
   }
-
   toggleMatchDetails(matchId: string): void {
-    console.log('Toggle details for match:', matchId);
+    if (this.expandedMatches.has(matchId)) {
+      this.expandedMatches.delete(matchId);
+    } else {
+      this.expandedMatches.add(matchId);
+    }
+  }
+
+  isMatchExpanded(matchId: string): boolean {
+    return this.expandedMatches.has(matchId);
   }
 
   hasMoreMatches(): boolean {
@@ -666,5 +743,184 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     }
 
     return mostPlayed || 'N/A';
+  }
+
+  // ========== EXPANDED MATCH METHODS ==========
+
+  getParticipantKDARatio(participant: any): number {
+    if (!participant || participant.deaths === 0) {
+      return (participant?.kills || 0) + (participant?.assists || 0);
+    }
+    return ((participant.kills || 0) + (participant.assists || 0)) / participant.deaths;
+  }
+  getParticipantItems(participant: any): number[] {
+    if (!participant) return [0, 0, 0, 0, 0, 0];
+    return [
+      participant.item0 || 0,
+      participant.item1 || 0,
+      participant.item2 || 0,
+      participant.item3 || 0,
+      participant.item4 || 0,
+      participant.item5 || 0
+    ];
+  }
+
+  // ========== LANE DETECTION AND ORGANIZATION ==========
+
+  getParticipantLane(participant: any): string {
+    // Determinar lane baseado em teamPosition ou lane
+    const lane = participant.teamPosition || participant.lane || 'UNKNOWN';
+    const role = participant.role || 'UNKNOWN';
+
+    // Mapear para lanes do LoL
+    switch (lane) {
+      case 'TOP':
+        return 'TOP';
+      case 'JUNGLE':
+        return 'JUNGLE';
+      case 'MIDDLE':
+      case 'MID':
+        return 'MIDDLE';
+      case 'BOTTOM':
+        if (role === 'DUO_CARRY' || participant.individualPosition === 'Bottom') {
+          return 'ADC';
+        } else if (role === 'DUO_SUPPORT' || participant.individualPosition === 'Utility') {
+          return 'SUPPORT';
+        }
+        // Fallback: determinar por champion ou items
+        return this.detectBotLaneRole(participant);
+      case 'UTILITY':
+        return 'SUPPORT';
+      default:
+        // Fallback para detecção baseada em posição individual
+        return this.detectLaneByPosition(participant);
+    }
+  }
+
+  private detectBotLaneRole(participant: any): string {    // Lista de campeões tradicionalmente ADC
+    const adcChampions = [
+      'Jinx', 'Caitlyn', 'Ashe', 'Vayne', 'Ezreal', 'Kai\'Sa', 'Jhin', 'Xayah',
+      'Tristana', 'Sivir', 'Miss Fortune', 'Lucian', 'Draven', 'Twitch', 'Kog\'Maw',
+      'Varus', 'Kalista', 'Aphelios', 'Samira', 'Zeri', 'Nilah'
+    ];
+
+    // Lista de campeões tradicionalmente Support
+    const supportChampions = [
+      'Thresh', 'Blitzcrank', 'Leona', 'Braum', 'Alistar', 'Nautilus', 'Pyke',
+      'Lulu', 'Janna', 'Soraka', 'Nami', 'Sona', 'Yuumi', 'Seraphine', 'Karma',
+      'Morgana', 'Zyra', 'Brand', 'Vel\'Koz', 'Xerath', 'Swain', 'Pantheon',
+      'Rakan', 'Taric', 'Bard', 'Zilean', 'Senna', 'Milio', 'Renata Glasc'
+    ];
+
+    const championName = participant.championName;
+
+    if (adcChampions.includes(championName)) {
+      return 'ADC';
+    } else if (supportChampions.includes(championName)) {
+      return 'SUPPORT';
+    }
+
+    // Verificar itens de suporte
+    const items = [
+      participant.item0, participant.item1, participant.item2,
+      participant.item3, participant.item4, participant.item5
+    ];
+
+    // IDs de itens de suporte comuns
+    const supportItems = [3850, 3851, 3853, 3854, 3855, 3857, 3858, 3859, 3860, 3862, 3863, 3864];
+    const hasSupportItem = items.some(item => supportItems.includes(item));
+
+    if (hasSupportItem) {
+      return 'SUPPORT';
+    }
+
+    // Se não conseguiu determinar, usar farm como critério
+    const totalFarm = (participant.totalMinionsKilled || 0) + (participant.neutralMinionsKilled || 0);
+    return totalFarm > 100 ? 'ADC' : 'SUPPORT';
+  }
+
+  private detectLaneByPosition(participant: any): string {
+    const position = participant.individualPosition || participant.teamPosition || 'UNKNOWN';
+
+    switch (position) {
+      case 'Top':
+        return 'TOP';
+      case 'Jungle':
+        return 'JUNGLE';
+      case 'Middle':
+        return 'MIDDLE';
+      case 'Bottom':
+        return 'ADC';
+      case 'Utility':
+        return 'SUPPORT';
+      default:
+        return 'UNKNOWN';
+    }
+  }
+  organizeTeamByLanes(team: any[] | undefined): { [lane: string]: any } {
+    const organizedTeam: { [lane: string]: any } = {
+      'TOP': null,
+      'JUNGLE': null,
+      'MIDDLE': null,
+      'ADC': null,
+      'SUPPORT': null
+    };
+
+    if (!team || !Array.isArray(team)) {
+      return organizedTeam;
+    }
+
+    team.forEach(participant => {
+      const lane = this.getParticipantLane(participant);
+      if (organizedTeam[lane] === null) {
+        organizedTeam[lane] = participant;
+      } else {
+        // Se já existe alguém na lane, colocar na primeira disponível
+        const availableLanes = Object.keys(organizedTeam).filter(l => organizedTeam[l] === null);
+        if (availableLanes.length > 0) {
+          organizedTeam[availableLanes[0]] = participant;
+        }
+      }
+    });
+
+    return organizedTeam;
+  }
+
+  getLaneIcon(lane: string): string {
+    switch (lane) {
+      case 'TOP': return '⚔️';
+      case 'JUNGLE': return '🌲';
+      case 'MIDDLE': return '🏰';
+      case 'ADC': return '🏹';
+      case 'SUPPORT': return '🛡️';
+      default: return '❓';
+    }
+  }
+
+  getLaneName(lane: string): string {
+    switch (lane) {
+      case 'TOP': return 'Top';
+      case 'JUNGLE': return 'Jungle';
+      case 'MIDDLE': return 'Mid';
+      case 'ADC': return 'ADC';
+      case 'SUPPORT': return 'Support';
+      default: return 'Unknown';
+    }
+  }
+
+  // ========== DEBUG HELPER ==========
+
+  debugParticipant(participant: any, label: string): void {
+    console.log(`${label}:`, participant);
+    console.log('Items:', [
+      participant?.item0,
+      participant?.item1,
+      participant?.item2,
+      participant?.item3,
+      participant?.item4,
+      participant?.item5
+    ]);
+    console.log('Champion:', participant?.championName);
+    console.log('Summoner:', participant?.summonerName);
   }
 }

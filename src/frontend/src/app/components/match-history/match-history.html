@@ -8,13 +8,13 @@
       <div class="tabs-nav">
         <button
           class="tab-btn"
-          [class.active]="activeTab === 'riot'"
+          [class.active]="isRiotTab()"
           (click)="setActiveTab('riot')">
           🏆 Riot API
         </button>
         <button
           class="tab-btn"
-          [class.active]="activeTab === 'custom'"
+          [class.active]="isCustomTab()"
           (click)="setActiveTab('custom')">
           🎮 Partidas Customizadas
         </button>
@@ -60,17 +60,15 @@
 
   <!-- Empty State -->
   <div *ngIf="!loading && !error && getCurrentMatches().length === 0" class="empty-container">
-    <div class="empty-icon">{{ activeTab === 'riot' ? '�' : '�🎮' }}</div>
-    <h3>{{ activeTab === 'riot' ? 'Nenhuma partida ranqueada encontrada' : 'Nenhuma partida customizada encontrada' }}</h3>
-    <p>{{ activeTab === 'riot' ? 'Você ainda não jogou nenhuma partida ranqueada.' : 'Ainda não há partidas customizadas registradas.' }}</p>
+    <div class="empty-icon">{{ isRiotTab() ? '🏆' : '🎮' }}</div>
+    <h3>{{ isRiotTab() ? 'Nenhuma partida ranqueada encontrada' : 'Nenhuma partida customizada encontrada' }}</h3>
+    <p>{{ isRiotTab() ? 'Você ainda não jogou nenhuma partida ranqueada.' : 'Ainda não há partidas customizadas registradas.' }}</p>
     <button class="btn btn-primary" (click)="loadCurrentTabMatches()">Recarregar</button>
   </div>
-
   <!-- Tab Content -->
   <div class="tab-content" *ngIf="!loading && !error && getCurrentMatches().length > 0">
-
     <!-- Riot API Tab Content -->
-    <div *ngIf="activeTab === 'riot'" class="riot-matches-content">
+    <div *ngIf="isRiotTab()" class="riot-matches-content">
       <!-- Summary Stats for Riot Matches -->
       <div class="summary-stats riot-theme">
         <div class="summary-card">
@@ -161,18 +159,278 @@
                   [class.negative]="(match.playerStats?.lpChange || 0) < 0">
               {{ (match.playerStats?.lpChange || 0) > 0 ? '+' : '' }}{{ match.playerStats?.lpChange || 0 }} LP
             </span>
-          </div>
-
-          <!-- Match Time -->
+          </div>          <!-- Match Time -->
           <div class="match-time">
             {{ match.createdAt ? getTimeAgo(match.createdAt) : 'Data indisponível' }}
           </div>
+
+          <!-- Expand Button -->
+          <div class="match-actions">
+            <button class="expand-btn"
+                    (click)="toggleMatchDetails(match.id.toString())"
+                    [class.expanded]="isMatchExpanded(match.id.toString())">
+              <span class="expand-icon">{{ isMatchExpanded(match.id.toString()) ? '▲' : '▼' }}</span>
+            </button>
+          </div>
+
+          <!-- Expanded Match Details -->
+          <div *ngIf="isMatchExpanded(match.id.toString())" class="match-details-expanded">          <!-- Expanded Match Details -->
+          <div *ngIf="isMatchExpanded(match.id.toString())" class="match-details-expanded">
+
+            <!-- Teams Composition (Side by Side) -->
+            <div class="teams-composition">
+              <h4>Composição dos Times</h4>
+
+              <div class="teams-container-side-by-side">
+                <!-- Team 1 (Blue Side) -->
+                <div class="team-section blue-team" [class.winner]="match.winner === 1">
+                  <div class="team-header">
+                    <h5 class="team-title">
+                      <span class="team-color-indicator blue"></span>
+                      Time Azul
+                      <span class="team-result victory" *ngIf="match.winner === 1">VITÓRIA</span>
+                      <span class="team-result defeat" *ngIf="match.winner !== 1">DERROTA</span>
+                    </h5>
+                  </div>
+
+                  <div class="team-players-by-lane">
+                    <div *ngFor="let lane of ['TOP', 'JUNGLE', 'MIDDLE', 'ADC', 'SUPPORT']"
+                         class="lane-row">
+                      <div class="lane-indicator">
+                        <span class="lane-icon">{{ getLaneIcon(lane) }}</span>
+                        <span class="lane-name">{{ getLaneName(lane) }}</span>
+                      </div>                      <div class="participant-detailed-card"
+                           *ngIf="organizeTeamByLanes(match.team1)[lane] as participant"
+                           [class.current-player]="participant.puuid === player?.puuid">
+
+                        <!-- Champion Info -->
+                        <div class="participant-champion-section">
+                          <div class="champion-avatar">
+                            <img *ngIf="getChampionImageUrl(participant.championName)"
+                                 [src]="getChampionImageUrl(participant.championName)"
+                                 [alt]="participant.championName"
+                                 class="champion-img"
+                                 onerror="this.style.display='none'; this.nextElementSibling.style.display='block'">
+                            <div class="champion-placeholder">{{ participant.championName?.charAt(0) || '?' }}</div>
+                            <span class="champion-level">{{ participant.champLevel }}</span>
+                          </div>
+                          <div class="champion-info">
+                            <div class="summoner-name" [class.current-player-name]="participant.puuid === player?.puuid">
+                              {{ participant.summonerName }}
+                              <span *ngIf="participant.puuid === player?.puuid" class="you-badge">VOCÊ</span>
+                            </div>
+                            <div class="champion-name">{{ participant.championName }}</div>
+                          </div>
+                        </div>
+
+                        <!-- KDA Section -->
+                        <div class="kda-section-detailed">
+                          <div class="kda-main">
+                            <span class="kills">{{ participant.kills }}</span>
+                            <span class="separator">/</span>
+                            <span class="deaths">{{ participant.deaths }}</span>
+                            <span class="separator">/</span>
+                            <span class="assists">{{ participant.assists }}</span>
+                          </div>
+                          <div class="kda-ratio">{{ getParticipantKDARatio(participant).toFixed(2) }}:1 KDA</div>
+                        </div>
+
+                        <!-- Stats Section -->
+                        <div class="stats-section">
+                          <div class="stat-item">
+                            <span class="stat-label">Farm</span>
+                            <span class="stat-value">{{ (participant.totalMinionsKilled || 0) + (participant.neutralMinionsKilled || 0) }}</span>
+                          </div>
+                          <div class="stat-item">
+                            <span class="stat-label">Ouro</span>
+                            <span class="stat-value">{{ (participant.goldEarned / 1000).toFixed(1) }}k</span>
+                          </div>
+                          <div class="stat-item">
+                            <span class="stat-label">Dano</span>
+                            <span class="stat-value">{{ (participant.totalDamageDealtToChampions / 1000).toFixed(1) }}k</span>
+                          </div>
+                          <div class="stat-item">
+                            <span class="stat-label">Visão</span>
+                            <span class="stat-value">{{ participant.visionScore }}</span>
+                          </div>
+                        </div>
+
+                        <!-- Items Section -->
+                        <div class="items-section-detailed">
+                          <div class="items-row">
+                            <div *ngFor="let item of getParticipantItems(participant); let i = index"
+                                 class="item-slot-detailed">
+                              <img *ngIf="item && item !== 0"
+                                   [src]="getItemImageUrl(item)"
+                                   [alt]="'Item ' + item"
+                                   class="item-img-detailed">
+                              <div *ngIf="!item || item === 0" class="empty-item-detailed"></div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Team 2 (Red Side) -->
+                <div class="team-section red-team" [class.winner]="match.winner === 2">
+                  <div class="team-header">
+                    <h5 class="team-title">
+                      <span class="team-color-indicator red"></span>
+                      Time Vermelho
+                      <span class="team-result victory" *ngIf="match.winner === 2">VITÓRIA</span>
+                      <span class="team-result defeat" *ngIf="match.winner !== 2">DERROTA</span>
+                    </h5>
+                  </div>
+
+                  <div class="team-players-by-lane">
+                    <div *ngFor="let lane of ['TOP', 'JUNGLE', 'MIDDLE', 'ADC', 'SUPPORT']"
+                         class="lane-row">
+                      <div class="lane-indicator">
+                        <span class="lane-icon">{{ getLaneIcon(lane) }}</span>
+                        <span class="lane-name">{{ getLaneName(lane) }}</span>
+                      </div>
+
+                      <div class="participant-detailed-card"
+                           *ngIf="organizeTeamByLanes(match.team2)[lane] as participant"
+                           [class.current-player]="participant.puuid === player?.puuid">
+
+                        <!-- Champion Info -->
+                        <div class="participant-champion-section">
+                          <div class="champion-avatar">
+                            <img *ngIf="getChampionImageUrl(participant.championName)"
+                                 [src]="getChampionImageUrl(participant.championName)"
+                                 [alt]="participant.championName"
+                                 class="champion-img"
+                                 onerror="this.style.display='none'; this.nextElementSibling.style.display='block'">
+                            <div class="champion-placeholder">{{ participant.championName?.charAt(0) || '?' }}</div>
+                            <span class="champion-level">{{ participant.champLevel }}</span>
+                          </div>
+                          <div class="champion-info">
+                            <div class="summoner-name" [class.current-player-name]="participant.puuid === player?.puuid">
+                              {{ participant.summonerName }}
+                              <span *ngIf="participant.puuid === player?.puuid" class="you-badge">VOCÊ</span>
+                            </div>
+                            <div class="champion-name">{{ participant.championName }}</div>
+                          </div>
+                        </div>
+
+                        <!-- KDA Section -->
+                        <div class="kda-section-detailed">
+                          <div class="kda-main">
+                            <span class="kills">{{ participant.kills }}</span>
+                            <span class="separator">/</span>
+                            <span class="deaths">{{ participant.deaths }}</span>
+                            <span class="separator">/</span>
+                            <span class="assists">{{ participant.assists }}</span>
+                          </div>
+                          <div class="kda-ratio">{{ getParticipantKDARatio(participant).toFixed(2) }}:1 KDA</div>
+                        </div>
+
+                        <!-- Stats Section -->
+                        <div class="stats-section">
+                          <div class="stat-item">
+                            <span class="stat-label">Farm</span>
+                            <span class="stat-value">{{ (participant.totalMinionsKilled || 0) + (participant.neutralMinionsKilled || 0) }}</span>
+                          </div>
+                          <div class="stat-item">
+                            <span class="stat-label">Ouro</span>
+                            <span class="stat-value">{{ (participant.goldEarned / 1000).toFixed(1) }}k</span>
+                          </div>
+                          <div class="stat-item">
+                            <span class="stat-label">Dano</span>
+                            <span class="stat-value">{{ (participant.totalDamageDealtToChampions / 1000).toFixed(1) }}k</span>
+                          </div>
+                          <div class="stat-item">
+                            <span class="stat-label">Visão</span>
+                            <span class="stat-value">{{ participant.visionScore }}</span>
+                          </div>
+                        </div>
+
+                        <!-- Items Section -->
+                        <div class="items-section-detailed">
+                          <div class="items-row">
+                            <div *ngFor="let item of getParticipantItems(participant); let i = index"
+                                 class="item-slot-detailed">
+                              <img *ngIf="item && item !== 0"
+                                   [src]="getItemImageUrl(item)"
+                                   [alt]="'Item ' + item"
+                                   class="item-img-detailed">
+                              <div *ngIf="!item || item === 0" class="empty-item-detailed"></div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Player's Detailed Stats (Below Teams) -->
+            <div class="player-detailed-stats">
+              <h4>Suas Estatísticas Detalhadas</h4>
+              <div class="detailed-stats-grid">
+                <div class="stat-item">
+                  <span class="stat-label">Ouro Coletado:</span>
+                  <span class="stat-value">{{ match.playerStats?.goldEarned | number }}</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">Dano Total:</span>
+                  <span class="stat-value">{{ match.playerStats?.totalDamageDealt | number }}</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">Dano a Campeões:</span>
+                  <span class="stat-value">{{ match.playerStats?.totalDamageDealtToChampions | number }}</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">Dano Sofrido:</span>
+                  <span class="stat-value">{{ match.playerStats?.totalDamageTaken | number }}</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">Farm:</span>
+                  <span class="stat-value">{{ (match.playerStats?.totalMinionsKilled || 0) + (match.playerStats?.neutralMinionsKilled || 0) }}</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">Visão:</span>
+                  <span class="stat-value">{{ match.playerStats?.visionScore }}</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">Wards Colocadas:</span>
+                  <span class="stat-value">{{ match.playerStats?.wardsPlaced }}</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">Wards Destruídas:</span>
+                  <span class="stat-value">{{ match.playerStats?.wardsKilled }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Match Metadata -->
+            <div class="match-metadata">
+              <div class="metadata-item">
+                <span class="metadata-label">Modo de Jogo:</span>
+                <span class="metadata-value">{{ getGameModeDisplay(match.gameMode) }}</span>
+              </div>
+              <div class="metadata-item" *ngIf="match.gameVersion">
+                <span class="metadata-label">Versão:</span>
+                <span class="metadata-value">{{ match.gameVersion }}</span>
+              </div>
+              <div class="metadata-item">
+                <span class="metadata-label">Duração:</span>
+                <span class="metadata-value">{{ getMatchDuration(match) }}</span>
+              </div>
+              <div class="metadata-item">
+                <span class="metadata-label">Data:</span>
+                <span class="metadata-value">{{ match.createdAt | date:'dd/MM/yyyy HH:mm' }}</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
-
-    <!-- Custom Matches Tab Content -->
-    <div *ngIf="activeTab === 'custom'" class="custom-matches-content">
+    </div>    <!-- Custom Matches Tab Content -->
+    <div *ngIf="isCustomTab()" class="custom-matches-content">
       <!-- Summary Stats for Custom Matches -->
       <div class="summary-stats custom-theme">
         <div class="summary-card">
@@ -268,7 +526,7 @@
       </div>
 
       <div class="performance-card">
-        <h4>{{ activeTab === 'riot' ? 'LP' : 'MMR' }} por Partida</h4>
+        <h4>{{ isRiotTab() ? 'LP' : 'MMR' }} por Partida</h4>
         <div class="performance-value"
              [class.positive]="getAverageGain() > 0">
           {{ getAverageGain().toFixed(1) }}
