@@ -18,7 +18,8 @@ import type { Notification } from './interfaces';
     CommonModule,
     FormsModule,
     DashboardComponent,
-    QueueComponent
+    QueueComponent,
+    MatchHistoryComponent
   ],
   templateUrl: './app-simple.html',
   styleUrl: './app.scss'
@@ -638,5 +639,42 @@ export class App implements OnInit, OnDestroy {
     } else {
       this.addNotification('warning', 'Chave da API Ausente', 'Por favor, insira uma chave da API da Riot.');
     }
+  }
+
+  // Electron window controls
+  minimizeWindow(): void {
+    if (this.isElectron) {
+      (window as any).electronAPI?.minimizeWindow();
+    }
+  }
+
+  maximizeWindow(): void {
+    if (this.isElectron) {
+      (window as any).electronAPI?.maximizeWindow();
+    }
+  }
+
+  closeWindow(): void {
+    if (this.isElectron) {
+      (window as any).electronAPI?.closeWindow();
+    }
+  }
+
+  // Gameflow display text
+  getGameflowDisplayText(phase: string): string {
+    const phases: { [key: string]: string } = {
+      'None': 'Fora do jogo',
+      'Lobby': 'No lobby',
+      'Matchmaking': 'Procurando partida',
+      'ReadyCheck': 'Verificação de prontidão',
+      'ChampSelect': 'Seleção de campeões',
+      'GameStart': 'Iniciando jogo',
+      'InProgress': 'Em jogo',
+      'Reconnect': 'Reconectando',
+      'WaitingForStats': 'Aguardando estatísticas',
+      'PreEndOfGame': 'Fim de jogo',
+      'EndOfGame': 'Jogo finalizado'
+    };
+    return phases[phase] || phase;
   }
 }

@@ -1,37 +1,5 @@
-<div class="app-container" style="background: #010a13; color: #f0e6d2; min-height: 100vh; padding: 20px;">
-  <h1 style="color: #c89b3c;">LoL Matchmaking</h1>
-  <p>Aplicação carregada com sucesso!</p>
-  <p>View atual: {{ currentView }}</p>
-
-  <!-- Navigation simples para teste -->
-  <div style="margin: 20px 0;">
-    <button style="margin-right: 10px; padding: 10px; background: #0596aa; color: white; border: none; border-radius: 4px;"
-            (click)="setCurrentView('dashboard')">Dashboard</button>
-    <button style="margin-right: 10px; padding: 10px; background: #0596aa; color: white; border: none; border-radius: 4px;"
-            (click)="setCurrentView('queue')">Fila</button>
-    <button style="margin-right: 10px; padding: 10px; background: #0596aa; color: white; border: none; border-radius: 4px;"
-            (click)="setCurrentView('history')">Histórico</button>
-  </div>
-
-  <!-- Content simples -->
-  <div style="background: #1e2328; padding: 20px; border-radius: 8px; border: 1px solid #463714;">
-    <ng-container [ngSwitch]="currentView">
-      <div *ngSwitchCase="'dashboard'">
-        <h2>Dashboard</h2>
-        <p>Bem-vindo ao sistema de matchmaking!</p>
-      </div>
-      <div *ngSwitchCase="'queue'">
-        <h2>Fila</h2>
-        <p>Sistema de filas em desenvolvimento.</p>
-      </div>
-      <div *ngSwitchCase="'history'">
-        <h2>Histórico</h2>
-        <p>Histórico de partidas.</p>
-      </div>
-    </ng-container>
-  </div>
-</div>
-  <!-- Header -->
+<div class="app-container">
+<!-- Header -->
   <header class="app-header">
     <div class="header-content">
       <div class="logo-section">
@@ -249,11 +217,8 @@
           Aceitar Partida
         </button>
         <button class="btn btn-secondary" (click)="declineMatch()">
-          Recusar
-        </button>
+          Recusar        </button>
       </div>
     </div>
   </div>
 </div>
-
-<router-outlet />

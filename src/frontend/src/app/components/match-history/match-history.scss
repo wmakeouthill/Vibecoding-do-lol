@@ -1,35 +1,77 @@
-// Match History Component Styles
+// ========== MATCH HISTORY COMPONENT STYLES ==========
 .match-history {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-lg);
-
-  // Header
+  padding: 20px;
+  background: linear-gradient(135deg, #0a1428 0%, #0f2027 100%);
+  min-height: 100vh;
+  color: #c9aa71;
+  font-family: 'Inter', sans-serif;
+  // ========== HEADER ==========
   .history-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--spacing-lg);
+    margin-bottom: 30px;
 
     h2 {
-      font-size: var(--font-size-xl);
-      color: var(--primary-gold);
+      font-size: 2rem;
+      font-weight: 700;
+      background: linear-gradient(45deg, #c89b3c, #f0e6d2);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 20px;
+      text-align: center;
     }
 
-    .history-stats {
-      .stat-summary {
+    // ========== TABS SYSTEM ==========
+    .tabs-container {
+      background: rgba(16, 29, 53, 0.8);
+      border-radius: 12px;
+      padding: 20px;
+      border: 1px solid rgba(200, 155, 60, 0.2);
+      margin-bottom: 20px;
+
+      .tabs-nav {
         display: flex;
-        gap: var(--spacing-md);
-        font-size: var(--font-size-sm);
-        color: var(--text-secondary);
+        gap: 10px;
+        margin-bottom: 20px;
 
-        .total-matches {
+        .tab-btn {
+          flex: 1;
+          padding: 12px 20px;
+          background: rgba(30, 35, 47, 0.6);
+          border: 2px solid transparent;
+          border-radius: 8px;
+          color: #a09b8c;
           font-weight: 600;
+          cursor: pointer;
+          transition: all 0.3s ease;
+
+          &:hover {
+            border-color: rgba(200, 155, 60, 0.3);
+            color: #c9aa71;
+            transform: translateY(-2px);
+          }
+
+          &.active {
+            background: linear-gradient(135deg, rgba(200, 155, 60, 0.2), rgba(240, 230, 210, 0.1));
+            border-color: #c89b3c;
+            color: #f0e6d2;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(200, 155, 60, 0.3);
+          }
         }
+      }
 
-        .win-rate {
-          color: var(--primary-blue);
-          font-weight: 600;
+      .history-stats {
+        .stat-summary {
+          display: flex;
+          justify-content: center;
+          gap: 30px;
+
+          .total-matches, .win-rate {
+            padding: 8px 16px;
+            background: rgba(16, 29, 53, 0.6);
+            border-radius: 6px;
+            border: 1px solid rgba(200, 155, 60, 0.3);
+            font-weight: 600;
+          }
         }
       }
     }

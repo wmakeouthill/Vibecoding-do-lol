@@ -13,7 +13,14 @@ import { interval, Subject, Subscription, takeUntil } from 'rxjs';
 export class MatchHistoryComponent implements OnInit, OnDestroy {
   @Input() player: Player | null = null;
 
-  matches: Match[] = [];
+  // Tab system
+  activeTab: 'riot' | 'custom' = 'riot';
+
+  // Match arrays
+  matches: Match[] = []; // Legacy - será mantido para compatibilidade
+  riotMatches: Match[] = []; // Partidas da Riot API
+  customMatches: Match[] = []; // Partidas customizadas
+
   loading = false;
   error: string | null = null;
   currentPage = 0;
@@ -29,8 +36,118 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
 
   constructor(private apiService: ApiService) {}
 
+  // ========== LOADING METHODS ==========
+  loadCurrentTabMatches(): void {
+    if (this.activeTab === 'riot') {
+      this.loadRiotMatches();
+    } else {
+      this.loadCustomMatches();
+    }
+  }
+
+  loadRiotMatches(): void {
+    if (!this.player) return;
+
+    this.loading = true;
+    this.error = null;
+
+    try {
+      if (this.player.puuid) {
+        const region = this.player.region || 'br1';
+        this.apiService.getPlayerMatchHistoryFromRiot(this.player.puuid, region, 20).subscribe({
+          next: (response: any) => {
+            if (response && response.success && response.matches) {
+              this.processRiotMatches(response.matches);
+              this.loading = false;
+              return;
+            } else {
+              this.riotMatches = this.generateMockRiotMatches();
+              this.loading = false;
+            }
+          },
+          error: (error: any) => {
+            console.log('Failed to load Riot API matches:', error);
+            this.riotMatches = this.generateMockRiotMatches();
+            this.loading = false;
+          }
+        });
+      } else {
+        this.riotMatches = this.generateMockRiotMatches();
+        this.loading = false;
+      }
+    } catch (error: any) {
+      this.error = error.message || 'Erro ao carregar histórico da Riot API';
+      this.loading = false;
+      console.error('Error loading Riot match history:', error);
+    }
+  }
+
+  loadCustomMatches(): void {
+    if (!this.player) return;
+
+    this.loading = true;
+    this.error = null;
+
+    try {
+      this.apiService.getCustomMatches(this.player.id.toString(), this.currentPage * this.matchesPerPage, this.matchesPerPage).subscribe({
+        next: (response) => {
+          if (response && response.success && response.matches) {
+            this.customMatches = this.mapApiMatchesToModel(response.matches);
+            this.totalMatches = response.pagination.total;
+          } else {
+            this.customMatches = this.generateMockCustomMatches();
+            this.totalMatches = this.customMatches.length;
+          }
+          this.loading = false;
+        },
+        error: (error) => {
+          this.error = error.message || 'Erro ao carregar partidas customizadas';
+          this.loading = false;
+          console.error('Error loading custom match history:', error);
+
+          // Fallback to mock data
+          setTimeout(() => {
+            this.error = null;
+            this.customMatches = this.generateMockCustomMatches();
+            this.totalMatches = this.customMatches.length;
+            this.loading = false;
+          }, 1000);
+        }
+      });
+    } catch (error: any) {
+      this.error = error.message || 'Erro ao carregar partidas customizadas';
+      this.loading = false;
+      console.error('Error loading custom match history:', error);
+    }
+  }
+
+  // ========== TAB SYSTEM ==========
+  setActiveTab(tab: 'riot' | 'custom'): void {
+    this.activeTab = tab;
+    this.currentPage = 0;
+    this.loadCurrentTabMatches();
+  }
+
+  getCurrentMatches(): Match[] {
+    return this.activeTab === 'riot' ? this.riotMatches : this.customMatches;
+  }
+
+  getWinRate(): string {
+    const matches = this.getCurrentMatches();
+    if (matches.length === 0) return '0.0';
+    const wins = matches.filter(m => m.playerStats?.isWin).length;
+    return ((wins / matches.length) * 100).toFixed(1);
+  }
   ngOnInit() {
-    this.loadMatches();
+    // Always load mock data to demonstrate the interface
+    this.riotMatches = this.generateMockRiotMatches();
+    this.customMatches = this.generateMockCustomMatches();
+
+    // If there's a player, try to load real data
+    if (this.player) {
+      this.loadCurrentTabMatches();
+    }
+
     this.startCurrentGameMonitoring();
   }
 
@@ -74,41 +191,9 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         this.currentGame = null;
       }
     });
-  }  async loadMatches() {
-    if (!this.player) return;
-
-    this.loading = true;
-    this.error = null;
-
-    try {
-      // First try to load real match history from Riot API if player has PUUID
-      if (this.player.puuid) {
-        // Certifique-se de que this.player.region existe e é uma string válida
-        const region = this.player.region || 'br1'; // Fallback para uma região padrão se necessário
-        this.apiService.getPlayerMatchHistoryFromRiot(this.player.puuid, region, 20).subscribe({
-          next: (response: any) => { // Adicionar tipagem explícita
-            if (response && response.success && response.matches) {
-              // Process real match data from Riot API
-              this.processRiotMatches(response.matches);
-              this.loading = false;
-              return;
-            } else {
-              this.fallbackToLocalMatches();
-            }
-          },
-          error: (error: any) => { // Adicionar tipagem explícita
-            console.log('Failed to load Riot API matches, trying local:', error);
-            this.fallbackToLocalMatches();
-          }
-        });
-      } else {
-        this.fallbackToLocalMatches();
-      }
-    } catch (error: any) {
-      this.error = error.message || 'Erro ao carregar histórico de partidas';
-      this.loading = false;
-      console.error('Error loading match history:', error);
-    }
+  }  // Legacy method for compatibility
+  async loadMatches() {
+    return this.loadCurrentTabMatches();
   }
 
   private fallbackToLocalMatches(): void {
@@ -289,9 +374,232 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     return mockMatches;
   }
 
-  async loadMoreMatches() {
-    this.currentPage++;
-    await this.loadMatches();
+  // ========== MOCK DATA GENERATORS ==========
+  private generateMockRiotMatches(): Match[] {
+    const mockMatches: Match[] = [];
+    const champions = ['Jinx', 'Ashe', 'Caitlyn', 'Vayne', 'Ezreal', 'Kai\'Sa', 'Sivir', 'Tristana', 'Jhin', 'Lucian'];
+    const gameModes = ['RANKED_SOLO_5x5', 'RANKED_FLEX_SR', 'ARAM', 'NORMAL'];
+
+    for (let i = 0; i < 15; i++) {
+      const isWin = Math.random() > 0.4; // 60% win rate for demo
+      const kills = Math.floor(Math.random() * 18) + 2;
+      const deaths = Math.floor(Math.random() * 8) + 1;
+      const assists = Math.floor(Math.random() * 25) + 3;
+      const lpChange = isWin ? Math.floor(Math.random() * 25) + 15 : -(Math.floor(Math.random() * 20) + 10);
+
+      mockMatches.push({
+        id: `riot_match_${i}`,
+        createdAt: new Date(Date.now() - (i * 3 * 60 * 60 * 1000)), // 3 hours between matches
+        duration: Math.floor(Math.random() * 1200) + 1200, // 20-40 minutes
+        gameMode: gameModes[Math.floor(Math.random() * gameModes.length)],
+        team1: [],
+        team2: [],
+        winner: isWin ? 1 : 2,
+        playerStats: {
+          champion: champions[Math.floor(Math.random() * champions.length)],
+          kills,
+          deaths,
+          assists,
+          mmrChange: lpChange, // Will be used as LP change for Riot matches
+          isWin,
+          championLevel: Math.floor(Math.random() * 8) + 13,
+          doubleKills: Math.random() > 0.7 ? Math.floor(Math.random() * 3) + 1 : 0,
+          tripleKills: Math.random() > 0.9 ? 1 : 0,
+          quadraKills: Math.random() > 0.98 ? 1 : 0,
+          pentaKills: Math.random() > 0.995 ? 1 : 0,
+          items: this.generateRandomItems(),
+          lpChange
+        }
+      });
+    }
+
+    return mockMatches;
+  }
+
+  private generateMockCustomMatches(): Match[] {
+    const mockMatches: Match[] = [];
+    const champions = ['Azir', 'Orianna', 'Syndra', 'Yasuo', 'Zed', 'LeBlanc', 'Ahri', 'Viktor'];
+
+    for (let i = 0; i < 8; i++) {
+      const isWin = Math.random() > 0.5;
+      const kills = Math.floor(Math.random() * 15) + 1;
+      const deaths = Math.floor(Math.random() * 8) + 1;
+      const assists = Math.floor(Math.random() * 20) + 2;
+      const mmrChange = isWin ? Math.floor(Math.random() * 25) + 10 : -(Math.floor(Math.random() * 20) + 5);
+
+      mockMatches.push({
+        id: `custom_match_${i}`,
+        createdAt: new Date(Date.now() - (i * 24 * 60 * 60 * 1000)),
+        duration: Math.floor(Math.random() * 1800) + 1200, // 20-50 minutes
+        team1: [],
+        team2: [],
+        winner: isWin ? 1 : 2,
+        averageMMR1: 1200 + Math.floor(Math.random() * 400),
+        averageMMR2: 1200 + Math.floor(Math.random() * 400),
+        playerStats: {
+          champion: champions[Math.floor(Math.random() * champions.length)],
+          kills,
+          deaths,
+          assists,
+          mmrChange,
+          isWin
+        }
+      });
+    }
+
+    return mockMatches;
+  }
+
+  private generateRandomItems(): number[] {
+    const items = [3031, 3006, 3046, 3153, 3072, 3026, 3094]; // Sample item IDs
+    const playerItems = [];
+    for (let i = 0; i < 6; i++) {
+      if (Math.random() > 0.2) { // 80% chance of having an item in each slot
+        playerItems.push(items[Math.floor(Math.random() * items.length)]);
+      } else {
+        playerItems.push(0); // Empty slot
+      }
+    }
+    return playerItems;
+  }
+
+  // ========== STATS METHODS ==========
+  getRiotStats() {
+    const stats = {
+      totalKills: 0,
+      totalDeaths: 0,
+      totalAssists: 0,
+      totalWins: 0,
+      totalMMRGained: 0
+    };
+
+    this.riotMatches.forEach(match => {
+      if (match.playerStats) {
+        stats.totalKills += match.playerStats.kills;
+        stats.totalDeaths += match.playerStats.deaths;
+        stats.totalAssists += match.playerStats.assists;
+        if (match.playerStats.isWin) stats.totalWins++;
+        stats.totalMMRGained += match.playerStats.lpChange || match.playerStats.mmrChange;
+      }
+    });
+
+    return stats;
+  }
+
+  getCustomStats() {
+    const stats = {
+      totalKills: 0,
+      totalDeaths: 0,
+      totalAssists: 0,
+      totalWins: 0,
+      totalMMRGained: 0
+    };
+
+    this.customMatches.forEach(match => {
+      if (match.playerStats) {
+        stats.totalKills += match.playerStats.kills;
+        stats.totalDeaths += match.playerStats.deaths;
+        stats.totalAssists += match.playerStats.assists;
+        if (match.playerStats.isWin) stats.totalWins++;
+        stats.totalMMRGained += match.playerStats.mmrChange;
+      }
+    });
+
+    return stats;
+  }
+
+  getRiotWinStreakInfo(): { current: number; longest: number } {
+    return this.calculateWinStreak(this.riotMatches);
+  }
+
+  getCustomWinStreakInfo(): { current: number; longest: number } {
+    return this.calculateWinStreak(this.customMatches);
+  }
+
+  private calculateWinStreak(matches: Match[]): { current: number; longest: number } {
+    let current = 0;
+    let longest = 0;
+    let temp = 0;
+
+    for (let i = 0; i < matches.length; i++) {
+      const match = matches[i];
+      if (match.playerStats?.isWin) {
+        temp++;
+        if (i === 0) current = temp;
+      } else {
+        longest = Math.max(longest, temp);
+        temp = 0;
+        if (i === 0) current = 0;
+      }
+    }
+
+    longest = Math.max(longest, temp);
+    return { current, longest };
+  }
+
+  // ========== UI HELPER METHODS ==========
+  getGameModeDisplay(gameMode?: string): string {
+    const modes: { [key: string]: string } = {
+      'RANKED_SOLO_5x5': 'Solo/Duo',
+      'RANKED_FLEX_SR': 'Flex',
+      'ARAM': 'ARAM',
+      'NORMAL': 'Normal',
+      'CLASSIC': 'Clássica'
+    };
+    return modes[gameMode || ''] || 'Desconhecido';
+  }
+
+  getChampionImageUrl(championName?: string): string {
+    if (!championName) return '';
+    // Data Dragon champion image URL
+    return `https://ddragon.leagueoflegends.com/cdn/13.24.1/img/champion/${championName}.png`;
+  }
+
+  getItemImageUrl(itemId: number): string {
+    if (!itemId || itemId === 0) return '';
+    // Data Dragon item image URL
+    return `https://ddragon.leagueoflegends.com/cdn/13.24.1/img/item/${itemId}.png`;
+  }
+
+  getPlayerItems(match: Match): number[] {
+    return match.playerStats?.items || [0, 0, 0, 0, 0, 0];
+  }
+
+  getAverageKDA(): string {
+    const matches = this.getCurrentMatches();
+    if (matches.length === 0) return '0.0 / 0.0 / 0.0';
+
+    const totalKills = matches.reduce((sum, m) => sum + (m.playerStats?.kills || 0), 0);
+    const totalDeaths = matches.reduce((sum, m) => sum + (m.playerStats?.deaths || 0), 0);
+    const totalAssists = matches.reduce((sum, m) => sum + (m.playerStats?.assists || 0), 0);
+
+    const avgKills = (totalKills / matches.length).toFixed(1);
+    const avgDeaths = (totalDeaths / matches.length).toFixed(1);
+    const avgAssists = (totalAssists / matches.length).toFixed(1);
+
+    return `${avgKills} / ${avgDeaths} / ${avgAssists}`;
+  }
+
+  getAverageGain(): number {
+    const matches = this.getCurrentMatches();
+    if (matches.length === 0) return 0;
+
+    const totalGain = matches.reduce((sum, m) => {
+      if (this.activeTab === 'riot') {
+        return sum + (m.playerStats?.lpChange || m.playerStats?.mmrChange || 0);
+      } else {
+        return sum + (m.playerStats?.mmrChange || 0);
+      }
+    }, 0);
+
+    return totalGain / matches.length;
+  }
+
+  // ========== UTILITY METHODS (from original component) ==========
+  getMatchDuration(match: Match): string {
+    const minutes = Math.floor(match.duration / 60);
+    const seconds = match.duration % 60;
+    return `${minutes}m ${seconds}s`;
   }
 
   getKDA(match: Match): string {
@@ -302,12 +610,6 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
   getKDARatio(match: Match): number {
     if (!match.playerStats || match.playerStats.deaths === 0) return 0;
     return ((match.playerStats.kills + match.playerStats.assists) / match.playerStats.deaths);
-  }
-
-  getMatchDuration(match: Match): string {
-    const minutes = Math.floor(match.duration / 60);
-    const seconds = match.duration % 60;
-    return `${minutes}m ${seconds}s`;
   }
 
   getTimeAgo(date: Date): string {
@@ -323,66 +625,31 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     return 'Agora mesmo';
   }
 
-  getWinStreakInfo(): { current: number; longest: number } {
-    let current = 0;
-    let longest = 0;
-    let temp = 0;
-
-    for (let i = 0; i < this.matches.length; i++) {
-      const match = this.matches[i];
-      if (match.playerStats?.isWin) {
-        temp++;
-        if (i === 0) current = temp;
-      } else {
-        longest = Math.max(longest, temp);
-        temp = 0;
-        if (i === 0) current = 0;
-      }
-    }
-
-    longest = Math.max(longest, temp);
-    return { current, longest };
-  }
-
-  getTotalStats() {
-    const stats = {
-      totalKills: 0,
-      totalDeaths: 0,
-      totalAssists: 0,
-      totalWins: 0,
-      totalMMRGained: 0
-    };
-
-    this.matches.forEach(match => {
-      if (match.playerStats) {
-        stats.totalKills += match.playerStats.kills;
-        stats.totalDeaths += match.playerStats.deaths;
-        stats.totalAssists += match.playerStats.assists;
-        if (match.playerStats.isWin) stats.totalWins++;
-        stats.totalMMRGained += match.playerStats.mmrChange;
-      }
-    });
-
-    return stats;
-  }
-  hasMoreMatches(): boolean {
-    return (this.currentPage + 1) * this.matchesPerPage < this.totalMatches;
-  }
   trackMatch(index: number, match: Match): string {
     return match.id.toString();
   }
 
   toggleMatchDetails(matchId: string): void {
-    // TODO: Implement match details expansion
     console.log('Toggle details for match:', matchId);
   }
 
+  hasMoreMatches(): boolean {
+    const currentMatches = this.getCurrentMatches();
+    return (this.currentPage + 1) * this.matchesPerPage < this.totalMatches;
+  }
+
+  async loadMoreMatches() {
+    this.currentPage++;
+    await this.loadCurrentTabMatches();
+  }
+
   getMostPlayedChampion(): string {
-    if (this.matches.length === 0) return 'N/A';
+    const matches = this.getCurrentMatches();
+    if (matches.length === 0) return 'N/A';
 
     const championCounts: { [key: string]: number } = {};
 
-    this.matches.forEach(match => {
+    matches.forEach(match => {
       if (match.playerStats?.champion) {
         championCounts[match.playerStats.champion] = (championCounts[match.playerStats.champion] || 0) + 1;
       }

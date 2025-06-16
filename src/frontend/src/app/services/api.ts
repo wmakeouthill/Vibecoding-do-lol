@@ -432,20 +432,33 @@ export class ApiService {
       losses: soloQueue.losses,
       display: `${soloQueue.tier} ${soloQueue.rank}`
     };
-  }
-  // ========== FIM DOS MÉTODOS AMIGÁVEIS ==========
+  }  // ========== FIM DOS MÉTODOS AMIGÁVEIS ==========
 
-  // Método para verificar se a Riot API Key está configurada e funcionando
-  checkRiotApiStatus(): Observable<any> {
-    return this.http.get(`${this.baseUrl}/settings/riot-api-status`)
+  // Método para salvar partida customizada após o jogo
+  saveCustomMatch(matchData: any): Observable<any> {
+    return this.http.post(`${this.baseUrl}/matches/custom`, matchData)
       .pipe(
         catchError(this.handleError)
       );
   }
 
-  // Método para obter configurações atuais
-  getSettings(): Observable<any> {
-    return this.http.get(`${this.baseUrl}/settings`)
+  // Método para buscar partidas customizadas do jogador
+  getCustomMatches(playerId: string, offset: number = 0, limit: number = 10): Observable<any> {
+    return this.http.get(`${this.baseUrl}/matches/custom/${playerId}?offset=${offset}&limit=${limit}`)
+      .pipe(
+        catchError(this.handleError)
+      );
+  }
+  // Métodos para buscar histórico de partidas da Riot API
+  getRiotApiMatchHistory(puuid: string, region: string, start: number = 0, count: number = 20): Observable<any> {
+    return this.http.get<any>(`${this.baseUrl}/riot/match-history/${puuid}?region=${region}&start=${start}&count=${count}`)
+      .pipe(
+        catchError(this.handleError)
+      );
+  }
+
+  getRiotApiMatchDetails(matchId: string, region: string): Observable<any> {
+    return this.http.get<any>(`${this.baseUrl}/riot/match-details/${matchId}?region=${region}`)
       .pipe(
         catchError(this.handleError)
       );

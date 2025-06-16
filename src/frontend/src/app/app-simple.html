@@ -58,12 +58,9 @@
           (joinQueue)="joinQueue($event)"
           (leaveQueue)="leaveQueue()">
         </app-queue>
-      </div>
-
-      <!-- History -->
+      </div>      <!-- History -->
       <div *ngSwitchCase="'history'" class="view-container">
-        <h2>📊 Histórico de Partidas</h2>
-        <p>Em breve: Histórico completo de suas partidas, estatísticas e evolução do MMR.</p>
+        <app-match-history [player]="currentPlayer"></app-match-history>
       </div>
 
       <!-- Settings -->

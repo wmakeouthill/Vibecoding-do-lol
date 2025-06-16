@@ -88,14 +88,20 @@ export interface Match {
   averageMMR2?: number;
   isVictory?: boolean;
   mmrChange?: number;
-  gameMode?: string;
-  playerStats?: {
+  gameMode?: string;  playerStats?: {
     champion: string;
     kills: number;
     deaths: number;
     assists: number;
     mmrChange: number;
     isWin: boolean;
+    championLevel?: number;
+    doubleKills?: number;
+    tripleKills?: number;
+    quadraKills?: number;
+    pentaKills?: number;
+    items?: number[];
+    lpChange?: number;
   };
 }
 

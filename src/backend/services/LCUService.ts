@@ -629,4 +629,38 @@ export class LCUService {
       return null;
     }
   }
+
+  // Método para salvar resultado de partida customizada
+  async saveCustomMatchResult(matchData: any): Promise<void> {
+    if (!this.dbManager) {
+      console.log('DatabaseManager não configurado para salvar partida customizada');
+      return;
+    }
+
+    try {
+      console.log('💾 Salvando resultado de partida customizada:', matchData);
+
+      // Create match in database
+      const matchId = await this.dbManager.createMatch(
+        matchData.team1Players || [],
+        matchData.team2Players || [],
+        matchData.averageMMR1 || 1200,
+        matchData.averageMMR2 || 1200
+      );
+
+      // If match is completed, mark it as such
+      if (matchData.completed && matchData.winner) {
+        await this.dbManager.completeMatch(
+          matchId,
+          matchData.winner,
+          matchData.mmrChanges || {}
+        );
+
+        console.log(`✅ Partida customizada ${matchId} salva com sucesso`);
+      }
+
+    } catch (error) {
+      console.error('❌ Erro ao salvar partida customizada:', error);
+    }
+  }
 }

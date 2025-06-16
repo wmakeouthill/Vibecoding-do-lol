@@ -436,30 +436,137 @@ app.post('/api/settings/riot-api-key', (async (req: Request, res: Response) => {
 }) as RequestHandler);
 
 
-
-// Remove or comment out old/redundant endpoints:
-// app.get('/api/player/current-comprehensive', ...);
-// app.get('/api/player/current-browser', ...);
-// app.post('/api/player/refresh', ...); // Replaced by refresh-by-riot-id
-
-// ... (keep other LCU, Match History, generic Riot API routes if still needed) ...
-
-// LCU specific routes - these are fine if they serve specific LCU interactions
-app.get('/api/lcu/status', async (req: Request, res: Response) => {
+// Match history routes
+app.get('/api/match-history/:playerId', async (req: Request, res: Response) => {
   try {
-    const status = await lcuService.getClientStatus();
-    res.json(status);
+    const playerId = parseInt(req.params.playerId);
+    const offset = parseInt(req.query.offset as string) || 0;
+    const limit = parseInt(req.query.limit as string) || 10;
+
+    const matches = await dbManager.getPlayerMatches(playerId, limit, offset);
+    const totalMatches = matches.length; // This is not accurate - should be total count from DB
+
+    res.json({
+      success: true,
+      matches,
+      pagination: {
+        offset,
+        limit,
+        total: totalMatches
+      }
+    });
   } catch (error: any) {
-    res.status(503).json({ error: 'Cliente do LoL não encontrado' });
+    res.status(500).json({ error: error.message });
   }
 });
 
-app.get('/api/lcu/current-summoner', (async (req: Request, res: Response) => {
+// Riot API match history routes
+app.get('/api/player/match-history-riot/:puuid', async (req: Request, res: Response) => {
   try {
-    const summoner = await lcuService.getCurrentSummoner(); // This gets basic LCU data
-    res.json(summoner);
+    const { puuid } = req.params;
+    const count = parseInt(req.query.count as string) || 20;
+    
+    const matchIds = await globalRiotAPI.getMatchHistory(puuid, 'americas', count);
+    
+    res.json({
+      success: true,
+      matches: matchIds
+    });
   } catch (error: any) {
-    res.status(503).json({ error: 'Não foi possível obter dados do invocador atual do LCU' });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/match/:matchId', async (req: Request, res: Response) => {
+  try {
+    const { matchId } = req.params;
+    
+    const matchDetails = await globalRiotAPI.getMatchDetails(matchId, 'americas');
+    
+    res.json({
+      success: true,
+      match: matchDetails
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Custom matches routes
+app.post('/api/matches/custom', (async (req: Request, res: Response) => {
+  try {
+    const { playerId, matchData } = req.body;
+    
+    if (!playerId || !matchData) {
+      return res.status(400).json({ error: 'playerId e matchData são obrigatórios' });
+    }
+
+    // Save custom match to database
+    // For now, we'll use the standard matches table with a custom flag
+    const team1Players = matchData.team1Players || [];
+    const team2Players = matchData.team2Players || [];
+    const avgMMR1 = matchData.averageMMR1 || 1200;
+    const avgMMR2 = matchData.averageMMR2 || 1200;
+
+    const matchId = await dbManager.createMatch(team1Players, team2Players, avgMMR1, avgMMR2);
+    
+    // If the match is already completed, mark it as such
+    if (matchData.completed && matchData.winner) {
+      await dbManager.completeMatch(matchId, matchData.winner, matchData.mmrChanges || {});
+    }
+
+    res.json({
+      success: true,
+      matchId,
+      message: 'Partida customizada salva com sucesso'
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+}) as RequestHandler);
+
+app.get('/api/matches/custom/:playerId', async (req: Request, res: Response) => {
+  try {
+    const playerId = parseInt(req.params.playerId);
+    const offset = parseInt(req.query.offset as string) || 0;
+    const limit = parseInt(req.query.limit as string) || 10;
+
+    const matches = await dbManager.getPlayerMatches(playerId, limit, offset);
+    
+    res.json({
+      success: true,
+      matches,
+      pagination: {
+        offset,
+        limit,
+        total: matches.length
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Current game monitoring route
+app.get('/api/lcu/current-match-details', (async (req: Request, res: Response) => {
+  try {
+    if (!lcuService.isClientConnected()) {
+      return res.status(503).json({ error: 'Cliente do LoL não conectado' });
+    }
+
+    const gameSession = await lcuService.getGameSession();
+    const gameflowPhase = await lcuService.getGameflowPhase();
+    
+    res.json({
+      success: true,
+      currentGame: {
+        session: gameSession,
+        phase: gameflowPhase,
+        isInGame: gameflowPhase === 'InProgress'
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 }) as RequestHandler);
 
@@ -474,6 +581,34 @@ app.use((error: any, req: Request, res: Response, next: NextFunction) => {
 app.use((req: Request, res: Response) => {
   res.status(404).json({ error: 'Rota não encontrada' });
 });
+
+// Test endpoint to simulate saving a custom match result
+app.post('/api/test/save-custom-match', (async (req: Request, res: Response) => {
+  try {
+    const testMatchData = {
+      team1Players: [1, 2, 3, 4, 5],
+      team2Players: [6, 7, 8, 9, 10],
+      averageMMR1: 1300,
+      averageMMR2: 1250,
+      winner: Math.random() > 0.5 ? 1 : 2,
+      completed: true,
+      mmrChanges: {
+        1: 15, 2: 12, 3: 18, 4: 10, 5: 14,
+        6: -15, 7: -12, 8: -18, 9: -10, 10: -14
+      }
+    };
+
+    await lcuService.saveCustomMatchResult(testMatchData);
+    
+    res.json({
+      success: true,
+      message: 'Partida customizada de teste salva com sucesso',
+      matchData: testMatchData
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+}) as RequestHandler);
 
 // Inicializar servidor
 async function startServer() {
