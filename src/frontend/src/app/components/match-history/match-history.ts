@@ -235,8 +235,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         }, 1000);
       }
     });
-  }
-  private processRiotMatches(matchIds: string[]): void {
+  }  private processRiotMatches(matchIds: string[]): void {
     if (!matchIds || matchIds.length === 0) {
       this.riotMatches = this.generateMockRiotMatches();
       this.totalMatches = this.riotMatches.length;
@@ -244,7 +243,9 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       return;
     }
 
-    // Fetch detailed match data for all 20 match IDs
+    console.log('🔄 Processando', matchIds.length, 'partidas da Riot API');
+
+    // Fetch detailed match data for all match IDs
     const matchPromises = matchIds.map(matchId =>
       this.apiService.getMatchDetails(matchId).toPromise()
     );
@@ -252,38 +253,90 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     Promise.allSettled(matchPromises).then(results => {
       const validMatches: any[] = [];
 
-      results.forEach(result => {
+      results.forEach((result, index) => {
         if (result.status === 'fulfilled' && result.value?.success) {
-          validMatches.push(result.value.match);
+          const matchData = result.value.match;
+          console.log(`✅ Partida ${matchIds[index]} carregada:`, {
+            gameMode: matchData.info.gameMode,
+            duration: matchData.info.gameDuration,
+            participants: matchData.info.participants.length,
+            playerFound: !!matchData.info.participants.find((p: any) => p.puuid === this.player?.puuid)
+          });
+          validMatches.push(matchData);
+        } else {
+          console.warn(`❌ Falha ao carregar partida ${matchIds[index]}:`, result);
         }
       });
 
       if (validMatches.length > 0) {
+        console.log('📊 Mapeando', validMatches.length, 'partidas válidas');
         this.riotMatches = this.mapRiotMatchesToModel(validMatches);
         this.totalMatches = this.riotMatches.length;
+          // Debug: Log do primeiro match processado
+        if (this.riotMatches.length > 0) {
+          const firstMatch = this.riotMatches[0];
+          console.log('🎮 Primeira partida processada:', {
+            id: firstMatch.id,
+            mode: firstMatch.gameMode,
+            playerChampion: firstMatch.playerStats?.champion,
+            team1Size: firstMatch.team1?.length || 0,
+            team2Size: firstMatch.team2?.length || 0,
+            winner: firstMatch.winner
+          });
+        }
       } else {
+        console.warn('⚠️ Nenhuma partida válida encontrada, usando dados mock');
         this.riotMatches = this.generateMockRiotMatches();
         this.totalMatches = this.riotMatches.length;
       }
 
       this.loading = false;
-    }).catch(() => {
+    }).catch(error => {
+      console.error('💥 Erro ao processar partidas:', error);
       this.fallbackToLocalMatches();
     });
-  }
-  private mapRiotMatchesToModel(riotMatches: any[]): Match[] {
+  }  private mapRiotMatchesToModel(riotMatches: any[]): Match[] {
     return riotMatches.map(matchData => {
+      // Validar estrutura dos dados
+      if (!matchData?.info?.participants || !Array.isArray(matchData.info.participants)) {
+        console.warn('⚠️ Dados de partida inválidos:', matchData);
+        return this.createDefaultMatch();
+      }
+
       const playerData = matchData.info.participants.find(
         (p: any) => p.puuid === this.player?.puuid
       );
 
       if (!playerData) {
+        console.warn('⚠️ Jogador não encontrado na partida:', matchData.metadata?.matchId);
         return this.createDefaultMatch();
       }
 
-      // Separar participantes em times
-      const team1 = matchData.info.participants.filter((p: any) => p.teamId === 100);
-      const team2 = matchData.info.participants.filter((p: any) => p.teamId === 200);
+      console.log('🔍 Dados do jogador na partida:', {
+        champion: playerData.championName,
+        kda: `${playerData.kills}/${playerData.deaths}/${playerData.assists}`,
+        win: playerData.win,
+        items: [playerData.item0, playerData.item1, playerData.item2, playerData.item3, playerData.item4, playerData.item5]
+      });
+
+      // Mapear participantes com dados completos para exibição
+      const enhancedParticipants = matchData.info.participants.map((p: any) => ({
+        ...p,
+        // Adicionar summonerName se não existir - usar riotIdGameName + riotIdTagline
+        summonerName: p.summonerName || (p.riotIdGameName ? `${p.riotIdGameName}#${p.riotIdTagline}` : 'Unknown')
+      }));
+
+      // Separar participantes em times com dados completos
+      const team1 = enhancedParticipants.filter((p: any) => p.teamId === 100);
+      const team2 = enhancedParticipants.filter((p: any) => p.teamId === 200);      console.log('👥 Times organizados:', {
+        team1: team1.map((p: any) => ({ champion: p.championName, summoner: p.summonerName })),
+        team2: team2.map((p: any) => ({ champion: p.championName, summoner: p.summonerName }))
+      });
+
+      // Determinar vencedor baseado nos dados dos times
+      const team1Won = matchData.info.teams?.find((t: any) => t.teamId === 100)?.win || false;
+      const team2Won = matchData.info.teams?.find((t: any) => t.teamId === 200)?.win || false;
+      const matchWinner = team1Won ? 1 : (team2Won ? 2 : 0);
 
       return {
         id: matchData.metadata.matchId,
@@ -292,11 +345,11 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         gameMode: matchData.info.gameMode,
         gameVersion: matchData.info.gameVersion,
         mapId: matchData.info.mapId,
-        participants: matchData.info.participants,
+        participants: enhancedParticipants,
         teams: matchData.info.teams,
         team1: team1,
         team2: team2,
-        winner: playerData.win ? (playerData.teamId === 100 ? 1 : 2) : (playerData.teamId === 100 ? 2 : 1),
+        winner: matchWinner,
         playerStats: {
           champion: playerData.championName,
           kills: playerData.kills,
@@ -305,27 +358,27 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           mmrChange: playerData.win ? 15 : -12, // Mock MMR - API não fornece
           isWin: playerData.win,
           championLevel: playerData.champLevel,
-          doubleKills: playerData.doubleKills,
-          tripleKills: playerData.tripleKills,
-          quadraKills: playerData.quadraKills,
-          pentaKills: playerData.pentaKills,
+          doubleKills: playerData.doubleKills || 0,
+          tripleKills: playerData.tripleKills || 0,
+          quadraKills: playerData.quadraKills || 0,
+          pentaKills: playerData.pentaKills || 0,
           items: [
-            playerData.item0, playerData.item1, playerData.item2,
-            playerData.item3, playerData.item4, playerData.item5
+            playerData.item0 || 0, playerData.item1 || 0, playerData.item2 || 0,
+            playerData.item3 || 0, playerData.item4 || 0, playerData.item5 || 0
           ],
           lpChange: playerData.win ? Math.floor(Math.random() * 25) + 10 : -(Math.floor(Math.random() * 20) + 10), // Mock LP
           // Dados expandidos
-          goldEarned: playerData.goldEarned,
-          totalDamageDealt: playerData.totalDamageDealt,
-          totalDamageDealtToChampions: playerData.totalDamageDealtToChampions,
-          totalDamageTaken: playerData.totalDamageTaken,
-          totalMinionsKilled: playerData.totalMinionsKilled,
-          neutralMinionsKilled: playerData.neutralMinionsKilled,
-          wardsPlaced: playerData.wardsPlaced,
-          wardsKilled: playerData.wardsKilled,
-          visionScore: playerData.visionScore,
-          summoner1Id: playerData.summoner1Id,
-          summoner2Id: playerData.summoner2Id,
+          goldEarned: playerData.goldEarned || 0,
+          totalDamageDealt: playerData.totalDamageDealt || 0,
+          totalDamageDealtToChampions: playerData.totalDamageDealtToChampions || 0,
+          totalDamageTaken: playerData.totalDamageTaken || 0,
+          totalMinionsKilled: playerData.totalMinionsKilled || 0,
+          neutralMinionsKilled: playerData.neutralMinionsKilled || 0,
+          wardsPlaced: playerData.wardsPlaced || 0,
+          wardsKilled: playerData.wardsKilled || 0,
+          visionScore: playerData.visionScore || 0,
+          summoner1Id: playerData.summoner1Id || 0,
+          summoner2Id: playerData.summoner2Id || 0,
           perks: playerData.perks
         }
       };
@@ -766,8 +819,12 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
   }
 
   // ========== LANE DETECTION AND ORGANIZATION ==========
-
   getParticipantLane(participant: any): string {
+    // Para ARAM, não há lanes específicas - organizar por papel/champion
+    if (participant.lane === 'BOTTOM' && participant.gameMode === 'ARAM') {
+      return this.detectARAMRole(participant);
+    }
+
     // Determinar lane baseado em teamPosition ou lane
     const lane = participant.teamPosition || participant.lane || 'UNKNOWN';
     const role = participant.role || 'UNKNOWN';
@@ -795,6 +852,33 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         // Fallback para detecção baseada em posição individual
         return this.detectLaneByPosition(participant);
     }
+  }
+
+  private detectARAMRole(participant: any): string {
+    // Para ARAM, organizar por tipo de champion
+    const championName = participant.championName;
+
+    // Tanks/Supports
+    const tanks = ['Leona', 'Braum', 'Alistar', 'Thresh', 'Blitzcrank', 'Nautilus', 'Malphite', 'Rammus', 'Shen'];
+    const supports = ['Nami', 'Soraka', 'Janna', 'Lulu', 'Sona', 'Karma', 'Yuumi', 'Seraphine'];
+
+    // ADC/Marksmen
+    const adcs = ['Jinx', 'Caitlyn', 'Ashe', 'Vayne', 'Ezreal', 'Kai\'Sa', 'Jhin', 'Xayah', 'Tristana', 'Sivir'];
+
+    // AP Carries/Mages
+    const mages = ['Lux', 'Orianna', 'Syndra', 'Azir', 'Veigar', 'Brand', 'Vel\'Koz', 'Xerath', 'Ziggs'];
+
+    // Assassins/AD
+    const assassins = ['Zed', 'Yasuo', 'Katarina', 'Akali', 'Talon', 'Qiyana'];
+
+    if (tanks.includes(championName)) return 'SUPPORT';
+    if (supports.includes(championName)) return 'SUPPORT';
+    if (adcs.includes(championName)) return 'ADC';
+    if (mages.includes(championName)) return 'MIDDLE';
+    if (assassins.includes(championName)) return 'JUNGLE';
+
+    // Fallback baseado em items
+    return this.detectBotLaneRole(participant);
   }
 
   private detectBotLaneRole(participant: any): string {    // Lista de campeões tradicionalmente ADC
@@ -856,8 +940,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       default:
         return 'UNKNOWN';
     }
-  }
-  organizeTeamByLanes(team: any[] | undefined): { [lane: string]: any } {
+  }  organizeTeamByLanes(team: any[] | undefined): { [lane: string]: any } {
     const organizedTeam: { [lane: string]: any } = {
       'TOP': null,
       'JUNGLE': null,
@@ -870,16 +953,32 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       return organizedTeam;
     }
 
+    // First pass: assign players to their primary lanes
     team.forEach(participant => {
       const lane = this.getParticipantLane(participant);
       if (organizedTeam[lane] === null) {
         organizedTeam[lane] = participant;
-      } else {
-        // Se já existe alguém na lane, colocar na primeira disponível
-        const availableLanes = Object.keys(organizedTeam).filter(l => organizedTeam[l] === null);
-        if (availableLanes.length > 0) {
-          organizedTeam[availableLanes[0]] = participant;
-        }
+      }
+    });
+
+    // Second pass: fill empty lanes with remaining players
+    const unassignedPlayers = team.filter(participant => {
+      const lane = this.getParticipantLane(participant);
+      return organizedTeam[lane] !== participant;
+    });
+
+    const emptyLanes = Object.keys(organizedTeam).filter(lane => organizedTeam[lane] === null);
+
+    unassignedPlayers.forEach((participant, index) => {
+      if (index < emptyLanes.length) {
+        organizedTeam[emptyLanes[index]] = participant;
+      }
+    });
+
+    // Final pass: if still empty lanes, create placeholders or duplicate players
+    Object.keys(organizedTeam).forEach((lane, index) => {
+      if (organizedTeam[lane] === null && team.length > index) {
+        organizedTeam[lane] = team[index];
       }
     });
 

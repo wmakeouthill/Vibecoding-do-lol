@@ -93,8 +93,7 @@ export interface Match {
   participants?: any[]; // Todos os 10 jogadores
   teams?: any[]; // Dados dos times
   gameVersion?: string;
-  mapId?: number;
-  playerStats?: {
+  mapId?: number;  playerStats?: {
     champion: string;
     kills: number;
     deaths: number;
@@ -102,6 +101,7 @@ export interface Match {
     mmrChange: number;
     isWin: boolean;
     championLevel?: number;
+    lane?: string; // Adicionando propriedade para a lane
     doubleKills?: number;
     tripleKills?: number;
     quadraKills?: number;

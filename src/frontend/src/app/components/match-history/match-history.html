@@ -108,19 +108,21 @@
             </div>
             <div class="match-type">{{ getGameModeDisplay(match.gameMode) }}</div>
             <div class="match-duration">{{ getMatchDuration(match) }}</div>
-          </div>
-
-          <!-- Champion Info -->
+          </div>          <!-- Champion Info -->
           <div class="champion-info">
             <div class="champion-icon">
               <img *ngIf="getChampionImageUrl(match.playerStats?.champion)"
                    [src]="getChampionImageUrl(match.playerStats?.champion)"
                    [alt]="match.playerStats?.champion"
+                   class="champion-img"
                    onerror="this.style.display='none'; this.nextElementSibling.style.display='block'">
-              <div class="champion-placeholder">{{ match.playerStats?.champion?.charAt(0) || '?' }}</div>
-            </div>
-            <div class="champion-details">
+              <div class="champion-placeholder"
+                   [style.display]="getChampionImageUrl(match.playerStats?.champion) ? 'none' : 'flex'">
+                {{ match.playerStats?.champion?.charAt(0) || '?' }}
+              </div>
+            </div>            <div class="champion-details">
               <div class="champion-name">{{ match.playerStats?.champion }}</div>
+              <div class="lane-name" *ngIf="match.playerStats?.lane">{{ getLaneName(match.playerStats?.lane || '') }}</div>
               <div class="champion-level">Nível {{ match.playerStats?.championLevel || 'N/A' }}</div>
             </div>
           </div>
@@ -211,15 +213,20 @@
                                  [alt]="participant.championName"
                                  class="champion-img"
                                  onerror="this.style.display='none'; this.nextElementSibling.style.display='block'">
-                            <div class="champion-placeholder">{{ participant.championName?.charAt(0) || '?' }}</div>
-                            <span class="champion-level">{{ participant.champLevel }}</span>
+                            <div class="champion-placeholder"
+                                 [style.display]="getChampionImageUrl(participant.championName) ? 'none' : 'flex'">
+                              {{ participant.championName?.charAt(0) || '?' }}
+                            </div>                            <span class="champion-level">{{ participant.champLevel }}</span>
                           </div>
                           <div class="champion-info">
                             <div class="summoner-name" [class.current-player-name]="participant.puuid === player?.puuid">
                               {{ participant.summonerName }}
-                              <span *ngIf="participant.puuid === player?.puuid" class="you-badge">VOCÊ</span>
                             </div>
                             <div class="champion-name">{{ participant.championName }}</div>
+                            <div class="lane-container">
+                              <div class="lane-name-small">{{ getLaneName(lane) }}</div>
+                              <span *ngIf="participant.puuid === player?.puuid" class="you-badge">VOCÊ</span>
+                            </div>
                           </div>
                         </div>
 
@@ -235,7 +242,21 @@
                           <div class="kda-ratio">{{ getParticipantKDARatio(participant).toFixed(2) }}:1 KDA</div>
                         </div>
 
-                        <!-- Stats Section -->
+                        <!-- Items Section (Above stats) -->
+                        <div class="items-section-detailed">
+                          <div class="items-row">
+                            <div *ngFor="let item of getParticipantItems(participant); let i = index"
+                                 class="item-slot-detailed">
+                              <img *ngIf="item && item !== 0"
+                                   [src]="getItemImageUrl(item)"
+                                   [alt]="'Item ' + item"
+                                   class="item-img-detailed">
+                              <div *ngIf="!item || item === 0" class="empty-item-detailed"></div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- Stats Section (Below items) -->
                         <div class="stats-section">
                           <div class="stat-item">
                             <span class="stat-label">Farm</span>
@@ -252,20 +273,6 @@
                           <div class="stat-item">
                             <span class="stat-label">Visão</span>
                             <span class="stat-value">{{ participant.visionScore }}</span>
-                          </div>
-                        </div>
-
-                        <!-- Items Section -->
-                        <div class="items-section-detailed">
-                          <div class="items-row">
-                            <div *ngFor="let item of getParticipantItems(participant); let i = index"
-                                 class="item-slot-detailed">
-                              <img *ngIf="item && item !== 0"
-                                   [src]="getItemImageUrl(item)"
-                                   [alt]="'Item ' + item"
-                                   class="item-img-detailed">
-                              <div *ngIf="!item || item === 0" class="empty-item-detailed"></div>
-                            </div>
                           </div>
                         </div>
                       </div>
@@ -290,9 +297,7 @@
                       <div class="lane-indicator">
                         <span class="lane-icon">{{ getLaneIcon(lane) }}</span>
                         <span class="lane-name">{{ getLaneName(lane) }}</span>
-                      </div>
-
-                      <div class="participant-detailed-card"
+                      </div>                      <div class="participant-detailed-card"
                            *ngIf="organizeTeamByLanes(match.team2)[lane] as participant"
                            [class.current-player]="participant.puuid === player?.puuid">
 
@@ -304,15 +309,20 @@
                                  [alt]="participant.championName"
                                  class="champion-img"
                                  onerror="this.style.display='none'; this.nextElementSibling.style.display='block'">
-                            <div class="champion-placeholder">{{ participant.championName?.charAt(0) || '?' }}</div>
-                            <span class="champion-level">{{ participant.champLevel }}</span>
+                            <div class="champion-placeholder"
+                                 [style.display]="getChampionImageUrl(participant.championName) ? 'none' : 'flex'">
+                              {{ participant.championName?.charAt(0) || '?' }}
+                            </div>                            <span class="champion-level">{{ participant.champLevel }}</span>
                           </div>
                           <div class="champion-info">
                             <div class="summoner-name" [class.current-player-name]="participant.puuid === player?.puuid">
                               {{ participant.summonerName }}
-                              <span *ngIf="participant.puuid === player?.puuid" class="you-badge">VOCÊ</span>
                             </div>
                             <div class="champion-name">{{ participant.championName }}</div>
+                            <div class="lane-container">
+                              <div class="lane-name-small">{{ getLaneName(lane) }}</div>
+                              <span *ngIf="participant.puuid === player?.puuid" class="you-badge">VOCÊ</span>
+                            </div>
                           </div>
                         </div>
 
@@ -328,7 +338,21 @@
                           <div class="kda-ratio">{{ getParticipantKDARatio(participant).toFixed(2) }}:1 KDA</div>
                         </div>
 
-                        <!-- Stats Section -->
+                        <!-- Items Section (Above stats) -->
+                        <div class="items-section-detailed">
+                          <div class="items-row">
+                            <div *ngFor="let item of getParticipantItems(participant); let i = index"
+                                 class="item-slot-detailed">
+                              <img *ngIf="item && item !== 0"
+                                   [src]="getItemImageUrl(item)"
+                                   [alt]="'Item ' + item"
+                                   class="item-img-detailed">
+                              <div *ngIf="!item || item === 0" class="empty-item-detailed"></div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- Stats Section (Below items) -->
                         <div class="stats-section">
                           <div class="stat-item">
                             <span class="stat-label">Farm</span>
@@ -345,20 +369,6 @@
                           <div class="stat-item">
                             <span class="stat-label">Visão</span>
                             <span class="stat-value">{{ participant.visionScore }}</span>
-                          </div>
-                        </div>
-
-                        <!-- Items Section -->
-                        <div class="items-section-detailed">
-                          <div class="items-row">
-                            <div *ngFor="let item of getParticipantItems(participant); let i = index"
-                                 class="item-slot-detailed">
-                              <img *ngIf="item && item !== 0"
-                                   [src]="getItemImageUrl(item)"
-                                   [alt]="'Item ' + item"
-                                   class="item-img-detailed">
-                              <div *ngIf="!item || item === 0" class="empty-item-detailed"></div>
-                            </div>
                           </div>
                         </div>
                       </div>
@@ -469,14 +479,15 @@
               <span class="result-text">{{ match.playerStats?.isWin ? 'V' : 'D' }}</span>
             </div>
             <div class="match-duration">{{ getMatchDuration(match) }}</div>
-          </div>
-
-          <!-- Champion Info -->
+          </div>          <!-- Champion Info -->
           <div class="champion-info">
             <div class="champion-icon">
               <div class="champion-placeholder">{{ match.playerStats?.champion?.charAt(0) || '?' }}</div>
             </div>
-            <div class="champion-name">{{ match.playerStats?.champion }}</div>
+            <div class="champion-details">
+              <div class="champion-name">{{ match.playerStats?.champion }}</div>
+              <div class="lane-name" *ngIf="match.playerStats?.lane">{{ getLaneName(match.playerStats?.lane || '') }}</div>
+            </div>
           </div>
 
           <!-- KDA -->
