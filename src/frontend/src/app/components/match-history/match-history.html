@@ -238,11 +238,10 @@
                             <span class="deaths">{{ participant.deaths }}</span>
                             <span class="separator">/</span>
                             <span class="assists">{{ participant.assists }}</span>
-                          </div>
-                          <div class="kda-ratio">{{ getParticipantKDARatio(participant).toFixed(2) }}:1 KDA</div>
+                          </div>                          <div class="kda-ratio">{{ getParticipantKDARatio(participant).toFixed(2) }}:1 KDA</div>
                         </div>
 
-                        <!-- Items Section (Above stats) -->
+                        <!-- Items Section -->
                         <div class="items-section-detailed">
                           <div class="items-row">
                             <div *ngFor="let item of getParticipantItems(participant); let i = index"
@@ -254,25 +253,25 @@
                               <div *ngIf="!item || item === 0" class="empty-item-detailed"></div>
                             </div>
                           </div>
-                        </div>
 
-                        <!-- Stats Section (Below items) -->
-                        <div class="stats-section">
-                          <div class="stat-item">
-                            <span class="stat-label">Farm</span>
-                            <span class="stat-value">{{ (participant.totalMinionsKilled || 0) + (participant.neutralMinionsKilled || 0) }}</span>
-                          </div>
-                          <div class="stat-item">
-                            <span class="stat-label">Ouro</span>
-                            <span class="stat-value">{{ (participant.goldEarned / 1000).toFixed(1) }}k</span>
-                          </div>
-                          <div class="stat-item">
-                            <span class="stat-label">Dano</span>
-                            <span class="stat-value">{{ (participant.totalDamageDealtToChampions / 1000).toFixed(1) }}k</span>
-                          </div>
-                          <div class="stat-item">
-                            <span class="stat-label">Visão</span>
-                            <span class="stat-value">{{ participant.visionScore }}</span>
+                          <!-- Stats Section (Inside items section, below items) -->
+                          <div class="stats-section">
+                            <div class="stat-item">
+                              <span class="stat-label">Farm</span>
+                              <span class="stat-value">{{ (participant.totalMinionsKilled || 0) + (participant.neutralMinionsKilled || 0) }}</span>
+                            </div>
+                            <div class="stat-item">
+                              <span class="stat-label">Ouro</span>
+                              <span class="stat-value">{{ (participant.goldEarned / 1000).toFixed(1) }}k</span>
+                            </div>
+                            <div class="stat-item">
+                              <span class="stat-label">Dano</span>
+                              <span class="stat-value">{{ (participant.totalDamageDealtToChampions / 1000).toFixed(1) }}k</span>
+                            </div>
+                            <div class="stat-item">
+                              <span class="stat-label">Visão</span>
+                              <span class="stat-value">{{ participant.visionScore }}</span>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -334,11 +333,10 @@
                             <span class="deaths">{{ participant.deaths }}</span>
                             <span class="separator">/</span>
                             <span class="assists">{{ participant.assists }}</span>
-                          </div>
-                          <div class="kda-ratio">{{ getParticipantKDARatio(participant).toFixed(2) }}:1 KDA</div>
+                          </div>                          <div class="kda-ratio">{{ getParticipantKDARatio(participant).toFixed(2) }}:1 KDA</div>
                         </div>
 
-                        <!-- Items Section (Above stats) -->
+                        <!-- Items Section -->
                         <div class="items-section-detailed">
                           <div class="items-row">
                             <div *ngFor="let item of getParticipantItems(participant); let i = index"
@@ -350,25 +348,25 @@
                               <div *ngIf="!item || item === 0" class="empty-item-detailed"></div>
                             </div>
                           </div>
-                        </div>
 
-                        <!-- Stats Section (Below items) -->
-                        <div class="stats-section">
-                          <div class="stat-item">
-                            <span class="stat-label">Farm</span>
-                            <span class="stat-value">{{ (participant.totalMinionsKilled || 0) + (participant.neutralMinionsKilled || 0) }}</span>
-                          </div>
-                          <div class="stat-item">
-                            <span class="stat-label">Ouro</span>
-                            <span class="stat-value">{{ (participant.goldEarned / 1000).toFixed(1) }}k</span>
-                          </div>
-                          <div class="stat-item">
-                            <span class="stat-label">Dano</span>
-                            <span class="stat-value">{{ (participant.totalDamageDealtToChampions / 1000).toFixed(1) }}k</span>
-                          </div>
-                          <div class="stat-item">
-                            <span class="stat-label">Visão</span>
-                            <span class="stat-value">{{ participant.visionScore }}</span>
+                          <!-- Stats Section (Inside items section, below items) -->
+                          <div class="stats-section">
+                            <div class="stat-item">
+                              <span class="stat-label">Farm</span>
+                              <span class="stat-value">{{ (participant.totalMinionsKilled || 0) + (participant.neutralMinionsKilled || 0) }}</span>
+                            </div>
+                            <div class="stat-item">
+                              <span class="stat-label">Ouro</span>
+                              <span class="stat-value">{{ (participant.goldEarned / 1000).toFixed(1) }}k</span>
+                            </div>
+                            <div class="stat-item">
+                              <span class="stat-label">Dano</span>
+                              <span class="stat-value">{{ (participant.totalDamageDealtToChampions / 1000).toFixed(1) }}k</span>
+                            </div>
+                            <div class="stat-item">
+                              <span class="stat-label">Visão</span>
+                              <span class="stat-value">{{ participant.visionScore }}</span>
+                            </div>
                           </div>
                         </div>
                       </div>
