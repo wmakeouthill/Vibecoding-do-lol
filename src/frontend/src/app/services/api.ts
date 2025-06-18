@@ -463,4 +463,20 @@ export class ApiService {
         catchError(this.handleError)
       );
   }
+
+  // LCU Match History
+  getLCUMatchHistory(startIndex: number = 0, count: number = 20): Observable<any> {
+    return this.http.get(`${this.baseUrl}/lcu/match-history?startIndex=${startIndex}&count=${count}`)
+      .pipe(
+        catchError(this.handleError)
+      );
+  }
+
+  // LCU Current Game Status
+  getCurrentGameFromLCU(): Observable<any> {
+    return this.http.get(`${this.baseUrl}/lcu/current-match-details`)
+      .pipe(
+        catchError(this.handleError)
+      );
+  }
 }

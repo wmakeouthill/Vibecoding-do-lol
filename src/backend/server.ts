@@ -551,25 +551,229 @@ app.get('/api/matches/custom/:playerId', async (req: Request, res: Response) => 
 app.get('/api/lcu/current-match-details', (async (req: Request, res: Response) => {
   try {
     if (!lcuService.isClientConnected()) {
-      return res.status(503).json({ error: 'Cliente do LoL não conectado' });
+      return res.status(503).json({ 
+        success: false,
+        error: 'Cliente do LoL não conectado' 
+      });
     }
 
-    const gameSession = await lcuService.getGameSession();
-    const gameflowPhase = await lcuService.getGameflowPhase();
+    const matchDetails = await lcuService.getCurrentMatchDetails();
     
     res.json({
       success: true,
-      currentGame: {
-        session: gameSession,
-        phase: gameflowPhase,
-        isInGame: gameflowPhase === 'InProgress'
-      }
+      currentGame: matchDetails,
+      isInGame: matchDetails.isInGame,
+      phase: matchDetails.phase
     });
+
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('❌ Erro ao buscar detalhes da partida atual:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message || 'Erro ao buscar status da partida atual'
+    });
   }
 }) as RequestHandler);
 
+// LCU Match History endpoint
+app.get('/api/lcu/match-history', (async (req: Request, res: Response) => {
+  try {
+    if (!lcuService.isClientConnected()) {
+      return res.status(503).json({ 
+        success: false,
+        error: 'Cliente do LoL não conectado' 
+      });
+    }
+
+    const startIndex = parseInt(req.query.startIndex as string) || 0;
+    const count = parseInt(req.query.count as string) || 20;
+
+    console.log(`📊 Buscando histórico LCU: startIndex=${startIndex}, count=${count}`);
+    
+    const matches = await lcuService.getMatchHistory(startIndex, count);
+    
+    if (!matches || matches.length === 0) {
+      return res.json({
+        success: true,
+        matches: [],
+        message: 'Nenhuma partida encontrada no histórico do League Client'
+      });
+    }
+
+    // Filter only real matches (not custom games, avoid practice tool, etc.)
+    const realMatches = matches.filter(match => {
+      return match.gameMode === 'CLASSIC' || 
+             match.gameMode === 'ARAM' ||
+             match.gameMode === 'RANKED_SOLO_5x5' ||
+             match.gameMode === 'RANKED_FLEX_SR' ||
+             match.gameMode === 'RANKED_FLEX_TT';
+    });
+
+    console.log(`✅ Partidas reais encontradas: ${realMatches.length}/${matches.length}`);
+    
+    res.json({
+      success: true,
+      matches: realMatches,
+      totalMatches: matches.length,
+      realMatches: realMatches.length
+    });
+
+  } catch (error: any) {
+    console.error('❌ Erro ao buscar histórico LCU:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message || 'Erro ao buscar histórico do League Client'
+    });
+  }
+}) as RequestHandler);
+
+// ===== MATCH LINKING SYSTEM =====
+
+// Create a new match linking session
+app.post('/api/match-linking/create', (async (req: Request, res: Response) => {
+  try {
+    const sessionData = req.body;
+    
+    console.log('🔗 Criando sessão de vinculação:', sessionData.id);
+    
+    // Save to database
+    const linkingSession = await dbManager.createMatchLinkingSession(sessionData);
+    
+    res.json({
+      success: true,
+      session: linkingSession,
+      message: 'Sessão de vinculação criada com sucesso'
+    });
+    
+  } catch (error: any) {
+    console.error('❌ Erro ao criar sessão de vinculação:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message || 'Erro ao criar sessão de vinculação'
+    });
+  }
+}) as RequestHandler);
+
+// Update match linking session
+app.put('/api/match-linking/:sessionId', (async (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const updateData = req.body;
+    
+    console.log('🔄 Atualizando sessão de vinculação:', sessionId);
+    
+    const updatedSession = await dbManager.updateMatchLinkingSession(sessionId, updateData);
+    
+    res.json({
+      success: true,
+      session: updatedSession,
+      message: 'Sessão atualizada com sucesso'
+    });
+    
+  } catch (error: any) {
+    console.error('❌ Erro ao atualizar sessão de vinculação:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message || 'Erro ao atualizar sessão de vinculação'
+    });
+  }
+}) as RequestHandler);
+
+// Complete match linking with post-game results
+app.post('/api/match-linking/complete', (async (req: Request, res: Response) => {
+  try {
+    const postGameData = req.body;
+    
+    console.log('🎯 Vinculando resultados pós-jogo para partida:', postGameData.queueMatchId);
+    
+    // Link the queue match with the real game results
+    const linkingResult = await dbManager.completeMatchLinking(postGameData);
+    
+    // Update player MMR based on results
+    await updatePlayerMMRFromResults(postGameData.playerResults);
+    
+    res.json({
+      success: true,
+      linkingResult,
+      message: 'Resultados vinculados com sucesso'
+    });
+    
+  } catch (error: any) {
+    console.error('❌ Erro ao vincular resultados:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message || 'Erro ao vincular resultados pós-jogo'
+    });
+  }
+}) as RequestHandler);
+
+// Get linked matches for a player
+app.get('/api/match-linking/player/:playerId', (async (req: Request, res: Response) => {
+  try {
+    const { playerId } = req.params;
+    const limit = parseInt(req.query.limit as string) || 20;
+    
+    const linkedMatches = await dbManager.getLinkedMatches(parseInt(playerId), limit);
+    
+    res.json({
+      success: true,
+      matches: linkedMatches,
+      count: linkedMatches.length
+    });
+    
+  } catch (error: any) {
+    console.error('❌ Erro ao buscar partidas vinculadas:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message || 'Erro ao buscar partidas vinculadas'
+    });
+  }
+}) as RequestHandler);
+
+// Get linking statistics
+app.get('/api/match-linking/stats', (async (req: Request, res: Response) => {
+  try {
+    const stats = await dbManager.getMatchLinkingStats();
+    
+    res.json({
+      success: true,
+      stats: {
+        totalSessions: stats.total || 0,
+        successfulLinks: stats.successful || 0,
+        successRate: stats.total > 0 ? ((stats.successful / stats.total) * 100).toFixed(1) : '0.0',
+        averageLinkTime: stats.averageTime || 0
+      }
+    });
+    
+  } catch (error: any) {
+    console.error('❌ Erro ao buscar estatísticas:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message || 'Erro ao buscar estatísticas de vinculação'
+    });
+  }
+}) as RequestHandler);
+
+// Helper function to update player MMR based on game results
+async function updatePlayerMMRFromResults(playerResults: any[]): Promise<void> {
+  for (const result of playerResults) {
+    if (result.dodged) continue; // Skip players who dodged
+    
+    try {
+      const mmrChange = result.won ? 
+        Math.floor(Math.random() * 20) + 10 : // Win: +10 to +30
+        -(Math.floor(Math.random() * 15) + 10); // Loss: -10 to -25
+      
+      await dbManager.updatePlayerMMR(result.playerId, mmrChange);
+      console.log(`📊 MMR atualizado para jogador ${result.playerId}: ${mmrChange > 0 ? '+' : ''}${mmrChange}`);
+      
+    } catch (error) {
+      console.error(`❌ Erro ao atualizar MMR do jogador ${result.playerId}:`, error);
+    }
+  }
+}
+
+// ===== EXISTING CODE CONTINUES =====
 
 // Middleware de erro
 app.use((error: any, req: Request, res: Response, next: NextFunction) => {

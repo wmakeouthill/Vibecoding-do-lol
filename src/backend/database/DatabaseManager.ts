@@ -75,6 +75,39 @@ export class DatabaseManager {
       )
     `);
 
+    // Add new columns for match linking if they don't exist
+    try {
+      await this.db.exec(`
+        ALTER TABLE matches ADD COLUMN riot_game_id TEXT;
+      `);
+    } catch (error) {
+      // Column might already exist
+    }
+
+    try {
+      await this.db.exec(`
+        ALTER TABLE matches ADD COLUMN actual_winner INTEGER;
+      `);
+    } catch (error) {
+      // Column might already exist
+    }
+
+    try {
+      await this.db.exec(`
+        ALTER TABLE matches ADD COLUMN actual_duration INTEGER;
+      `);
+    } catch (error) {
+      // Column might already exist
+    }
+
+    try {
+      await this.db.exec(`
+        ALTER TABLE matches ADD COLUMN linked_results TEXT;
+      `);
+    } catch (error) {
+      // Column might already exist
+    }
+
     // Tabela de fila
     await this.db.exec(`
       CREATE TABLE IF NOT EXISTS queue_history (
@@ -120,6 +153,46 @@ export class DatabaseManager {
         participants_data TEXT, -- JSON com dados dos participantes
         player_result TEXT, -- JSON com resultado específico do jogador
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Tabela para sessões de vinculação de partidas
+    await this.db.exec(`
+      CREATE TABLE IF NOT EXISTS match_linking_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT UNIQUE NOT NULL,
+        custom_match_id TEXT,
+        queue_match_id INTEGER,
+        players_data TEXT, -- JSON com dados dos jogadores
+        pick_ban_result TEXT, -- JSON com resultado do pick/ban
+        game_started INTEGER DEFAULT 0, -- 0 ou 1
+        game_ended INTEGER DEFAULT 0, -- 0 ou 1
+        riot_game_id TEXT, -- ID do jogo na Riot API, se disponível
+        linked_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        completed_at DATETIME
+      )
+    `);
+
+    // Tabela para resultados individuais de jogadores em partidas
+    await this.db.exec(`
+      CREATE TABLE IF NOT EXISTS player_match_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        player_id INTEGER,
+        match_id INTEGER,
+        champion TEXT,
+        kills INTEGER DEFAULT 0,
+        deaths INTEGER DEFAULT 0,
+        assists INTEGER DEFAULT 0,
+        won INTEGER DEFAULT 0, -- 0 ou 1
+        items TEXT, -- JSON com itens comprados
+        gold_earned INTEGER DEFAULT 0,
+        total_damage INTEGER DEFAULT 0,
+        dodged INTEGER DEFAULT 0, -- 0 ou 1
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (player_id) REFERENCES players (id),
+        FOREIGN KEY (match_id) REFERENCES matches (id)
       )
     `);
 
@@ -173,14 +246,29 @@ export class DatabaseManager {
 
     return await this.db.get('SELECT * FROM players WHERE summoner_name = ? COLLATE NOCASE', [summonerName]);
   }
-
-  async updatePlayerMMR(playerId: number, newMMR: number): Promise<void> {
+  async updatePlayerMMR(playerId: number, mmrChange: number): Promise<void> {
     if (!this.db) throw new Error('Banco de dados não inicializado');
 
-    await this.db.run(
-      'UPDATE players SET current_mmr = ?, peak_mmr = MAX(peak_mmr, ?), updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [newMMR, newMMR, playerId]
-    );
+    try {
+      // Get current MMR first
+      const player = await this.db.get('SELECT current_mmr, peak_mmr FROM players WHERE id = ?', [playerId]);
+      if (!player) throw new Error(`Player ${playerId} not found`);
+
+      const newMMR = player.current_mmr + mmrChange;
+      const newPeakMMR = Math.max(player.peak_mmr || 0, newMMR);
+
+      await this.db.run(`
+        UPDATE players 
+        SET current_mmr = ?, peak_mmr = ?, updated_at = datetime('now')
+        WHERE id = ?
+      `, [newMMR, newPeakMMR, playerId]);
+
+      console.log(`📊 MMR atualizado para jogador ${playerId}: ${mmrChange > 0 ? '+' : ''}${mmrChange} (${player.current_mmr} → ${newMMR})`);
+
+    } catch (error) {
+      console.error('Erro ao atualizar MMR do jogador:', error);
+      throw error;
+    }
   }
 
   async updatePlayerStats(playerId: number, won: boolean): Promise<void> {
@@ -369,4 +457,232 @@ export class DatabaseManager {
       this.db = null;
     }
   }
+
+  // ===== MATCH LINKING METHODS =====
+
+  async createMatchLinkingSession(sessionData: any): Promise<any> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+
+    try {
+      const query = `
+        INSERT INTO match_linking_sessions (
+          session_id, custom_match_id, queue_match_id, players_data,
+          pick_ban_result, game_started, game_ended, riot_game_id,
+          linked_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      `;
+
+      const result = await this.db.run(query, [
+        sessionData.id,
+        sessionData.customMatchId,
+        sessionData.queueMatchId,
+        JSON.stringify(sessionData.players),
+        sessionData.pickBanResult ? JSON.stringify(sessionData.pickBanResult) : null,
+        sessionData.gameStarted ? 1 : 0,
+        sessionData.gameEnded ? 1 : 0,
+        sessionData.riotGameId || null,
+        sessionData.linkedAt.toISOString()
+      ]);
+
+      return { id: result.lastID, sessionId: sessionData.id };
+
+    } catch (error) {
+      console.error('Erro ao criar sessão de vinculação:', error);
+      throw error;
+    }
+  }
+
+  async updateMatchLinkingSession(sessionId: string, updateData: any): Promise<any> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+
+    try {
+      const query = `
+        UPDATE match_linking_sessions 
+        SET 
+          pick_ban_result = COALESCE(?, pick_ban_result),
+          game_started = COALESCE(?, game_started),
+          game_ended = COALESCE(?, game_ended),
+          riot_game_id = COALESCE(?, riot_game_id),
+          completed_at = CASE WHEN ? = 1 THEN datetime('now') ELSE completed_at END,
+          updated_at = datetime('now')
+        WHERE session_id = ?
+      `;
+
+      await this.db.run(query, [
+        updateData.pickBanResult ? JSON.stringify(updateData.pickBanResult) : null,
+        updateData.gameStarted !== undefined ? (updateData.gameStarted ? 1 : 0) : null,
+        updateData.gameEnded !== undefined ? (updateData.gameEnded ? 1 : 0) : null,
+        updateData.riotGameId || null,
+        updateData.gameEnded ? 1 : 0,
+        sessionId
+      ]);
+
+      return { sessionId, updated: true };
+
+    } catch (error) {
+      console.error('Erro ao atualizar sessão de vinculação:', error);
+      throw error;
+    }
+  }
+
+  async completeMatchLinking(postGameData: any): Promise<any> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+
+    try {
+      // Begin transaction
+      await this.db.exec('BEGIN TRANSACTION');
+
+      // Update the original queue match with real results
+      const updateMatchQuery = `
+        UPDATE matches 
+        SET 
+          riot_game_id = ?,
+          actual_winner = ?,
+          actual_duration = ?,
+          linked_results = ?,
+          completed_at = datetime('now')
+        WHERE id = ?
+      `;
+
+      await this.db.run(updateMatchQuery, [
+        postGameData.riotGameId,
+        postGameData.winner,
+        postGameData.duration,
+        JSON.stringify(postGameData.playerResults),
+        postGameData.queueMatchId
+      ]);
+
+      // Save individual player results
+      for (const playerResult of postGameData.playerResults) {
+        const playerResultQuery = `
+          INSERT INTO player_match_results (
+            player_id, match_id, champion, kills, deaths, assists,
+            won, items, gold_earned, total_damage, dodged, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        `;
+
+        await this.db.run(playerResultQuery, [
+          playerResult.playerId,
+          postGameData.queueMatchId,
+          playerResult.champion,
+          playerResult.kills,
+          playerResult.deaths,
+          playerResult.assists,
+          playerResult.won ? 1 : 0,
+          JSON.stringify(playerResult.items),
+          playerResult.goldEarned,
+          playerResult.totalDamageDealt,
+          playerResult.dodged ? 1 : 0
+        ]);
+      }
+
+      // Mark linking session as completed
+      await this.db.run(`
+        UPDATE match_linking_sessions 
+        SET game_ended = 1, completed_at = datetime('now')
+        WHERE queue_match_id = ?
+      `, [postGameData.queueMatchId]);
+
+      await this.db.exec('COMMIT');
+
+      return { 
+        success: true, 
+        matchId: postGameData.queueMatchId,
+        riotGameId: postGameData.riotGameId 
+      };
+
+    } catch (error) {
+      await this.db.exec('ROLLBACK');
+      console.error('Erro ao completar vinculação:', error);
+      throw error;
+    }
+  }
+
+  async getLinkedMatches(playerId: number, limit: number = 20): Promise<any[]> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+
+    try {
+      const query = `
+        SELECT 
+          m.*,
+          pmr.champion,
+          pmr.kills,
+          pmr.deaths,
+          pmr.assists,
+          pmr.won,
+          pmr.items,
+          pmr.gold_earned,
+          pmr.total_damage,
+          mls.riot_game_id,
+          mls.pick_ban_result
+        FROM matches m
+        LEFT JOIN player_match_results pmr ON m.id = pmr.match_id AND pmr.player_id = ?
+        LEFT JOIN match_linking_sessions mls ON m.id = mls.queue_match_id
+        WHERE m.id IN (
+          SELECT match_id FROM player_match_results WHERE player_id = ?
+        )
+        AND m.riot_game_id IS NOT NULL
+        ORDER BY m.completed_at DESC
+        LIMIT ?
+      `;
+
+      const matches = await this.db.all(query, [playerId, playerId, limit]);
+
+      return matches.map(match => ({
+        id: match.id,
+        createdAt: new Date(match.created_at),
+        completedAt: match.completed_at ? new Date(match.completed_at) : null,
+        duration: match.actual_duration || match.duration,
+        team1Players: JSON.parse(match.team1_players || '[]'),
+        team2Players: JSON.parse(match.team2_players || '[]'),
+        winner: match.actual_winner || match.winner_team,
+        riotGameId: match.riot_game_id,
+        pickBanResult: match.pick_ban_result ? JSON.parse(match.pick_ban_result) : null,
+        playerStats: {
+          champion: match.champion,
+          kills: match.kills,
+          deaths: match.deaths,
+          assists: match.assists,
+          won: match.won === 1,
+          items: match.items ? JSON.parse(match.items) : [],
+          goldEarned: match.gold_earned,
+          totalDamage: match.total_damage
+        }
+      }));
+
+    } catch (error) {
+      console.error('Erro ao buscar partidas vinculadas:', error);
+      throw error;
+    }
+  }
+
+  async getMatchLinkingStats(): Promise<any> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+
+    try {
+      const stats = await this.db.get(`
+        SELECT 
+          COUNT(*) as total,
+          COUNT(CASE WHEN game_ended = 1 THEN 1 END) as successful,
+          AVG(
+            CASE WHEN completed_at IS NOT NULL 
+            THEN (julianday(completed_at) - julianday(linked_at)) * 24 * 60 
+            END
+          ) as average_time_minutes
+        FROM match_linking_sessions
+      `);
+
+      return {
+        total: stats.total || 0,
+        successful: stats.successful || 0,
+        averageTime: Math.round((stats.average_time_minutes || 0) * 60) // Convert to seconds
+      };
+
+    } catch (error) {
+      console.error('Erro ao buscar estatísticas de vinculação:', error);
+      throw error;
+    }
+  }
+
+  // ===== END MATCH LINKING METHODS =====
 }

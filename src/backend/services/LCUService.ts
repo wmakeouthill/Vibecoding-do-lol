@@ -598,7 +598,6 @@ export class LCUService {
       throw error;
     }
   }
-
   // Método para buscar histórico de partidas do LCU
   async getMatchHistory(startIndex: number = 0, count: number = 20): Promise<any[]> {
     try {
@@ -606,13 +605,94 @@ export class LCUService {
         throw new Error('LCU não conectado');
       }
 
+      console.log(`🔍 Buscando histórico LCU: índice ${startIndex}, quantidade ${count}`);
       const response = await this.client!.get(`/lol-match-history/v1/products/lol/current-summoner/matches?begIndex=${startIndex}&endIndex=${startIndex + count}`);
       
-      return response.data.games?.games || [];
+      const basicMatches = response.data.games?.games || [];
+      console.log(`📋 Partidas básicas encontradas: ${basicMatches.length}`);
+
+      if (basicMatches.length === 0) {
+        return [];
+      }
+
+      // Para cada partida, buscar dados detalhados incluindo todos os participantes
+      const detailedMatches = [];
+      
+      for (const match of basicMatches) {
+        try {
+          if (match.gameId) {
+            console.log(`🔄 Buscando detalhes da partida ${match.gameId}...`);
+            const detailedMatch = await this.getMatchDetails(match.gameId);
+            if (detailedMatch) {
+              // Combinar dados básicos com dados detalhados
+              detailedMatches.push({
+                ...match,
+                ...detailedMatch,
+                // Garantir que temos os dados essenciais
+                gameId: match.gameId,
+                gameCreation: match.gameCreation || detailedMatch.gameCreation,
+                gameDuration: match.gameDuration || detailedMatch.gameDuration,
+                participants: detailedMatch.participants || [],
+                participantIdentities: detailedMatch.participantIdentities || []
+              });
+            } else {
+              // Se não conseguiu dados detalhados, usar só os básicos
+              console.log(`⚠️ Usando dados básicos para partida ${match.gameId}`);
+              detailedMatches.push(match);
+            }
+          }
+        } catch (error) {
+          console.log(`❌ Erro ao buscar detalhes da partida ${match.gameId}:`, error instanceof Error ? error.message : 'Erro desconhecido');
+          // Em caso de erro, usar dados básicos
+          detailedMatches.push(match);
+        }
+      }
+
+      console.log(`✅ Partidas detalhadas processadas: ${detailedMatches.length}`);
+      return detailedMatches;
 
     } catch (error) {
       console.error('❌ Erro ao buscar histórico de partidas:', error);
       return [];
+    }
+  }
+
+  // Novo método para buscar detalhes completos de uma partida específica
+  async getMatchDetails(gameId: number): Promise<any | null> {
+    try {
+      if (!this.isConnected) {
+        throw new Error('LCU não conectado');
+      }      // Tentar diferentes endpoints para obter dados completos da partida
+      const endpoints = [
+        `/lol-match-history/v1/games/${gameId}`,
+        `/lol-match-history/v1/products/lol/current-summoner/matches/${gameId}`,
+        `/lol-match-history/v3/matchlists/by-account/current/matches/${gameId}`,
+        `/lol-match-history/v1/game-timelines/${gameId}`,
+        `/lol-match-history/v1/match-details/${gameId}`,
+        `/lol-spectator/v1/spectator/delayed-spectator-mode/spectate-game-info/${gameId}`
+      ];
+
+      for (const endpoint of endpoints) {
+        try {
+          console.log(`🔗 Tentando endpoint: ${endpoint}`);
+          const response = await this.client!.get(endpoint);
+          
+          if (response.data && response.data.participants) {
+            console.log(`✅ Dados completos obtidos via ${endpoint}: ${response.data.participants.length} participantes`);
+            return response.data;
+          }
+        } catch (error) {
+          console.log(`❌ Endpoint ${endpoint} falhou:`, error instanceof Error ? error.message : 'Erro desconhecido');
+          continue;
+        }
+      }
+
+      console.log(`⚠️ Nenhum endpoint retornou dados completos para partida ${gameId}`);
+      return null;
+
+    } catch (error) {
+      console.error(`❌ Erro ao buscar detalhes da partida ${gameId}:`, error);
+      return null;
     }
   }
 

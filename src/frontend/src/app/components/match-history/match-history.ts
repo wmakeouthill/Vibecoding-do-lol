@@ -47,43 +47,93 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       this.loadCustomMatches();
     }
   }
-
   loadRiotMatches(): void {
-    if (!this.player) return;
+    if (!this.player) {
+      console.warn('⚠️ Nenhum player disponível para carregar partidas');
+      return;
+    }
+
+    console.log('🚀 Iniciando carregamento de partidas da Riot API para:', {
+      player: this.player.summonerName,
+      puuid: this.player.puuid
+    });
 
     this.loading = true;
     this.error = null;
 
-    try {      if (this.player.puuid) {
-        // Para histórico da Riot API, sempre usar 'americas' como região
-        this.apiService.getPlayerMatchHistoryFromRiot(this.player.puuid, 'americas', 20).subscribe({
-          next: (response: any) => {
-            if (response && response.success && response.matches) {
-              this.processRiotMatches(response.matches);
-              this.loading = false;
-              return;
+    try {
+      // First, try to get matches from LCU (League Client)
+      console.log('📡 Tentando carregar via LCU...');
+      this.apiService.getLCUMatchHistory().subscribe({
+        next: (lcuResponse: any) => {
+          console.log('📬 Resposta LCU recebida:', {
+            success: lcuResponse?.success,
+            matchCount: lcuResponse?.matches?.length || 0
+          });
+
+          if (lcuResponse && lcuResponse.success && lcuResponse.matches && lcuResponse.matches.length > 0) {
+            console.log('✅ Partidas obtidas via LCU:', lcuResponse.matches.length);
+            this.processLCUMatches(lcuResponse.matches);
+            this.loading = false;
+            return;
+          } else {
+            console.log('ℹ️ LCU não retornou partidas, tentando Riot API...');
+            // If LCU fails, try Riot API with PUUID
+            if (this.player && this.player.puuid) {
+              this.apiService.getPlayerMatchHistoryFromRiot(this.player.puuid, 'americas', 20).subscribe({
+                next: (response: any) => {
+                  if (response && response.success && response.matches && response.matches.length > 0) {
+                    console.log('✅ Partidas obtidas via Riot API:', response.matches.length);
+                    this.processRiotMatches(response.matches);
+                  } else {
+                    console.log('ℹ️ Nenhuma partida encontrada via Riot API');
+                    this.riotMatches = [];
+                  }
+                  this.loading = false;
+                },
+                error: (error: any) => {
+                  console.log('❌ Falha ao carregar via Riot API:', error);
+                  this.riotMatches = [];
+                  this.loading = false;
+                }
+              });
             } else {
-              this.riotMatches = this.generateMockRiotMatches();
+              console.log('ℹ️ Sem PUUID disponível, nenhuma partida carregada');
+              this.riotMatches = [];
               this.loading = false;
             }
-          },
-          error: (error: any) => {
-            console.log('Failed to load Riot API matches:', error);
-            this.riotMatches = this.generateMockRiotMatches();
+          }
+        },
+        error: (error: any) => {
+          console.log('❌ Falha ao carregar via LCU:', error);
+          // Fallback to Riot API
+          if (this.player && this.player.puuid) {
+            this.apiService.getPlayerMatchHistoryFromRiot(this.player.puuid, 'americas', 20).subscribe({
+              next: (response: any) => {
+                if (response && response.success && response.matches && response.matches.length > 0) {
+                  this.processRiotMatches(response.matches);
+                } else {
+                  this.riotMatches = [];
+                }
+                this.loading = false;
+              },
+              error: () => {
+                this.riotMatches = [];
+                this.loading = false;
+              }
+            });
+          } else {
+            this.riotMatches = [];
             this.loading = false;
           }
-        });
-      } else {
-        this.riotMatches = this.generateMockRiotMatches();
-        this.loading = false;
-      }
+        }
+      });
     } catch (error: any) {
       this.error = error.message || 'Erro ao carregar histórico da Riot API';
       this.loading = false;
       console.error('Error loading Riot match history:', error);
     }
   }
-
   loadCustomMatches(): void {
     if (!this.player) return;
 
@@ -93,12 +143,14 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     try {
       this.apiService.getCustomMatches(this.player.id.toString(), this.currentPage * this.matchesPerPage, this.matchesPerPage).subscribe({
         next: (response) => {
-          if (response && response.success && response.matches) {
+          if (response && response.success && response.matches && response.matches.length > 0) {
+            console.log('✅ Partidas customizadas encontradas:', response.matches.length);
             this.customMatches = this.mapApiMatchesToModel(response.matches);
             this.totalMatches = response.pagination.total;
           } else {
-            this.customMatches = this.generateMockCustomMatches();
-            this.totalMatches = this.customMatches.length;
+            console.log('ℹ️ Nenhuma partida customizada encontrada');
+            this.customMatches = [];
+            this.totalMatches = 0;
           }
           this.loading = false;
         },
@@ -107,19 +159,17 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           this.loading = false;
           console.error('Error loading custom match history:', error);
 
-          // Fallback to mock data
-          setTimeout(() => {
-            this.error = null;
-            this.customMatches = this.generateMockCustomMatches();
-            this.totalMatches = this.customMatches.length;
-            this.loading = false;
-          }, 1000);
+          // No more fallback to mock data - keep empty if no real data
+          this.customMatches = [];
+          this.totalMatches = 0;
         }
       });
     } catch (error: any) {
       this.error = error.message || 'Erro ao carregar partidas customizadas';
       this.loading = false;
       console.error('Error loading custom match history:', error);
+      this.customMatches = [];
+      this.totalMatches = 0;
     }
   }
   // ========== TAB SYSTEM ==========
@@ -149,13 +199,16 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     return ((wins / matches.length) * 100).toFixed(1);
   }
   ngOnInit() {
-    // Always load mock data to demonstrate the interface
-    this.riotMatches = this.generateMockRiotMatches();
-    this.customMatches = this.generateMockCustomMatches();
+    // NO MORE MOCK DATA BY DEFAULT - only load real data
+    // Only show mock data if explicitly needed for demo purposes
 
-    // If there's a player, try to load real data
+    // If there's a player, load real data
     if (this.player) {
       this.loadCurrentTabMatches();
+    } else {
+      // No player, clear arrays
+      this.riotMatches = [];
+      this.customMatches = [];
     }
 
     this.startCurrentGameMonitoring();
@@ -180,28 +233,30 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     // Initial check
     this.checkCurrentGame();
   }
-
   private checkCurrentGame(): void {
     if (!this.player) return;
 
-    this.apiService.getCurrentGame().subscribe({
-      next: (response: any) => { // Adicionar tipagem explícita
+    // Use the new LCU endpoint for more accurate current game status
+    this.apiService.getCurrentGameFromLCU().subscribe({
+      next: (response: any) => {
         if (response && response.success && response.currentGame) {
           this.currentGame = response.currentGame;
-          this.isInGame = response.currentGame.isInGame;
-          this.gamePhase = response.currentGame.phase;
+          this.isInGame = response.isInGame;
+          this.gamePhase = response.phase;
         } else {
           this.isInGame = false;
           this.currentGame = null;
+          this.gamePhase = '';
         }
       },
-      error: (err: any) => { // Adicionar tipagem explícita
-        console.error('Failed to get current game:', err);
+      error: (err: any) => {
+        console.error('Failed to get current game from LCU:', err);
         this.isInGame = false;
         this.currentGame = null;
+        this.gamePhase = '';
       }
     });
-  }  // Legacy method for compatibility
+  }// Legacy method for compatibility
   async loadMatches() {
     return this.loadCurrentTabMatches();
   }
@@ -817,9 +872,17 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       participant.item5 || 0
     ];
   }
-
   // ========== LANE DETECTION AND ORGANIZATION ==========
   getParticipantLane(participant: any): string {
+    // Debug log to understand lane detection
+    console.log('🔍 Detectando lane para:', {
+      champion: participant.championName,
+      lane: participant.lane,
+      role: participant.role,
+      teamPosition: participant.teamPosition,
+      individualPosition: participant.individualPosition
+    });
+
     // Para ARAM, não há lanes específicas - organizar por papel/champion
     if (participant.lane === 'BOTTOM' && participant.gameMode === 'ARAM') {
       return this.detectARAMRole(participant);
@@ -850,7 +913,9 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         return 'SUPPORT';
       default:
         // Fallback para detecção baseada em posição individual
-        return this.detectLaneByPosition(participant);
+        const detectedLane = this.detectLaneByPosition(participant);
+        console.log('🎯 Lane detectada:', detectedLane);
+        return detectedLane;
     }
   }
 
@@ -922,7 +987,6 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     const totalFarm = (participant.totalMinionsKilled || 0) + (participant.neutralMinionsKilled || 0);
     return totalFarm > 100 ? 'ADC' : 'SUPPORT';
   }
-
   private detectLaneByPosition(participant: any): string {
     const position = participant.individualPosition || participant.teamPosition || 'UNKNOWN';
 
@@ -938,9 +1002,42 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       case 'Utility':
         return 'SUPPORT';
       default:
-        return 'UNKNOWN';
+        // Fallback: detect by participant order and champion role
+        return this.detectLaneByChampionAndOrder(participant);
+    }
+  }
+
+  private detectLaneByChampionAndOrder(participant: any): string {
+    const championName = participant.championName;
+    const participantId = participant.participantId;
+
+    // Common role detection based on champion types
+    const junglers = ['Graves', 'Nidalee', 'Kindred', 'KhaZix', 'Rengar', 'Ekko', 'Diana', 'Kayn', 'Viego', 'Belveth'];
+    const supports = ['Thresh', 'Leona', 'Braum', 'Nautilus', 'Alistar', 'Lulu', 'Nami', 'Soraka', 'Janna', 'Sona', 'Yuumi'];
+    const adcs = ['Jinx', 'Caitlyn', 'Ashe', 'Vayne', 'Ezreal', 'Kaisa', 'Jhin', 'Xayah', 'Tristana', 'Sivir', 'Draven'];
+
+    if (junglers.includes(championName)) return 'JUNGLE';
+    if (supports.includes(championName)) return 'SUPPORT';
+    if (adcs.includes(championName)) return 'ADC';
+
+    // Fallback by participant order (common in LCU data)
+    // Usually: 1-TOP, 2-JUNGLE, 3-MID, 4-ADC, 5-SUPPORT per team
+    const order = (participantId - 1) % 5;
+    switch (order) {
+      case 0: return 'TOP';
+      case 1: return 'JUNGLE';
+      case 2: return 'MIDDLE';
+      case 3: return 'ADC';
+      case 4: return 'SUPPORT';
+      default: return 'UNKNOWN';
     }
   }  organizeTeamByLanes(team: any[] | undefined): { [lane: string]: any } {
+    console.log('🔧 organizeTeamByLanes chamado com:', {
+      teamIsArray: Array.isArray(team),
+      teamLength: team?.length,
+      teamData: team?.map((p: any) => ({ name: p.summonerName, champion: p.championName, teamId: p.teamId }))
+    });
+
     const organizedTeam: { [lane: string]: any } = {
       'TOP': null,
       'JUNGLE': null,
@@ -950,12 +1047,17 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     };
 
     if (!team || !Array.isArray(team)) {
+      console.log('❌ Time inválido ou vazio');
       return organizedTeam;
     }
 
-    // First pass: assign players to their primary lanes
-    team.forEach(participant => {
+    console.log('👥 Organizando time com', team.length, 'jogadores');
+
+    // First pass: assign players to their detected lanes
+    team.forEach((participant, index) => {
       const lane = this.getParticipantLane(participant);
+      console.log(`🎯 Jogador ${index + 1}: ${participant.championName} -> ${lane}`);
+
       if (organizedTeam[lane] === null) {
         organizedTeam[lane] = participant;
       }
@@ -968,19 +1070,28 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     });
 
     const emptyLanes = Object.keys(organizedTeam).filter(lane => organizedTeam[lane] === null);
+    console.log('📍 Lanes vazias:', emptyLanes);
+    console.log('👤 Jogadores não atribuídos:', unassignedPlayers.length);
 
     unassignedPlayers.forEach((participant, index) => {
       if (index < emptyLanes.length) {
         organizedTeam[emptyLanes[index]] = participant;
+        console.log(`🔄 Atribuindo ${participant.championName} para ${emptyLanes[index]}`);
       }
     });
 
-    // Final pass: if still empty lanes, create placeholders or duplicate players
-    Object.keys(organizedTeam).forEach((lane, index) => {
+    // Final pass: ensure all players are assigned (force assignment if needed)
+    const lanes = ['TOP', 'JUNGLE', 'MIDDLE', 'ADC', 'SUPPORT'];
+    lanes.forEach((lane, index) => {
       if (organizedTeam[lane] === null && team.length > index) {
         organizedTeam[lane] = team[index];
+        console.log(`🚨 Forçando atribuição: ${team[index].championName} -> ${lane}`);
       }
     });
+
+    console.log('✅ Time organizado:', Object.keys(organizedTeam).map(lane =>
+      `${lane}: ${organizedTeam[lane]?.championName || 'VAZIO'}`
+    ));
 
     return organizedTeam;
   }
@@ -1020,6 +1131,219 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       participant?.item5
     ]);
     console.log('Champion:', participant?.championName);
-    console.log('Summoner:', participant?.summonerName);
+    console.log('Summoner:', participant?.summonerName);  }
+  // New method to process LCU match data
+  private processLCUMatches(lcuMatches: any[]): void {
+    console.log('🔄 Processando', lcuMatches.length, 'partidas do LCU');
+
+    const mappedMatches = lcuMatches.map(match => {
+      return this.mapLCUMatchToModel(match);
+    }).filter(match => match !== null) as Match[];
+
+    this.riotMatches = mappedMatches;
+    this.totalMatches = this.riotMatches.length;
+
+    console.log('✅ Partidas LCU processadas:', {
+      total: lcuMatches.length,
+      mapeadas: this.riotMatches.length
+    });
+
+    if (this.riotMatches.length === 0) {
+      console.warn('⚠️ Nenhuma partida foi mapeada com sucesso');
+    }
+  }
+  // New method to map LCU match data to our Match model
+  private mapLCUMatchToModel(lcuMatch: any): Match | null {
+    try {
+      // Try to find player data
+      let playerData = null;
+      const currentPlayerPuuid = this.player?.puuid;
+      const currentPlayerName = this.player?.summonerName?.toLowerCase();
+
+      // Strategy 1: Match by PUUID in participants directly
+      if (currentPlayerPuuid) {
+        playerData = lcuMatch.participants?.find((p: any) => p.puuid === currentPlayerPuuid);
+      }
+
+      // Strategy 2: Match by participantIdentities
+      if (!playerData && lcuMatch.participantIdentities) {
+        if (currentPlayerPuuid) {
+          const identity = lcuMatch.participantIdentities.find((id: any) =>
+            id.player?.puuid === currentPlayerPuuid
+          );
+          if (identity) {
+            playerData = lcuMatch.participants?.find((p: any) =>
+              p.participantId === identity.participantId
+            );
+          }
+        }
+
+        if (!playerData && currentPlayerName) {
+          const identity = lcuMatch.participantIdentities.find((id: any) => {
+            const playerSummonerName = id.player?.summonerName?.toLowerCase();
+            const playerGameName = id.player?.gameName?.toLowerCase();
+            return playerSummonerName === currentPlayerName || playerGameName === currentPlayerName;
+          });
+          if (identity) {
+            playerData = lcuMatch.participants?.find((p: any) =>
+              p.participantId === identity.participantId
+            );
+          }
+        }
+      }
+
+      if (!playerData) {
+        return null;
+      }
+
+      // Convert championId to championName
+      const getChampionName = (championId: number): string => {
+        const championMap: { [key: number]: string } = {
+          1: 'Annie', 2: 'Olaf', 3: 'Galio', 4: 'TwistedFate', 5: 'XinZhao',
+          6: 'Urgot', 7: 'LeBlanc', 8: 'Vladimir', 9: 'Fiddlesticks', 10: 'Kayle',
+          11: 'MasterYi', 12: 'Alistar', 13: 'Ryze', 14: 'Sion', 15: 'Sivir',
+          16: 'Soraka', 17: 'Teemo', 18: 'Tristana', 19: 'Warwick', 20: 'Nunu',
+          21: 'MissFortune', 22: 'Ashe', 23: 'Tryndamere', 24: 'Jax', 25: 'Morgana',
+          26: 'Zilean', 27: 'Singed', 28: 'Evelynn', 29: 'Twitch', 30: 'Karthus',
+          31: 'Chogath', 32: 'Amumu', 33: 'Rammus', 34: 'Anivia', 35: 'Shaco',
+          36: 'DrMundo', 37: 'Sona', 38: 'Kassadin', 39: 'Irelia', 40: 'Janna',
+          41: 'Gangplank', 42: 'Corki', 43: 'Karma', 44: 'Taric', 45: 'Veigar',
+          48: 'Trundle', 50: 'Swain', 51: 'Caitlyn', 53: 'Blitzcrank', 54: 'Malphite',
+          55: 'Katarina', 56: 'Nocturne', 57: 'Maokai', 58: 'Renekton', 59: 'JarvanIV',
+          60: 'Elise', 61: 'Orianna', 62: 'MonkeyKing', 63: 'Brand', 64: 'LeeSin',
+          67: 'Vayne', 68: 'Rumble', 69: 'Cassiopeia', 72: 'Skarner', 74: 'Heimerdinger',
+          75: 'Nasus', 76: 'Nidalee', 77: 'Udyr', 78: 'Poppy', 79: 'Gragas',
+          80: 'Pantheon', 81: 'Ezreal', 82: 'Mordekaiser', 83: 'Yorick', 84: 'Akali',
+          85: 'Kennen', 86: 'Garen', 89: 'Leona', 90: 'Malzahar', 91: 'Talon',
+          92: 'Riven', 96: 'KogMaw', 98: 'Shen', 99: 'Lux', 101: 'Xerath',
+          102: 'Shyvana', 103: 'Ahri', 104: 'Graves', 105: 'Fizz', 106: 'Volibear',
+          107: 'Rengar', 110: 'Varus', 111: 'Nautilus', 112: 'Viktor', 113: 'Sejuani',
+          114: 'Fiora', 115: 'Ziggs', 117: 'Lulu', 119: 'Draven', 120: 'Hecarim',
+          121: 'Khazix', 122: 'Darius', 126: 'Jayce', 127: 'Lissandra', 131: 'Diana',
+          133: 'Quinn', 134: 'Syndra', 136: 'AurelionSol', 141: 'Kayn', 142: 'Zoe',
+          143: 'Zyra', 145: 'Kaisa', 147: 'Seraphine', 150: 'Gnar', 154: 'Zac',
+          157: 'Yasuo', 161: 'Velkoz', 163: 'Taliyah', 164: 'Camille', 166: 'Akshan',
+          200: 'Belveth', 201: 'Braum', 202: 'Jhin', 203: 'Kindred', 221: 'Zed',
+          222: 'Jinx', 223: 'TahmKench', 234: 'Viego', 235: 'Senna', 236: 'Lucian',
+          238: 'Zed', 245: 'Ekko', 246: 'Qiyana', 254: 'Vi', 266: 'Aatrox',
+          267: 'Nami', 268: 'Azir', 350: 'Yuumi', 360: 'Samira', 412: 'Thresh',
+          420: 'Illaoi', 421: 'RekSai', 427: 'Ivern', 429: 'Kalista', 432: 'Bard',
+          497: 'Rakan', 498: 'Xayah', 516: 'Ornn', 517: 'Sylas', 518: 'Neeko',
+          523: 'Aphelios', 526: 'Rell', 555: 'Pyke', 650: 'Briar', 711: 'Vex',
+          777: 'Yone', 875: 'Sett', 876: 'Lillia', 887: 'Gwen', 888: 'Renata',
+          893: 'Aurora', 895: 'Nilah', 897: 'KSante', 901: 'Smolder', 910: 'Hwei',
+          950: 'Naafiri', 960: 'Ambessa'
+        };
+
+        return championMap[championId] || 'Aatrox'; // Fallback válido
+      };
+
+      // Map participants with complete information
+      const enhancedParticipants = lcuMatch.participants?.map((p: any) => {
+        const identity = lcuMatch.participantIdentities?.find((id: any) =>
+          id.participantId === p.participantId
+        );
+
+        const isCurrentPlayerByPuuid = identity?.player?.puuid === currentPlayerPuuid;
+        const isCurrentPlayerByName = currentPlayerName &&
+          (identity?.player?.summonerName?.toLowerCase() === currentPlayerName ||
+           identity?.player?.gameName?.toLowerCase() === currentPlayerName);        const isCurrentPlayer = isCurrentPlayerByPuuid || isCurrentPlayerByName;
+
+        // Create a proper display name combining gameName and tagLine
+        let displayName = `Player ${p.participantId}`;
+        if (identity?.player) {
+          const player = identity.player;
+          if (player.gameName && player.tagLine) {
+            displayName = `${player.gameName}#${player.tagLine}`;
+          } else if (player.summonerName) {
+            displayName = player.summonerName;
+          } else if (player.gameName) {
+            displayName = player.gameName;
+          }
+        }
+
+        return {
+          ...p,
+          championName: getChampionName(p.championId),
+          summonerName: displayName,
+          puuid: identity?.player?.puuid || '',
+          kills: p.stats?.kills || 0,
+          deaths: p.stats?.deaths || 0,
+          assists: p.stats?.assists || 0,
+          champLevel: p.stats?.champLevel || 1,
+          goldEarned: p.stats?.goldEarned || 0,
+          totalDamageDealt: p.stats?.totalDamageDealt || 0,
+          totalDamageDealtToChampions: p.stats?.totalDamageDealtToChampions || 0,
+          totalDamageTaken: p.stats?.totalDamageTaken || 0,
+          totalMinionsKilled: p.stats?.totalMinionsKilled || 0,
+          neutralMinionsKilled: p.stats?.neutralMinionsKilled || 0,
+          wardsPlaced: p.stats?.wardsPlaced || 0,
+          wardsKilled: p.stats?.wardsKilled || 0,
+          visionScore: p.stats?.visionScore || 0,
+          item0: p.stats?.item0 || 0,
+          item1: p.stats?.item1 || 0,
+          item2: p.stats?.item2 || 0,
+          item3: p.stats?.item3 || 0,
+          item4: p.stats?.item4 || 0,
+          item5: p.stats?.item5 || 0,
+          isCurrentPlayer: isCurrentPlayer
+        };
+      }) || [];      // Separate into teams
+      const team1 = enhancedParticipants.filter((p: any) => p.teamId === 100);
+      const team2 = enhancedParticipants.filter((p: any) => p.teamId === 200);      console.log('⚡ Times separados:', {
+        team1Count: team1.length,
+        team2Count: team2.length,
+        team1Players: team1.map((p: any) => ({ name: p.summonerName, champion: p.championName, teamId: p.teamId })),
+        team2Players: team2.map((p: any) => ({ name: p.summonerName, champion: p.championName, teamId: p.teamId }))
+      });
+
+      // Find current player data
+      const currentPlayerData = enhancedParticipants.find((p: any) => p.isCurrentPlayer) || playerData;
+
+      return {
+        id: lcuMatch.gameId || lcuMatch.gameCreation,
+        createdAt: new Date(lcuMatch.gameCreation || lcuMatch.gameCreationDate),
+        duration: lcuMatch.gameDuration || (lcuMatch.gameLength / 1000),
+        gameMode: lcuMatch.gameMode,
+        gameVersion: lcuMatch.gameVersion,
+        mapId: lcuMatch.mapId,
+        participants: enhancedParticipants,
+        teams: lcuMatch.teams,
+        team1: team1,
+        team2: team2,
+        winner: lcuMatch.teams?.find((t: any) => t.win)?.teamId === 100 ? 1 : 2,
+        playerStats: {
+          champion: getChampionName(currentPlayerData.championId) || 'Aatrox',
+          kills: currentPlayerData.stats?.kills || currentPlayerData.kills || 0,
+          deaths: currentPlayerData.stats?.deaths || currentPlayerData.deaths || 0,
+          assists: currentPlayerData.stats?.assists || currentPlayerData.assists || 0,
+          mmrChange: 0,
+          isWin: currentPlayerData.stats?.win || false,
+          championLevel: currentPlayerData.stats?.champLevel || currentPlayerData.champLevel || 1,
+          items: [
+            currentPlayerData.stats?.item0 || currentPlayerData.item0 || 0,
+            currentPlayerData.stats?.item1 || currentPlayerData.item1 || 0,
+            currentPlayerData.stats?.item2 || currentPlayerData.item2 || 0,
+            currentPlayerData.stats?.item3 || currentPlayerData.item3 || 0,
+            currentPlayerData.stats?.item4 || currentPlayerData.item4 || 0,
+            currentPlayerData.stats?.item5 || currentPlayerData.item5 || 0
+          ],
+          lpChange: 0,
+          goldEarned: currentPlayerData.stats?.goldEarned || currentPlayerData.goldEarned || 0,
+          totalDamageDealt: currentPlayerData.stats?.totalDamageDealt || currentPlayerData.totalDamageDealt || 0,
+          totalDamageDealtToChampions: currentPlayerData.stats?.totalDamageDealtToChampions || currentPlayerData.totalDamageDealtToChampions || 0,
+          totalDamageTaken: currentPlayerData.stats?.totalDamageTaken || currentPlayerData.totalDamageTaken || 0,
+          totalMinionsKilled: currentPlayerData.stats?.totalMinionsKilled || currentPlayerData.totalMinionsKilled || 0,
+          neutralMinionsKilled: currentPlayerData.stats?.neutralMinionsKilled || currentPlayerData.neutralMinionsKilled || 0,
+          wardsPlaced: currentPlayerData.stats?.wardsPlaced || currentPlayerData.wardsPlaced || 0,
+          wardsKilled: currentPlayerData.stats?.wardsKilled || currentPlayerData.wardsKilled || 0,
+          visionScore: currentPlayerData.stats?.visionScore || currentPlayerData.visionScore || 0,
+          summoner1Id: currentPlayerData.spell1Id || 0,
+          summoner2Id: currentPlayerData.spell2Id || 0
+        }      };
+    } catch (error: any) {
+      console.error('❌ Erro ao mapear partida LCU:', error);
+      return null;
+    }
   }
 }
