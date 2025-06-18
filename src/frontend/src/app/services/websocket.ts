@@ -131,14 +131,14 @@ export class WebsocketService {
 
     this.connectionSubject.next(false);
   }
-
   private send(message: WebSocketMessage): void {
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+      console.log('📤 Enviando mensagem WebSocket:', message);
       this.socket.send(JSON.stringify(message));
     } else {
       console.warn('⚠️ WebSocket não está conectado, mensagem ignorada:', message);
     }
-  }  // Métodos públicos para interagir com o matchmaking
+  }// Métodos públicos para interagir com o matchmaking
   async joinQueue(player: any, preferences?: any): Promise<void> {
     this.send({
       type: 'join_queue',

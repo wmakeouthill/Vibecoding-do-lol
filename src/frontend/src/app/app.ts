@@ -179,13 +179,15 @@ export class App implements OnInit, OnDestroy {
       this.addNotification('error', 'Erro', 'Não foi possível entrar na fila');
     }
   }
-
   async leaveQueue(): Promise<void> {
+    console.log('🔍 leaveQueue chamado no frontend');
     try {
       await this.websocketService.leaveQueue();
       this.isInQueue = false;
       this.addNotification('info', 'Fila', 'Saiu da fila');
+      console.log('✅ Saiu da fila com sucesso');
     } catch (error) {
+      console.error('❌ Erro ao sair da fila:', error);
       this.addNotification('error', 'Erro', 'Não foi possível sair da fila');
     }
   }

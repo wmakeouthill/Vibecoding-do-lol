@@ -32,21 +32,50 @@ interface QueueStatus {
   averageWaitTime: number;
   estimatedMatchTime: number;
   isActive: boolean;
+  playersInQueueList?: QueuedPlayerInfo[];
+  recentActivities?: QueueActivity[];
+}
+
+interface QueuedPlayerInfo {
+  summonerName: string;
+  tagLine?: string;
+  primaryLane: string;
+  secondaryLane: string;
+  mmr: number;
+  queuePosition: number;
+  joinTime: Date;
+}
+
+interface QueueActivity {
+  id: string;
+  timestamp: Date;
+  type: 'player_joined' | 'player_left' | 'match_created' | 'system_update' | 'queue_cleared';
+  message: string;
+  playerName?: string;
+  playerTag?: string;
+  lane?: string;
 }
 
 export class MatchmakingService {
   private dbManager: DatabaseManager;
+  private wss: any; // WebSocketServer
   private queue: QueuedPlayer[] = [];
   private activeMatches: Map<number, Match> = new Map();
   private matchmakingInterval: NodeJS.Timeout | null = null;
   private isActive = true;
+  private recentActivities: QueueActivity[] = [];
+  private readonly MAX_ACTIVITIES = 20;
 
-  constructor(dbManager: DatabaseManager) {
+  constructor(dbManager: DatabaseManager, wss?: any) {
     this.dbManager = dbManager;
+    this.wss = wss;
   }
-
   async initialize(): Promise<void> {
     console.log('🔍 Inicializando sistema de matchmaking...');
+    
+    // Adicionar atividades iniciais
+    this.addActivity('system_update', 'Sistema de matchmaking inicializado');
+    this.addActivity('system_update', 'Aguardando jogadores para a fila');
     
     // Iniciar processamento de matchmaking a cada 5 segundos
     this.matchmakingInterval = setInterval(() => {
@@ -54,16 +83,17 @@ export class MatchmakingService {
     }, 5000);
 
     console.log('✅ Sistema de matchmaking ativo');
-  }  async addPlayerToQueue(websocket: WebSocket, requestData: any): Promise<void> {
+  }async addPlayerToQueue(websocket: WebSocket, requestData: any): Promise<void> {
     try {
       // Validar dados da requisição
       if (!requestData) {
         throw new Error('Dados da requisição não fornecidos');
-      }
-
-      // Extrair player e preferences dos dados
+      }      // Extrair player e preferences dos dados
       const playerData = requestData.player;
       const preferences = requestData.preferences;
+
+      console.log('🔍 Dados recebidos - playerData:', playerData);
+      console.log('🔍 Dados recebidos - preferences:', preferences);
 
       // Validar dados do jogador
       if (!playerData) {
@@ -112,9 +142,20 @@ export class MatchmakingService {
         websocket: websocket,
         queuePosition: this.queue.length + 1,
         preferences: preferences
-      };
+      };      this.queue.push(queuedPlayer);
 
-      this.queue.push(queuedPlayer);
+      // Adicionar atividade
+      const primaryLaneName = this.getLaneDisplayName(preferences?.primaryLane);
+      const playerTag = player.tag_line ? `#${player.tag_line}` : '';
+      this.addActivity(
+        'player_joined', 
+        `${player.summoner_name}${playerTag} entrou na fila como ${primaryLaneName}`,
+        player.summoner_name,
+        player.tag_line,
+        preferences?.primaryLane
+      );
+
+      console.log(`✅ ${player.summoner_name} entrou na fila como ${primaryLaneName}`);
 
       // Notificar jogador sobre entrada na fila
       websocket.send(JSON.stringify({
@@ -139,12 +180,23 @@ export class MatchmakingService {
       }));
     }
   }
-
   removePlayerFromQueue(websocket: WebSocket): void {
+    console.log('🔍 removePlayerFromQueue chamado');
     const playerIndex = this.queue.findIndex(player => player.websocket === websocket);
-    if (playerIndex !== -1) {
+    console.log('🔍 Player index encontrado:', playerIndex);
+    console.log('🔍 Tamanho da fila antes:', this.queue.length);
+      if (playerIndex !== -1) {
       const player = this.queue[playerIndex];
+      const playerTag = player.summonerName.includes('#') ? '' : ''; // Tag já incluída no summonerName se existir
+      
       this.queue.splice(playerIndex, 1);
+
+      // Adicionar atividade de saída
+      this.addActivity(
+        'player_left',
+        `${player.summonerName} saiu da fila`,
+        player.summonerName
+      );
 
       // Atualizar posições na fila
       this.queue.forEach((p, index) => {
@@ -152,7 +204,10 @@ export class MatchmakingService {
       });
 
       console.log(`➖ ${player.summonerName} saiu da fila`);
+      console.log('🔍 Tamanho da fila depois:', this.queue.length);
       this.broadcastQueueUpdate();
+    } else {
+      console.log('⚠️ Jogador não encontrado na fila para remoção');
     }
   }
 
@@ -340,7 +395,6 @@ export class MatchmakingService {
       console.error('Erro ao criar partida:', error);
     }
   }
-
   // Método para broadcast de atualizações da fila
   private broadcastQueueUpdate(): void {
     const queueStatus = this.getQueueStatus();
@@ -349,16 +403,32 @@ export class MatchmakingService {
       data: queueStatus
     });
 
-    // Enviar para todos os jogadores conectados via WebSocket
-    this.queue.forEach(player => {
-      if (player.websocket && player.websocket.readyState === player.websocket.OPEN) {
-        try {
-          player.websocket.send(message);
-        } catch (error) {
-          console.error('Erro ao enviar atualização da fila:', error);
+    console.log('📢 Fazendo broadcast de queue_update:', queueStatus);
+
+    // Se temos o WebSocketServer, enviar para todos os clientes conectados
+    if (this.wss && this.wss.clients) {
+      this.wss.clients.forEach((client: any) => {
+        if (client.readyState === 1) { // WebSocket.OPEN
+          try {
+            client.send(message);
+            console.log('📤 Enviado queue_update para cliente');
+          } catch (error) {
+            console.error('❌ Erro ao enviar atualização da fila:', error);
+          }
         }
-      }
-    });
+      });
+    } else {
+      // Fallback: enviar apenas para jogadores na fila
+      this.queue.forEach(player => {
+        if (player.websocket && player.websocket.readyState === 1) {
+          try {
+            player.websocket.send(message);
+          } catch (error) {
+            console.error('❌ Erro ao enviar atualização da fila (fallback):', error);
+          }
+        }
+      });
+    }
   }
 
   private calculateEstimatedWaitTime(): number {
@@ -426,14 +496,60 @@ export class MatchmakingService {
 
     return changes;
   }
-
   getQueueStatus(): QueueStatus {
+    // Criar lista de jogadores na fila com informações detalhadas
+    const playersInQueueList: QueuedPlayerInfo[] = this.queue.map((player, index) => ({
+      summonerName: player.summonerName,
+      tagLine: player.summonerName.includes('#') ? player.summonerName.split('#')[1] : undefined,
+      primaryLane: player.preferences?.primaryLane || 'any',
+      secondaryLane: player.preferences?.secondaryLane || 'any',
+      mmr: player.currentMMR,
+      queuePosition: index + 1,
+      joinTime: player.joinTime
+    }));
+
     return {
       playersInQueue: this.queue.length,
       averageWaitTime: this.calculateEstimatedWaitTime(),
       estimatedMatchTime: this.queue.length >= 10 ? 30 : this.calculateEstimatedWaitTime(),
-      isActive: this.isActive
+      isActive: this.isActive,
+      playersInQueueList,
+      recentActivities: this.recentActivities
     };
+  }
+
+  // Método para adicionar atividades recentes
+  private addActivity(type: QueueActivity['type'], message: string, playerName?: string, playerTag?: string, lane?: string): void {
+    const activity: QueueActivity = {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: new Date(),
+      type,
+      message,
+      playerName,
+      playerTag,
+      lane
+    };
+
+    this.recentActivities.unshift(activity); // Adiciona no início da lista
+    
+    // Manter apenas as últimas MAX_ACTIVITIES atividades
+    if (this.recentActivities.length > this.MAX_ACTIVITIES) {
+      this.recentActivities = this.recentActivities.slice(0, this.MAX_ACTIVITIES);
+    }
+
+    console.log('📝 Nova atividade adicionada:', activity.message);
+  }
+  // Método para converter lane ID para nome exibível
+  private getLaneDisplayName(laneId?: string): string {
+    const laneNames: { [key: string]: string } = {
+      'top': 'Topo',
+      'jungle': 'Selva',
+      'mid': 'Meio',
+      'bot': 'Atirador',
+      'adc': 'Atirador',
+      'support': 'Suporte'
+    };
+    return laneNames[laneId || ''] || 'Qualquer lane';
   }
 
   destroy(): void {

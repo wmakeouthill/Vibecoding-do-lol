@@ -173,4 +173,45 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     // Usar a versão mais atual do CDN Data Dragon
     return `https://ddragon.leagueoflegends.com/cdn/15.12.1/img/profileicon/${iconId}.png`;
   }
+  // Método para obter nome exibível da lane
+  getLaneDisplayName(laneId: string): string {
+    const laneNames: { [key: string]: string } = {
+      'top': 'Topo',
+      'jungle': 'Selva',
+      'mid': 'Meio',
+      'bot': 'Atirador',
+      'adc': 'Atirador',
+      'support': 'Suporte',
+      'any': 'Qualquer'
+    };
+    return laneNames[laneId] || 'Qualquer';
+  }
+
+  // Método para obter slots vazios na fila
+  getEmptySlots(): number[] {
+    const playersCount = this.queueStatus.playersInQueue || 0;
+    const maxPlayers = 10;
+    const emptyCount = Math.max(0, maxPlayers - playersCount);
+    return Array(emptyCount).fill(0).map((_, i) => i);
+  }
+
+  // Método para calcular tempo passado
+  getTimeAgo(timestamp: Date | string): string {
+    const now = new Date();
+    const time = new Date(timestamp);
+    const diffInSeconds = Math.floor((now.getTime() - time.getTime()) / 1000);
+
+    if (diffInSeconds < 60) {
+      return 'agora';
+    } else if (diffInSeconds < 3600) {
+      const minutes = Math.floor(diffInSeconds / 60);
+      return `há ${minutes} min`;
+    } else if (diffInSeconds < 86400) {
+      const hours = Math.floor(diffInSeconds / 3600);
+      return `há ${hours}h`;
+    } else {
+      const days = Math.floor(diffInSeconds / 86400);
+      return `há ${days}d`;
+    }
+  }
 }

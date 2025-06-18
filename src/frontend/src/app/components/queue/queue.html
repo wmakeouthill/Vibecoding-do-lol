@@ -137,22 +137,37 @@
       <li>Jogadores com MMR similar são prioritários no matchmaking</li>
     </ul>
   </div>
-
   <!-- Recent Queue Activity -->
-  <div class="recent-activity" *ngIf="isInQueue">
+  <div class="recent-activity" *ngIf="isInQueue || queueStatus.playersInQueue > 0">
+    <h4>Jogadores na Fila ({{ queueStatus.playersInQueue }}/10)</h4>
+    <div class="players-in-queue" *ngIf="queueStatus.playersInQueueList && queueStatus.playersInQueueList.length > 0">
+      <div class="player-in-queue" *ngFor="let player of queueStatus.playersInQueueList; let i = index">
+        <div class="player-position">{{ i + 1 }}</div>
+        <div class="player-info">
+          <span class="player-name">{{ player.summonerName }}<span class="player-tag" *ngIf="player.tagLine">#{{ player.tagLine }}</span></span>
+          <span class="player-lanes">
+            {{ getLaneDisplayName(player.primaryLane) }} • {{ getLaneDisplayName(player.secondaryLane) }}
+          </span>
+          <span class="player-mmr">{{ player.mmr }} MMR</span>
+        </div>
+      </div>
+      <div class="empty-slots" *ngFor="let slot of getEmptySlots(); let i = index">
+        <div class="player-position">{{ queueStatus.playersInQueue + i + 1 }}</div>
+        <div class="player-info empty">
+          <span class="waiting-text">Aguardando jogador...</span>
+        </div>
+      </div>
+    </div>
+
     <h4>Atividade Recente da Fila</h4>
-    <div class="activity-list">
-      <div class="activity-item">
-        <span class="activity-time">há 2 min</span>
-        <span class="activity-text">3 jogadores entraram na fila</span>
+    <div class="activity-list" *ngIf="queueStatus.recentActivities && queueStatus.recentActivities.length > 0">
+      <div class="activity-item" *ngFor="let activity of queueStatus.recentActivities.slice(0, 10)">
+        <span class="activity-time">{{ getTimeAgo(activity.timestamp) }}</span>
+        <span class="activity-text">{{ activity.message }}</span>
       </div>
-      <div class="activity-item">
-        <span class="activity-time">há 5 min</span>
-        <span class="activity-text">Partida criada com sucesso</span>
-      </div>
-      <div class="activity-item">
-        <span class="activity-time">há 8 min</span>
-        <span class="activity-text">Sistema de matchmaking otimizado</span>      </div>
+    </div>
+    <div class="no-activity" *ngIf="!queueStatus.recentActivities || queueStatus.recentActivities.length === 0">
+      <span class="activity-text">Nenhuma atividade recente</span>
     </div>
   </div>
 

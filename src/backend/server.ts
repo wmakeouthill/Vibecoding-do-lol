@@ -61,7 +61,7 @@ app.use((req, res, next) => {
 
 // Inicializar serviços
 const dbManager = new DatabaseManager();
-const matchmakingService = new MatchmakingService(dbManager);
+const matchmakingService = new MatchmakingService(dbManager, wss);
 const playerService = new PlayerService(globalRiotAPI, dbManager);
 const lcuService = new LCUService(globalRiotAPI);
 const matchHistoryService = new MatchHistoryService(globalRiotAPI, dbManager);
@@ -91,8 +91,8 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
   switch (data.type) {
     case 'join_queue':
       await matchmakingService.addPlayerToQueue(ws, data.data);
-      break;
-    case 'leave_queue':
+      break;    case 'leave_queue':
+      console.log('🔍 Recebida mensagem leave_queue');
       matchmakingService.removePlayerFromQueue(ws);
       break;
     case 'get_queue_status':

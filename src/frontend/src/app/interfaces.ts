@@ -31,6 +31,28 @@ export interface QueueStatus {
   estimatedMatchTime?: number;
   isActive?: boolean;
   yourPosition?: number;
+  playersInQueueList?: QueuedPlayerInfo[]; // Lista dos jogadores na fila
+  recentActivities?: QueueActivity[]; // Atividades recentes
+}
+
+export interface QueuedPlayerInfo {
+  summonerName: string;
+  tagLine?: string;
+  primaryLane: string;
+  secondaryLane: string;
+  mmr: number;
+  queuePosition: number;
+  joinTime: Date;
+}
+
+export interface QueueActivity {
+  id: string;
+  timestamp: Date;
+  type: 'player_joined' | 'player_left' | 'match_created' | 'system_update' | 'queue_cleared';
+  message: string;
+  playerName?: string;
+  playerTag?: string;
+  lane?: string;
 }
 
 export interface Lane {
