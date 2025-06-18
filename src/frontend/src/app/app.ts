@@ -91,15 +91,15 @@ export class App implements OnInit, OnDestroy {
     this.websocketService.connect();
     this.websocketService.onMessage().pipe(
       takeUntil(this.destroy$)
-    ).subscribe(message => this.handleWebSocketMessage(message));
-
-    // Check connection status
+    ).subscribe(message => this.handleWebSocketMessage(message));    // Check connection status
     this.websocketService.onConnectionChange().pipe(
       takeUntil(this.destroy$)
     ).subscribe((connected: boolean) => {
       this.isConnected = connected;
       if (connected) {
         this.tryAutoLoadCurrentPlayer();
+        // Solicitar status da fila quando conectar
+        this.websocketService.requestQueueStatus();
       }
     });
 
@@ -125,12 +125,15 @@ export class App implements OnInit, OnDestroy {
     this.currentView = view;
     console.log('View changed to:', view);
   }
-
   private handleWebSocketMessage(message: any): void {
     switch (message.type) {
       case 'queue_joined':
         this.isInQueue = true;
         this.addNotification('success', 'Fila', `Entrou na fila (posição ${message.data.position})`);
+        break;      case 'queue_update':
+        console.log('🔄 Recebido queue_update:', message.data);
+        this.queueStatus = message.data;
+        console.log('🔄 queueStatus atualizado para:', this.queueStatus);
         break;
       case 'match_found':
         this.matchFound = message.data;
@@ -151,8 +154,7 @@ export class App implements OnInit, OnDestroy {
       try {
         this.currentPlayer = JSON.parse(savedPlayer);
       } catch (error) {
-        console.log('Erro ao carregar dados do jogador do localStorage');
-      }
+        console.log('Erro ao carregar dados do jogador do localStorage');      }
     }
   }
 
@@ -161,6 +163,11 @@ export class App implements OnInit, OnDestroy {
     if (!this.currentPlayer) {
       this.addNotification('warning', 'Configuração Necessária', 'Configure seu nome de invocador primeiro');
       this.setCurrentView('settings');
+      return;
+    }
+
+    if (!this.currentPlayer.summonerName) {
+      this.addNotification('error', 'Erro', 'Nome do invocador não encontrado');
       return;
     }
 

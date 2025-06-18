@@ -10,6 +10,11 @@ interface QueuedPlayer {
   joinTime: Date;
   websocket: WebSocket;
   queuePosition?: number;
+  preferences?: {
+    primaryLane?: string;
+    secondaryLane?: string;
+    autoAccept?: boolean;
+  };
 }
 
 interface Match {
@@ -49,9 +54,17 @@ export class MatchmakingService {
     }, 5000);
 
     console.log('✅ Sistema de matchmaking ativo');
-  }
-  async addPlayerToQueue(websocket: WebSocket, playerData: any): Promise<void> {
+  }  async addPlayerToQueue(websocket: WebSocket, requestData: any): Promise<void> {
     try {
+      // Validar dados da requisição
+      if (!requestData) {
+        throw new Error('Dados da requisição não fornecidos');
+      }
+
+      // Extrair player e preferences dos dados
+      const playerData = requestData.player;
+      const preferences = requestData.preferences;
+
       // Validar dados do jogador
       if (!playerData) {
         throw new Error('Dados do jogador não fornecidos');
@@ -59,9 +72,7 @@ export class MatchmakingService {
 
       if (!playerData.summonerName) {
         throw new Error('Nome do invocador é obrigatório');
-      }
-
-      console.log('🔍 Dados do jogador recebidos:', playerData);
+      }      console.log('🔍 Dados do jogador recebidos:', playerData);
 
       // Buscar jogador no banco ou criar novo
       let player = await this.dbManager.getPlayerBySummonerName(playerData.summonerName);
@@ -91,9 +102,7 @@ export class MatchmakingService {
           data: { position: existingPlayerIndex + 1, estimated_wait: this.calculateEstimatedWaitTime() }
         }));
         return;
-      }
-
-      // Adicionar à fila
+      }      // Adicionar à fila
       const queuedPlayer: QueuedPlayer = {
         id: player.id,
         summonerName: player.summoner_name,
@@ -101,7 +110,8 @@ export class MatchmakingService {
         currentMMR: player.current_mmr,
         joinTime: new Date(),
         websocket: websocket,
-        queuePosition: this.queue.length + 1
+        queuePosition: this.queue.length + 1,
+        preferences: preferences
       };
 
       this.queue.push(queuedPlayer);
