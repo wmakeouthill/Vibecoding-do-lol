@@ -111,11 +111,14 @@ export interface Match {
   isVictory?: boolean;
   mmrChange?: number;
   gameMode?: string;
+  // Propriedades adicionais para exibição no dashboard
+  champion?: string;
+  kda?: string;
   // Dados expandidos da Riot API
   participants?: any[]; // Todos os 10 jogadores
   teams?: any[]; // Dados dos times
   gameVersion?: string;
-  mapId?: number;  playerStats?: {
+  mapId?: number;playerStats?: {
     champion: string;
     kills: number;
     deaths: number;
