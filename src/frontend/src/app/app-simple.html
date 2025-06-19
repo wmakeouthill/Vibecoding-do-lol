@@ -50,8 +50,18 @@
       </app-custom-pick-ban>
     </div>
 
+    <!-- Game In Progress Phase -->
+    <div *ngIf="inGamePhase" class="view-container game-view">
+      <app-game-in-progress
+        [gameData]="gameData"
+        [currentPlayer]="currentPlayer"
+        (onGameComplete)="onGameComplete($event)"
+        (onGameCancel)="onGameCancel()">
+      </app-game-in-progress>
+    </div>
+
     <!-- Normal Views -->
-    <ng-container *ngIf="!inDraftPhase" [ngSwitch]="currentView">
+    <ng-container *ngIf="!inDraftPhase && !inGamePhase" [ngSwitch]="currentView">
       <!-- Dashboard -->
       <div *ngSwitchCase="'dashboard'" class="view-container">
         <app-dashboard

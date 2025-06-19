@@ -1,0 +1,181 @@
+<div class="game-in-progress-container">
+  <!-- Header -->
+  <div class="game-header">
+    <div class="game-title">
+      <h2>{{ getGameStatusIcon() }} Partida em Andamento</h2>
+      <p class="game-status">{{ getGameStatusText() }}</p>
+    </div>
+
+    <div class="game-info">
+      <div class="game-timer">
+        <span class="timer-label">Duração:</span>
+        <span class="timer-value">{{ getGameDurationFormatted() }}</span>
+      </div>
+
+      <div class="lcu-status" *ngIf="lcuDetectionEnabled">
+        <span class="status-indicator" [class.active]="lcuGameDetected"></span>
+        <span>{{ lcuGameDetected ? 'LCU Conectado' : 'Aguardando LCU' }}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Teams Display -->
+  <div class="teams-section">
+    <div class="team team-blue" [style.border-color]="getTeamColor('blue')">
+      <div class="team-header">
+        <h3 [style.color]="getTeamColor('blue')">{{ getTeamName('blue') }}</h3>
+        <div class="team-status" *ngIf="selectedWinner">
+          <span class="winner-badge" *ngIf="selectedWinner === 'blue'">🏆 VITÓRIA</span>
+          <span class="loser-badge" *ngIf="selectedWinner === 'red'">💀 DERROTA</span>
+        </div>
+      </div>
+
+      <div class="team-players">
+        <div class="player" *ngFor="let player of getTeamPlayers('blue')"
+             [class.current-player]="currentPlayer && player.id === currentPlayer.id">
+          <div class="player-info">
+            <span class="player-name">{{ player.summonerName || player.name }}</span>
+            <span class="player-role" *ngIf="player.role">{{ player.role }}</span>
+          </div>
+          <div class="player-champion" *ngIf="player.champion">
+            <span class="champion-name">{{ player.champion.name }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="vs-divider">
+      <span class="vs-text">VS</span>
+      <div class="game-duration-display">
+        {{ getGameDurationFormatted() }}
+      </div>
+    </div>
+
+    <div class="team team-red" [style.border-color]="getTeamColor('red')">
+      <div class="team-header">
+        <h3 [style.color]="getTeamColor('red')">{{ getTeamName('red') }}</h3>
+        <div class="team-status" *ngIf="selectedWinner">
+          <span class="winner-badge" *ngIf="selectedWinner === 'red'">🏆 VITÓRIA</span>
+          <span class="loser-badge" *ngIf="selectedWinner === 'blue'">💀 DERROTA</span>
+        </div>
+      </div>
+
+      <div class="team-players">
+        <div class="player" *ngFor="let player of getTeamPlayers('red')"
+             [class.current-player]="currentPlayer && player.id === currentPlayer.id">
+          <div class="player-info">
+            <span class="player-name">{{ player.summonerName || player.name }}</span>
+            <span class="player-role" *ngIf="player.role">{{ player.role }}</span>
+          </div>
+          <div class="player-champion" *ngIf="player.champion">
+            <span class="champion-name">{{ player.champion.name }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Game Status Information -->
+  <div class="game-status-section">
+    <div class="status-card">
+      <div class="status-item">
+        <span class="status-label">Status:</span>
+        <span class="status-value" [class]="gameStatus">{{ getGameStatusText() }}</span>
+      </div>
+
+      <div class="status-item" *ngIf="gameStartTime">
+        <span class="status-label">Início:</span>
+        <span class="status-value">{{ gameStartTime | date:'HH:mm:ss' }}</span>
+      </div>
+
+      <div class="status-item" *ngIf="lcuGameDetected">
+        <span class="status-label">Detecção LCU:</span>
+        <span class="status-value connected">✅ Ativa</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Winner Declaration Section -->
+  <div class="winner-section" *ngIf="gameStatus === 'ended' || !lcuDetectionEnabled">
+    <div class="winner-declaration">
+      <h3>Declarar Vencedor</h3>
+      <p>Selecione o time vencedor da partida:</p>
+
+      <div class="winner-buttons">
+        <button class="team-button team-blue-btn"
+                [class.selected]="selectedWinner === 'blue'"
+                (click)="declareWinner('blue')">
+          <span class="team-icon">🛡️</span>
+          <span class="team-name">Time Azul</span>
+          <span class="winner-icon" *ngIf="selectedWinner === 'blue'">✓</span>
+        </button>
+
+        <button class="team-button team-red-btn"
+                [class.selected]="selectedWinner === 'red'"
+                (click)="declareWinner('red')">
+          <span class="team-icon">⚔️</span>
+          <span class="team-name">Time Vermelho</span>
+          <span class="winner-icon" *ngIf="selectedWinner === 'red'">✓</span>
+        </button>
+      </div>
+
+      <div class="your-team-info" *ngIf="getMyTeam()">
+        <p>Seu time: <strong [style.color]="getTeamColor(getMyTeam()!)">{{ getTeamName(getMyTeam()!) }}</strong></p>
+        <p class="result-preview" *ngIf="selectedWinner">
+          Resultado:
+          <span [class.victory]="isMyTeamWinner()" [class.defeat]="!isMyTeamWinner()">
+            {{ isMyTeamWinner() ? '🏆 VITÓRIA' : '💀 DERROTA' }}
+          </span>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Section -->
+  <div class="settings-section">
+    <div class="settings-card">
+      <h4>Configurações</h4>
+
+      <div class="setting-item">
+        <label class="setting-label">
+          <input type="checkbox"
+                 [(ngModel)]="lcuDetectionEnabled"
+                 (change)="toggleLCUDetection()">
+          <span class="checkmark"></span>
+          Detecção automática via LCU
+        </label>
+        <p class="setting-description">
+          Detectar automaticamente o fim da partida através do cliente do League of Legends
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Action Buttons -->
+  <div class="action-buttons">
+    <button class="btn btn-primary"
+            [disabled]="!selectedWinner"
+            (click)="confirmWinner()"
+            *ngIf="gameStatus === 'ended' || !lcuDetectionEnabled">
+      <span class="btn-icon">✅</span>
+      Confirmar Resultado
+    </button>
+
+    <button class="btn btn-secondary" (click)="cancelGame()">
+      <span class="btn-icon">❌</span>
+      Cancelar Partida
+    </button>
+  </div>
+
+  <!-- Debug Info (only in development) -->
+  <div class="debug-section" *ngIf="false">
+    <h4>Debug Info</h4>
+    <pre>{{ {
+      gameStatus: gameStatus,
+      lcuDetected: lcuGameDetected,
+      selectedWinner: selectedWinner,
+      gameDuration: gameDuration,
+      lcuEnabled: lcuDetectionEnabled
+    } | json }}</pre>
+  </div>
+</div>
