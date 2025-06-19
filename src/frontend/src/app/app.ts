@@ -16,8 +16,7 @@ import { Player, QueueStatus, LCUStatus, MatchFound, QueuePreferences, RefreshPl
 import type { Notification } from './interfaces';
 
 @Component({
-  selector: 'app-root',
-  imports: [
+  selector: 'app-root',  imports: [
     CommonModule,
     FormsModule,
     DashboardComponent,
@@ -54,10 +53,16 @@ export class App implements OnInit, OnDestroy {
   // Dados da partida encontrada (novo sistema)
   matchFoundData: MatchFoundData | null = null;
   showMatchFound = false;
-
   // Estado do draft
   inDraftPhase = false;
   draftData: any = null;
+  draftPhase: 'preview' | 'pickban' = 'preview';
+  isMatchLeader = false;
+
+  // Propriedades do Pick & Ban
+  draftTimer = 30;
+  selectedChampion: any = null;
+  champions: any[] = []; // Lista de campeões disponíveis
 
   // Notificações
   notifications: Notification[] = [];
@@ -144,6 +149,231 @@ export class App implements OnInit, OnDestroy {
     this.addNotification('info', 'Draft Cancelado', 'Você saiu da fase de draft.');
   }
 
+  startPickBan(): void {
+    console.log('🎯 Iniciando fase de Pick & Ban...');
+    this.draftPhase = 'pickban';
+  }
+
+  onPickBanComplete(result: any): void {
+    console.log('✅ Pick & Ban completado:', result);
+    this.inDraftPhase = false;
+    this.draftData = null;
+    this.draftPhase = 'preview';
+    this.currentView = 'dashboard';
+    this.addNotification('success', 'Draft Concluído', 'O draft foi concluído com sucesso!');
+  }
+
+  onPickBanCancel(): void {
+    console.log('❌ Pick & Ban cancelado');
+    this.inDraftPhase = false;
+    this.draftData = null;
+    this.draftPhase = 'preview';
+    this.currentView = 'dashboard';
+    this.addNotification('info', 'Draft Cancelado', 'O draft foi cancelado.');
+  }
+
+  // Método para determinar se o jogador atual é líder
+  private determineMatchLeader(): void {
+    if (!this.draftData || !this.currentPlayer) {
+      this.isMatchLeader = false;
+      return;
+    }
+
+    // Encontrar o primeiro jogador humano (não-bot) do time azul
+    const humanPlayersBlue = this.draftData.blueTeam?.filter((player: any) =>
+      !player.summonerName.startsWith('Bot') &&
+      !player.summonerName.includes('bot')
+    ) || [];
+
+    if (humanPlayersBlue.length > 0) {
+      // O líder é o primeiro jogador humano do time azul
+      const leader = humanPlayersBlue[0];
+      this.isMatchLeader = leader.summonerName === this.currentPlayer.summonerName;
+
+      console.log(`👑 Líder da partida: ${leader.summonerName}`);
+      console.log(`🎮 Você é o líder: ${this.isMatchLeader}`);
+    } else {
+      this.isMatchLeader = false;
+    }
+  }
+
+  // Método para transferir liderança
+  transferLeadership(targetPlayer: any): void {
+    if (!this.isMatchLeader) {
+      this.addNotification('error', 'Acesso Negado', 'Apenas o líder pode transferir a liderança.');
+      return;
+    }
+
+    if (targetPlayer.summonerName.startsWith('Bot') || targetPlayer.summonerName.includes('bot')) {
+      this.addNotification('error', 'Transferência Inválida', 'Não é possível transferir liderança para um bot.');
+      return;
+    }
+
+    // Aqui você pode implementar a lógica do backend para transferir liderança
+    // Por enquanto, vou simular localmente
+    console.log(`👑 Transferindo liderança para: ${targetPlayer.summonerName}`);
+    this.isMatchLeader = false;
+    this.addNotification('success', 'Liderança Transferida', `${targetPlayer.summonerName} agora é o líder da partida.`);
+  }
+
+  // Método para obter jogadores humanos elegíveis para liderança
+  getEligibleLeaders(): any[] {
+    if (!this.draftData) return [];
+
+    const allPlayers = [...(this.draftData.blueTeam || []), ...(this.draftData.redTeam || [])];
+    return allPlayers.filter((player: any) =>
+      !player.summonerName.startsWith('Bot') &&
+      !player.summonerName.includes('bot') &&
+      player.summonerName !== this.currentPlayer?.summonerName
+    );
+  }
+
+  // Métodos para Pick & Ban
+  getCurrentActionText(): string {
+    if (!this.draftData) return '';
+
+    const { phase, currentTurn, currentAction } = this.draftData;
+    const actionType = currentAction?.type || 'ban';
+    const team = currentTurn === 'blue' ? 'Azul' : 'Vermelho';
+
+    if (actionType === 'ban') {
+      return `Time ${team} está banindo...`;
+    } else {
+      return `Time ${team} está escolhendo...`;
+    }
+  }
+
+  getBansForTeam(team: 'blue' | 'red'): any[] {
+    if (!this.draftData?.bans) return [];
+    const bans = this.draftData.bans[team] || [];
+    // Criar array de 5 slots para bans (3 na primeira fase, 2 na segunda)
+    const banSlots = new Array(5).fill(null);
+    bans.forEach((ban: any, index: number) => {
+      if (index < banSlots.length) {
+        banSlots[index] = ban;
+      }
+    });
+    return banSlots;
+  }
+
+  isCurrentPicker(player: any, team: 'blue' | 'red'): boolean {
+    if (!this.draftData) return false;
+
+    const { currentTurn, currentAction } = this.draftData;
+    return currentTurn === team && this.isMyTurn() &&
+           this.currentPlayer?.summonerName === player.summonerName;
+  }
+
+  isMyTurn(): boolean {
+    if (!this.draftData || !this.currentPlayer) return false;
+
+    const { currentTurn, currentAction } = this.draftData;
+    const myTeam = this.getMyTeam();
+
+    return currentTurn === myTeam;
+  }
+
+  isCurrentlyBanning(): boolean {
+    return this.draftData?.currentAction?.type === 'ban';
+  }
+
+  getMyTeam(): 'blue' | 'red' | null {
+    if (!this.draftData || !this.currentPlayer) return null;
+
+    const isInBlueTeam = this.draftData.blueTeam?.some((p: any) =>
+      p.summonerName === this.currentPlayer?.summonerName
+    );
+
+    return isInBlueTeam ? 'blue' : 'red';
+  }
+
+  getAvailableChampions(): any[] {
+    // Lista simplificada de campeões para demonstração
+    const allChampions = [
+      { id: 1, name: 'Garen', imageUrl: '/assets/images/champion-placeholder.svg' },
+      { id: 2, name: 'Lux', imageUrl: '/assets/images/champion-placeholder.svg' },
+      { id: 3, name: 'Jinx', imageUrl: '/assets/images/champion-placeholder.svg' },
+      { id: 4, name: 'Thresh', imageUrl: '/assets/images/champion-placeholder.svg' },
+      { id: 5, name: 'Lee Sin', imageUrl: '/assets/images/champion-placeholder.svg' },
+      { id: 6, name: 'Ahri', imageUrl: '/assets/images/champion-placeholder.svg' },
+      { id: 7, name: 'Ashe', imageUrl: '/assets/images/champion-placeholder.svg' },
+      { id: 8, name: 'Braum', imageUrl: '/assets/images/champion-placeholder.svg' },
+      { id: 9, name: 'Yasuo', imageUrl: '/assets/images/champion-placeholder.svg' },
+      { id: 10, name: 'Zed', imageUrl: '/assets/images/champion-placeholder.svg' }
+    ];
+
+    // Filtrar campeões já banidos ou escolhidos
+    const bannedChampions = [
+      ...(this.draftData?.bans?.blue || []),
+      ...(this.draftData?.bans?.red || [])
+    ];
+
+    const pickedChampions = [
+      ...(this.draftData?.blueTeam?.filter((p: any) => p.champion) || []).map((p: any) => p.champion),
+      ...(this.draftData?.redTeam?.filter((p: any) => p.champion) || []).map((p: any) => p.champion)
+    ];
+
+    const unavailableIds = [
+      ...bannedChampions.map((c: any) => c.id),
+      ...pickedChampions.map((c: any) => c.id)
+    ];
+
+    return allChampions.filter(champion => !unavailableIds.includes(champion.id));
+  }
+
+  selectChampion(champion: any): void {
+    this.selectedChampion = champion;
+    console.log('🎯 Campeão selecionado:', champion.name);
+  }
+
+  confirmSelection(): void {
+    if (!this.selectedChampion) return;
+
+    const actionType = this.isCurrentlyBanning() ? 'ban' : 'pick';
+    console.log(`✅ ${actionType === 'ban' ? 'Banindo' : 'Escolhendo'} campeão:`, this.selectedChampion.name);
+
+    // Aqui você implementaria a chamada para o backend
+    // this.apiService.submitDraftAction(this.draftData.matchId, actionType, this.selectedChampion.id)
+
+    // Por enquanto, simular a ação localmente
+    this.simulateDraftAction(actionType, this.selectedChampion);
+
+    this.selectedChampion = null;
+  }
+
+  private simulateDraftAction(actionType: 'ban' | 'pick', champion: any): void {
+    if (!this.draftData) return;
+
+    const myTeam = this.getMyTeam();
+    if (!myTeam) return;
+
+    if (actionType === 'ban') {
+      if (!this.draftData.bans[myTeam]) {
+        this.draftData.bans[myTeam] = [];
+      }
+      this.draftData.bans[myTeam].push(champion);
+    } else {
+      // Encontrar o jogador atual e atribuir o campeão
+      const currentPlayer = myTeam === 'blue'
+        ? this.draftData.blueTeam?.find((p: any) => p.summonerName === this.currentPlayer?.summonerName)
+        : this.draftData.redTeam?.find((p: any) => p.summonerName === this.currentPlayer?.summonerName);
+
+      if (currentPlayer) {
+        currentPlayer.champion = champion;
+      }
+    }
+
+    // Simular mudança de turno (em um sistema real, isso viria do backend)
+    this.simulateNextTurn();
+  }
+
+  private simulateNextTurn(): void {
+    // Alternar o turno (implementação simplificada)
+    this.draftData.currentTurn = this.draftData.currentTurn === 'blue' ? 'red' : 'blue';
+
+    // Em um sistema real, isso seria gerenciado pelo backend
+    this.addNotification('info', 'Turno Alterado', `Agora é a vez do time ${this.draftData.currentTurn === 'blue' ? 'Azul' : 'Vermelho'}`);
+  }
   private handleWebSocketMessage(message: any): void {
     switch (message.type) {
       case 'queue_joined':
@@ -194,6 +424,8 @@ export class App implements OnInit, OnDestroy {
         // Entrar na fase de draft
         this.inDraftPhase = true;
         this.draftData = message.data;
+        this.draftPhase = 'preview'; // Sempre começar na preview        // Determinar se é líder (primeiro jogador humano do time azul)
+        this.determineMatchLeader();
         // Atualizar estado compartilhado
         this.queueStateService.updateCentralizedQueue({
           isInQueue: false,

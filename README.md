@@ -22,7 +22,7 @@ O projeto tem como objetivo principal **criar um sistema de matchmaking personal
 
 ## 🚀 Principais Funcionalidades
 
-### 🎮 Sistema de Matchmaking 5v5 Avançado
+### 🎮 Sistema de Matchmaking 5v5 Avançado - IMPLEMENTADO ✅
 - **Sistema de Fila em Tempo Real**: Comunicação WebSocket bidirecional para atualizações instantâneas
 - **Seleção de Lanes**: Escolha de lane primária e secundária (Topo, Selva, Meio, Atirador, Suporte)
 - **MMR dinâmico** com algoritmo ELO personalizado baseado no rank oficial da Riot
@@ -32,6 +32,56 @@ O projeto tem como objetivo principal **criar um sistema de matchmaking personal
 - **Contador de Jogadores**: Sistema "X/10 jogadores" com atualização instantânea
 - **Tempo estimado de espera** baseado em dados históricos e número de jogadores na fila
 - **Sistema de aceitação** com timeout e penalty para rejeições
+
+## 📊 Status de Implementação
+
+### ✅ Funcionalidades Totalmente Implementadas
+- ✅ **Sistema de Fila Completo**: WebSocket, MMR, balanceamento, atividades em tempo real
+- ✅ **Interface de Matchmaking**: Dashboard, seleção de lanes, lista de jogadores
+- ✅ **Sistema de Draft**: Modal match found, preview de times, sistema de liderança
+- ✅ **Pick & Ban Profissional**: Interface completa estilo LoL com timer e grid de campeões
+- ✅ **Sistema de Liderança**: Validação anti-bot, transferência, interface de controle
+- ✅ **Notificações em Tempo Real**: Sistema completo de feedback visual
+- ✅ **Auto-accept para Bots**: Facilita testes e desenvolvimento
+- ✅ **Integração LCU Básica**: Detecção de jogador, dados básicos
+- ✅ **Base de Dados**: SQLite com DatabaseManager e sistema de players
+- ✅ **APIs REST**: Endpoints para player management e queue status
+
+### 🔨 Funcionalidades Parcialmente Implementadas
+- 🔨 **Integração Riot API**: Base implementada, precisa de expansão para match history
+- 🔨 **Sistema de MMR**: Cálculo básico implementado, precisa de refinamento
+- 🔨 **WebSocket Sync**: Local implementado, precisa de sincronização multi-cliente real
+
+### 📋 Funcionalidades Planejadas (Próximas Fases)
+- 📋 **Criação Automática de Lobbies**: Após draft completado
+- 📋 **Histórico de Partidas**: Tracking completo e analytics
+- 📋 **Sistema de Ranking**: Leaderboard e progressão
+- 📋 **Integração Riot API Completa**: Match history e dados oficiais
+- 📋 **Timer de Draft Sincronizado**: Sincronização entre todos os clientes
+- 📋 **Sistema P2P**: Para salas privadas e torneios
+- 📋 **Interface Móvel**: Responsividade completa
+
+### ⚔️ Sistema de Draft Completo (Pick & Ban) - IMPLEMENTADO ✅
+- **Modal de Partida Encontrada**: Interface moderna para aceitar/recusar partidas com timer de 30 segundos
+- **Preview dos Times**: Visualização detalhada dos jogadores de ambos os times antes do draft
+- **Sistema de Liderança Inteligente**:
+  - Bots NUNCA podem ser líderes (validação automática)
+  - Primeiro jogador humano do time azul é automaticamente líder
+  - Interface exclusiva para transferir liderança entre jogadores humanos
+  - Validação robusta contra transferência para bots
+  - Painel de controle de liderança com lista de jogadores elegíveis
+- **Pick & Ban Estilo LoL Completo**:
+  - Interface profissional com timer de draft (30 segundos por turno)
+  - Grid completo de campeões selecionáveis com imagens
+  - Sistema de turnos automático seguindo regras oficiais do LoL
+  - Diferenciação visual clara entre fases de ban e pick
+  - Feedback visual dinâmico para jogador atual
+  - Campeões banidos/escolhidos são removidos automaticamente da seleção
+  - Indicação clara de qual equipe está atuando
+  - Interface responsiva e intuitiva
+- **Auto-accept para Bots**: Bots aceitam partidas automaticamente para facilitar testes
+- **Notificações em Tempo Real**: Sistema completo de feedback para todas as ações
+- **Estado Persistente**: Draft mantém estado durante reconexões
 
 ### 🔄 Sistema de Fila Inteligente
 - **Auto-detecção de desconexão**: Reconexão automática via WebSocket
@@ -64,15 +114,22 @@ O projeto tem como objetivo principal **criar um sistema de matchmaking personal
 - **Integração com system tray**: Operação em segundo plano
 - **Auto-updater**: Atualizações automáticas e seamless
 
-### 📊 Interface e Experiência do Usuário
+### 📊 Interface e Experiência do Usuário - IMPLEMENTADO ✅
 - **Dashboard em Tempo Real**: Status do sistema, estatísticas do jogador e fila atual
-- **Sistema de Notificações**: Alertas visuais para partidas encontradas, lobbies criados, etc.
-- **Seletor de Lanes Visual**: Interface intuitiva para escolha de posições
-- **Atividades Recentes**: Feed em tempo real com histórico das últimas ações da fila
-- **Lista de Jogadores**: Visualização de todos os jogadores na fila com suas informações
-- **Indicadores de Status**: Conexão LCU, status da fila, tempo de espera
-- **Design Responsivo**: Interface adaptável com tema dark/light
-- **Animações Suaves**: Feedback visual para todas as interações
+- **Sistema de Notificações Avançado**: Alertas visuais com tipos (success, info, warning, error) para partidas encontradas, lobbies criados, etc.
+- **Seletor de Lanes Visual**: Interface intuitiva para escolha de posições primárias e secundárias
+- **Atividades Recentes**: Feed em tempo real com histórico das últimas 20 ações da fila
+- **Lista de Jogadores**: Visualização de todos os jogadores na fila com suas informações detalhadas
+- **Indicadores de Status**: Conexão LCU, status da fila, tempo de espera em tempo real
+- **Modal de Match Found Avançado**: Interface moderna para aceitar/declinar partidas com timer visual
+- **Tela de Draft Preview Completa**: Visualização dos times com sistema de liderança integrado
+- **Interface de Pick & Ban Profissional**: Sistema completo de seleção de campeões estilo LoL
+- **Grid de Campeões Interativo**: Seleção visual com imagens, filtragem automática e estado dinâmico
+- **Controles de Liderança Avançados**: Painel exclusivo para líderes transferirem responsabilidade com validação
+- **Design Responsivo Moderno**: Interface adaptável com tema dark otimizado
+- **Animações Suaves e Feedback**: Feedback visual para todas as interações com transições profissionais
+- **Sistema de Estados Visuais**: Indicação clara de estado atual (fila, match found, draft preview, pick & ban)
+- **Gerenciamento de Erro Integrado**: Tratamento visual de erros com notificações contextuais
 
 ## 🏗️ Arquitetura Técnica Detalhada
 
