@@ -1,7 +1,8 @@
-import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, OnChanges } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, OnChanges, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Player, QueueStatus, Match } from '../../interfaces';
 import { ApiService } from '../../services/api';
+import { ChampionService } from '../../services/champion.service';
 import { Subscription } from 'rxjs';
 
 @Component({
@@ -31,7 +32,7 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
   isLoadingMatches: boolean = false;
   matchHistoryError: string | null = null;
 
-  constructor(private apiService: ApiService) {}
+  constructor(private apiService: ApiService, private cdr: ChangeDetectorRef) {}
 
   // Detectar mudanças no player
   ngOnChanges(): void {
@@ -180,7 +181,9 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
 
   getHighestMMR(): number {
     return this.player?.currentMMR ? this.player.currentMMR + 50 : 1200; // Mock highest MMR
-  }  // Método para buscar dados reais de partidas
+  }
+
+  // Método para buscar dados reais de partidas
   loadRecentMatches(): void {
     if (!this.player?.puuid) {
       this.generateMockData();
@@ -188,18 +191,38 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
     }
 
     this.isLoadingMatches = true;
-    this.matchHistoryError = null;    // Tentar buscar do LCU primeiro (mais confiável para dados detalhados)
+    this.matchHistoryError = null;
+
+    // Tentar buscar do LCU primeiro (mais confiável para dados detalhados)
     this.loadFromLCU();
   }
+
   private loadFromLCU(): void {
-    const lcuHistorySub = this.apiService.getLCUMatchHistory(0, 5)
+    const lcuHistorySub = this.apiService.getLCUMatchHistoryAll(0, 3, true) // customOnly = true
       .subscribe({
         next: (response) => {
           this.processLCUMatches(response);
           this.isLoadingMatches = false;
         },
         error: (error) => {
-          console.warn('Falha ao buscar histórico do LCU:', error);
+          console.warn('Falha ao buscar histórico completo do LCU:', error);
+          // Fallback para método original
+          this.loadFromLCUOriginal();
+        }
+      });
+
+    this.subscriptions.push(lcuHistorySub);
+  }
+
+  private loadFromLCUOriginal(): void {
+    const lcuHistorySub = this.apiService.getLCUMatchHistoryAll(0, 3, true) // Usar o mesmo endpoint com customOnly = true
+      .subscribe({
+        next: (response) => {
+          this.processLCUMatches(response);
+          this.isLoadingMatches = false;
+        },
+        error: (error) => {
+          console.warn('Falha ao buscar histórico original do LCU:', error);
           // Fallback para Riot API
           this.loadFromRiotAPI();
         }
@@ -225,6 +248,7 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
 
     this.subscriptions.push(riotHistorySub);
   }
+
   private processRiotApiMatches(response: any): void {
     if (response && response.matches && Array.isArray(response.matches)) {
       // A API retorna apenas IDs, então vamos usar dados básicos mockados por enquanto
@@ -248,21 +272,81 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   private processLCUMatches(response: any): void {
-    if (response && response.games && Array.isArray(response.games.games)) {
-      this.recentMatches = response.games.games.slice(0, 5).map((match: any, index: number) => {
-        const stats = match.stats || {};
+    // A estrutura do LCU agora retorna { success: true, matches: [...] }
+    let games = null;
 
-        return {
+    if (response && response.success && Array.isArray(response.matches)) {
+      games = response.matches;
+    } else if (response && Array.isArray(response.games)) {
+      games = response.games;
+    } else if (response && Array.isArray(response)) {
+      games = response;
+    }
+
+    if (games && games.length > 0) {
+      // Pegar só as 3 primeiras para o dashboard
+      const selectedGames = games.slice(0, 3);
+
+      this.recentMatches = selectedGames.map((match: any, index: number) => {
+        // Encontrar o jogador atual para determinar vitória
+        const currentPlayerPuuid = this.player?.puuid;
+        let isVictory = false;
+        let playerStats = null;
+        let currentPlayerIdentity = null;
+        let currentParticipant = null;
+
+        if (currentPlayerPuuid && match.participants) {
+          // Encontrar o participante atual
+          currentParticipant = match.participants.find((p: any) =>
+            match.participantIdentities?.find((pi: any) =>
+              pi.participantId === p.participantId &&
+              pi.player?.puuid === currentPlayerPuuid
+            )
+          );
+
+          // Encontrar a identidade do jogador atual
+          currentPlayerIdentity = match.participantIdentities?.find((pi: any) =>
+            pi.player?.puuid === currentPlayerPuuid
+          );
+
+          if (currentParticipant) {
+            isVictory = currentParticipant.stats?.win || false;
+            playerStats = currentParticipant.stats;
+          }
+        }
+
+        // Determinar o modo de jogo (para partidas personalizadas usar gameType)
+        let gameMode = match.gameMode || 'CLASSIC';
+        if (match.gameType === 'CUSTOM_GAME') {
+          gameMode = 'CUSTOM';
+        }
+
+        // Tentar pegar o championId do participante principal
+        const championId = currentParticipant?.championId || playerStats?.championId;
+        const championName = ChampionService.getChampionNameById(championId);
+
+        // Buscar o nome do jogador
+        const playerName = currentPlayerIdentity?.player?.gameName ||
+                          this.player?.summonerName ||
+                          'Unknown';
+
+        const processedMatch = {
           id: index + 1,
-          timestamp: match.gameCreation || Date.now(),
-          isVictory: stats.win || false,
-          duration: match.gameDuration || 1800,
-          mmrChange: this.calculateMMRChange(stats.win || false),
-          gameMode: this.formatGameMode(match.gameMode),
-          champion: match.championName || 'Unknown',
-          kda: `${stats.kills || 0}/${stats.deaths || 0}/${stats.assists || 0}`
+          timestamp: match.gameCreation || match.gameStartTime || Date.now(),
+          isVictory: isVictory,
+          duration: match.gameDuration || match.gameLength || 1800,
+          mmrChange: this.calculateMMRChange(isVictory),
+          gameMode: this.formatGameMode(gameMode),
+          champion: championName || 'Unknown',
+          playerName: playerName,
+          kda: `${playerStats?.kills || 0}/${playerStats?.deaths || 0}/${playerStats?.assists || 0}`
         };
+
+        return processedMatch;
       });
+
+      // Força a detecção de mudanças
+      this.cdr.detectChanges();
     } else {
       this.generateMockData();
     }
@@ -280,10 +364,30 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
       'RANKED_FLEX_SR': 'Ranked Flex',
       'ARAM': 'ARAM',
       'NORMAL': 'Normal',
-      'DRAFT': 'Draft Pick'
+      'DRAFT': 'Draft Pick',
+      'CUSTOM': 'Personalizada',
+      'PRACTICETOOL': 'Ferramenta de Treino',
+      'TUTORIAL': 'Tutorial',
+      'ONEFORALL': 'Um para Todos',
+      'ASCENSION': 'Ascensão',
+      'FIRSTBLOOD': 'Snowdown Showdown',
+      'KINGPORO': 'Rei Poro',
+      'SIEGE': 'Nexus Siege',
+      'ASSASSINATE': 'Blood Hunt Assassin',
+      'ARSR': 'All Random Summoner\'s Rift',
+      'DARKSTAR': 'Dark Star: Singularity',
+      'STARGUARDIAN': 'Star Guardian',
+      'PROJECT': 'PROJECT: Hunters',
+      'GAMEMODEX': 'Nexus Blitz',
+      'ODYSSEY': 'Odyssey: Extraction',
+      'NEXUSBLITZ': 'Nexus Blitz',
+      'ULTBOOK': 'Ultimate Spellbook',
+      'CHERRY': 'Arena',
+      'URF': 'URF',
+      'ARURF': 'ARURF'
     };
 
-    return gameModes[gameMode] || 'Custom';
+    return gameModes[gameMode] || gameMode || 'Personalizada';
   }
 
   getTodayWins(): number {
@@ -345,36 +449,43 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
 
   // Método para gerar dados de exemplo quando não há dados reais
   generateMockData(): void {
-    if (!this.player && !this.recentMatches.length) {
-      // Adicionar algumas partidas de exemplo
-      this.recentMatches = [
-        {
-          id: 1,
-          timestamp: Date.now() - 1000 * 60 * 30, // 30 minutes ago
-          isVictory: true,
-          duration: 1800, // 30 minutes
-          mmrChange: 15,
-          gameMode: 'Ranked Solo'
-        },
-        {
-          id: 2,
-          timestamp: Date.now() - 1000 * 60 * 60 * 2, // 2 hours ago
-          isVictory: false,
-          duration: 1500, // 25 minutes
-          mmrChange: -12,
-          gameMode: 'Ranked Solo'
-        },
-        {
-          id: 3,
-          timestamp: Date.now() - 1000 * 60 * 60 * 5, // 5 hours ago
-          isVictory: true,
-          duration: 2100, // 35 minutes
-          mmrChange: 18,
-          gameMode: 'Ranked Solo'
-        }
-      ];
-    }
+    this.recentMatches = [
+      {
+        id: 1,
+        timestamp: Date.now() - 1000 * 60 * 30, // 30 minutes ago
+        isVictory: true,
+        duration: 1800, // 30 minutes
+        mmrChange: 15,
+        gameMode: 'Personalizada',
+        champion: 'Jinx',
+        kda: '12/3/8'
+      },
+      {
+        id: 2,
+        timestamp: Date.now() - 1000 * 60 * 60 * 2, // 2 hours ago
+        isVictory: false,
+        duration: 1500, // 25 minutes
+        mmrChange: -12,
+        gameMode: 'ARAM',
+        champion: 'Yasuo',
+        kda: '8/7/5'
+      },
+      {
+        id: 3,
+        timestamp: Date.now() - 1000 * 60 * 60 * 5, // 5 hours ago
+        isVictory: true,
+        duration: 2100, // 35 minutes
+        mmrChange: 18,
+        gameMode: 'Personalizada',
+        champion: 'Thresh',
+        kda: '2/2/18'
+      }
+    ];
+
+    // Remover o erro se houver dados mockados
+    this.matchHistoryError = null;
   }
+
   ngOnInit(): void {
     this.loadRecentMatches();
     this.leaderboardPosition = this.getLeaderboardPosition();
@@ -396,11 +507,13 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
 
   onOpenSettings(): void {
     this.openSettings.emit();
-  }  onProfileIconError(event: any): void {
-    // Fallback para ícone padrão se falhar o carregamento
-    console.log('Erro ao carregar ícone de perfil, tentando fallback');
+  }
 
-    const iconId = this.player?.profileIconId || 29;    const fallbackUrls = [
+  onProfileIconError(event: any): void {
+    // Fallback para ícone padrão se falhar o carregamento
+    const iconId = this.player?.profileIconId || 29;
+
+    const fallbackUrls = [
       `https://ddragon.leagueoflegends.com/cdn/15.12.1/img/profileicon/${iconId}.png`,
       `https://ddragon.leagueoflegends.com/cdn/14.24.1/img/profileicon/${iconId}.png`,
       `https://ddragon.leagueoflegends.com/cdn/14.23.1/img/profileicon/${iconId}.png`,
@@ -425,7 +538,9 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
       return ` #${this.player.tagLine}`;
     }
     return '';
-  }  getProfileIconUrl(): string {
+  }
+
+  getProfileIconUrl(): string {
     const iconId = this.player?.profileIconId || 29;
     // Usar Community Dragon como primeira opção (mais confiável)
     return `https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/${iconId}.jpg`;

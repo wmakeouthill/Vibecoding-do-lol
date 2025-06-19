@@ -110,9 +110,9 @@ export interface Match {
   averageMMR2?: number;
   isVictory?: boolean;
   mmrChange?: number;
-  gameMode?: string;
-  // Propriedades adicionais para exibição no dashboard
+  gameMode?: string;  // Propriedades adicionais para exibição no dashboard
   champion?: string;
+  playerName?: string;
   kda?: string;
   // Dados expandidos da Riot API
   participants?: any[]; // Todos os 10 jogadores

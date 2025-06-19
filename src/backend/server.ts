@@ -719,6 +719,66 @@ app.get('/api/lcu/match-history', (async (req: Request, res: Response) => {
   }
 }) as RequestHandler);
 
+// LCU Match History endpoint - ALL matches (including custom games) for dashboard
+app.get('/api/lcu/match-history-all', (async (req: Request, res: Response) => {
+  try {
+    if (!lcuService.isClientConnected()) {
+      return res.status(503).json({ 
+        success: false,
+        error: 'Cliente do LoL não conectado' 
+      });
+    }
+
+    const startIndex = parseInt(req.query.startIndex as string) || 0;
+    const count = parseInt(req.query.count as string) || 5; // Apenas 5 para o dashboard
+    const customOnly = req.query.customOnly === 'true'; // Novo parâmetro para filtrar apenas personalizadas
+
+    console.log(`📊 Buscando partidas LCU para dashboard: startIndex=${startIndex}, count=${count}, customOnly=${customOnly}`);
+    
+    // Buscar mais partidas para garantir que temos suficientes personalizadas
+    const searchCount = customOnly ? count * 10 : count; // Se buscar apenas personalizadas, buscar mais
+    const allMatches = await lcuService.getMatchHistory(startIndex, searchCount);
+    
+    if (!allMatches || allMatches.length === 0) {
+      return res.json({
+        success: true,
+        matches: [],
+        message: 'Nenhuma partida encontrada no histórico do League Client'
+      });
+    }
+
+    let matches = allMatches;
+
+    // Filtrar apenas partidas personalizadas se solicitado
+    if (customOnly) {
+      matches = allMatches.filter(match => 
+        match.gameType === 'CUSTOM_GAME' || 
+        match.queueType === 'CUSTOM' ||
+        match.gameMode === 'CUSTOM'
+      );
+      console.log(`🎮 Partidas personalizadas encontradas: ${matches.length} de ${allMatches.length} totais`);
+      
+      // Pegar apenas a quantidade solicitada
+      matches = matches.slice(0, count);
+    }
+
+    console.log(`✅ Partidas retornadas: ${matches.length}`);
+    
+    res.json({
+      success: true,
+      matches: matches,
+      totalMatches: matches.length
+    });
+
+  } catch (error: any) {
+    console.error('❌ Erro ao buscar histórico completo LCU:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message || 'Erro ao buscar histórico do League Client'
+    });
+  }
+}) as RequestHandler);
+
 // ===== MATCH LINKING SYSTEM =====
 
 // Create a new match linking session

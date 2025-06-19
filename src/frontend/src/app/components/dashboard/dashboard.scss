@@ -1221,6 +1221,176 @@
         grid-template-columns: 1fr;
       }
     }
+  }  // Estilos aprimorados para as informações do jogador nas partidas
+  .recent-activity-section {
+    .match-item {
+      display: flex;
+      align-items: center;
+      padding: var(--spacing-md);
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      margin-bottom: var(--spacing-md);
+      transition: all 0.2s ease;
+
+      &:hover {
+        background: var(--bg-tertiary);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      }
+
+      &.victory {
+        border-left: 4px solid #27ae60;
+      }
+
+      &.defeat {
+        border-left: 4px solid #e74c3c;
+      }
+
+      .match-result {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin-right: var(--spacing-lg);
+        min-width: 80px;
+
+        .result-icon {
+          font-size: 1.5rem;
+          margin-bottom: var(--spacing-xs);
+        }
+
+        .result-text {
+          font-size: var(--font-size-sm);
+          font-weight: 600;
+          text-transform: uppercase;
+          color: var(--text-primary);
+        }
+      }
+
+      .match-details {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+
+        .match-info {
+          display: flex;
+          gap: var(--spacing-md);
+          align-items: center;
+
+          .match-mode {
+            background: var(--bg-quaternary);
+            padding: var(--spacing-xs) var(--spacing-sm);
+            border-radius: var(--radius-sm);
+            font-size: var(--font-size-sm);
+            font-weight: 600;
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+          }
+
+          .match-duration {
+            font-size: var(--font-size-sm);
+            color: var(--text-secondary);
+            font-family: 'Courier New', monospace;
+          }
+        }
+
+        .match-champion {
+          display: flex;
+          align-items: center;
+          gap: var(--spacing-sm);
+
+          .player-info {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+            margin-right: var(--spacing-sm);
+
+            .player-name {
+              background: var(--bg-secondary);
+              padding: var(--spacing-xs) var(--spacing-sm);
+              border-radius: var(--radius-sm);
+              font-size: var(--font-size-sm);
+              font-weight: 600;
+              color: var(--primary-blue);
+              border: 1px solid var(--primary-blue);
+              opacity: 0.9;
+              transition: all 0.2s ease;
+
+              &:hover {
+                opacity: 1;
+                transform: translateY(-1px);
+                box-shadow: 0 2px 8px rgba(0, 150, 255, 0.2);
+              }
+            }
+
+            .champion-name {
+              background: var(--bg-tertiary);
+              padding: var(--spacing-xs) var(--spacing-sm);
+              border-radius: var(--radius-sm);
+              font-size: var(--font-size-sm);
+              font-weight: 600;
+              color: var(--primary-gold);
+              border: 1px solid var(--border-color);
+              transition: all 0.2s ease;
+
+              &:hover {
+                opacity: 1;
+                transform: translateY(-1px);
+                box-shadow: 0 2px 8px rgba(200, 155, 60, 0.2);
+              }
+            }
+          }
+
+          .kda {
+            font-family: 'Courier New', monospace;
+            font-size: var(--font-size-sm);
+            color: var(--text-secondary);
+            padding: var(--spacing-xs) var(--spacing-sm);
+            background: var(--bg-quaternary);
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-color);
+            font-weight: 600;
+          }
+        }
+      }
+
+      .match-mmr {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin: 0 var(--spacing-lg);
+        min-width: 60px;
+
+        .mmr-change {
+          font-size: var(--font-size-md);
+          font-weight: 700;
+          margin-bottom: var(--spacing-xs);
+
+          &.positive {
+            color: #27ae60;
+          }
+
+          &.negative {
+            color: #e74c3c;
+          }
+        }
+
+        .mmr-label {
+          font-size: var(--font-size-xs);
+          color: var(--text-secondary);
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+      }
+
+      .match-date {
+        min-width: 100px;
+        text-align: right;
+        font-size: var(--font-size-sm);
+        color: var(--text-secondary);
+      }
+    }
   }
 }
 

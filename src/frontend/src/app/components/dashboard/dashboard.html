@@ -154,11 +154,12 @@
           <div class="match-info">
             <span class="match-mode">{{ match.gameMode || 'Matchmaking' }}</span>
             <span class="match-duration">{{ formatMatchDuration(match.duration) }}</span>
-          </div>
-
-          <!-- Champion and KDA info when available -->
-          <div class="match-champion" *ngIf="match.champion || match.kda">
-            <span class="champion-name" *ngIf="match.champion">{{ match.champion }}</span>
+          </div>          <!-- Champion and KDA info when available -->
+          <div class="match-champion" *ngIf="match.champion || match.kda || match.playerName">
+            <div class="player-info" *ngIf="match.playerName || match.champion">
+              <span class="player-name" *ngIf="match.playerName">{{ match.playerName }}</span>
+              <span class="champion-name" *ngIf="match.champion">{{ match.champion }}</span>
+            </div>
             <span class="kda" *ngIf="match.kda">{{ match.kda }}</span>
           </div>
         </div>

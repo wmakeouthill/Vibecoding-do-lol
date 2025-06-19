@@ -471,6 +471,13 @@ export class ApiService {
         catchError(this.handleError)
       );
   }
+  // LCU Match History - ALL matches (including custom) for dashboard
+  getLCUMatchHistoryAll(startIndex: number = 0, count: number = 5, customOnly: boolean = false): Observable<any> {
+    return this.http.get(`${this.baseUrl}/lcu/match-history-all?startIndex=${startIndex}&count=${count}&customOnly=${customOnly}`)
+      .pipe(
+        catchError(this.handleError)
+      );
+  }
 
   // Queue endpoints
   joinQueue(playerData: any, preferences: any): Observable<any> {
