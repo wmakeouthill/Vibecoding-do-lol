@@ -9,26 +9,16 @@
           <div class="progress-fill" [style.width.%]="getPhaseProgress()"></div>
         </div>
       </div>
-    </div>
-
-    <div class="timer-section">
+    </div>    <div class="timer-section">
       <div class="timer" [class.warning]="timeRemaining <= 10">
         ⏱️ {{ timeRemaining }}s
       </div>
 
-      <!-- Leader Controls -->
-      <div class="leader-controls" *ngIf="isLeader">
-        <button
-          class="btn btn-secondary btn-sm"
-          *ngIf="session.leaderCanExtend"
-          (click)="extendTime()">
-          +30s
-        </button>
-        <button
-          class="btn btn-warning btn-sm"
-          (click)="forceRandomPick()">
-          Forçar Pick
-        </button>
+      <!-- Current Player Indicator -->
+      <div class="current-player" *ngIf="session">
+        <span class="current-player-text">
+          {{ getCurrentPlayerName() }}
+        </span>
       </div>
     </div>
   </div>
@@ -91,13 +81,52 @@
       </div>
     </div>
   </div>
-
   <!-- Champion Selection -->
   <div class="champion-selection" *ngIf="isMyTurn">
     <div class="selection-header">
       <h3>
         {{ session.phases[session.currentAction] && session.phases[session.currentAction].action === 'ban' ? '🚫 Banir Campeão' : '⭐ Escolher Campeão' }}
       </h3>
+
+      <!-- Role Filter -->
+      <div class="role-filter">
+        <button
+          class="role-btn"
+          [class.active]="selectedRole === 'all'"
+          (click)="selectRole('all')">
+          Todos ({{ champions.length }})
+        </button>
+        <button
+          class="role-btn"
+          [class.active]="selectedRole === 'top'"
+          (click)="selectRole('top')">
+          🛡️ Top ({{ championsByRole.top?.length || 0 }})
+        </button>
+        <button
+          class="role-btn"
+          [class.active]="selectedRole === 'jungle'"
+          (click)="selectRole('jungle')">
+          🌲 Jungle ({{ championsByRole.jungle?.length || 0 }})
+        </button>
+        <button
+          class="role-btn"
+          [class.active]="selectedRole === 'mid'"
+          (click)="selectRole('mid')">
+          ⚡ Mid ({{ championsByRole.mid?.length || 0 }})
+        </button>
+        <button
+          class="role-btn"
+          [class.active]="selectedRole === 'adc'"
+          (click)="selectRole('adc')">
+          🏹 ADC ({{ championsByRole.adc?.length || 0 }})
+        </button>
+        <button
+          class="role-btn"
+          [class.active]="selectedRole === 'support'"
+          (click)="selectRole('support')">
+          💎 Support ({{ championsByRole.support?.length || 0 }})
+        </button>
+      </div>
 
       <!-- Search -->
       <div class="search-container">
@@ -107,17 +136,28 @@
           placeholder="Buscar campeão..."
           class="champion-search">
         <span class="search-icon">🔍</span>
+        <span class="results-count">{{ getFilteredChampions().length }} campeões</span>
       </div>
-    </div>
-
-    <!-- Champions Grid -->
+    </div>    <!-- Champions Grid -->
     <div class="champions-grid">
       <div class="champion-card"
            *ngFor="let champion of getFilteredChampions()"
            [class.selected]="selectedChampion?.id === champion.id"
            (click)="selectChampion(champion)">
-        <img [src]="champion.image" [alt]="champion.name" class="champion-portrait">
+        <img
+          [src]="champion.image"
+          [alt]="champion.name"
+          class="champion-portrait"
+          (error)="onImageError($event, champion)"
+          loading="lazy">
         <span class="champion-label">{{ champion.name }}</span>
+      </div>
+
+      <!-- Empty state when no champions match filter -->
+      <div *ngIf="getFilteredChampions().length === 0" class="no-champions">
+        <div class="no-champions-icon">😔</div>
+        <div class="no-champions-text">Nenhum campeão encontrado</div>
+        <div class="no-champions-hint">Tente ajustar os filtros ou busca</div>
       </div>
     </div>
 

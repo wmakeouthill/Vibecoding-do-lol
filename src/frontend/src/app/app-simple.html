@@ -41,167 +41,13 @@
   <!-- Content -->
   <main class="content">    <!-- Draft Phase -->
     <div *ngIf="inDraftPhase" class="view-container draft-view">
-      <!-- Draft Preview Phase -->
-      <div *ngIf="draftPhase === 'preview'" class="draft-preview">
-        <h2>🎯 Partida Encontrada!</h2>
-        <div class="draft-info">
-          <p>Todos os jogadores aceitaram! Prepare-se para a fase de pick & ban.</p>
-          <div *ngIf="draftData" class="match-details">
-            <h3>Detalhes da Partida:</h3>
-            <p><strong>ID da Partida:</strong> {{ draftData.matchId }}</p>
-            <div class="teams">
-              <div class="team blue-team">
-                <h4>🔵 Time Azul</h4>
-                <ul>
-                  <li *ngFor="let player of draftData.blueTeam"
-                      [class.current-player]="player.summonerName === currentPlayer?.summonerName">
-                    {{ player.summonerName }}
-                    <span *ngIf="player.summonerName === currentPlayer?.summonerName" class="you-indicator">(Você)</span>
-                  </li>
-                </ul>
-              </div>
-              <div class="team red-team">
-                <h4>🔴 Time Vermelho</h4>
-                <ul>
-                  <li *ngFor="let player of draftData.redTeam"
-                      [class.current-player]="player.summonerName === currentPlayer?.summonerName">
-                    {{ player.summonerName }}
-                    <span *ngIf="player.summonerName === currentPlayer?.summonerName" class="you-indicator">(Você)</span>
-                  </li>
-                </ul>
-              </div>            </div>
-          </div>
-
-          <!-- Leadership Management -->
-          <div *ngIf="isMatchLeader" class="leadership-panel">
-            <h4>👑 Gerenciar Liderança</h4>
-            <p>Como líder, você pode transferir a liderança para outro jogador:</p>
-            <div class="transfer-options">
-              <div *ngFor="let player of getEligibleLeaders()" class="transfer-option">
-                <span class="player-name">{{ player.summonerName }}</span>
-                <button (click)="transferLeadership(player)" class="btn-transfer">
-                  👑 Tornar Líder
-                </button>
-              </div>
-              <div *ngIf="getEligibleLeaders().length === 0" class="no-options">
-                <p>Nenhum outro jogador humano disponível para liderança.</p>
-              </div>
-            </div>
-          </div>
-
-          <div *ngIf="!isMatchLeader" class="leadership-info">
-            <p>👑 Você não é o líder desta partida.</p>
-          </div>
-            <div class="draft-actions">
-            <button (click)="startPickBan()" class="btn-primary">⚔️ Ir para os Picks</button>
-            <button (click)="exitDraft()" class="btn-secondary">❌ Cancelar</button>
-          </div>
-        </div>
-      </div>      <!-- Pick & Ban Phase -->
-      <div *ngIf="draftPhase === 'pickban'" class="draft-pickban">
-        <div class="draft-header">
-          <h2>🎯 Pick & Ban Phase</h2>
-          <div class="draft-timer">
-            <span class="timer-label">Tempo restante:</span>
-            <span class="timer-value">{{ draftTimer }}s</span>
-          </div>
-          <div class="current-action">
-            <span>{{ getCurrentActionText() }}</span>
-          </div>
-        </div>
-
-        <div class="draft-content">
-          <!-- Teams Display -->
-          <div class="teams-display">
-            <div class="team blue-side">
-              <h3>🔵 Time Azul</h3>
-              <div class="bans-section">
-                <h4>Bans:</h4>
-                <div class="ban-slots">
-                  <div *ngFor="let ban of getBansForTeam('blue'); let i = index"
-                       class="ban-slot" [class.filled]="ban">
-                    <div *ngIf="ban" class="champion-ban">{{ ban.name || 'Campeão' }}</div>
-                    <div *ngIf="!ban" class="empty-slot">Ban {{ i + 1 }}</div>
-                  </div>
-                </div>
-              </div>
-              <div class="picks-section">
-                <h4>Picks:</h4>
-                <div class="pick-slots">
-                  <div *ngFor="let player of draftData.blueTeam; let i = index"
-                       class="pick-slot" [class.current]="isCurrentPicker(player, 'blue')">
-                    <div class="player-info">
-                      <span class="player-name">{{ player.summonerName }}</span>
-                      <div class="champion-pick" [class.picked]="player.champion">
-                        {{ player.champion?.name || 'Aguardando...' }}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="team red-side">
-              <h3>🔴 Time Vermelho</h3>
-              <div class="bans-section">
-                <h4>Bans:</h4>
-                <div class="ban-slots">
-                  <div *ngFor="let ban of getBansForTeam('red'); let i = index"
-                       class="ban-slot" [class.filled]="ban">
-                    <div *ngIf="ban" class="champion-ban">{{ ban.name || 'Campeão' }}</div>
-                    <div *ngIf="!ban" class="empty-slot">Ban {{ i + 1 }}</div>
-                  </div>
-                </div>
-              </div>
-              <div class="picks-section">
-                <h4>Picks:</h4>
-                <div class="pick-slots">
-                  <div *ngFor="let player of draftData.redTeam; let i = index"
-                       class="pick-slot" [class.current]="isCurrentPicker(player, 'red')">
-                    <div class="player-info">
-                      <span class="player-name">{{ player.summonerName }}</span>
-                      <div class="champion-pick" [class.picked]="player.champion">
-                        {{ player.champion?.name || 'Aguardando...' }}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Champion Selection (only for current player if it's their turn) -->
-          <div *ngIf="isMyTurn()" class="champion-selection">
-            <h3>{{ isCurrentlyBanning() ? '🚫 Escolha um campeão para banir' : '⚔️ Escolha seu campeão' }}</h3>
-            <div class="champion-grid">
-              <div *ngFor="let champion of getAvailableChampions()"
-                   class="champion-card"
-                   [class.selected]="selectedChampion?.id === champion.id"
-                   (click)="selectChampion(champion)">
-                <img [src]="champion.imageUrl" [alt]="champion.name" class="champion-image">
-                <span class="champion-name">{{ champion.name }}</span>
-              </div>
-            </div>
-            <div class="selection-actions">
-              <button [disabled]="!selectedChampion"
-                      (click)="confirmSelection()"
-                      class="btn-primary">
-                {{ isCurrentlyBanning() ? '🚫 Banir Campeão' : '⚔️ Confirmar Pick' }}
-              </button>
-            </div>
-          </div>
-
-          <!-- Other players turn display -->
-          <div *ngIf="!isMyTurn()" class="waiting-display">
-            <h3>⏱️ Aguardando...</h3>
-            <p>{{ getCurrentActionText() }}</p>
-          </div>
-        </div>
-
-        <div class="draft-actions">
-          <button (click)="onPickBanCancel()" class="btn-secondary">❌ Cancelar Draft</button>
-        </div>
-      </div>
+      <!-- Use the CustomPickBanComponent -->
+      <app-custom-pick-ban
+        [matchData]="currentMatchData"
+        [currentPlayer]="currentPlayer"
+        (onPickBanComplete)="onPickBanComplete($event)"
+        (onPickBanCancel)="exitDraft()">
+      </app-custom-pick-ban>
     </div>
 
     <!-- Normal Views -->
@@ -335,7 +181,18 @@
 
           <button type="button" (click)="updateRiotApiKey()" class="btn-primary">
             🔑 Configurar API Key
-          </button>        </div>
+          </button>
+        </div>
+
+        <!-- Test Section -->
+        <div class="test-section">
+          <h3>🧪 Testes de Desenvolvimento</h3>
+          <p>Ferramentas para testar funcionalidades em desenvolvimento:</p>
+
+          <button type="button" (click)="testDraftPhase()" class="btn-secondary">
+            🎯 Testar Pick & Ban
+          </button>
+        </div>
       </div>
 
     </ng-container>

@@ -9,6 +9,7 @@ import { QueueComponent } from './components/queue/queue';
 import { MatchHistoryComponent } from './components/match-history/match-history';
 import { P2PStatusComponent } from './components/p2p-status/p2p-status';
 import { MatchFoundComponent, MatchFoundData } from './components/match-found/match-found';
+import { CustomPickBanComponent } from './components/custom-pick-ban/custom-pick-ban';
 import { WebsocketService } from './services/websocket';
 import { ApiService } from './services/api';
 import { QueueStateService } from './services/queue-state';
@@ -23,7 +24,8 @@ import type { Notification } from './interfaces';
     QueueComponent,
     MatchHistoryComponent,
     P2PStatusComponent,
-    MatchFoundComponent
+    MatchFoundComponent,
+    CustomPickBanComponent
   ],
   templateUrl: './app-simple.html',
   styleUrl: './app.scss'
@@ -154,13 +156,17 @@ export class App implements OnInit, OnDestroy {
     this.draftPhase = 'pickban';
   }
 
-  onPickBanComplete(result: any): void {
-    console.log('✅ Pick & Ban completado:', result);
-    this.inDraftPhase = false;
-    this.draftData = null;
-    this.draftPhase = 'preview';
-    this.currentView = 'dashboard';
-    this.addNotification('success', 'Draft Concluído', 'O draft foi concluído com sucesso!');
+  // Handle Pick & Ban completion
+  onPickBanComplete(result: any) {
+    console.log('🎯 Pick & Ban completed:', result);
+
+    // Exit draft phase
+    this.exitDraft();
+
+    // Show completion notification
+    this.addNotification('success', 'Pick & Ban Completo', 'A seleção de campeões foi finalizada!');
+
+    // Could transition to game start here
   }
 
   onPickBanCancel(): void {
@@ -416,6 +422,9 @@ export class App implements OnInit, OnDestroy {
         this.addNotification('info', 'Partida Cancelada', 'A partida foi cancelada.');
         break;      case 'draft_phase':
         console.log('🎯 Fase de draft iniciada!', message.data);
+        console.log('🔍 Debug: matchFoundData antes:', this.matchFoundData);
+        console.log('🔍 Debug: inDraftPhase antes:', this.inDraftPhase);
+
         // Esconder modal de aceitação
         this.showMatchFound = false;
         this.matchFoundData = null;
@@ -424,7 +433,12 @@ export class App implements OnInit, OnDestroy {
         // Entrar na fase de draft
         this.inDraftPhase = true;
         this.draftData = message.data;
-        this.draftPhase = 'preview'; // Sempre começar na preview        // Determinar se é líder (primeiro jogador humano do time azul)
+        this.draftPhase = 'preview'; // Sempre começar na preview
+
+        console.log('🔍 Debug: inDraftPhase depois:', this.inDraftPhase);
+        console.log('🔍 Debug: draftData definido:', this.draftData);
+
+        // Determinar se é líder (primeiro jogador humano do time azul)
         this.determineMatchLeader();
         // Atualizar estado compartilhado
         this.queueStateService.updateCentralizedQueue({
@@ -1021,5 +1035,55 @@ export class App implements OnInit, OnDestroy {
       'EndOfGame': 'Jogo finalizado'
     };
     return phases[phase] || phase;
+  }
+
+  // Add getter for currentMatchData to be compatible with CustomPickBanComponent
+  get currentMatchData() {
+    if (!this.draftData) return null;
+
+    return {
+      id: this.draftData.matchId,
+      team1: this.draftData.blueTeam || [],
+      team2: this.draftData.redTeam || []
+    };
+  }
+
+  // Método de teste para simular draft phase
+  testDraftPhase() {
+    console.log('🧪 Testando fase de draft...');
+
+    // Simular dados de uma partida
+    this.draftData = {
+      matchId: 'test_match_' + Date.now(),
+      blueTeam: [
+        { id: 1, summonerName: 'TestPlayer', name: 'TestPlayer' },
+        { id: -1, summonerName: 'Bot1', name: 'Bot1' },
+        { id: -2, summonerName: 'Bot2', name: 'Bot2' },
+        { id: -3, summonerName: 'Bot3', name: 'Bot3' },
+        { id: -4, summonerName: 'Bot4', name: 'Bot4' }
+      ],
+      redTeam: [
+        { id: -5, summonerName: 'Bot5', name: 'Bot5' },
+        { id: -6, summonerName: 'Bot6', name: 'Bot6' },
+        { id: -7, summonerName: 'Bot7', name: 'Bot7' },
+        { id: -8, summonerName: 'Bot8', name: 'Bot8' },
+        { id: -9, summonerName: 'Bot9', name: 'Bot9' }
+      ]
+    };    // Definir player atual
+    if (!this.currentPlayer) {
+      this.currentPlayer = {
+        id: 1,
+        summonerName: 'TestPlayer',
+        region: 'br1',
+        summonerLevel: 30,
+        currentMMR: 1200
+      };
+    }
+
+    this.inDraftPhase = true;
+    this.draftPhase = 'pickban';
+
+    console.log('✅ Draft phase simulado ativado');
+    this.addNotification('info', 'Teste', 'Draft phase ativado para teste');
   }
 }
