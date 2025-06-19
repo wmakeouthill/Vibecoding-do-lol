@@ -8,7 +8,6 @@
   background: var(--bg-primary);
   color: var(--text-primary);
   position: relative;
-  overflow: hidden;
 
   &::before {
     content: '';
@@ -237,6 +236,8 @@
   flex: 1;
   padding: var(--spacing-xl);
   overflow-y: auto;
+  overflow-x: hidden;
+  max-height: calc(100vh - 120px); /* Ajustando altura para garantir scroll */
 
   .view-container {
     max-width: 1200px;
