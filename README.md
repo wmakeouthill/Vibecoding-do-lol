@@ -22,19 +22,31 @@ O projeto tem como objetivo principal **criar um sistema de matchmaking personal
 
 ## 🚀 Principais Funcionalidades
 
-### 🎮 Sistema de Matchmaking 5v5
-- **MMR dinâmico** com algoritmo ELO personalizado
-- **Balanceamento automático de equipes** baseado em estatísticas detalhadas
-- **Fila em tempo real** com comunicação WebSocket
-- **Tempo estimado de espera** baseado em dados históricos da fila
+### 🎮 Sistema de Matchmaking 5v5 Avançado
+- **Sistema de Fila em Tempo Real**: Comunicação WebSocket bidirecional para atualizações instantâneas
+- **Seleção de Lanes**: Escolha de lane primária e secundária (Topo, Selva, Meio, Atirador, Suporte)
+- **MMR dinâmico** com algoritmo ELO personalizado baseado no rank oficial da Riot
+- **Balanceamento automático de equipes** por MMR e preferências de lane
+- **Atividades da Fila em Tempo Real**: Histórico detalhado das últimas 20 atividades com timestamps
+- **Lista de Jogadores na Fila**: Visualização em tempo real dos jogadores (posição, MMR, lanes preferidas)
+- **Contador de Jogadores**: Sistema "X/10 jogadores" com atualização instantânea
+- **Tempo estimado de espera** baseado em dados históricos e número de jogadores na fila
 - **Sistema de aceitação** com timeout e penalty para rejeições
 
+### 🔄 Sistema de Fila Inteligente
+- **Auto-detecção de desconexão**: Reconexão automática via WebSocket
+- **Persistência de estado**: Mantém posição na fila durante reconexões
+- **Broadcast inteligente**: Atualizações enviadas para todos os clientes conectados
+- **Sistema de heartbeat**: Monitoramento de conexão em tempo real
+- **Queue timeout**: Remoção automática de jogadores inativos
+
 ### 🏆 Sistema de Ranking e Estatísticas
-- **MMR inicial baseado no rank oficial** da Riot API
-- **Cálculo dinâmico de MMR** baseado em resultados de partidas
+- **MMR inicial baseado no rank oficial** da Riot API (Solo Queue e Flex Queue)
+- **Cálculo dinâmico de MMR** baseado em resultados de partidas customizadas
 - **Histórico completo de partidas** com analytics detalhados
 - **Estatísticas do jogador**: winrate, MMR médio, tendências de performance
 - **Sistema de leaderboard** para ranking competitivo da comunidade
+- **Tracking de preferências**: Análise de performance por lane
 
 ### 🔗 Integração Profunda com League of Legends
 - **Riot Games API**: Dados oficiais de jogadores e histórico de partidas
@@ -52,15 +64,168 @@ O projeto tem como objetivo principal **criar um sistema de matchmaking personal
 - **Integração com system tray**: Operação em segundo plano
 - **Auto-updater**: Atualizações automáticas e seamless
 
-## 🏗️ Arquitetura Técnica
+### 📊 Interface e Experiência do Usuário
+- **Dashboard em Tempo Real**: Status do sistema, estatísticas do jogador e fila atual
+- **Sistema de Notificações**: Alertas visuais para partidas encontradas, lobbies criados, etc.
+- **Seletor de Lanes Visual**: Interface intuitiva para escolha de posições
+- **Atividades Recentes**: Feed em tempo real com histórico das últimas ações da fila
+- **Lista de Jogadores**: Visualização de todos os jogadores na fila com suas informações
+- **Indicadores de Status**: Conexão LCU, status da fila, tempo de espera
+- **Design Responsivo**: Interface adaptável com tema dark/light
+- **Animações Suaves**: Feedback visual para todas as interações
 
-### Stack Tecnológico
-- **Backend**: Node.js + TypeScript + Express.js
-- **Frontend**: Angular 18+ + TypeScript + SCSS
-- **Desktop**: Electron (empacotamento multiplataforma)
-- **Database**: SQLite (local) com DatabaseManager customizado
-- **APIs**: Riot Games API + League Client API (LCU)
-- **Comunicação**: WebSocket (real-time) + REST API
+## 🏗️ Arquitetura Técnica Detalhada
+
+### Stack Tecnológico Completo
+- **Backend**: Node.js 20+ + TypeScript 5+ + Express.js + WebSocket
+- **Frontend**: Angular 18+ + TypeScript + SCSS + RxJS
+- **Desktop**: Electron (multi-plataforma) com preload scripts seguros
+- **Database**: SQLite3 com DatabaseManager customizado e migrations
+- **APIs Externas**: Riot Games API v4/v5 + League Client API (LCU)
+- **Comunicação**: WebSocket (tempo real) + REST API + Server-Sent Events
+- **Build Tools**: Angular CLI + TypeScript Compiler + Electron Builder
+- **Dev Tools**: Nodemon + Concurrently + Hot Reload
+
+### Arquitetura de Serviços
+
+#### Backend Services (Modular)
+```typescript
+├── MatchmakingService.ts        # Core do sistema de fila e matchmaking
+│   ├── Queue Management         # Gerenciamento da fila em tempo real
+│   ├── Activity Tracking        # Sistema de atividades recentes (max 20)
+│   ├── Player Balancing         # Algoritmo de balanceamento por MMR
+│   ├── WebSocket Broadcasting   # Broadcast para todos os clientes
+│   └── Match Creation           # Criação e validação de partidas
+│
+├── RiotAPIService.ts           # Integração com Riot Games API
+│   ├── Account API (Riot ID)    # Busca por gameName#tagLine
+│   ├── Summoner API (PUUID)     # Dados do summoner via PUUID
+│   ├── League API (Ranked)      # Dados ranqueados (SoloQ/Flex)
+│   ├── Match API (History)      # Histórico de partidas oficiais
+│   └── Rate Limiting            # Controle de taxa de requisições
+│
+├── LCUService.ts               # League Client Integration
+│   ├── Auto-Detection           # Detecção automática do cliente LoL
+│   ├── Current Summoner         # Dados do jogador logado
+│   ├── Lobby Management         # Criação e convites automáticos
+│   ├── Game State Monitoring    # Status do jogo (lobby, partida, etc.)
+│   └── SSL Certificate Handling # Conexão segura com LCU
+│
+├── PlayerService.ts            # Gerenciamento de dados dos jogadores
+│   ├── Player Registration      # Registro automático via LCU
+│   ├── Data Synchronization     # Sync entre LCU e Riot API
+│   ├── MMR Calculation         # Cálculo de MMR customizado
+│   ├── Statistics Tracking      # Estatísticas e histórico
+│   └── Profile Management      # Gestão de perfis de jogador
+│
+└── DatabaseManager.ts          # Gestão de dados SQLite
+    ├── Schema Management        # Criação e migração de tabelas
+    ├── Query Builder           # Queries otimizadas e type-safe
+    ├── Connection Pooling      # Pool de conexões para performance
+    ├── Data Validation         # Validação de integridade
+    └── Backup & Recovery       # Sistema de backup automático
+```
+
+#### Frontend Architecture (Component-Based)
+```typescript
+├── Core App Component          # Container principal da aplicação
+│   ├── WebSocket Management    # Conexão persistente com backend
+│   ├── State Management       # Estado global da aplicação
+│   ├── Notification System    # Sistema de notificações em tempo real
+│   └── Route Management       # Navegação entre telas
+│
+├── Dashboard Component         # Tela principal
+│   ├── Player Info Card       # Dados do jogador atual
+│   ├── System Status          # Status LCU e servidor
+│   ├── Quick Actions          # Ações rápidas (entrar/sair fila)
+│   └── Recent Matches         # Histórico de partidas recentes
+│
+├── Queue Component            # Sistema de fila avançado
+│   ├── Queue Status Display   # "X/10 jogadores" em tempo real
+│   ├── Players List          # Lista de jogadores na fila
+│   │   ├── Player Position    # Posição numerada na fila
+│   │   ├── Player Info        # Nome, tag, MMR
+│   │   └── Lane Preferences   # Lanes primária e secundária
+│   ├── Recent Activities     # Feed de atividades (scrollable)
+│   │   ├── Activity Feed      # Últimas 20 atividades
+│   │   ├── Timestamp Display  # "há X min", "agora"
+│   │   └── Activity Types     # Join, leave, match created, etc.
+│   ├── Queue Timer           # Tempo na fila
+│   └── Lane Selector Modal   # Seleção de posições
+│
+├── Lane Selector Component    # Seletor de lanes visual
+│   ├── Lane Grid Display     # Grid com 5 posições
+│   ├── Lane Icons & Names    # Ícones e nomes das lanes
+│   ├── Primary/Secondary     # Seleção de lane primária/secundária
+│   ├── Validation Logic      # Validação de seleções
+│   └── Auto-Accept Option    # Opção de aceitar partidas automaticamente
+│
+└── Match History Component    # Histórico de partidas
+    ├── Match List Display     # Lista de partidas com paginação
+    ├── Match Details Modal    # Detalhes expandidos da partida
+    ├── Statistics Overview    # Estatísticas resumidas
+    └── Performance Charts     # Gráficos de performance
+```
+
+### Fluxo de Dados em Tempo Real
+
+#### WebSocket Events (Bidirectional)
+```typescript
+// Cliente → Servidor
+interface ClientToServerEvents {
+  'join_queue': {
+    player: PlayerData;
+    preferences: {
+      primaryLane: 'top' | 'jungle' | 'mid' | 'bot' | 'support';
+      secondaryLane: 'top' | 'jungle' | 'mid' | 'bot' | 'support';
+      autoAccept?: boolean;
+    };
+  };
+  'leave_queue': {};
+  'get_queue_status': {};
+  'accept_match': { matchId: string };
+  'decline_match': { matchId: string };
+}
+
+// Servidor → Cliente
+interface ServerToClientEvents {
+  'queue_update': {
+    playersInQueue: number;
+    averageWaitTime: number;
+    estimatedMatchTime: number;
+    isActive: boolean;
+    playersInQueueList: QueuedPlayerInfo[];
+    recentActivities: QueueActivity[];
+  };
+  'queue_joined': { position: number; estimatedWait: number };
+  'match_found': { matchId: string; players: Player[]; timeoutMs: number };
+  'match_ready': { matchId: string; team1: Player[]; team2: Player[] };
+  'lobby_created': { success: boolean; invitesSent: number };
+}
+```
+
+#### Sistema de Atividades da Fila
+```typescript
+interface QueueActivity {
+  id: string;                    // UUID único
+  timestamp: Date;               // Timestamp da atividade
+  type: 'player_joined' |        // Jogador entrou na fila
+        'player_left' |          // Jogador saiu da fila
+        'match_created' |        // Partida foi criada
+        'system_update' |        // Atualização do sistema
+        'queue_cleared';         // Fila foi limpa
+  message: string;               // Mensagem formatada para exibição
+  playerName?: string;           // Nome do jogador (se aplicável)
+  playerTag?: string;            // Tag do jogador (se aplicável)
+  lane?: string;                 // Lane selecionada (se aplicável)
+}
+
+// Exemplo de atividades geradas:
+// "popcorn seller#coup entrou na fila como Atirador"
+// "SummonerName saiu da fila" 
+// "Partida criada com 10 jogadores"
+// "Sistema de matchmaking otimizado"
+```
 
 ### Estrutura do Projeto
 ```
@@ -264,16 +429,53 @@ GET    /api/player/details/:riotId           # Dados via Riot ID (formato: gameN
 GET    /api/player/puuid/:puuid              # Dados via PUUID
 ```
 
-#### 🏆 Matchmaking & Queue
+#### � Queue Management & Real-time Features
 ```http
-# Status da fila
-GET    /api/queue/status                     # Status atual da fila de matchmaking
-Response: { playersInQueue: 0, averageWaitTime: 0, estimatedMatchTime: 0 }
+# Status da fila em tempo real
+GET    /api/queue/status                     # Status completo da fila
+Response: {
+  playersInQueue: 3,
+  averageWaitTime: 120,
+  estimatedMatchTime: 180,
+  isActive: true,
+  playersInQueueList: [
+    {
+      summonerName: "PlayerName",
+      tagLine: "TAG",
+      primaryLane: "bot",
+      secondaryLane: "mid", 
+      mmr: 1250,
+      queuePosition: 1,
+      joinTime: "2025-06-17T..."
+    }
+  ],
+  recentActivities: [
+    {
+      id: "uuid",
+      timestamp: "2025-06-17T...",
+      type: "player_joined",
+      message: "PlayerName#TAG entrou na fila como Atirador",
+      playerName: "PlayerName",
+      playerTag: "TAG",
+      lane: "bot"
+    }
+  ]
+}
 
-# Sistema de registro/busca
-POST   /api/player/register                  # Registrar jogador
-Body:  { "riotId": "gameName#tagLine", "region": "br1" }
-POST   /api/player/search                    # Buscar jogadores
+# Entrar na fila (via WebSocket)
+WS     join_queue
+Data:  {
+  player: { summonerName: "...", mmr: 1200, ... },
+  preferences: { primaryLane: "bot", secondaryLane: "mid", autoAccept: false }
+}
+
+# Sair da fila (via WebSocket) 
+WS     leave_queue
+Data:  {}
+
+# Updates em tempo real (Server → Client)
+WS     queue_update                          # Broadcast para todos os clientes
+Data:  { playersInQueue: 2, playersInQueueList: [...], recentActivities: [...] }
 ```
 
 #### 📊 League Client Integration (LCU)
@@ -316,42 +518,163 @@ GET    /api/stats/leaderboard                # Ranking dos melhores jogadores
 GET    /api/stats/player/:id                 # Estatísticas detalhadas
 ```
 
-### 🔄 WebSocket Events
+### 🔄 WebSocket Events (Real-time Communication)
 
-#### Client → Server
+#### Client → Server Events
 ```javascript
-// Entrar na fila
-{ type: 'join_queue', data: { playerId: 123, preferences: {...} } }
+// Entrar na fila com seleção de lanes
+{
+  type: 'join_queue',
+  data: {
+    player: {
+      summonerName: "PlayerName",
+      tagLine: "TAG", 
+      mmr: 1250,
+      region: "br1"
+    },
+    preferences: {
+      primaryLane: "bot",      // Atirador (ADC)
+      secondaryLane: "mid",    // Meio
+      autoAccept: false        // Aceitar partidas automaticamente
+    }
+  }
+}
 
 // Sair da fila
 { type: 'leave_queue' }
 
-// Status da fila
+// Solicitar status atual da fila
 { type: 'get_queue_status' }
 
-// Aceitar partida
-{ type: 'accept_match', data: { matchId: "uuid" } }
+// Aceitar partida encontrada
+{ 
+  type: 'accept_match', 
+  data: { matchId: "uuid-da-partida" } 
+}
 
-// Rejeitar partida
-{ type: 'decline_match', data: { matchId: "uuid" } }
+// Rejeitar partida encontrada
+{ 
+  type: 'decline_match', 
+  data: { matchId: "uuid-da-partida", reason: "not_ready" } 
+}
 ```
 
-#### Server → Client
+#### Server → Client Events
 ```javascript
-// Partida encontrada
-{ type: 'match_found', data: { matchId: "uuid", players: [...], timeoutMs: 30000 } }
+// Atualização da fila em tempo real (broadcast para todos)
+{
+  type: 'queue_update',
+  data: {
+    playersInQueue: 3,
+    averageWaitTime: 120,
+    estimatedMatchTime: 180,
+    isActive: true,
+    playersInQueueList: [
+      {
+        summonerName: "Player1",
+        tagLine: "TAG1",
+        primaryLane: "bot",
+        secondaryLane: "mid",
+        mmr: 1250,
+        queuePosition: 1,
+        joinTime: "2025-06-17T10:30:00Z"
+      }
+    ],
+    recentActivities: [
+      {
+        id: "activity-uuid-1",
+        timestamp: "2025-06-17T10:30:15Z",
+        type: "player_joined",
+        message: "Player1#TAG1 entrou na fila como Atirador",
+        playerName: "Player1",
+        playerTag: "TAG1", 
+        lane: "bot"
+      },
+      {
+        id: "activity-uuid-2", 
+        timestamp: "2025-06-17T10:29:45Z",
+        type: "player_left",
+        message: "Player2 saiu da fila"
+      }
+    ]
+  }
+}
 
-// Partida confirmada
-{ type: 'match_ready', data: { matchId: "uuid", lobbyCode: "...", team1: [...], team2: [...] } }
+// Confirmação de entrada na fila
+{
+  type: 'queue_joined',
+  data: {
+    position: 3,
+    estimatedWait: 180,
+    queueStatus: { playersInQueue: 3, ... }
+  }
+}
+
+// Partida encontrada (aguardando aceitação)
+{
+  type: 'match_found',
+  data: {
+    matchId: "match-uuid",
+    players: [/* 10 jogadores */],
+    team1: [/* 5 jogadores time 1 */],
+    team2: [/* 5 jogadores time 2 */],
+    acceptTimeoutMs: 30000,
+    acceptedPlayers: [],
+    missingAccepts: 10
+  }
+}
+
+// Partida confirmada (todos aceitaram)
+{
+  type: 'match_ready',
+  data: {
+    matchId: "match-uuid", 
+    lobbyCode: "LOBBY123",
+    team1: [/* balanceado por MMR */],
+    team2: [/* balanceado por MMR */],
+    averageMMR1: 1245,
+    averageMMR2: 1238
+  }
+}
 
 // Partida cancelada
-{ type: 'match_cancelled', data: { reason: "timeout", matchId: "uuid" } }
+{
+  type: 'match_cancelled',
+  data: {
+    reason: "timeout" | "player_declined" | "insufficient_players",
+    matchId: "match-uuid",
+    declinedBy: "PlayerName" // se aplicável
+  }
+}
 
-// Status da fila atualizado
-{ type: 'queue_status', data: { playersInQueue: 5, averageWaitTime: 120 } }
+// Lobby criado automaticamente no LoL
+{
+  type: 'lobby_created',
+  data: {
+    success: true,
+    lobbyCode: "LOBBY123",
+    invitesSent: 9,
+    failedInvites: [],
+    message: "Lobby criado! Convites enviados para 9 jogadores."
+  }
+}
+```
 
-// Lobby criado automaticamente
-{ type: 'lobby_created', data: { success: true, invitesSent: 9 } }
+#### Activity Types & Messages
+```typescript
+// Tipos de atividades automaticamente geradas
+enum ActivityType {
+  PLAYER_JOINED = 'player_joined',    // "PlayerName#TAG entrou na fila como Atirador"
+  PLAYER_LEFT = 'player_left',        // "PlayerName saiu da fila"  
+  MATCH_CREATED = 'match_created',    // "Partida criada com 10 jogadores"
+  MATCH_CANCELLED = 'match_cancelled', // "Partida cancelada (timeout)"
+  SYSTEM_UPDATE = 'system_update',    // "Sistema de matchmaking otimizado"
+  QUEUE_CLEARED = 'queue_cleared'     // "Fila limpa pelo administrador"
+}
+
+// Sistema mantém até 20 atividades recentes
+// Interface scrollable no frontend
+// Timestamps formatados automaticamente ("há 2 min", "agora")
 ```
 
 ### 🌐 Riot API Integration
@@ -479,16 +802,25 @@ curl -X GET http://localhost:3000/api/health
 curl -X GET http://localhost:3000/api/lcu/status
 ```
 
-### Checklist de Testes Manuais
-- [ ] ✅ Registro automático de jogador via LCU
-- [ ] ✅ Busca de dados via Riot ID funcional
-- [ ] ✅ Entrada e saída da fila de matchmaking
-- [ ] ✅ Algoritmo de matchmaking com diferentes MMRs
-- [ ] ✅ Comunicação WebSocket em tempo real
-- [ ] ✅ Integração LCU e criação automática de lobbies
-- [ ] ✅ Cálculo correto de MMR pós-partida
-- [ ] ✅ Precisão do histórico de partidas
-- [ ] ✅ Empacotamento da aplicação Electron
+### Checklist de Testes Manuais Detalhado
+- [ ] ✅ **Detecção Automática LCU**: Conecta automaticamente ao League of Legends
+- [ ] ✅ **Registro via LCU**: Registra jogador automaticamente via dados do cliente
+- [ ] ✅ **Busca Riot ID**: Funcionalidade de refresh por gameName#tagLine
+- [ ] ✅ **Seleção de Lanes**: Interface de seleção primária/secundária funcional
+- [ ] ✅ **Entrada na Fila**: Sistema de join com broadcast em tempo real
+- [ ] ✅ **Contador em Tempo Real**: "X/10 jogadores" atualiza instantaneamente
+- [ ] ✅ **Lista de Jogadores**: Mostra jogadores, MMR e lanes em tempo real
+- [ ] ✅ **Atividades da Fila**: Feed com últimas 20 atividades e timestamps
+- [ ] ✅ **Saída da Fila**: Leave com atualização imediata do contador
+- [ ] ✅ **WebSocket Reconnection**: Reconexão automática em caso de desconexão
+- [ ] ✅ **Matchmaking Algorithm**: Balanceamento por MMR e preferências
+- [ ] ✅ **Integração LCU**: Criação automática de lobbies e convites
+- [ ] ✅ **Cálculo de MMR**: Atualização correta após partidas
+- [ ] ✅ **Histórico de Partidas**: Armazenamento e visualização de dados
+- [ ] ✅ **Build Electron**: Empacotamento para Windows/Mac/Linux
+- [ ] ✅ **Performance**: Sistema suporta múltiplos jogadores simultâneos
+- [ ] ✅ **Error Handling**: Tratamento de erros de API e conexão
+- [ ] ✅ **Security**: Validação de inputs e proteção contra exploits
 
 ## 🐛 Troubleshooting
 
@@ -587,109 +919,116 @@ Este projeto está licenciado sob a **MIT License** - veja o arquivo [LICENSE](L
 
 **Desenvolvido com ❤️ para a comunidade League of Legends**
 
-#### 3. Riot API Rate Limiting
-```bash
-# Implement request queuing
-# Add retry logic with exponential backoff
-# Monitor API usage in logs
+### Performance e Otimizações
+
+#### Backend Optimizations
+- **Connection Pooling**: Pool de conexões WebSocket para alta concorrência
+- **Rate Limiting**: Proteção contra abuse com limits específicos por endpoint
+- **Caching Strategy**: Cache de dados da Riot API para reduzir latência
+- **Database Indexing**: Índices otimizados para queries frequentes
+- **Memory Management**: Gestão eficiente de memória para longa execução
+- **Error Recovery**: Sistema robusto de recuperação de erros
+
+#### Frontend Optimizations  
+- **Lazy Loading**: Carregamento sob demanda de componentes
+- **Change Detection**: OnPush strategy para performance otimizada
+- **Bundle Optimization**: Tree shaking e code splitting
+- **Memory Leaks Prevention**: Unsubscribe automático de observables
+- **Virtual Scrolling**: Para listas grandes (match history)
+- **Service Workers**: Cache de assets estáticos
+
+#### Real-time Optimizations
+- **WebSocket Reconnection**: Reconexão automática com backoff exponencial
+- **State Synchronization**: Sincronização de estado entre cliente e servidor
+- **Broadcast Optimization**: Envio inteligente apenas para clientes interessados
+- **Queue State Management**: Estado da fila otimizado para updates frequentes
+- **Activity Batching**: Agrupamento de atividades para reduzir traffic
+
+### Segurança e Confiabilidade
+
+#### Data Security
+- **Input Validation**: Validação rigorosa de todos os inputs
+- **SQL Injection Prevention**: Queries parametrizadas e ORM
+- **XSS Protection**: Sanitização de dados no frontend
+- **CORS Configuration**: Configuração segura de cross-origin
+- **Rate Limiting**: Proteção contra ataques DDoS
+- **SSL/TLS**: Comunicação criptografada em produção
+
+#### Error Handling
+- **Graceful Degradation**: Funcionamento parcial em caso de falhas
+- **Circuit Breaker**: Proteção contra cascading failures
+- **Retry Logic**: Tentativas automáticas com backoff
+- **Logging Strategy**: Logs estruturados para debugging
+- **Health Checks**: Monitoramento contínuo de saúde do sistema
+- **Failover Mechanisms**: Sistemas de backup automático
+
+## 🔗 Sistema Peer-to-Peer (P2P)
+
+### Nova Funcionalidade: Matchmaking Descentralizado
+
+O projeto agora inclui um **sistema revolucionário de conexão P2P** que permite aos jogadores se conectarem diretamente uns aos outros, criando uma rede descentralizada para matchmaking sem depender de servidor central.
+
+#### 🌟 Principais Características P2P:
+
+- **🔗 Conexões Diretas**: Jogadores se conectam diretamente via WebRTC
+- **📡 Descoberta Automática**: Encontra outros jogadores na rede local e internet
+- **⚖️ Fila Distribuída**: Sistema de fila sincronizado entre todos os peers
+- **🤝 Algoritmo de Consenso**: Decisões de matchmaking tomadas coletivamente
+- **🏆 Resistência a Falhas**: Sistema continua funcionando mesmo com peers desconectados
+- **🚀 Escalabilidade**: Performance melhora com mais usuários conectados
+
+#### 🛠️ Implementação Técnica:
+
+```typescript
+// P2P Manager - Gerenciamento de conexões WebRTC
+P2PManager {
+  - WebRTC Peer Connections
+  - Data Channels para comunicação
+  - Descoberta de peers (local + internet)
+  - Sistema de heartbeat
+  - Reconexão automática
+}
+
+// Distributed Queue - Fila sincronizada
+DistributedQueueService {
+  - Sincronização de estado entre peers
+  - Algoritmo de consenso para matches
+  - Eleição de líder para coordenação
+  - Balanceamento distribuído de equipes
+}
 ```
 
-#### 4. Electron Build Failures
-```bash
-# Clear node_modules and reinstall
-rm -rf node_modules
-npm install
+#### 📊 Interface P2P:
 
-# Check platform-specific dependencies
-npm run rebuild
+- **Status da Rede**: Peers conectados e status de conexão
+- **Fila Distribuída**: Posição, tempo de espera, estatísticas
+- **Métricas da Rede**: MMR médio, distribuição por lane
+- **Controles**: Entrar/sair da fila P2P, conectar à rede
+
+#### 🎯 Benefícios:
+
+✅ **Zero Custos de Servidor**: Não precisa manter infraestrutura central  
+✅ **Latência Reduzida**: Conexões diretas entre jogadores  
+✅ **Alta Disponibilidade**: Sistema distribuído resistente a falhas  
+✅ **Transparência**: Algoritmos abertos e verificáveis  
+✅ **Escalabilidade**: Capacidade cresce com número de usuários  
+✅ **Personalização**: Comunidade pode ajustar algoritmos  
+
+#### 📁 Arquivos P2P:
+
+```
+src/frontend/src/app/
+├── services/
+│   ├── p2p-manager.ts           # Gerenciador de conexões P2P
+│   └── distributed-queue.ts     # Serviço de fila distribuída
+└── components/
+    └── p2p-status/
+        └── p2p-status.ts        # Interface de status P2P
 ```
 
-## 🔒 Security Considerations
+#### 📚 Documentação P2P:
 
-### Data Protection
-- **No password storage** - Uses Riot Games authentication
-- **Encrypted communications** - HTTPS and WSS in production
-- **Input validation** - All user inputs sanitized
-- **Rate limiting** - API endpoints protected against abuse
-
-### Privacy
-- **Minimal data collection** - Only game-related statistics
-- **Local database** - Sensitive data stored locally when possible
-- **GDPR compliance** - User data deletion capabilities
-- **Anonymization** - Personal identifiers removed from logs
-
-## 🤝 Contributing
-
-### Development Setup
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Make your changes following the coding standards
-4. Write tests for new functionality
-5. Commit your changes: `git commit -m 'Add amazing feature'`
-6. Push to the branch: `git push origin feature/amazing-feature`
-7. Open a Pull Request
-
-### Coding Standards
-- **TypeScript strict mode** enabled
-- **ESLint** for code linting
-- **Prettier** for code formatting
-- **Conventional commits** for commit messages
-- **Comprehensive documentation** for new features
-
-### Pull Request Process
-1. Ensure all tests pass
-2. Update documentation as needed
-3. Add yourself to contributors list
-4. Request review from maintainers
-5. Address feedback promptly
-
-## 📋 Roadmap
-
-### Phase 1: Core Features ✅
-- [x] Basic matchmaking system
-- [x] Riot API integration
-- [x] LCU integration
-- [x] Desktop application
-- [x] Real-time communication
-
-### Phase 2: Enhanced Features 🚧
-- [ ] Advanced statistics and analytics
-- [ ] Tournament system
-- [ ] Custom game modes
-- [ ] Social features (friends, chat)
-- [ ] Mobile companion app
-
-### Phase 3: Advanced Features 📋
-- [ ] Machine learning matchmaking
-- [ ] Esports integration
-- [ ] Streaming overlay
-- [ ] Discord bot integration
-- [ ] API for third-party developers
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 📞 Support
-
-### Getting Help
-- **GitHub Issues** - Bug reports and feature requests
-- **Discord Server** - Community support and discussions
-- **Documentation** - Comprehensive guides and API reference
-- **Email Support** - Direct contact for urgent issues
-
-### Community
-- **Discord**: [Join our community](https://discord.gg/your-invite)
-- **Reddit**: [r/CustomLoLMatchmaking](https://reddit.com/r/your-subreddit)
-- **Twitter**: [@LoLMatchmaking](https://twitter.com/your-handle)
+- [`P2P_IMPLEMENTATION_PLAN.md`](./P2P_IMPLEMENTATION_PLAN.md) - Plano técnico de implementação
+- [`P2P_USER_GUIDE.md`](./P2P_USER_GUIDE.md) - Guia do usuário para sistema P2P
 
 ---
-
-## 🎉 Acknowledgments
-
-- **Riot Games** for providing the League of Legends API
-- **Angular Team** for the excellent frontend framework
-- **Electron Team** for making desktop development accessible
-- **Open Source Community** for the amazing tools and libraries
-
-**Built with ❤️ for the League of Legends community**

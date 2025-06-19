@@ -7,8 +7,11 @@ import { HttpErrorResponse } from '@angular/common/http'; // Import HttpErrorRes
 import { DashboardComponent } from './components/dashboard/dashboard';
 import { QueueComponent } from './components/queue/queue';
 import { MatchHistoryComponent } from './components/match-history/match-history';
+import { P2PStatusComponent } from './components/p2p-status/p2p-status';
+import { MatchFoundComponent, MatchFoundData } from './components/match-found/match-found';
 import { WebsocketService } from './services/websocket';
 import { ApiService } from './services/api';
+import { QueueStateService } from './services/queue-state';
 import { Player, QueueStatus, LCUStatus, MatchFound, QueuePreferences, RefreshPlayerResponse } from './interfaces'; // Adicionar RefreshPlayerResponse
 import type { Notification } from './interfaces';
 
@@ -19,16 +22,17 @@ import type { Notification } from './interfaces';
     FormsModule,
     DashboardComponent,
     QueueComponent,
-    MatchHistoryComponent
+    MatchHistoryComponent,
+    P2PStatusComponent,
+    MatchFoundComponent
   ],
   templateUrl: './app-simple.html',
   styleUrl: './app.scss'
 })
 export class App implements OnInit, OnDestroy {
   protected title = 'LoL Matchmaking';
-
   // Estado da aplicação
-  currentView: 'dashboard' | 'queue' | 'history' | 'settings' = 'dashboard';
+  currentView: 'dashboard' | 'queue' | 'history' | 'settings' | 'p2p' = 'dashboard';
   isElectron = false;
   isConnected = false;
   isInQueue = false;
@@ -44,9 +48,16 @@ export class App implements OnInit, OnDestroy {
     isActive: true
   };
   lcuStatus: LCUStatus = { isConnected: false };
-
   // Modal de partida encontrada
   matchFound: MatchFound | null = null;
+
+  // Dados da partida encontrada (novo sistema)
+  matchFoundData: MatchFoundData | null = null;
+  showMatchFound = false;
+
+  // Estado do draft
+  inDraftPhase = false;
+  draftData: any = null;
 
   // Notificações
   notifications: Notification[] = [];
@@ -58,10 +69,10 @@ export class App implements OnInit, OnDestroy {
   };
 
   private destroy$ = new Subject<void>();
-
   constructor(
     private websocketService: WebsocketService,
-    private apiService: ApiService
+    private apiService: ApiService,
+    private queueStateService: QueueStateService
   ) {
     this.isElectron = !!(window as any).electronAPI;
   }
@@ -120,30 +131,90 @@ export class App implements OnInit, OnDestroy {
     this.destroy$.next();
     this.destroy$.complete();
   }
-
-  setCurrentView(view: 'dashboard' | 'queue' | 'history' | 'settings'): void {
+  setCurrentView(view: 'dashboard' | 'queue' | 'history' | 'settings' | 'p2p'): void {
     this.currentView = view;
     console.log('View changed to:', view);
   }
+
+  exitDraft(): void {
+    console.log('🚪 Saindo do draft...');
+    this.inDraftPhase = false;
+    this.draftData = null;
+    this.currentView = 'dashboard';
+    this.addNotification('info', 'Draft Cancelado', 'Você saiu da fase de draft.');
+  }
+
   private handleWebSocketMessage(message: any): void {
     switch (message.type) {
       case 'queue_joined':
         this.isInQueue = true;
+        // Atualizar estado compartilhado
+        this.queueStateService.updateCentralizedQueue({
+          isInQueue: true,
+          position: message.data.position
+        });
         this.addNotification('success', 'Fila', `Entrou na fila (posição ${message.data.position})`);
-        break;      case 'queue_update':
+        break;
+      case 'queue_update':
         console.log('🔄 Recebido queue_update:', message.data);
         this.queueStatus = message.data;
+        // Atualizar estado compartilhado com dados da fila
+        this.queueStateService.updateCentralizedQueue({
+          isInQueue: this.isInQueue,
+          playersInQueue: message.data.playersInQueue,
+          averageWaitTime: message.data.averageWaitTime,
+          estimatedTime: message.data.estimatedMatchTime
+        });
         console.log('🔄 queueStatus atualizado para:', this.queueStatus);
         break;
       case 'match_found':
-        this.matchFound = message.data;
-        this.addNotification('success', 'Partida Encontrada!', 'Uma partida foi encontrada para você');
+        console.log('🎮 Partida encontrada!', message.data);
+        this.matchFoundData = message.data;
+        this.showMatchFound = true;
+        this.addNotification('success', 'Partida Encontrada', 'Uma partida foi encontrada! Aceite para continuar.');
+        break;
+      case 'match_timeout':
+        console.log('⏰ Timeout da partida:', message.data);
+        this.showMatchFound = false;
+        this.matchFoundData = null;
+        this.addNotification('warning', 'Timeout', 'A partida foi cancelada por timeout. Alguns jogadores não aceitaram.');
+        break;
+      case 'match_cancelled':
+        console.log('❌ Partida cancelada:', message.data);
+        this.showMatchFound = false;
+        this.matchFoundData = null;
+        this.addNotification('info', 'Partida Cancelada', 'A partida foi cancelada.');
+        break;      case 'draft_phase':
+        console.log('🎯 Fase de draft iniciada!', message.data);
+        // Esconder modal de aceitação
+        this.showMatchFound = false;
+        this.matchFoundData = null;
+        // Sair da fila
+        this.isInQueue = false;
+        // Entrar na fase de draft
+        this.inDraftPhase = true;
+        this.draftData = message.data;
+        // Atualizar estado compartilhado
+        this.queueStateService.updateCentralizedQueue({
+          isInQueue: false,
+          playersInQueue: 0,
+          averageWaitTime: 0,
+          estimatedTime: 0
+        });
+        this.addNotification('success', 'Draft Iniciado', 'Todos aceitaram! A fase de draft começou.');
         break;
       case 'queue_error':
         this.addNotification('error', 'Erro na Fila', message.message);
         break;
       case 'queue_status':
         this.queueStatus = message.data;
+        // Atualizar estado compartilhado
+        this.queueStateService.updateCentralizedQueue({
+          isInQueue: this.isInQueue,
+          playersInQueue: message.data.playersInQueue,
+          averageWaitTime: message.data.averageWaitTime,
+          estimatedTime: message.data.estimatedMatchTime
+        });
         break;
     }
   }
@@ -174,50 +245,83 @@ export class App implements OnInit, OnDestroy {
     try {
       await this.websocketService.joinQueue(this.currentPlayer, preferences);
       this.isInQueue = true;
+      // Atualizar estado compartilhado
+      this.queueStateService.updateCentralizedQueue({
+        isInQueue: true
+      });
       this.addNotification('success', 'Fila', `Entrou na fila como ${preferences?.primaryLane || 'qualquer lane'}`);
     } catch (error) {
       this.addNotification('error', 'Erro', 'Não foi possível entrar na fila');
     }
-  }
-  async leaveQueue(): Promise<void> {
-    console.log('🔍 leaveQueue chamado no frontend');
+  }  async leaveQueue(): Promise<void> {
     try {
       await this.websocketService.leaveQueue();
       this.isInQueue = false;
-      this.addNotification('info', 'Fila', 'Saiu da fila');
-      console.log('✅ Saiu da fila com sucesso');
+      // Atualizar estado compartilhado
+      this.queueStateService.updateCentralizedQueue({
+        isInQueue: false
+      });
+      this.addNotification('info', 'Fila', 'Você saiu da fila');
     } catch (error) {
-      console.error('❌ Erro ao sair da fila:', error);
-      this.addNotification('error', 'Erro', 'Não foi possível sair da fila');
+      console.error('Erro ao sair da fila:', error);
+      this.addNotification('error', 'Erro', 'Erro ao sair da fila');
     }
   }
 
-  // Auto-join queue function
-  async autoJoinQueue(): Promise<void> {
-    if (!this.lcuStatus.isConnected) {
-      this.addNotification('warning', 'LoL Cliente Offline', 'Conecte-se ao League of Legends primeiro');
+  // Método para adicionar bot na fila (apenas para popcorn seller#coup)
+  async addBotToQueue(): Promise<void> {
+    // Verificar se o usuário atual é autorizado
+    if (!this.isAuthorizedForBots()) {
+      this.addNotification('error', 'Não Autorizado', 'Você não tem permissão para adicionar bots');
       return;
     }
 
     try {
-      this.apiService.autoJoinQueue().subscribe({
-        next: (response) => {
-          if (response && response.success) {
-            this.isInQueue = true;
-            // Atualizar informações do jogador automaticamente
-            if (response.player) {
-              this.currentPlayer = response.player;
-              localStorage.setItem('currentPlayer', JSON.stringify(response.player));
-            }
-            this.addNotification('success', 'Auto Fila', 'Entrou na fila automaticamente');
-          }
-        },
-        error: (err) => {
-          this.addNotification('error', 'Erro', 'Não foi possível entrar na fila automaticamente');
-        }
-      });
+      // Chamar API para adicionar bot
+      await this.apiService.addBotToQueue().toPromise();
+      this.addNotification('success', 'Bot Adicionado', 'Um bot foi adicionado à fila com lane aleatória');
     } catch (error) {
-      this.addNotification('error', 'Erro', 'Não foi possível entrar na fila');
+      console.error('Erro ao adicionar bot:', error);
+      this.addNotification('error', 'Erro', 'Erro ao adicionar bot na fila');
+    }
+  }
+
+  // Verificar se o usuário atual pode adicionar bots
+  private isAuthorizedForBots(): boolean {
+    return this.currentPlayer?.summonerName === 'popcorn seller' &&
+           this.currentPlayer?.tagLine === 'coup';
+  }
+  // Métodos para partida encontrada
+  async onAcceptMatch(matchId: number): Promise<void> {
+    try {
+      await this.apiService.acceptMatch(
+        matchId,
+        this.currentPlayer?.id,
+        this.currentPlayer?.summonerName
+      ).toPromise();
+      this.addNotification('success', 'Partida Aceita', 'Você aceitou a partida! Aguarde outros jogadores.');
+    } catch (error) {
+      console.error('Erro ao aceitar partida:', error);
+      this.addNotification('error', 'Erro', 'Erro ao aceitar partida');
+      this.showMatchFound = false;
+      this.matchFoundData = null;
+    }
+  }  async onDeclineMatch(matchId: number): Promise<void> {
+    try {
+      await this.apiService.declineMatch(
+        matchId,
+        this.currentPlayer?.id,
+        this.currentPlayer?.summonerName
+      ).toPromise();
+
+      this.showMatchFound = false;
+      this.matchFoundData = null;
+      this.addNotification('info', 'Partida Recusada', 'Você recusou a partida');
+    } catch (error) {
+      console.error('Erro ao recusar partida:', error);
+      this.showMatchFound = false;
+      this.matchFoundData = null;
+      this.addNotification('info', 'Partida Recusada', 'Você recusou a partida');
     }
   }
 

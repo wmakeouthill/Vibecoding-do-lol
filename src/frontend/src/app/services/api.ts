@@ -472,10 +472,68 @@ export class ApiService {
       );
   }
 
-  // LCU Current Game Status
-  getCurrentGameFromLCU(): Observable<any> {
-    return this.http.get(`${this.baseUrl}/lcu/current-match-details`)
+  // Queue endpoints
+  joinQueue(playerData: any, preferences: any): Observable<any> {
+    return this.http.post(`${this.baseUrl}/queue/join`, { player: playerData, preferences })
       .pipe(
+        retry(1),
+        catchError(this.handleError)
+      );
+  }
+
+  leaveQueue(playerId: number): Observable<any> {
+    return this.http.post(`${this.baseUrl}/queue/leave`, { playerId })
+      .pipe(
+        retry(1),
+        catchError(this.handleError)
+      );
+  }
+
+  // Método para adicionar bot na fila (feature temporária para testes)
+  addBotToQueue(): Observable<any> {
+    return this.http.post(`${this.baseUrl}/queue/add-bot`, {})
+      .pipe(
+        retry(1),
+        catchError(this.handleError)
+      );  }
+  // Métodos para sistema de partidas
+  acceptMatch(matchId: number, playerId?: number, summonerName?: string): Observable<any> {
+    const body: any = { matchId };
+    if (playerId) body.playerId = playerId;
+    if (summonerName) body.summonerName = summonerName;
+
+    return this.http.post(`${this.baseUrl}/match/accept`, body)
+      .pipe(
+        retry(1),
+        catchError(this.handleError)
+      );
+  }
+
+  declineMatch(matchId: number, playerId?: number, summonerName?: string): Observable<any> {
+    const body: any = { matchId };
+    if (playerId) body.playerId = playerId;
+    if (summonerName) body.summonerName = summonerName;
+
+    return this.http.post(`${this.baseUrl}/match/decline`, body)
+      .pipe(
+        retry(1),
+        catchError(this.handleError)
+      );
+  }
+
+  // Método original do sistema antigo (manter para compatibilidade)
+  joinLegacyQueue(playerId: number, mmr: number, role: string): Observable<any> {
+    return this.http.post(`${this.baseUrl}/queue/join-legacy`, { playerId, mmr, role })
+      .pipe(
+        retry(1),
+        catchError(this.handleError)
+      );
+  }
+
+  leaveLegacyQueue(playerId: number): Observable<any> {
+    return this.http.post(`${this.baseUrl}/queue/leave-legacy`, { playerId })
+      .pipe(
+        retry(1),
         catchError(this.handleError)
       );
   }

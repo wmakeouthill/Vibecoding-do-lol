@@ -96,6 +96,19 @@
         <i class="icon-play"></i>
         <span>Selecionar Lanes e Entrar na Fila</span>
       </button>
+
+      <!-- Funcionalidade especial para adicionar bots (apenas para popcorn seller#coup) -->
+      <div class="bot-controls" *ngIf="isSpecialUser() && !isInQueue">
+        <h4>🤖 Controles de Bot (Teste)</h4>
+        <p class="bot-warning">⚠️ Feature temporária para testes do sistema de matchmaking</p>
+        <button class="queue-btn bot-btn"
+                [disabled]="!queueStatus.isActive"
+                (click)="onAddBot()">
+          <i class="icon-plus"></i>
+          <span>Adicionar Bot na Fila</span>
+        </button>
+        <small class="bot-note">Os bots serão criados com lanes aleatórias disponíveis</small>
+      </div>
     </div>
 
     <!-- In Queue State -->

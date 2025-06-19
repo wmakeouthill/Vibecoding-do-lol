@@ -811,3 +811,122 @@
     }
   }
 }
+
+// Draft Phase Styles
+.draft-view {
+  background: var(--bg-secondary);
+  border-radius: var(--border-radius-lg);
+  border: 2px solid var(--border-accent);
+  box-shadow: var(--shadow-lg);
+
+  h2 {
+    text-align: center;
+    color: var(--primary-gold);
+    font-size: 2rem;
+    margin-bottom: var(--spacing-lg);
+    text-shadow: 0 0 10px rgba(200, 155, 60, 0.3);
+  }
+
+  .draft-info {
+    padding: var(--spacing-lg);
+
+    p {
+      text-align: center;
+      font-size: 1.1rem;
+      margin-bottom: var(--spacing-lg);
+      color: var(--text-primary);
+    }
+  }
+
+  .match-details {
+    background: var(--bg-primary);
+    border-radius: var(--border-radius-md);
+    padding: var(--spacing-lg);
+    margin-bottom: var(--spacing-lg);
+    border: 1px solid var(--border-primary);
+
+    h3 {
+      color: var(--accent-blue);
+      margin-bottom: var(--spacing-md);
+      text-align: center;
+    }
+
+    p {
+      text-align: center;
+      margin-bottom: var(--spacing-md);
+      font-family: monospace;
+      background: var(--bg-tertiary);
+      padding: var(--spacing-sm);
+      border-radius: var(--border-radius-sm);
+    }
+  }
+
+  .teams {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-lg);
+    margin-top: var(--spacing-lg);
+
+    .team {
+      background: var(--bg-tertiary);
+      border-radius: var(--border-radius-md);
+      padding: var(--spacing-md);
+      border: 2px solid;
+
+      &.blue-team {
+        border-color: var(--accent-blue);
+        background: linear-gradient(135deg, rgba(5, 150, 170, 0.1) 0%, var(--bg-tertiary) 100%);
+
+        h4 {
+          color: var(--accent-blue);
+        }
+      }
+
+      &.red-team {
+        border-color: #dc3545;
+        background: linear-gradient(135deg, rgba(220, 53, 69, 0.1) 0%, var(--bg-tertiary) 100%);
+
+        h4 {
+          color: #dc3545;
+        }
+      }
+
+      h4 {
+        text-align: center;
+        margin-bottom: var(--spacing-md);
+        font-size: 1.2rem;
+      }
+
+      ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+
+        li {
+          background: var(--bg-primary);
+          padding: var(--spacing-sm);
+          margin-bottom: var(--spacing-xs);
+          border-radius: var(--border-radius-sm);
+          border: 1px solid var(--border-primary);
+          text-align: center;
+          font-weight: 500;
+
+          &:last-child {
+            margin-bottom: 0;
+          }
+        }
+      }
+    }
+  }
+
+  .draft-actions {
+    display: flex;
+    justify-content: center;
+    gap: var(--spacing-md);
+    margin-top: var(--spacing-lg);
+
+    button {
+      min-width: 150px;
+    }
+  }
+}

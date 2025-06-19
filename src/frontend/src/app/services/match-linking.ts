@@ -106,12 +106,11 @@ export class MatchLinkingService {
       this.processPostGameLinking(session, gameResults);
     }
   }
-
   // Monitor for game completion via LCU
   private startGameMonitoring(sessionId: string): void {
     const checkInterval = setInterval(() => {
-      this.apiService.getCurrentGameFromLCU().subscribe({
-        next: (response) => {
+      this.apiService.getCurrentGame().subscribe({
+        next: (response: any) => {
           if (response && response.success) {
             if (response.phase === 'EndOfGame' || response.phase === 'PreEndOfGame') {
               // Game ended, try to get results

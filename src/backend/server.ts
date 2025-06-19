@@ -340,6 +340,98 @@ app.get('/api/queue/status', (req: Request, res: Response) => {
   res.json(queueStatus);
 });
 
+// Rota temporária para adicionar bot na fila (apenas para testes)
+app.post('/api/queue/add-bot', async (req: Request, res: Response) => {
+  try {
+    await matchmakingService.addBotToQueue();
+    res.json({ 
+      success: true, 
+      message: 'Bot adicionado à fila com sucesso' 
+    });  } catch (error: any) {
+    console.error('Erro ao adicionar bot:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// Endpoints para sistema de partidas
+app.post('/api/match/accept', (async (req: Request, res: Response) => {
+  try {
+    const { playerId, matchId, summonerName } = req.body;
+    
+    if ((!playerId && !summonerName) || !matchId) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'playerId ou summonerName e matchId são obrigatórios' 
+      });
+    }
+
+    await matchmakingService.acceptMatch(playerId || 0, matchId, summonerName);
+    res.json({ 
+      success: true, 
+      message: 'Partida aceita com sucesso' 
+    });
+  } catch (error: any) {
+    console.error('Erro ao aceitar partida:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+}) as RequestHandler);
+
+app.post('/api/match/decline', (async (req: Request, res: Response) => {
+  try {
+    const { playerId, matchId, summonerName } = req.body;
+    
+    if ((!playerId && !summonerName) || !matchId) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'playerId ou summonerName e matchId são obrigatórios' 
+      });
+    }
+
+    await matchmakingService.declineMatch(playerId || 0, matchId, summonerName);
+    res.json({ 
+      success: true, 
+      message: 'Partida recusada com sucesso' 
+    });
+  } catch (error: any) {
+    console.error('Erro ao recusar partida:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+}) as RequestHandler);
+
+app.post('/api/match/draft-action', (async (req: Request, res: Response) => {
+  try {
+    const { matchId, playerId, championId, action } = req.body;
+    
+    if (!matchId || !playerId || !championId || !action) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Todos os parâmetros são obrigatórios' 
+      });
+    }
+
+    await matchmakingService.processDraftAction(matchId, playerId, championId, action);
+    res.json({ 
+      success: true, 
+      message: 'Ação do draft processada com sucesso' 
+    });
+  } catch (error: any) {
+    console.error('Erro ao processar ação do draft:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+}) as RequestHandler);
+
 app.get('/api/matches/recent', async (req: Request, res: Response) => {
   try {
     const matches = await matchmakingService.getRecentMatches();

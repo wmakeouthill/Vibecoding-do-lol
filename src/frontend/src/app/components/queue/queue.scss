@@ -516,6 +516,63 @@
       }
     }
   }
+
+  // Bot controls para usuário especial
+  .bot-controls {
+    margin-top: var(--spacing-md);
+    padding: var(--spacing-md);
+    background: linear-gradient(135deg, #2c1810, #3d2518);
+    border: 2px solid #8b4513;
+    border-radius: var(--radius-md);
+    text-align: center;
+
+    h4 {
+      color: #ffd700;
+      margin-bottom: var(--spacing-sm);
+      font-size: var(--font-size-md);
+    }
+
+    .bot-warning {
+      color: #ffa500;
+      font-size: var(--font-size-sm);
+      margin-bottom: var(--spacing-md);
+      font-style: italic;
+    }
+
+    .bot-btn {
+      background: linear-gradient(135deg, #8b4513, #a0522d);
+      border: 1px solid #cd853f;
+      color: white;
+      padding: var(--spacing-sm) var(--spacing-md);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: var(--spacing-xs);
+
+      &:hover:not(:disabled) {
+        background: linear-gradient(135deg, #a0522d, #8b4513);
+        transform: translateY(-1px);
+      }
+
+      &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      i {
+        font-size: var(--font-size-sm);
+      }
+    }
+
+    .bot-note {
+      display: block;
+      margin-top: var(--spacing-sm);
+      color: #ccc;
+      font-size: var(--font-size-xs);
+    }
+  }
 }
 
 // Animations

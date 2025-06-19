@@ -21,6 +21,9 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   @Output() joinQueue = new EventEmitter<QueuePreferences>();
   @Output() leaveQueue = new EventEmitter<void>();
 
+  // Adicionar outputs para funcionalidade de bots
+  @Output() addBot = new EventEmitter<void>();
+
   queueTimer = 0;
   private timerInterval?: number;
 
@@ -213,5 +216,20 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       const days = Math.floor(diffInSeconds / 86400);
       return `há ${days}d`;
     }
+  }
+
+  // Verificar se o usuário atual é o popcorn seller que pode adicionar bots
+  isSpecialUser(): boolean {
+    return this.currentPlayer?.summonerName === 'popcorn seller' &&
+           this.currentPlayer?.tagLine === 'coup';
+  }
+
+  // Método para adicionar bot na fila
+  onAddBot(): void {
+    if (!this.isSpecialUser()) {
+      console.warn('Usuário não autorizado para adicionar bots');
+      return;
+    }
+    this.addBot.emit();
   }
 }

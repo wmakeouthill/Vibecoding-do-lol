@@ -232,12 +232,11 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
 
     // Initial check
     this.checkCurrentGame();
-  }
-  private checkCurrentGame(): void {
+  }  private checkCurrentGame(): void {
     if (!this.player) return;
 
     // Use the new LCU endpoint for more accurate current game status
-    this.apiService.getCurrentGameFromLCU().subscribe({
+    this.apiService.getCurrentGame().subscribe({
       next: (response: any) => {
         if (response && response.success && response.currentGame) {
           this.currentGame = response.currentGame;

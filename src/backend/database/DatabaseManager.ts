@@ -683,6 +683,21 @@ export class DatabaseManager {
       throw error;
     }
   }
+  // Método para atualizar status da partida
+  async updateMatchStatus(matchId: number | string, status: string): Promise<void> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+
+    try {
+      await this.db.run(
+        'UPDATE matches SET status = ? WHERE id = ? OR match_id = ?',
+        [status, matchId, matchId]
+      );
+      console.log(`📊 Status da partida ${matchId} atualizado para: ${status}`);
+    } catch (error) {
+      console.error('Erro ao atualizar status da partida:', error);
+      throw error;
+    }
+  }
 
   // ===== END MATCH LINKING METHODS =====
 }

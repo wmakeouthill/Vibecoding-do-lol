@@ -1,0 +1,128 @@
+<div class="match-found-overlay" *ngIf="isVisible && matchData">
+  <div class="match-found-modal">
+    <!-- Header -->
+    <div class="match-header">
+      <h2>🎮 Partida Encontrada!</h2>
+      <div class="match-info">
+        <span class="estimated-duration">
+          <i class="icon-clock"></i>
+          ~{{ matchData.estimatedGameDuration }} minutos
+        </span>
+      </div>
+    </div>
+
+    <!-- Accept/Decline Phase -->
+    <div class="accept-phase" *ngIf="matchData.phase === 'accept'">
+      <div class="countdown-timer">
+        <div class="timer-circle">
+          <span class="time-left">{{ acceptTimeLeft }}</span>
+        </div>
+        <p>Aceite a partida em {{ acceptTimeLeft }} segundos</p>
+      </div>
+
+      <div class="action-buttons">
+        <button class="accept-btn" (click)="onAcceptMatch()">
+          <i class="icon-check"></i>
+          Aceitar
+        </button>
+        <button class="decline-btn" (click)="onDeclineMatch()">
+          <i class="icon-close"></i>
+          Recusar
+        </button>
+      </div>
+    </div>
+
+    <!-- Teams Overview -->
+    <div class="teams-container">
+      <!-- Your Team -->
+      <div class="team-section your-team">
+        <div class="team-header" [style.border-color]="getTeamColor(matchData.playerSide)">
+          <h3 [style.color]="getTeamColor(matchData.playerSide)">
+            {{ getTeamSideName(matchData.playerSide) }}
+          </h3>
+          <span class="team-mmr">{{ getRoundedMMR(matchData.averageMMR.yourTeam) }} MMR médio</span>
+        </div>
+
+        <div class="players-list">
+          <div class="player-card"
+               *ngFor="let player of matchData.teammates"
+               [class.current-player]="player.summonerName.includes('popcorn seller')">
+            <div class="player-avatar">
+              <img src="/assets/images/champion-placeholder.svg"
+                   alt="Avatar"
+                   class="avatar-image">
+            </div>
+            <div class="player-info">
+              <span class="player-name">{{ player.summonerName }}</span>
+              <div class="player-lanes">
+                <span class="lane primary-lane">
+                  {{ getLaneIcon(player.primaryLane) }} {{ getLaneName(player.primaryLane) }}
+                </span>
+                <span class="lane-separator">•</span>
+                <span class="lane secondary-lane">
+                  {{ getLaneIcon(player.secondaryLane) }} {{ getLaneName(player.secondaryLane) }}
+                </span>
+              </div>
+              <span class="player-mmr">{{ player.mmr }} MMR</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VS Divider -->
+      <div class="vs-divider">
+        <span class="vs-text">VS</span>
+      </div>
+
+      <!-- Enemy Team -->
+      <div class="team-section enemy-team">
+        <div class="team-header" [style.border-color]="getTeamColor(matchData.playerSide === 'blue' ? 'red' : 'blue')">
+          <h3 [style.color]="getTeamColor(matchData.playerSide === 'blue' ? 'red' : 'blue')">
+            {{ getTeamSideName(matchData.playerSide === 'blue' ? 'red' : 'blue') }}
+          </h3>
+          <span class="team-mmr">{{ getRoundedMMR(matchData.averageMMR.enemyTeam) }} MMR médio</span>
+        </div>
+
+        <div class="players-list">
+          <div class="player-card" *ngFor="let player of matchData.enemies">
+            <div class="player-avatar">
+              <img src="/assets/images/champion-placeholder.svg"
+                   alt="Avatar"
+                   class="avatar-image">
+            </div>
+            <div class="player-info">
+              <span class="player-name">{{ player.summonerName }}</span>
+              <div class="player-lanes">
+                <span class="lane primary-lane">
+                  {{ getLaneIcon(player.primaryLane) }} {{ getLaneName(player.primaryLane) }}
+                </span>
+                <span class="lane-separator">•</span>
+                <span class="lane secondary-lane">
+                  {{ getLaneIcon(player.secondaryLane) }} {{ getLaneName(player.secondaryLane) }}
+                </span>
+              </div>
+              <span class="player-mmr">{{ player.mmr }} MMR</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Match Balance Info -->
+    <div class="match-balance">
+      <div class="balance-info">
+        <span class="balance-label">Balanceamento da Partida:</span>        <div class="mmr-difference">
+          <span class="mmr-diff">
+            Diferença de MMR: {{ getMMRDifference() }}
+          </span>
+          <span class="balance-rating"
+                [class.excellent]="isExcellentBalance()"
+                [class.good]="isGoodBalance()"
+                [class.fair]="isFairBalance()">
+            {{ getBalanceRating(getMMRDifference()) }}
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

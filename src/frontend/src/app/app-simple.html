@@ -10,7 +10,6 @@
       </span>
     </div>
   </header>
-
   <!-- Navigation -->
   <nav class="nav-buttons">
     <button
@@ -24,6 +23,11 @@
       ⏱️ Fila ({{ queueStatus.playersInQueue }})
     </button>
     <button
+      [class.active]="currentView === 'p2p'"
+      (click)="setCurrentView('p2p')">
+      🔗 Rede P2P
+    </button>
+    <button
       [class.active]="currentView === 'history'"
       (click)="setCurrentView('history')">
       📊 Histórico
@@ -34,10 +38,39 @@
       ⚙️ Configurações
     </button>
   </nav>
-
   <!-- Content -->
   <main class="content">
-    <ng-container [ngSwitch]="currentView">
+    <!-- Draft Phase -->
+    <div *ngIf="inDraftPhase" class="view-container draft-view">
+      <h2>🎯 Fase de Draft</h2>
+      <div class="draft-info">
+        <p>Todos os jogadores aceitaram! A fase de pick & ban começou.</p>
+        <div *ngIf="draftData" class="match-details">
+          <h3>Detalhes da Partida:</h3>
+          <p><strong>ID da Partida:</strong> {{ draftData.matchId }}</p>
+          <div class="teams">
+            <div class="team blue-team">
+              <h4>🔵 Time Azul</h4>
+              <ul>
+                <li *ngFor="let player of draftData.blueTeam">{{ player.summonerName }}</li>
+              </ul>
+            </div>
+            <div class="team red-team">
+              <h4>🔴 Time Vermelho</h4>
+              <ul>
+                <li *ngFor="let player of draftData.redTeam">{{ player.summonerName }}</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <div class="draft-actions">
+          <button (click)="exitDraft()" class="btn-secondary">❌ Sair do Draft</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Normal Views -->
+    <ng-container *ngIf="!inDraftPhase" [ngSwitch]="currentView">
       <!-- Dashboard -->
       <div *ngSwitchCase="'dashboard'" class="view-container">
         <app-dashboard
@@ -47,18 +80,23 @@
           (viewHistory)="setCurrentView('history')"
           (openSettings)="setCurrentView('settings')">
         </app-dashboard>
-      </div>
-
-      <!-- Queue -->
-      <div *ngSwitchCase="'queue'" class="view-container">
-        <app-queue
+      </div><!-- Queue -->
+      <div *ngSwitchCase="'queue'" class="view-container">        <app-queue
           [isInQueue]="isInQueue"
           [queueStatus]="queueStatus"
           [currentPlayer]="currentPlayer"
           (joinQueue)="joinQueue($event)"
-          (leaveQueue)="leaveQueue()">
+          (leaveQueue)="leaveQueue()"
+          (addBot)="addBotToQueue()">
         </app-queue>
-      </div>      <!-- History -->
+      </div>
+
+      <!-- P2P Network -->
+      <div *ngSwitchCase="'p2p'" class="view-container">
+        <h2>🔗 Rede Peer-to-Peer</h2>
+        <p>Sistema de conexão direta entre jogadores para matchmaking descentralizado.</p>
+        <app-p2p-status></app-p2p-status>
+      </div><!-- History -->
       <div *ngSwitchCase="'history'" class="view-container">
         <app-match-history [player]="currentPlayer"></app-match-history>
       </div>
@@ -162,24 +200,19 @@
 
           <button type="button" (click)="updateRiotApiKey()" class="btn-primary">
             🔑 Configurar API Key
-          </button>
-        </div>
+          </button>        </div>
       </div>
 
     </ng-container>
   </main>
 
   <!-- Match Found Modal -->
-  <div *ngIf="matchFound" class="modal-overlay">
-    <div class="modal-content">
-      <h2>🎉 Partida Encontrada!</h2>
-      <p>Uma partida foi encontrada. Aceitar?</p>
-      <div class="modal-actions">
-        <button (click)="acceptMatch()" class="btn-success">✅ Aceitar</button>
-        <button (click)="declineMatch()" class="btn-danger">❌ Recusar</button>
-      </div>
-    </div>
-  </div>
+  <app-match-found
+    [matchData]="matchFoundData"
+    [isVisible]="showMatchFound"
+    (acceptMatch)="onAcceptMatch($event)"
+    (declineMatch)="onDeclineMatch($event)">
+  </app-match-found>
 
   <!-- Notifications -->
   <div class="notifications">
