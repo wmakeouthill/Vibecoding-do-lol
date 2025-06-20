@@ -78,20 +78,32 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     });
   }  loadCustomMatches(): void {
     if (!this.player) {
-      // console.warn('⚠️ Nenhum player disponível para carregar partidas customizadas');
+      console.warn('⚠️ [DEBUG] Nenhum player disponível para carregar partidas customizadas');
       return;
-    }this.loading = true;
+    }
+
+    console.log('🔍 [DEBUG] Carregando partidas customizadas para player:', this.player);
+
+    this.loading = true;
     this.error = null;
 
     try {
       // Primeiro tentar com o nome do summoner, depois com o ID
       const playerIdentifier = this.player.summonerName || this.player.id.toString();
 
+      console.log('🎯 [DEBUG] Usando playerIdentifier:', playerIdentifier);
+
       this.apiService.getCustomMatches(playerIdentifier, this.currentPage * this.matchesPerPage, this.matchesPerPage).subscribe({
-        next: (response) => {          if (response && response.success && response.matches && response.matches.length > 0) {
+        next: (response) => {
+          console.log('📋 [DEBUG] Resposta do backend:', response);          if (response && response.success && response.matches && response.matches.length > 0) {
+            console.log('✅ [DEBUG] Mapeando', response.matches.length, 'partidas customizadas');
+            console.log('🔍 [DEBUG] Dados das partidas recebidas:', response.matches);
             this.customMatches = this.mapApiMatchesToModel(response.matches);
             this.totalMatches = response.pagination.total;
+            console.log('📊 [DEBUG] Partidas mapeadas:', this.customMatches.length);
+            console.log('🎯 [DEBUG] Conteúdo das partidas mapeadas:', this.customMatches);
           } else {
+            console.log('⚠️ [DEBUG] Nenhuma partida encontrada na resposta');
             this.customMatches = [];
             this.totalMatches = 0;
             this.error = 'Você ainda não jogou nenhuma partida customizada. Complete uma partida personalizada para vê-la aparecer aqui.';

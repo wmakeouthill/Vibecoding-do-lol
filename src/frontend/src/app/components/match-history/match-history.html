@@ -436,8 +436,9 @@
             </div>
           </div>
         </div>
-      </div>
-    </div>    <!-- Custom Matches Tab Content -->
+      </div>    </div>
+
+    <!-- Custom Matches Tab Content -->
     <div *ngIf="isCustomTab()" class="custom-matches-content">
       <!-- Summary Stats for Custom Matches -->
       <div class="summary-stats custom-theme">
@@ -466,7 +467,7 @@
 
       <!-- Custom Match List -->
       <div class="match-list custom-style">
-        <div *ngFor="let match of customMatches; trackBy: trackMatch"
+        <div *ngFor="let match of getCurrentMatches(); trackBy: trackMatch"
              class="match-item custom-match"
              [class.win]="match.playerStats?.isWin"
              [class.loss]="!match.playerStats?.isWin">
@@ -477,7 +478,9 @@
               <span class="result-text">{{ match.playerStats?.isWin ? 'V' : 'D' }}</span>
             </div>
             <div class="match-duration">{{ getMatchDuration(match) }}</div>
-          </div>          <!-- Champion Info -->
+          </div>
+
+          <!-- Champion Info -->
           <div class="champion-info">
             <div class="champion-icon">
               <div class="champion-placeholder">{{ match.playerStats?.champion?.charAt(0) || '?' }}</div>
@@ -520,7 +523,9 @@
             </button>
           </div>
         </div>
-      </div>  </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Performance Analysis -->
   <div *ngIf="getCurrentMatches().length > 0" class="performance-analysis">
