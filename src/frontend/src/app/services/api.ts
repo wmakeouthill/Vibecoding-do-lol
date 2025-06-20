@@ -34,6 +34,10 @@ interface MatchHistory {
 export class ApiService {
   private baseUrl = this.getBaseUrl();
 
+  // Error suppression system to reduce spam when services are down
+  private errorSuppressionCache = new Map<string, number>();
+  private readonly ERROR_SUPPRESSION_DURATION = 30000; // 30 seconds
+
   constructor(private http: HttpClient) {}
 
   private getBaseUrl(): string {
@@ -54,9 +58,9 @@ export class ApiService {
 
   private isElectron(): boolean {
     return !!(window as any).electronAPI;
-  }
-  private handleError(error: HttpErrorResponse) {
+  }  private handleError(error: HttpErrorResponse) {
     let errorMessage = 'Erro desconhecido';
+    const currentTime = Date.now();
 
     if (error.error instanceof ErrorEvent) {
       // Erro do lado do cliente
@@ -65,16 +69,39 @@ export class ApiService {
       // Erro do lado do servidor
       if (error.status === 503 && error.error?.error?.includes('Riot API')) {
         errorMessage = 'Chave da Riot API não configurada ou inválida. Configure uma chave válida nas configurações.';
+
+        // Suppress repeated Riot API errors
+        const errorKey = 'riot-api-503';
+        const lastErrorTime = this.errorSuppressionCache.get(errorKey);
+        if (!lastErrorTime || (currentTime - lastErrorTime) > this.ERROR_SUPPRESSION_DURATION) {
+          console.warn('🚫 Riot API service unavailable');
+          this.errorSuppressionCache.set(errorKey, currentTime);
+        }
       } else if (error.status === 503 && error.error?.error?.includes('LCU')) {
         errorMessage = 'Cliente do League of Legends não está conectado. Abra o jogo e tente novamente.';
+
+        // Suppress repeated LCU errors
+        const errorKey = 'lcu-503';
+        const lastErrorTime = this.errorSuppressionCache.get(errorKey);
+        if (!lastErrorTime || (currentTime - lastErrorTime) > this.ERROR_SUPPRESSION_DURATION) {
+          console.warn('🎮 LCU not connected');
+          this.errorSuppressionCache.set(errorKey, currentTime);
+        }
       } else if (error.status === 404 && error.error?.error?.includes('não encontrado')) {
         errorMessage = error.error.error;
       } else {
         errorMessage = error.error?.error || error.message || `Erro ${error.status}`;
+
+        // Only log unexpected errors
+        const errorKey = `${error.status}-${error.url}`;
+        const lastErrorTime = this.errorSuppressionCache.get(errorKey);
+        if (!lastErrorTime || (currentTime - lastErrorTime) > this.ERROR_SUPPRESSION_DURATION) {
+          console.error('❌ API Error:', errorMessage);
+          this.errorSuppressionCache.set(errorKey, currentTime);
+        }
       }
     }
 
-    console.error('Erro na API:', errorMessage);
     return throwError(() => new Error(errorMessage));
   }
 
@@ -335,18 +362,75 @@ export class ApiService {
         retry(1),
         catchError(this.handleError)
       );
-  }
-
-  // Método para buscar automaticamente do LCU (cliente do LoL) - MAIS CONVENIENTE
+  }  // Método para buscar automaticamente do LCU (cliente do LoL) - MAIS CONVENIENTE
   getPlayerFromLCU(): Observable<Player> {
+    // Strategy 1: Try LCU + Riot API combined endpoint first
     return this.http.get<any>(`${this.baseUrl}/player/current-details`)
       .pipe(
         retry(1),
         map(response => {
           if (response.success && response.data) {
-            return this.mapApiResponseToPlayer(response.data);
+            const mappedPlayer = this.mapApiResponseToPlayer(response.data);
+
+            // Add metadata about data completeness
+            (mappedPlayer as any)._isPartialData = response.data.partialData || false;
+            (mappedPlayer as any)._dataSource = response.data.partialData ? 'LCU apenas' : 'LCU + Riot API';
+
+            // Log the data source for debugging
+            if (response.data.partialData) {
+              console.log('📡 Dados carregados apenas do LCU (Riot API indisponível)');
+            } else {
+              console.log('✅ Dados completos carregados do LCU + Riot API');
+            }
+
+            return mappedPlayer;
           }
           throw new Error('Nenhum jogador conectado no League of Legends');
+        }),
+        catchError((error: any) => {
+          // If combined endpoint fails due to Riot API, try LCU-only endpoint
+          console.log('💡 Combined LCU+Riot endpoint failed, trying LCU-only approach:', error.message);
+
+          if (error.message?.includes('Riot API') || error.message?.includes('não encontrado')) {
+            return this.getLCUOnlyPlayerData();
+          }
+
+          // For other errors, propagate them
+          return this.handleError(error);
+        })
+      );
+  }
+
+  // Fallback method: Get player data from LCU only (no Riot API dependency)
+  private getLCUOnlyPlayerData(): Observable<Player> {
+    console.log('🎮 Falling back to LCU-only data (Riot API unavailable)');
+
+    return this.http.get<any>(`${this.baseUrl}/lcu/current-summoner`)
+      .pipe(
+        retry(1),
+        map(lcuData => {
+          if (!lcuData) {
+            throw new Error('Dados do LCU não disponíveis');
+          }
+
+          // Create a Player object from LCU data only
+          const lcuPlayer: Player = {
+            id: lcuData.summonerId || 0,
+            summonerName: lcuData.gameName || lcuData.displayName || 'Unknown',
+            tagLine: lcuData.tagLine || null,
+            summonerId: (lcuData.summonerId || '0').toString(),
+            puuid: lcuData.puuid || '',
+            profileIconId: lcuData.profileIconId || 29,
+            summonerLevel: lcuData.summonerLevel || 30,
+            region: 'br1', // Default region
+            currentMMR: 1200, // Default MMR when Riot API unavailable
+            rank: undefined, // No rank data without Riot API
+            wins: undefined,
+            losses: undefined
+          };
+
+          console.log('✅ Player data created from LCU-only (Riot API offline):', lcuPlayer.summonerName);
+          return lcuPlayer;
         }),
         catchError(this.handleError)
       );
@@ -375,13 +459,16 @@ export class ApiService {
         map(response => this.mapApiResponseToPlayer(response)),
         catchError(this.handleError)
       );
-  }
-  // Método auxiliar para mapear resposta da API para Player
+  }  // Método auxiliar para mapear resposta da API para Player
   private mapApiResponseToPlayer(data: any): Player {
     // Adaptar diferentes formatos de resposta da API para o formato Player esperado
     const lcuData = data.lcu || data.lcuData || {};
     const riotAccount = data.riotAccount || {};
     const riotApi = data.riotApi || data.riotData || data;
+    const lcuRankedStats = data.lcuRankedStats || null;
+
+    // Process rank data from multiple sources
+    const rankedData = this.processRankedData(riotApi, lcuRankedStats);
 
     return {
       id: riotApi.id || lcuData.summonerId || 0,
@@ -392,16 +479,79 @@ export class ApiService {
       profileIconId: riotApi.profileIconId || lcuData.profileIconId || 1,
       summonerLevel: riotApi.summonerLevel || lcuData.summonerLevel || 30,
       region: riotApi.region || 'br1',
-      currentMMR: this.calculateMMRFromData(riotApi),
-      rank: this.extractRankData(riotApi),
-      wins: riotApi.soloQueue?.wins || riotApi.wins,
-      losses: riotApi.soloQueue?.losses || riotApi.losses
+      currentMMR: this.calculateMMRFromData(riotApi, lcuRankedStats),
+      rank: rankedData.soloQueue ? this.extractRankData(riotApi) : undefined,
+      wins: rankedData.soloQueue?.wins || riotApi.soloQueue?.wins || riotApi.wins,
+      losses: rankedData.soloQueue?.losses || riotApi.soloQueue?.losses || riotApi.losses,
+      rankedData: rankedData
     };
   }
 
-  private calculateMMRFromData(data: any): number {
+  private processRankedData(riotApi: any, lcuRankedStats: any): any {
+    const result = {
+      soloQueue: null as any,
+      flexQueue: null as any
+    };
+
+    // Priority 1: Use Riot API data if available
+    if (riotApi?.soloQueue || riotApi?.rankedData?.soloQueue) {
+      result.soloQueue = riotApi.soloQueue || riotApi.rankedData.soloQueue;
+    }
+
+    if (riotApi?.flexQueue || riotApi?.rankedData?.flexQueue) {
+      result.flexQueue = riotApi.flexQueue || riotApi.rankedData.flexQueue;
+    }
+
+    // Priority 2: Use LCU ranked stats as fallback or supplement
+    if (lcuRankedStats?.queues) {
+      lcuRankedStats.queues.forEach((queue: any) => {
+        if (queue.queueType === 'RANKED_SOLO_5x5' && !result.soloQueue) {
+          result.soloQueue = {
+            tier: queue.tier,
+            rank: queue.division,
+            leaguePoints: queue.leaguePoints,
+            wins: queue.wins,
+            losses: queue.losses,
+            isProvisional: queue.isProvisional || false
+          };
+        } else if (queue.queueType === 'RANKED_FLEX_SR' && !result.flexQueue) {
+          result.flexQueue = {
+            tier: queue.tier,
+            rank: queue.division,
+            leaguePoints: queue.leaguePoints,
+            wins: queue.wins,
+            losses: queue.losses,
+            isProvisional: queue.isProvisional || false
+          };
+        }
+      });
+    }
+
+    return result;
+  }
+  private calculateMMRFromData(data: any, lcuRankedStats?: any): number {
+    // Try Riot API data first
     const soloQueue = data.soloQueue || data.rankedData?.soloQueue;
-    if (!soloQueue) return 1200;
+    if (soloQueue?.tier) {
+      return this.calculateMMRFromRankData(soloQueue);
+    }
+
+    // Try LCU ranked stats as fallback
+    if (lcuRankedStats?.queues) {
+      const lcuSoloQueue = lcuRankedStats.queues.find((q: any) => q.queueType === 'RANKED_SOLO_5x5');
+      if (lcuSoloQueue?.tier) {
+        return this.calculateMMRFromRankData({
+          tier: lcuSoloQueue.tier,
+          rank: lcuSoloQueue.division,
+          leaguePoints: lcuSoloQueue.leaguePoints
+        });
+      }
+    }
+
+    return 1200; // Default MMR
+  }
+  private calculateMMRFromRankData(rankData: any): number {
+    if (!rankData?.tier) return 1200;
 
     const tierValues: { [key: string]: number } = {
       'IRON': 800, 'BRONZE': 1000, 'SILVER': 1200, 'GOLD': 1400,
@@ -413,9 +563,9 @@ export class ApiService {
       'IV': 0, 'III': 50, 'II': 100, 'I': 150
     };
 
-    const baseMMR = tierValues[soloQueue.tier] || 1200;
-    const rankBonus = rankValues[soloQueue.rank] || 0;
-    const lpBonus = (soloQueue.leaguePoints || 0) * 0.8;
+    const baseMMR = tierValues[rankData.tier] || 1200;
+    const rankBonus = rankValues[rankData.rank] || 0;
+    const lpBonus = (rankData.leaguePoints || 0) * 0.8;
 
     return Math.round(baseMMR + rankBonus + lpBonus);
   }

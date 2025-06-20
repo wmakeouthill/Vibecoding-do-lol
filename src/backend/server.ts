@@ -133,21 +133,21 @@ app.post('/api/player/register', (async (req: Request, res: Response) => {
 // IMPORTANT: This must come BEFORE the generic /api/player/:playerId route
 app.get('/api/player/current-details', (async (req: Request, res: Response) => {
   try {
-    console.log('[NEW DEBUG] /api/player/current-details endpoint called - v2');
+    console.log('[CURRENT DETAILS] Endpoint called');
     
     if (!lcuService.isClientConnected()) {
-      console.log('[NEW DEBUG] LCU client not connected');
+      console.log('[CURRENT DETAILS] LCU client not connected');
       return res.status(503).json({ error: 'Cliente do LoL não conectado' });
     }
 
-    console.log('[NEW DEBUG] Getting current summoner from LCU...');
+    console.log('[CURRENT DETAILS] Getting current summoner from LCU...');
     const lcuSummoner = await lcuService.getCurrentSummoner();
     if (!lcuSummoner) {
-      console.log('[NEW DEBUG] No summoner data from LCU');
+      console.log('[CURRENT DETAILS] No summoner data from LCU');
       return res.status(404).json({ error: 'Não foi possível obter dados do jogador no LCU.' });
     }
 
-    console.log('[NEW DEBUG] LCU Summoner data:', {
+    console.log('[CURRENT DETAILS] LCU Summoner data received:', {
       gameName: (lcuSummoner as any).gameName,
       tagLine: (lcuSummoner as any).tagLine,
       puuid: lcuSummoner.puuid
@@ -155,7 +155,7 @@ app.get('/api/player/current-details', (async (req: Request, res: Response) => {
 
     // Check if we have gameName and tagLine
     if (!(lcuSummoner as any).gameName || !(lcuSummoner as any).tagLine) {
-      console.log('[NEW DEBUG] LCU data missing gameName or tagLine:', {
+      console.log('[CURRENT DETAILS] LCU data missing gameName or tagLine:', {
         gameName: (lcuSummoner as any).gameName,
         tagLine: (lcuSummoner as any).tagLine
       });
@@ -165,34 +165,54 @@ app.get('/api/player/current-details', (async (req: Request, res: Response) => {
     const riotId = `${(lcuSummoner as any).gameName}#${(lcuSummoner as any).tagLine}`;
     const region = 'br1';
     
-    console.log('[NEW DEBUG] Using Riot ID from LCU:', riotId);
+    console.log('[CURRENT DETAILS] Using Riot ID from LCU:', riotId);    // Prepare base data with LCU information
+    const baseData = {
+      lcu: lcuSummoner,
+      riotAccount: { 
+        gameName: (lcuSummoner as any).gameName,
+        tagLine: (lcuSummoner as any).tagLine,
+        puuid: lcuSummoner.puuid
+      },
+      riotApi: null,
+      lcuRankedStats: null,
+      partialData: false
+    };
 
-    // Use the exact same logic as refresh-by-riot-id endpoint
+    // Try to get LCU ranked stats
     try {
-      console.log('[NEW DEBUG] About to call playerService.getPlayerBySummonerNameWithDetails');
-      const playerData = await playerService.getPlayerBySummonerNameWithDetails(riotId, region);
-      console.log('[NEW DEBUG] playerService returned data successfully');
-      
-      const comprehensiveData = {
-        lcu: lcuSummoner,
-        riotAccount: { 
-          gameName: (lcuSummoner as any).gameName,
-          tagLine: (lcuSummoner as any).tagLine,
-          puuid: lcuSummoner.puuid
-        },
-        riotApi: playerData,
-      };
-
-      console.log('[NEW DEBUG] Successfully compiled comprehensive data');
-      res.json({ success: true, data: comprehensiveData });
-      
-    } catch (playerError: any) {
-      console.error('[NEW DEBUG] Error fetching player data:', playerError.message);
-      res.status(404).json({ error: `Jogador ${riotId} não encontrado: ${playerError.message}` });
+      console.log('[CURRENT DETAILS] Attempting to get LCU ranked stats...');
+      const lcuRankedStats = await lcuService.getRankedStats();
+      if (lcuRankedStats) {
+        console.log('[CURRENT DETAILS] LCU ranked stats available:', !!lcuRankedStats.queues);
+        baseData.lcuRankedStats = lcuRankedStats;
+      }
+    } catch (lcuRankError: any) {
+      console.log('[CURRENT DETAILS] LCU ranked stats unavailable:', lcuRankError.message);
     }
 
+    // Try to get Riot API data as additional information, but don't fail if it's unavailable
+    try {
+      console.log('[CURRENT DETAILS] Attempting to get Riot API data...');
+      const playerData = await playerService.getPlayerBySummonerNameWithDetails(riotId, region);
+      console.log('[CURRENT DETAILS] Riot API data fetched successfully');
+      
+      baseData.riotApi = playerData;
+      baseData.partialData = false;
+      
+    } catch (playerError: any) {
+      console.log('[CURRENT DETAILS] Riot API data unavailable, using LCU-only data:', playerError.message);
+      baseData.partialData = true;
+    }
+
+    console.log('[CURRENT DETAILS] Returning data, partialData:', baseData.partialData);
+    res.json({ 
+      success: true, 
+      data: baseData,
+      message: baseData.partialData ? 'Dados carregados apenas do LCU (Riot API indisponível)' : 'Dados completos carregados'
+    });
+
   } catch (error: any) {
-    console.error(`[NEW DEBUG] Erro ao buscar dados detalhados do jogador atual:`, error.message);
+    console.error(`[CURRENT DETAILS] Erro ao buscar dados detalhados do jogador atual:`, error.message);
     res.status(500).json({ error: 'Erro interno ao processar a solicitação para current-details' });
   }
 }) as RequestHandler);

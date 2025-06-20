@@ -18,12 +18,24 @@
             <span class="stat-icon">⚡</span>
             <span class="stat-value">{{ player.currentMMR || player.mmr || 'N/A' }}</span>
             <span class="stat-label">MMR</span>
+          </div>          <div class="stat-pill" *ngIf="player.rankedData?.soloQueue || player.rank">
+            <span class="stat-icon">🏆</span>
+            <span class="stat-value">{{ getSoloQueueRank() }}</span>
+            <span class="stat-label">Solo/Duo ({{ getSoloQueueLP() }} LP)</span>
           </div>
 
-          <div class="stat-pill" *ngIf="player.rankedData?.soloQueue || player.rank">
-            <span class="stat-icon">🏆</span>
-            <span class="stat-value">{{ getRankDisplay() }}</span>
-            <span class="stat-label">{{ getRankLP() }} LP</span>
+          <!-- Flex Rank -->
+          <div class="stat-pill" *ngIf="hasFlexRank()">
+            <span class="stat-icon">🎖️</span>
+            <span class="stat-value">{{ getFlexRank() }}</span>
+            <span class="stat-label">Flex ({{ getFlexLP() }} LP)</span>
+          </div>
+
+          <!-- Unranked indicator when no rank data available -->
+          <div class="stat-pill" *ngIf="!hasSoloQueueRank() && !hasFlexRank()">
+            <span class="stat-icon">🥉</span>
+            <span class="stat-value">{{ getRankStatus() }}</span>
+            <span class="stat-label">Ranking</span>
           </div>
 
           <div class="stat-pill">

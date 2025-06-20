@@ -196,16 +196,18 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
     // Tentar buscar do LCU primeiro (mais confiável para dados detalhados)
     this.loadFromLCU();
   }
-
   private loadFromLCU(): void {
+    console.log('🎮 Loading match history from LCU (primary source)...');
+
     const lcuHistorySub = this.apiService.getLCUMatchHistoryAll(0, 3, true) // customOnly = true
       .subscribe({
         next: (response) => {
           this.processLCUMatches(response);
           this.isLoadingMatches = false;
+          console.log('✅ Match history loaded from LCU successfully');
         },
         error: (error) => {
-          console.warn('Falha ao buscar histórico completo do LCU:', error);
+          console.warn('⚠️ Primary LCU method failed, trying alternative LCU endpoint:', error.message);
           // Fallback para método original
           this.loadFromLCUOriginal();
         }
@@ -215,32 +217,45 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   private loadFromLCUOriginal(): void {
-    const lcuHistorySub = this.apiService.getLCUMatchHistoryAll(0, 3, true) // Usar o mesmo endpoint com customOnly = true
+    console.log('🔄 Trying alternative LCU endpoint...');
+
+    const lcuHistorySub = this.apiService.getLCUMatchHistoryAll(0, 3, false) // customOnly = false para tentar pegar mais dados
       .subscribe({
         next: (response) => {
           this.processLCUMatches(response);
           this.isLoadingMatches = false;
+          console.log('✅ Match history loaded from alternative LCU method');
         },
         error: (error) => {
-          console.warn('Falha ao buscar histórico original do LCU:', error);
-          // Fallback para Riot API
+          console.warn('⚠️ All LCU methods failed, trying Riot API as last resort:', error.message);
+          // Fallback para Riot API apenas como último recurso
           this.loadFromRiotAPI();
         }
       });
 
     this.subscriptions.push(lcuHistorySub);
   }
-
   private loadFromRiotAPI(): void {
+    // Only attempt Riot API if absolutely necessary and show minimal error feedback
+    console.log('📡 Attempting to load match history from Riot API as fallback...');
+
     const riotHistorySub = this.apiService.getPlayerMatchHistoryFromRiot(this.player!.puuid!, this.player!.region || 'br1', 5)
       .subscribe({
         next: (response) => {
           this.processRiotApiMatches(response);
           this.isLoadingMatches = false;
+          console.log('✅ Match history loaded from Riot API successfully');
         },
         error: (error) => {
-          console.warn('Falha ao buscar histórico da Riot API:', error);
-          this.matchHistoryError = 'Não foi possível carregar o histórico de partidas';
+          // Suppress verbose error logging for Riot API failures when service is down
+          if (error.message?.includes('Riot API') || error.message?.includes('503') || error.message?.includes('API')) {
+            console.log('🚫 Riot API unavailable for match history - using fallback data');
+          } else {
+            console.warn('⚠️ Failed to load match history from Riot API:', error.message);
+          }
+
+          // Set a more user-friendly error message instead of technical details
+          this.matchHistoryError = 'Histórico indisponível - dados do LCU serão usados quando possível';
           this.generateMockData(); // Fallback para dados mock
           this.isLoadingMatches = false;
         }
@@ -446,6 +461,76 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
     }
     return this.formatWaitTime(this.queueStatus.averageWaitTime);
   }
+
+  // ========== MÉTODOS DE RANK MELHORADOS ==========
+
+  hasSoloQueueRank(): boolean {
+    return !!(this.player?.rankedData?.soloQueue?.tier || this.player?.rank?.tier);
+  }
+
+  hasFlexRank(): boolean {
+    return !!(this.player?.rankedData?.flexQueue?.tier);
+  }
+
+  getSoloQueueRank(): string {
+    if (this.player?.rankedData?.soloQueue) {
+      const soloQueue = this.player.rankedData.soloQueue;
+      return `${soloQueue.tier} ${soloQueue.rank || soloQueue.division || 'IV'}`;
+    }
+
+    if (this.player?.rank) {
+      return this.player.rank.display || `${this.player.rank.tier} ${this.player.rank.rank}`;
+    }
+
+    return 'Unranked';
+  }
+
+  getSoloQueueLP(): number {
+    if (this.player?.rankedData?.soloQueue) {
+      return this.player.rankedData.soloQueue.leaguePoints || 0;
+    }
+
+    if (this.player?.rank?.lp) {
+      return this.player.rank.lp;
+    }
+
+    return 0;
+  }
+
+  getFlexRank(): string {
+    if (this.player?.rankedData?.flexQueue) {
+      const flexQueue = this.player.rankedData.flexQueue;
+      return `${flexQueue.tier} ${flexQueue.rank || flexQueue.division || 'IV'}`;
+    }
+
+    return 'Unranked';
+  }
+
+  getFlexLP(): number {
+    if (this.player?.rankedData?.flexQueue) {
+      return this.player.rankedData.flexQueue.leaguePoints || 0;
+    }
+
+    return 0;
+  }
+
+  getRankStatus(): string {
+    // Check if we have partial data (LCU only)
+    const isPartialData = (this.player as any)?._isPartialData;
+    const dataSource = (this.player as any)?._dataSource;
+
+    if (isPartialData) {
+      return 'Dados incompletos';
+    }
+
+    if (!this.hasSoloQueueRank() && !this.hasFlexRank()) {
+      return 'Unranked';
+    }
+
+    return 'Sem dados';
+  }
+
+  // ========== FIM DOS MÉTODOS DE RANK MELHORADOS ==========
 
   // Método para gerar dados de exemplo quando não há dados reais
   generateMockData(): void {

@@ -1422,7 +1422,7 @@ export class App implements OnInit, OnDestroy {
       this.lcuStatus = { isConnected: false };
     }
   }  private async tryAutoLoadCurrentPlayer(): Promise<void> {
-    // Use the direct endpoint that combines LCU + Riot API data
+    // Priority 1: Try LCU first (League Client is the primary source)
     if (this.lcuStatus.isConnected) {
       try {
         this.apiService.getPlayerFromLCU().subscribe({
@@ -1430,82 +1430,121 @@ export class App implements OnInit, OnDestroy {
             this.currentPlayer = player;
             localStorage.setItem('currentPlayer', JSON.stringify(this.currentPlayer));
             this.addNotification('success', 'Auto Load', 'Dados carregados do League of Legends automaticamente');
+            console.log('✅ Player data loaded from LCU successfully');
           },
           error: (error) => {
-            console.error('Erro ao obter dados do LCU via endpoint direto:', error);
-            this.tryLoadFromAPI();
+            console.warn('⚠️ LCU data unavailable, trying fallback options:', error.message);
+            this.tryLoadFromLocalStorage();
           }
         });
       } catch (error) {
-        this.tryLoadFromAPI();
+        console.warn('⚠️ LCU connection failed, trying fallback options');
+        this.tryLoadFromLocalStorage();
       }
     } else {
-      this.tryLoadFromAPI();
+      console.log('📱 LCU not connected, trying fallback options');
+      this.tryLoadFromLocalStorage();
     }
   }
+  private tryLoadFromLocalStorage(): void {
+    // Priority 2: Try loading from local storage
+    const savedPlayer = localStorage.getItem('currentPlayer');
+    if (savedPlayer) {
+      try {
+        this.currentPlayer = JSON.parse(savedPlayer);
+        console.log('📦 Player data loaded from local storage');
+        this.addNotification('info', 'Dados Locais', 'Usando dados salvos localmente');
+        return; // Exit early if we have valid local data
+      } catch (error) {
+        console.warn('⚠️ Invalid local storage data, clearing and trying Riot API');
+        localStorage.removeItem('currentPlayer');
+      }
+    }
 
-  private tryLoadFromAPI(): void {
-    // Try to get current player info from the League Client
+    // Priority 3: Only try Riot API as last resort (and only if it's likely to work)
+    this.tryLoadFromRiotAPI();
+  }
+
+  private tryLoadFromRiotAPI(): void {
+    // Only attempt Riot API if we have no other options
+    // This reduces the spam of errors when Riot API is down
+    console.log('🌐 Attempting to load from Riot API as last resort...');
+
     this.apiService.getCurrentPlayer().subscribe({
       next: (response) => {
         if (response && response.success && response.player) {
-          // Auto-load player data from the League client
           this.currentPlayer = response.player;
-          this.addNotification('success', 'Auto Registro', 'Dados do jogador carregados automaticamente');
+          localStorage.setItem('currentPlayer', JSON.stringify(this.currentPlayer));
+          this.addNotification('success', 'Riot API', 'Dados carregados da API da Riot');
+          console.log('✅ Player data loaded from Riot API');
+        } else {
+          console.log('📝 No player data available, manual registration needed');
+          this.addNotification('info', 'Registro Manual', 'Configure seus dados nas configurações');
         }
       },
       error: (err) => {
-        console.log('Não foi possível carregar dados do jogador atual:', err);
-        // Silently fail - will use manual registration instead
+        // Suppress verbose error logging for Riot API failures
+        if (err.message?.includes('Riot API') || err.message?.includes('503')) {
+          console.log('🚫 Riot API unavailable - this is expected if the service is down');
+          this.addNotification('info', 'API Indisponível', 'Configure seus dados manualmente nas configurações');
+        } else {
+          console.warn('⚠️ Could not load player data:', err.message);
+          this.addNotification('info', 'Dados Não Encontrados', 'Configure seus dados nas configurações');
+        }
       }
     });
   }  private async tryLoadRealPlayerData(): Promise<void> {
-    try {
-      // Detect if running in Electron or browser and use appropriate method
-      const isInElectron = !!(window as any).electronAPI;
-      const apiCall = isInElectron ?
-        this.apiService.getCurrentPlayerDetails() : // Electron mode
-        this.apiService.getCurrentPlayerDebug(); // Browser mode
+    console.log('🚀 Starting intelligent player data loading...');
 
-      console.log(`🌐 Loading player data via ${isInElectron ? 'Electron' : 'Browser'} mode...`);
+    // Strategy 1: Always try LCU first (primary data source)
+    if (this.lcuStatus.isConnected) {
+      console.log('� LCU connected, loading from League Client...');
 
-      apiCall.subscribe({
-        next: (response) => {
-          console.log('Dados recebidos:', JSON.stringify(response, null, 2));
-
-          if (response && response.success && response.data) {
-            this.currentPlayer = this.mapRealDataToPlayer(response.data);
+      try {        // Use the LCU-focused endpoint
+        this.apiService.getPlayerFromLCU().subscribe({
+          next: (player: Player) => {
+            this.currentPlayer = player;
             localStorage.setItem('currentPlayer', JSON.stringify(this.currentPlayer));
-            this.addNotification('success', 'Dados Carregados', `Bem-vindo, ${this.currentPlayer.summonerName}!`);
-            console.log('Real player data loaded:', this.currentPlayer);
-          } else {
-            console.log('Response received but no valid data found');
-            this.fallbackToStorageOrMock();
-          }
-        },
-        error: (error) => {
-          console.log('Failed to load real player data:', error);
 
-          // Fornecer feedback específico baseado no tipo de erro
-          if (error.message.includes('Cliente do LoL não conectado')) {
-            this.addNotification('warning', 'LoL Cliente Offline', 'Conecte-se ao League of Legends para carregar dados automaticamente');
-          } else if (error.message.includes('Jogador não encontrado')) {
-            this.addNotification('info', 'Dados não Encontrados', 'Configure seus dados manualmente nas configurações');
-          } else if (error.message.includes('PUUID')) {
-            this.addNotification('warning', 'Dados Corrompidos', 'Há um problema com os dados salvos. Reconfigure nas configurações.');
-          } else {
-            this.addNotification('info', 'Carregamento Manual', 'Configure seus dados nas configurações');
-          }
+            // Check if this is partial data and provide appropriate notification
+            const isPartialData = (player as any)._isPartialData;
+            const dataSource = (player as any)._dataSource || 'Desconhecido';
 
-          this.fallbackToStorageOrMock();
-        }
-      });
-    } catch (error: any) {
-      console.log('Error loading real player data:', error);
-      this.addNotification('warning', 'Erro de Conexão', 'Não foi possível conectar ao serviço. Verifique sua conexão.');
-      this.fallbackToStorageOrMock();
+            if (isPartialData) {
+              this.addNotification('info', 'Dados Parciais', `Conectado como ${this.currentPlayer.summonerName} (dados apenas do LCU - Riot API indisponível)`);
+              console.log('📡 LCU data loaded (partial):', this.currentPlayer.summonerName);
+            } else {
+              this.addNotification('success', 'LCU Conectado', `Bem-vindo, ${this.currentPlayer.summonerName}! (dados completos)`);
+              console.log('✅ LCU data loaded (complete):', this.currentPlayer.summonerName);
+            }
+          },
+          error: (error) => {
+            console.warn('⚠️ LCU data loading failed:', error.message);
+            this.handleLCUDataFailure(error);
+          }
+        });
+        return; // Exit early if LCU is available
+      } catch (error) {
+        console.warn('⚠️ LCU connection error:', error);
+        this.handleLCUDataFailure(error as Error);
+      }
     }
+
+    // Strategy 2: LCU not available, try fallback options
+    console.log('📱 LCU not available, trying fallback options...');
+    this.handleLCUDataFailure(new Error('LCU not connected'));
   }
+
+  private handleLCUDataFailure(error: Error): void {
+    // Check for specific error types and provide appropriate feedback
+    if (error.message.includes('Cliente do LoL não conectado') || error.message.includes('LCU')) {
+      this.addNotification('info', 'LoL Cliente Offline', 'Conecte-se ao League of Legends para dados automáticos');
+    } else if (error.message.includes('Jogador não encontrado') || error.message.includes('não encontrado')) {
+      this.addNotification('info', 'Dados Não Encontrados', 'Configure manualmente nas configurações');
+    }
+
+    // Try fallback options
+    this.tryLoadFromLocalStorage();  }
 
   private fallbackToStorageOrMock(): void {
     // If no real data available and no stored data, create mock data for testing
