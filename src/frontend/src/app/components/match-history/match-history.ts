@@ -51,35 +51,17 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     if (!this.player) {
       console.warn('⚠️ Nenhum player disponível para carregar partidas');
       return;
-    }
-
-    console.log('🚀 Carregando histórico EXCLUSIVAMENTE do LCU para:', {
-      player: this.player.summonerName,
-      puuid: this.player.puuid
-    });
-
-    this.loading = true;
-    this.error = null;    // USAR APENAS LCU - Sem fallback para Riot API
-    console.log('📡 Buscando partidas do League of Legends Client (LCU)...');
-    this.apiService.getLCUMatchHistoryAll(0, 20, false).subscribe({
-      next: (lcuResponse: any) => {
-        console.log('📬 Resposta LCU recebida:', {
-          success: lcuResponse?.success,
-          matchCount: lcuResponse?.matches?.length || 0
-        });
-
+    }    this.loading = true;
+    this.error = null;
+    this.apiService.getLCUMatchHistoryAll(0, 20, false).subscribe({      next: (lcuResponse: any) => {
         if (lcuResponse && lcuResponse.success && lcuResponse.matches && lcuResponse.matches.length > 0) {
-          console.log('✅ Partidas do LCU encontradas:', lcuResponse.matches.length);
           this.processLCUMatches(lcuResponse.matches);
         } else {
-          console.log('ℹ️ LCU não retornou partidas - pode não haver histórico recente');
           this.riotMatches = [];
           this.error = 'Nenhuma partida encontrada no histórico do League of Legends. Certifique-se de que o LoL está aberto e você jogou partidas recentemente.';
         }
         this.loading = false;
-      },
-      error: (error: any) => {
-        console.log('❌ Erro ao acessar LCU:', error);
+      },      error: (error: any) => {
         this.riotMatches = [];
 
         // Mensagem mais específica baseada no tipo de erro
@@ -98,38 +80,18 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     if (!this.player) {
       console.warn('⚠️ Nenhum player disponível para carregar partidas customizadas');
       return;
-    }
+    }    this.loading = true;
+    this.error = null;
 
-    console.log('🎯 Carregando partidas customizadas para:', {
-      playerId: this.player.id,
-      summonerName: this.player.summonerName
-    });
-
-    this.loading = true;
-    this.error = null;    try {
+    try {
       // Primeiro tentar com o nome do summoner, depois com o ID
       const playerIdentifier = this.player.summonerName || this.player.id.toString();
-      console.log('🔍 Usando identificador:', playerIdentifier);
 
       this.apiService.getCustomMatches(playerIdentifier, this.currentPage * this.matchesPerPage, this.matchesPerPage).subscribe({
-        next: (response) => {
-          console.log('📦 Resposta de partidas customizadas:', response);
-
-          if (response && response.success && response.matches && response.matches.length > 0) {
-            console.log('✅ Partidas customizadas encontradas:', response.matches.length);
+        next: (response) => {          if (response && response.success && response.matches && response.matches.length > 0) {
             this.customMatches = this.mapApiMatchesToModel(response.matches);
             this.totalMatches = response.pagination.total;
-
-            console.log('🔄 Partidas mapeadas:', {
-              totalMapeadas: this.customMatches.length,
-              primeirasPartidas: this.customMatches.slice(0, 2).map(m => ({
-                id: m.id,
-                winner: m.winner,
-                playerWon: m.playerStats?.isWin
-              }))
-            });
           } else {
-            console.log('ℹ️ Nenhuma partida customizada encontrada');
             this.customMatches = [];
             this.totalMatches = 0;
             this.error = 'Você ainda não jogou nenhuma partida customizada. Complete uma partida personalizada para vê-la aparecer aqui.';
@@ -168,9 +130,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
 
   isRiotTab(): boolean {
     return this.activeTab === 'riot';
-  }
-
-  getCurrentMatches(): Match[] {
+  }  getCurrentMatches(): Match[] {
     return this.activeTab === 'riot' ? this.riotMatches : this.customMatches;
   }
 
@@ -288,33 +248,19 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
 
       const playerData = matchData.info.participants.find(
         (p: any) => p.puuid === this.player?.puuid
-      );
-
-      if (!playerData) {
+      );      if (!playerData) {
         console.warn('⚠️ Jogador não encontrado na partida:', matchData.metadata?.matchId);
         return this.createDefaultMatch();
       }
-
-      console.log('🔍 Dados do jogador na partida:', {
-        champion: playerData.championName,
-        kda: `${playerData.kills}/${playerData.deaths}/${playerData.assists}`,
-        win: playerData.win,
-        items: [playerData.item0, playerData.item1, playerData.item2, playerData.item3, playerData.item4, playerData.item5]
-      });
 
       // Mapear participantes com dados completos para exibição
       const enhancedParticipants = matchData.info.participants.map((p: any) => ({
         ...p,
         // Adicionar summonerName se não existir - usar riotIdGameName + riotIdTagline
         summonerName: p.summonerName || (p.riotIdGameName ? `${p.riotIdGameName}#${p.riotIdTagline}` : 'Unknown')
-      }));
-
-      // Separar participantes em times com dados completos
+      }));      // Separar participantes em times com dados completos
       const team1 = enhancedParticipants.filter((p: any) => p.teamId === 100);
-      const team2 = enhancedParticipants.filter((p: any) => p.teamId === 200);      console.log('👥 Times organizados:', {
-        team1: team1.map((p: any) => ({ champion: p.championName, summoner: p.summonerName })),
-        team2: team2.map((p: any) => ({ champion: p.championName, summoner: p.summonerName }))
-      });
+      const team2 = enhancedParticipants.filter((p: any) => p.teamId === 200);
 
       // Determinar vencedor baseado nos dados dos times
       const team1Won = matchData.info.teams?.find((t: any) => t.teamId === 100)?.win || false;
@@ -388,18 +334,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       }
     };
   }  private mapApiMatchesToModel(apiMatches: any[]): Match[] {
-    console.log('🔄 Mapeando partidas da API para modelo do frontend:', apiMatches.length);
-
     return apiMatches.map(match => {
-      console.log('📝 Mapeando partida:', {
-        id: match.id,
-        title: match.title,
-        winnerTeam: match.winner_team,
-        playerWon: match.player_won,
-        status: match.status,
-        duration: match.duration,
-        hasPickBanData: !!match.pick_ban_data
-      });
 
       // Parse JSON fields safely
       let team1Players = [];
@@ -497,19 +432,9 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           assists: 0, // Not stored yet for custom matches
           mmrChange: match.player_won ? 15 : -10, // Mock MMR change
           isWin: match.player_won || false,
-          championLevel: 18,
-          items: [0, 0, 0, 0, 0, 0] // Not stored yet for custom matches
+          championLevel: 18,          items: [0, 0, 0, 0, 0, 0] // Not stored yet for custom matches
         }
       };
-
-      console.log('✅ Partida mapeada:', {
-        id: mappedMatch.id,
-        winner: mappedMatch.winner,
-        playerChampion: mappedMatch.playerStats?.champion,
-        playerWon: mappedMatch.playerStats?.isWin,
-        team1Count: mappedMatch.team1.length,
-        team2Count: mappedMatch.team2.length
-      });
 
       return mappedMatch;
     });
@@ -903,16 +828,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     ];
   }
   // ========== LANE DETECTION AND ORGANIZATION ==========
-  getParticipantLane(participant: any): string {
-    // Debug log to understand lane detection
-    console.log('🔍 Detectando lane para:', {
-      champion: participant.championName,
-      lane: participant.lane,
-      role: participant.role,
-      teamPosition: participant.teamPosition,
-      individualPosition: participant.individualPosition
-    });
-
+  private getParticipantLane(participant: any): string {
     // Para ARAM, não há lanes específicas - organizar por papel/champion
     if (participant.lane === 'BOTTOM' && participant.gameMode === 'ARAM') {
       return this.detectARAMRole(participant);
@@ -941,11 +857,8 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         return this.detectBotLaneRole(participant);
       case 'UTILITY':
         return 'SUPPORT';
-      default:
-        // Fallback para detecção baseada em posição individual
-        const detectedLane = this.detectLaneByPosition(participant);
-        console.log('🎯 Lane detectada:', detectedLane);
-        return detectedLane;
+      default:        // Fallback para detecção baseada em posição individual
+        return this.detectLaneByPosition(participant);
     }
   }
 
@@ -1062,12 +975,6 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       default: return 'UNKNOWN';
     }
   }  organizeTeamByLanes(team: any[] | undefined): { [lane: string]: any } {
-    console.log('🔧 organizeTeamByLanes chamado com:', {
-      teamIsArray: Array.isArray(team),
-      teamLength: team?.length,
-      teamData: team?.map((p: any) => ({ name: p.summonerName, champion: p.championName, teamId: p.teamId }))
-    });
-
     const organizedTeam: { [lane: string]: any } = {
       'TOP': null,
       'JUNGLE': null,
@@ -1077,16 +984,10 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     };
 
     if (!team || !Array.isArray(team)) {
-      console.log('❌ Time inválido ou vazio');
       return organizedTeam;
-    }
-
-    console.log('👥 Organizando time com', team.length, 'jogadores');
-
-    // First pass: assign players to their detected lanes
+    }    // First pass: assign players to their detected lanes
     team.forEach((participant, index) => {
       const lane = this.getParticipantLane(participant);
-      console.log(`🎯 Jogador ${index + 1}: ${participant.championName} -> ${lane}`);
 
       if (organizedTeam[lane] === null) {
         organizedTeam[lane] = participant;
@@ -1097,31 +998,19 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     const unassignedPlayers = team.filter(participant => {
       const lane = this.getParticipantLane(participant);
       return organizedTeam[lane] !== participant;
-    });
-
-    const emptyLanes = Object.keys(organizedTeam).filter(lane => organizedTeam[lane] === null);
-    console.log('📍 Lanes vazias:', emptyLanes);
-    console.log('👤 Jogadores não atribuídos:', unassignedPlayers.length);
+    });    const emptyLanes = Object.keys(organizedTeam).filter(lane => organizedTeam[lane] === null);
 
     unassignedPlayers.forEach((participant, index) => {
       if (index < emptyLanes.length) {
         organizedTeam[emptyLanes[index]] = participant;
-        console.log(`🔄 Atribuindo ${participant.championName} para ${emptyLanes[index]}`);
       }
-    });
-
-    // Final pass: ensure all players are assigned (force assignment if needed)
+    });    // Final pass: ensure all players are assigned (force assignment if needed)
     const lanes = ['TOP', 'JUNGLE', 'MIDDLE', 'ADC', 'SUPPORT'];
     lanes.forEach((lane, index) => {
       if (organizedTeam[lane] === null && team.length > index) {
         organizedTeam[lane] = team[index];
-        console.log(`🚨 Forçando atribuição: ${team[index].championName} -> ${lane}`);
       }
     });
-
-    console.log('✅ Time organizado:', Object.keys(organizedTeam).map(lane =>
-      `${lane}: ${organizedTeam[lane]?.championName || 'VAZIO'}`
-    ));
 
     return organizedTeam;
   }
@@ -1142,41 +1031,19 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       case 'TOP': return 'Top';
       case 'JUNGLE': return 'Jungle';
       case 'MIDDLE': return 'Mid';
-      case 'ADC': return 'ADC';
-      case 'SUPPORT': return 'Support';
+      case 'ADC': return 'ADC';      case 'SUPPORT': return 'Support';
       default: return 'Unknown';
     }
   }
 
-  // ========== DEBUG HELPER ==========
-
-  debugParticipant(participant: any, label: string): void {
-    console.log(`${label}:`, participant);
-    console.log('Items:', [
-      participant?.item0,
-      participant?.item1,
-      participant?.item2,
-      participant?.item3,
-      participant?.item4,
-      participant?.item5
-    ]);
-    console.log('Champion:', participant?.championName);
-    console.log('Summoner:', participant?.summonerName);  }
   // New method to process LCU match data
   private processLCUMatches(lcuMatches: any[]): void {
-    console.log('🔄 Processando', lcuMatches.length, 'partidas do LCU');
-
     const mappedMatches = lcuMatches.map(match => {
       return this.mapLCUMatchToModel(match);
     }).filter(match => match !== null) as Match[];
 
     this.riotMatches = mappedMatches;
     this.totalMatches = this.riotMatches.length;
-
-    console.log('✅ Partidas LCU processadas:', {
-      total: lcuMatches.length,
-      mapeadas: this.riotMatches.length
-    });
 
     if (this.riotMatches.length === 0) {
       console.warn('⚠️ Nenhuma partida foi mapeada com sucesso');
@@ -1281,12 +1148,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         };
       }) || [];      // Separate into teams
       const team1 = enhancedParticipants.filter((p: any) => p.teamId === 100);
-      const team2 = enhancedParticipants.filter((p: any) => p.teamId === 200);      console.log('⚡ Times separados:', {
-        team1Count: team1.length,
-        team2Count: team2.length,
-        team1Players: team1.map((p: any) => ({ name: p.summonerName, champion: p.championName, teamId: p.teamId })),
-        team2Players: team2.map((p: any) => ({ name: p.summonerName, champion: p.championName, teamId: p.teamId }))
-      });
+      const team2 = enhancedParticipants.filter((p: any) => p.teamId === 200);
 
       // Find current player data
       const currentPlayerData = enhancedParticipants.find((p: any) => p.isCurrentPlayer) || playerData;
