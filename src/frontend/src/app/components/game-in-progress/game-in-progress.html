@@ -191,4 +191,129 @@
       lcuEnabled: lcuDetectionEnabled
     } | json }}</pre>
   </div>
+
+  <!-- Match Confirmation Modal -->
+  <div class="modal-overlay" *ngIf="showMatchConfirmation" (click)="closeMatchConfirmation()">
+    <div class="match-confirmation-modal" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3>🔍 Partida Detectada no League of Legends</h3>
+        <button class="close-btn" (click)="closeMatchConfirmation()">×</button>
+      </div>
+
+      <div class="modal-content" *ngIf="detectedLCUMatch && matchComparisonResult">
+        <!-- Match Information -->
+        <div class="match-info-section">
+          <div class="confidence-indicator">
+            <div class="confidence-badge" [class.high-confidence]="matchComparisonResult.confidence >= 80"
+                 [class.medium-confidence]="matchComparisonResult.confidence >= 50 && matchComparisonResult.confidence < 80"
+                 [class.low-confidence]="matchComparisonResult.confidence < 50">
+              {{ matchComparisonResult.confidence }}% de similaridade
+            </div>
+            <p class="confidence-reason">{{ matchComparisonResult.reason }}</p>
+          </div>
+
+          <div class="lcu-match-details">
+            <h4>Detalhes da Partida do LoL:</h4>
+            <div class="match-detail-row">
+              <span class="label">Data/Hora:</span>
+              <span class="value">{{ formatLCUMatchDate(detectedLCUMatch.gameCreation) }}</span>
+            </div>
+            <div class="match-detail-row">
+              <span class="label">Duração:</span>
+              <span class="value">{{ formatGameDuration(detectedLCUMatch.gameDuration) }}</span>
+            </div>
+            <div class="match-detail-row">
+              <span class="label">ID da Partida:</span>
+              <span class="value">{{ detectedLCUMatch.gameId }}</span>
+            </div>
+            <div class="match-detail-row" *ngIf="getLCUMatchWinner(detectedLCUMatch)">
+              <span class="label">Vencedor:</span>
+              <span class="value winner" [style.color]="getLCUMatchWinner(detectedLCUMatch) === 'blue' ? '#4FC3F7' : '#F44336'">
+                Time {{ getLCUMatchWinner(detectedLCUMatch) === 'blue' ? 'Azul' : 'Vermelho' }} 🏆
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Team Comparison -->
+        <div class="team-comparison-section">
+          <h4>Comparação de Times:</h4>
+
+          <div class="teams-comparison">
+            <!-- Current Game Teams -->
+            <div class="current-game-teams">
+              <h5>Jogo Atual no App:</h5>
+              <div class="team-comparison-row">
+                <div class="team-comp team-blue">
+                  <strong>Time Azul:</strong>
+                  <ul class="champion-list">
+                    <li *ngFor="let player of getTeamPlayers('blue')">
+                      {{ player.champion?.name || 'Sem campeão' }}
+                    </li>
+                  </ul>
+                </div>
+                <div class="team-comp team-red">
+                  <strong>Time Vermelho:</strong>
+                  <ul class="champion-list">
+                    <li *ngFor="let player of getTeamPlayers('red')">
+                      {{ player.champion?.name || 'Sem campeão' }}
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <!-- LCU Match Teams -->
+            <div class="lcu-game-teams">
+              <h5>Partida Detectada do LoL:</h5>
+              <div class="team-comparison-row">
+                <div class="team-comp team-blue">
+                  <strong>Time {{ detectedLCUMatch.teams?.[0]?.teamId === 100 ? 'Azul' : 'Vermelho' }}:</strong>
+                  <ul class="champion-list">
+                    <li *ngFor="let participant of getLCUTeamParticipants(detectedLCUMatch, 100)">
+                      {{ getChampionNameById(participant.championId) || 'Champion ' + participant.championId }}
+                    </li>
+                  </ul>
+                </div>
+                <div class="team-comp team-red">
+                  <strong>Time {{ detectedLCUMatch.teams?.[1]?.teamId === 200 ? 'Vermelho' : 'Azul' }}:</strong>
+                  <ul class="champion-list">
+                    <li *ngFor="let participant of getLCUTeamParticipants(detectedLCUMatch, 200)">
+                      {{ getChampionNameById(participant.championId) || 'Champion ' + participant.championId }}
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Confirmation Message -->
+        <div class="confirmation-message">
+          <p class="confirmation-text">
+            <strong>Esta é a partida que você acabou de jogar?</strong>
+          </p>
+          <p class="confirmation-subtitle">
+            Se confirmar, o resultado desta partida será aplicado ao seu jogo no aplicativo.
+          </p>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-primary" (click)="confirmDetectedMatch()"
+                [disabled]="!getLCUMatchWinner(detectedLCUMatch)">
+          <span class="btn-icon">✅</span>
+          Sim, Esta é a Partida
+        </button>
+        <button class="btn btn-secondary" (click)="rejectDetectedMatch()">
+          <span class="btn-icon">❌</span>
+          Não, Buscar Outra
+        </button>
+        <button class="btn btn-outline" (click)="closeMatchConfirmation()">
+          <span class="btn-icon">🚫</span>
+          Cancelar
+        </button>
+      </div>
+    </div>
+  </div>
 </div>

@@ -559,3 +559,321 @@
     }
   }
 }
+
+/* ===== MATCH CONFIRMATION MODAL ===== */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.8);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.match-confirmation-modal {
+  background: linear-gradient(135deg, #1e2328 0%, #2b2f35 100%);
+  border-radius: 12px;
+  border: 2px solid #3c3c41;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+  max-width: 800px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  color: #e0e6ed;
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 24px;
+    border-bottom: 1px solid #3c3c41;
+    background: linear-gradient(90deg, #463714 0%, #58471d 100%);
+
+    h3 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 600;
+      color: #f0e6d2;
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      font-size: 24px;
+      color: #a09b8c;
+      cursor: pointer;
+      padding: 0;
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      transition: all 0.2s ease;
+
+      &:hover {
+        background-color: #5bc0de;
+        color: #fff;
+      }
+    }
+  }
+
+  .modal-content {
+    padding: 24px;
+  }
+
+  .match-info-section {
+    margin-bottom: 24px;
+
+    .confidence-indicator {
+      text-align: center;
+      margin-bottom: 20px;
+
+      .confidence-badge {
+        display: inline-block;
+        padding: 8px 16px;
+        border-radius: 20px;
+        font-weight: 600;
+        font-size: 14px;
+        margin-bottom: 8px;
+
+        &.high-confidence {
+          background-color: #5cb85c;
+          color: #fff;
+        }
+
+        &.medium-confidence {
+          background-color: #f0ad4e;
+          color: #fff;
+        }
+
+        &.low-confidence {
+          background-color: #d9534f;
+          color: #fff;
+        }
+      }
+
+      .confidence-reason {
+        font-size: 14px;
+        color: #a09b8c;
+        margin: 0;
+      }
+    }
+
+    .lcu-match-details {
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 8px;
+      padding: 16px;
+      border: 1px solid #3c3c41;
+
+      h4 {
+        margin: 0 0 12px 0;
+        font-size: 16px;
+        color: #c8aa6e;
+      }
+
+      .match-detail-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 6px 0;
+        border-bottom: 1px solid rgba(60, 60, 65, 0.3);
+
+        &:last-child {
+          border-bottom: none;
+        }
+
+        .label {
+          font-weight: 500;
+          color: #a09b8c;
+        }
+
+        .value {
+          color: #e0e6ed;
+          font-weight: 500;
+
+          &.winner {
+            font-weight: 600;
+            text-shadow: 0 0 4px currentColor;
+          }
+        }
+      }
+    }
+  }
+
+  .team-comparison-section {
+    margin-bottom: 24px;
+
+    h4 {
+      margin: 0 0 16px 0;
+      font-size: 18px;
+      color: #c8aa6e;
+      text-align: center;
+    }
+
+    .teams-comparison {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .current-game-teams,
+    .lcu-game-teams {
+      h5 {
+        margin: 0 0 12px 0;
+        font-size: 14px;
+        color: #a09b8c;
+        text-align: center;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+    }
+
+    .team-comparison-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .team-comp {
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 6px;
+      padding: 12px;
+      border: 1px solid #3c3c41;
+
+      &.team-blue {
+        border-left: 3px solid #4fc3f7;
+      }
+
+      &.team-red {
+        border-left: 3px solid #f44336;
+      }
+
+      strong {
+        display: block;
+        margin-bottom: 8px;
+        color: #f0e6d2;
+        font-size: 14px;
+      }
+
+      .champion-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+
+        li {
+          padding: 2px 0;
+          font-size: 13px;
+          color: #cdbe91;
+        }
+      }
+    }
+  }
+
+  .confirmation-message {
+    text-align: center;
+    padding: 20px;
+    background: rgba(196, 155, 43, 0.1);
+    border-radius: 8px;
+    border: 1px solid rgba(196, 155, 43, 0.3);
+    margin-bottom: 24px;
+
+    .confirmation-text {
+      margin: 0 0 8px 0;
+      font-size: 16px;
+      font-weight: 600;
+      color: #f0e6d2;
+    }
+
+    .confirmation-subtitle {
+      margin: 0;
+      font-size: 14px;
+      color: #a09b8c;
+    }
+  }
+
+  .modal-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    padding-top: 16px;
+    border-top: 1px solid #3c3c41;
+
+    .btn {
+      padding: 10px 20px;
+      border-radius: 6px;
+      border: none;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+
+      &.btn-primary {
+        background-color: #5cb85c;
+        color: #fff;
+
+        &:hover:not(:disabled) {
+          background-color: #4cae4c;
+          transform: translateY(-1px);
+        }
+
+        &:disabled {
+          background-color: #666;
+          cursor: not-allowed;
+          opacity: 0.6;
+        }
+      }
+
+      &.btn-secondary {
+        background-color: #f0ad4e;
+        color: #fff;
+
+        &:hover {
+          background-color: #ec971f;
+          transform: translateY(-1px);
+        }
+      }
+
+      &.btn-outline {
+        background-color: transparent;
+        color: #a09b8c;
+        border: 1px solid #5a5a5a;
+
+        &:hover {
+          background-color: #5a5a5a;
+          color: #fff;
+        }
+      }
+    }
+  }
+}
+
+/* Responsive design for modal */
+@media (max-width: 768px) {
+  .match-confirmation-modal {
+    max-width: 95%;
+    margin: 10px;
+
+    .team-comparison-row {
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+
+    .modal-actions {
+      flex-direction: column;
+
+      .btn {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+  }
+}
