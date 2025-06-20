@@ -348,10 +348,9 @@ export class DatabaseManager {
       LIMIT ? OFFSET ?
     `, [`%"id":${playerId}%`, `%"id":${playerId}%`, limit, offset]);
   }
-
   async getRecentMatches(limit: number = 20): Promise<Match[]> {
     if (!this.db) throw new Error('Banco de dados não inicializado');
-    return await this.db.all('SELECT * FROM matches ORDER BY created_at DESC LIMIT ?', [limit]);
+    return await this.db.all('SELECT * FROM custom_matches ORDER BY created_at DESC LIMIT ?', [limit]);
   }
 
   async deleteMatch(matchId: number): Promise<void> {

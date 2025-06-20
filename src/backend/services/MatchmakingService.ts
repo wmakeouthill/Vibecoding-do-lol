@@ -343,17 +343,20 @@ export class MatchmakingService {
       }
     } catch (error) {
       console.error('Erro no processamento de matchmaking:', error);
-    }
-  }
+    }  }
+
   // Método para criar partida no banco e notificar jogadores
   private async createMatchAndNotify(match: Match): Promise<void> {
-    try {      // Salvar partida no banco de dados
-      const matchId = await this.dbManager.createMatch(
-        match.team1.map(p => p.id),
-        match.team2.map(p => p.id),
-        match.averageMMR1,
-        match.averageMMR2
-      );
+    try {
+      // Salvar partida no banco de dados como partida personalizada
+      const matchId = await this.dbManager.createCustomMatch({
+        title: `Partida Automatizada ${new Date().toLocaleString()}`,
+        description: `Times balanceados - MMR médio: Time 1: ${Math.round(match.averageMMR1)}, Time 2: ${Math.round(match.averageMMR2)}`,
+        team1Players: match.team1.map(p => p.summonerName),
+        team2Players: match.team2.map(p => p.summonerName),
+        createdBy: 'Sistema de Matchmaking',
+        gameMode: 'CLASSIC'
+      });
 
       // Atualizar o ID da partida
       match.id = matchId;
@@ -620,10 +623,9 @@ export class MatchmakingService {
   // Método para iniciar fase de draft (pick & ban)
   private async startDraftPhase(matchId: number): Promise<void> {
     const match = this.activeMatches.get(matchId);
-    if (!match) return;
-
-    // Atualizar status da partida    match.status = 'in_progress';
-    await this.dbManager.updateMatchStatus(matchId, 'draft_phase');
+    if (!match) return;    // Atualizar status da partida
+    match.status = 'in_progress';
+    await this.dbManager.updateCustomMatchStatus(matchId, 'in_progress');
 
     // Criar dados iniciais do draft
     const draftData = {
