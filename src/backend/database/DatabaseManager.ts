@@ -605,7 +605,7 @@ export class DatabaseManager {
 
     if (extraData.pickBanData !== undefined) {
       updateFields.push('pick_ban_data = ?');
-      updateValues.push(JSON.stringify(extraData.pickBanData));
+      updateValues.push(typeof extraData.pickBanData === 'string' ? extraData.pickBanData : JSON.stringify(extraData.pickBanData));
     }
 
     if (extraData.detectedByLCU !== undefined) {
@@ -631,6 +631,10 @@ export class DatabaseManager {
     updateValues.push(matchId); // WHERE condition
 
     const query = `UPDATE custom_matches SET ${updateFields.join(', ')} WHERE id = ?`;
+    
+    console.log('📊 Atualizando partida customizada:', { matchId, winnerTeam, extraData });
+    console.log('🔧 Query SQL:', query);
+    console.log('🔧 Valores:', updateValues);
     
     await this.db.run(query, updateValues);
 
@@ -671,26 +675,60 @@ export class DatabaseManager {
   async getPlayerCustomMatches(playerIdentifier: string, limit: number = 20): Promise<any[]> {
     if (!this.db) throw new Error('Banco de dados não inicializado');
 
+    console.log('🔍 Buscando partidas customizadas para:', playerIdentifier);
+
     // Buscar tanto por ID numérico quanto por nome
     const matches = await this.db.all(`
       SELECT * FROM custom_matches 
       WHERE (team1_players LIKE '%' || ? || '%' OR team2_players LIKE '%' || ? || '%')
+      AND status = 'completed'
       ORDER BY created_at DESC 
       LIMIT ?
     `, [playerIdentifier, playerIdentifier, limit]);
 
+    console.log('📊 Partidas encontradas no banco:', matches.length);
+
     return matches.map(match => {
-      const team1Players = JSON.parse(match.team1_players || '[]');
-      const team2Players = JSON.parse(match.team2_players || '[]');
+      let team1Players = [];
+      let team2Players = [];
       
-      // Determinar em qual time o jogador está
-      const isInTeam1 = team1Players.includes(playerIdentifier) || 
-                       team1Players.some((p: any) => p.toString() === playerIdentifier);
-      const isInTeam2 = team2Players.includes(playerIdentifier) || 
-                       team2Players.some((p: any) => p.toString() === playerIdentifier);
+      try {
+        team1Players = JSON.parse(match.team1_players || '[]');
+        team2Players = JSON.parse(match.team2_players || '[]');
+      } catch (e) {
+        console.warn('⚠️ Erro ao fazer parse dos times da partida', match.id, ':', e);
+        team1Players = [];
+        team2Players = [];
+      }
+      
+      // Determinar em qual time o jogador está (melhor verificação)
+      const isInTeam1 = team1Players.some((p: any) => {
+        const pStr = p.toString().toLowerCase();
+        const identifierStr = playerIdentifier.toString().toLowerCase();
+        return pStr === identifierStr || pStr.includes(identifierStr) || identifierStr.includes(pStr);
+      });
+      
+      const isInTeam2 = team2Players.some((p: any) => {
+        const pStr = p.toString().toLowerCase();
+        const identifierStr = playerIdentifier.toString().toLowerCase();
+        return pStr === identifierStr || pStr.includes(identifierStr) || identifierStr.includes(pStr);
+      });
       
       const playerTeam = isInTeam1 ? 1 : (isInTeam2 ? 2 : null);
       const playerWon = playerTeam === match.winner_team;
+
+      console.log('🎯 Partida processada:', {
+        id: match.id,
+        title: match.title,
+        playerIdentifier,
+        team1Count: team1Players.length,
+        team2Count: team2Players.length,
+        playerTeam,
+        winnerTeam: match.winner_team,
+        playerWon,
+        isInTeam1,
+        isInTeam2
+      });
 
       return {
         ...match,

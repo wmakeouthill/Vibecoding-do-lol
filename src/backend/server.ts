@@ -664,7 +664,33 @@ app.get('/api/match/:matchId', async (req: Request, res: Response) => {
 // Custom matches routes
 app.post('/api/matches/custom', (async (req: Request, res: Response) => {
   try {
-    const { title, description, team1Players, team2Players, createdBy, gameMode } = req.body;
+    const { 
+      title, 
+      description, 
+      team1Players, 
+      team2Players, 
+      createdBy, 
+      gameMode,
+      winnerTeam,
+      duration,
+      pickBanData,
+      riotGameId,
+      detectedByLCU,
+      status
+    } = req.body;
+    
+    console.log('💾 [POST /api/matches/custom] Recebendo dados:', {
+      title,
+      team1Count: team1Players?.length,
+      team2Count: team2Players?.length,
+      createdBy,
+      winnerTeam,
+      duration,
+      hasPickBan: !!pickBanData,
+      riotGameId,
+      detectedByLCU,
+      status
+    });
     
     if (!team1Players || !team2Players || !createdBy) {
       return res.status(400).json({ 
@@ -682,13 +708,27 @@ app.post('/api/matches/custom', (async (req: Request, res: Response) => {
       gameMode
     });
 
+    // Se a partida já está finalizada, atualizá-la com o resultado
+    if (status === 'completed' && winnerTeam) {
+      console.log('🏆 Completando partida imediatamente com vencedor:', winnerTeam);
+      
+      await dbManager.completeCustomMatch(matchId, winnerTeam, {
+        duration,
+        pickBanData,
+        riotGameId,
+        detectedByLCU
+      });
+    }
+
+    console.log('✅ [POST /api/matches/custom] Partida salva com ID:', matchId);
+
     res.json({
       success: true,
       matchId,
       message: 'Partida personalizada criada com sucesso'
     });
   } catch (error: any) {
-    console.error('Erro ao criar partida personalizada:', error);
+    console.error('💥 [POST /api/matches/custom] Erro ao criar partida personalizada:', error);
     res.status(500).json({ error: error.message });
   }
 }) as RequestHandler);

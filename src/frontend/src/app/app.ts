@@ -308,28 +308,29 @@ export class App implements OnInit, OnDestroy {
         }
       } else {
         // Para partidas normais (não simulações), criar nova entrada
+        // Criar dados no formato correto para a tabela custom_matches
         const matchData = {
-          playerId: this.currentPlayer?.id || 1,
-          matchData: {
-            sessionId: gameResult.sessionId,
-            gameId: gameResult.gameId,
-            type: 'custom',
-            duration: gameResult.duration,
-            team1Players: gameResult.team1.map((player: any) => player.id || player),
-            team2Players: gameResult.team2.map((player: any) => player.id || player),
-            averageMMR1: this.calculateTeamMMR(gameResult.team1),
-            averageMMR2: this.calculateTeamMMR(gameResult.team2),
-            pickBanData: gameResult.pickBanData,
-            detectedByLCU: gameResult.detectedByLCU,
-            endTime: gameResult.endTime,
-            startTime: this.gameData?.startTime || new Date(),
-            isCustomGame: true,
-            completed: true,
-            winner: gameResult.winner === 'blue' ? 1 : 2,
-            riotId: gameResult.riotId, // Preservar Riot ID se disponível
-            mmrChanges: {} // Could be implemented later
-          }
+          title: `Partida Customizada ${new Date().toLocaleDateString()}`,
+          description: `Partida entre ${gameResult.team1.length}v${gameResult.team2.length}`,
+          team1Players: gameResult.team1.map((player: any) => {
+            // Garantir que temos um identificador válido
+            return player.id?.toString() || player.summonerName || player.toString();
+          }),
+          team2Players: gameResult.team2.map((player: any) => {
+            // Garantir que temos um identificador válido
+            return player.id?.toString() || player.summonerName || player.toString();
+          }),
+          createdBy: this.currentPlayer?.id?.toString() || this.currentPlayer?.summonerName || '1',
+          gameMode: 'CLASSIC',
+          winnerTeam: gameResult.winner === 'blue' ? 1 : 2,
+          duration: Math.floor(gameResult.duration / 60), // Converter segundos para minutos
+          pickBanData: gameResult.pickBanData ? JSON.stringify(gameResult.pickBanData) : null,
+          riotGameId: gameResult.riotId || null,
+          detectedByLCU: gameResult.detectedByLCU ? 1 : 0,
+          status: 'completed'
         };
+
+        console.log('💾 Salvando partida customizada com dados formatados:', matchData);
 
         const response = await this.apiService.saveCustomMatch(matchData).toPromise();
 

@@ -52,9 +52,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     if (!this.player) {
       console.warn('⚠️ Nenhum player disponível para carregar partidas');
       return;
-    }
-
-    console.log('🚀 Iniciando carregamento de partidas da Riot API para:', {
+    }    console.log('🚀 Iniciando carregamento de partidas do LCU (prioridade) para:', {
       player: this.player.summonerName,
       puuid: this.player.puuid
     });
@@ -63,8 +61,8 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     this.error = null;
 
     try {
-      // First, try to get matches from LCU (League Client)
-      console.log('📡 Tentando carregar via LCU...');
+      // PRIORIDADE: Buscar partidas do LCU (League Client)
+      console.log('📡 Carregando via LCU (fonte preferencial)...');
       this.apiService.getLCUMatchHistory().subscribe({
         next: (lcuResponse: any) => {
           console.log('📬 Resposta LCU recebida:', {
@@ -78,7 +76,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
             this.loading = false;
             return;
           } else {
-            console.log('ℹ️ LCU não retornou partidas, tentando Riot API...');
+            console.log('ℹ️ LCU não retornou partidas, usando Riot API apenas como backup...');
             // If LCU fails, try Riot API with PUUID
             if (this.player && this.player.puuid) {
               this.apiService.getPlayerMatchHistoryFromRiot(this.player.puuid, 'americas', 20).subscribe({
@@ -460,28 +458,73 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       }
     };
   }
-
   private mapApiMatchesToModel(apiMatches: any[]): Match[] {
+    console.log('🔄 Mapeando partidas da API para modelo do frontend:', apiMatches.length);
+
     return apiMatches.map(match => {
+      console.log('📝 Mapeando partida:', {
+        id: match.id,
+        title: match.title,
+        winnerTeam: match.winner_team,
+        playerWon: match.player_won,
+        status: match.status,
+        duration: match.duration
+      });
+
+      // Parse JSON fields safely
+      let team1Players = [];
+      let team2Players = [];
+
+      try {
+        team1Players = typeof match.team1_players === 'string' ? JSON.parse(match.team1_players) : (match.team1_players || []);
+        team2Players = typeof match.team2_players === 'string' ? JSON.parse(match.team2_players) : (match.team2_players || []);
+      } catch (e) {
+        console.warn('⚠️ Erro ao fazer parse dos times:', e);
+        team1Players = [];
+        team2Players = [];
+      }
+
       // Convert database match to our frontend Match interface
-      return {
+      const mappedMatch = {
         id: match.id || match.match_id,
         createdAt: new Date(match.created_at),
-        duration: match.duration || 1200, // Default to 20 minutes if unavailable
-        team1: JSON.parse(match.team1_players || '[]'),
-        team2: JSON.parse(match.team2_players || '[]'),
+        duration: match.duration ? (match.duration * 60) : 1200, // Converter minutos para segundos se necessário
+        gameMode: match.game_mode || 'CLASSIC',
+        team1: team1Players.map((playerId: any) => ({
+          name: playerId,
+          champion: 'Unknown',
+          teamId: 100
+        })),
+        team2: team2Players.map((playerId: any) => ({
+          name: playerId,
+          champion: 'Unknown',
+          teamId: 200
+        })),
         winner: match.winner_team || 0,
-        averageMMR1: match.average_mmr_team1 || 0,
-        averageMMR2: match.average_mmr_team2 || 0,
+        averageMMR1: 1200, // Mock value for custom matches
+        averageMMR2: 1200, // Mock value for custom matches
+        // Determine if current player won
         playerStats: {
-          champion: match.champion || 'Unknown', // This would come from match details
-          kills: match.kills || 0,
-          deaths: match.deaths || 0,
-          assists: match.assists || 0,
-          mmrChange: match.player_mmr_change || 0,
-          isWin: match.player_won || false
+          champion: 'Unknown', // Custom matches don't store individual champion data yet
+          kills: 0, // Not stored yet for custom matches
+          deaths: 0, // Not stored yet for custom matches
+          assists: 0, // Not stored yet for custom matches
+          mmrChange: match.player_won ? 15 : -10, // Mock MMR change
+          isWin: match.player_won || false,
+          championLevel: 18,
+          items: [0, 0, 0, 0, 0, 0] // Not stored yet for custom matches
         }
       };
+
+      console.log('✅ Partida mapeada:', {
+        id: mappedMatch.id,
+        winner: mappedMatch.winner,
+        playerWon: mappedMatch.playerStats?.isWin,
+        team1Count: mappedMatch.team1.length,
+        team2Count: mappedMatch.team2.length
+      });
+
+      return mappedMatch;
     });
   }
 

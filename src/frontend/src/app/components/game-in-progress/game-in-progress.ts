@@ -56,11 +56,15 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
 
   // Manual result declaration
   selectedWinner: 'blue' | 'red' | null = null;
-
   // Match confirmation modal
   showMatchConfirmation: boolean = false;
   detectedLCUMatch: any = null;
   matchComparisonResult: any = null;
+
+  // Live match linking
+  currentLiveMatchId: string | null = null;
+  matchLinkingEnabled: boolean = true;
+  lastLinkingAttempt: number = 0;
 
   // Timers
   private gameTimer: Subscription | null = null;
@@ -78,7 +82,6 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
   ngOnDestroy() {
     this.stopTimers();
   }
-
   private initializeGame() {
     if (!this.gameData) return;
 
@@ -94,6 +97,9 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
 
     // Start game timer
     this.startGameTimer();
+
+    // Start live match linking system
+    this.startLiveMatchLinking();
   }
 
   private startGameTimer() {
@@ -102,6 +108,140 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
         this.gameDuration = Math.floor((Date.now() - this.gameStartTime.getTime()) / 1000);
       }
     });
+  }
+
+  // Live match linking system - tries to link to actual LoL match every 2 minutes
+  private startLiveMatchLinking() {
+    if (!this.matchLinkingEnabled) return;
+
+    console.log('🔗 Iniciando sistema de vinculação de partidas ao vivo...');
+
+    // Try to link immediately
+    this.tryLinkToLiveMatch();
+
+    // Then try every 2 minutes
+    this.lcuDetectionTimer = interval(120000).subscribe(() => { // 2 minutes
+      this.tryLinkToLiveMatch();
+    });
+  }
+
+  private async tryLinkToLiveMatch(): Promise<void> {
+    const now = Date.now();
+
+    // Avoid too frequent attempts
+    if (now - this.lastLinkingAttempt < 30000) { // 30 seconds cooldown
+      return;
+    }
+
+    this.lastLinkingAttempt = now;
+
+    try {
+      console.log('🔗 Tentando vincular com partida ao vivo do LoL...');
+
+      // Get current game from LCU
+      const gameState = await this.apiService.getCurrentGame().toPromise();
+
+      if (!gameState || !gameState.success || !gameState.data) {
+        console.log('📡 Nenhum jogo ativo detectado no LCU');
+        return;
+      }
+
+      const currentGame = gameState.data;
+
+      // Check if this is a valid game to link
+      if (currentGame.gameMode && currentGame.gameId) {
+        // Check if we're already linked to this match
+        if (this.currentLiveMatchId === currentGame.gameId.toString()) {
+          console.log('🔗 Já vinculado à partida:', currentGame.gameId);
+          return;
+        }
+
+        // Check if this match seems to correspond to our draft
+        const linkingScore = this.calculateLiveLinkingScore(currentGame);
+
+        if (linkingScore.shouldLink) {
+          console.log('✅ Vinculando à partida ao vivo:', {
+            gameId: currentGame.gameId,
+            score: linkingScore.score,
+            reason: linkingScore.reason
+          });
+
+          // Link to this match
+          this.currentLiveMatchId = currentGame.gameId.toString();
+
+          // Update game data with live match ID
+          if (this.gameData) {
+            this.gameData.originalMatchId = currentGame.gameId;
+            this.gameData.riotId = `BR1_${currentGame.gameId}`;
+          }
+
+          // Notify user about successful linking
+          console.log('🎯 Partida vinculada automaticamente! ID:', currentGame.gameId);
+
+        } else {
+          console.log('⚠️ Partida ao vivo não corresponde ao draft atual:', linkingScore.reason);
+        }
+      }
+
+    } catch (error) {
+      console.log('❌ Erro ao tentar vincular partida ao vivo:', error);
+    }
+  }
+
+  // Calculate if current live match should be linked to our draft
+  private calculateLiveLinkingScore(liveGame: any): { shouldLink: boolean, score: number, reason: string } {
+    if (!this.gameData || !this.gameData.pickBanData) {
+      return { shouldLink: false, score: 0, reason: 'Dados de draft não disponíveis' };
+    }
+
+    let score = 0;
+    let maxScore = 100;
+    const reasons: string[] = [];
+
+    // Check game timing (should be recent)
+    if (liveGame.gameCreation) {
+      const gameTime = new Date(liveGame.gameCreation);
+      const draftTime = this.gameData.startTime ? new Date(this.gameData.startTime) : new Date();
+      const timeDiff = Math.abs(gameTime.getTime() - draftTime.getTime()) / (1000 * 60); // minutes
+
+      if (timeDiff <= 15) { // Within 15 minutes of draft
+        score += 30;
+        reasons.push(`Horário compatível (${Math.round(timeDiff)} min)`);
+      } else {
+        return { shouldLink: false, score: 0, reason: `Muito tempo entre draft e partida (${Math.round(timeDiff)} min)` };
+      }
+    }
+
+    // Check if it's a custom game (preferred for our use case)
+    if (liveGame.gameMode === 'CLASSIC' && liveGame.gameType === 'CUSTOM_GAME') {
+      score += 40;
+      reasons.push('Partida customizada');
+    } else if (liveGame.gameMode === 'CLASSIC') {
+      score += 20;
+      reasons.push('Partida clássica');
+    }
+
+    // Check player participation (if current player is in the game)
+    if (this.currentPlayer && liveGame.participants) {
+      const currentPlayerInGame = liveGame.participants.some((p: any) =>
+        p.summonerName === this.currentPlayer?.summonerName ||
+        p.gameName === this.currentPlayer?.summonerName
+      );
+
+      if (currentPlayerInGame) {
+        score += 30;
+        reasons.push('Jogador atual está na partida');
+      } else {
+        // Not necessarily a deal-breaker, but reduces confidence
+        score -= 10;
+        reasons.push('Jogador atual não encontrado na partida');
+      }
+    }
+
+    const shouldLink = score >= 60; // Need at least 60% confidence
+    const reason = reasons.join(', ');
+
+    return { shouldLink, score, reason };
   }
 
   private startLCUDetection() {
@@ -272,14 +412,28 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
       alert('Erro ao acessar o histórico do LCU. Certifique-se de que o League of Legends está aberto.');
     }
   }
-
   // Find matching LCU game based on current game data
   private findMatchingLCUGame(lcuMatches: any[]): { match: any | null, confidence: number, reason: string } {
     if (!this.gameData) {
       return { match: null, confidence: 0, reason: 'Nenhum dado de jogo disponível' };
     }
 
-    console.log('🔍 Procurando partida correspondente entre', lcuMatches.length, 'partidas do LCU');    // First, try to match by original match ID if this is a simulation
+    console.log('🔍 Procurando partida correspondente entre', lcuMatches.length, 'partidas do LCU');
+
+    // HIGHEST PRIORITY: Check if we have a live-linked match
+    if (this.currentLiveMatchId) {
+      const linkedMatch = lcuMatches.find((match: any) => match.gameId.toString() === this.currentLiveMatchId);
+      if (linkedMatch) {
+        console.log('🎯 Partida encontrada por vinculação automática:', linkedMatch.gameId);
+        return {
+          match: linkedMatch,
+          confidence: 100,
+          reason: `Partida vinculada automaticamente durante o jogo (ID: ${linkedMatch.gameId})`
+        };
+      }
+    }
+
+    // SECOND PRIORITY: Try to match by original match ID if this is a simulation
     if (this.gameData.originalMatchId) {
       const exactMatch = lcuMatches.find((match: any) => match.gameId === this.gameData?.originalMatchId);
       if (exactMatch) {
@@ -292,17 +446,28 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
       }
     }
 
-    // If no exact match, try to match by champion picks and team composition
+    // THIRD PRIORITY: Compare by similarity (champions, timing, etc.)
+    let bestMatch: any = null;
+    let bestScore = 0;
+    let bestReason = '';
+
     for (const lcuMatch of lcuMatches) {
       const similarity = this.calculateMatchSimilarity(lcuMatch);
-      if (similarity.confidence >= 70) {
-        console.log('✅ Partida correspondente encontrada por similaridade:', similarity);
-        return {
-          match: lcuMatch,
-          confidence: similarity.confidence,
-          reason: similarity.reason
-        };
+      if (similarity.confidence > bestScore) {
+        bestMatch = lcuMatch;
+        bestScore = similarity.confidence;
+        bestReason = similarity.reason;
       }
+    }
+
+    // Only accept matches with reasonable confidence
+    if (bestScore >= 70) {
+      console.log('✅ Partida correspondente encontrada por similaridade:', { match: bestMatch.gameId, score: bestScore });
+      return {
+        match: bestMatch,
+        confidence: bestScore,
+        reason: bestReason
+      };
     }
 
     // No good match found
@@ -426,7 +591,6 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
 
     return (matches / Math.max(list1.length, list2.length)) * 50; // Max 50 points per team
   }
-
   // Modal actions
   confirmDetectedMatch(): void {
     if (!this.detectedLCUMatch || !this.matchComparisonResult) return;
@@ -448,8 +612,20 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
       this.showMatchConfirmation = false;
       this.autoCompleteGame(winner, true);
     } else {
-      alert('A partida detectada não possui informação de vencedor. Use a declaração manual.');
-      this.closeMatchConfirmation();
+      // No winner detected, but user confirmed this is the right match
+      console.log('✅ Partida confirmada pelo usuário, mas sem vencedor detectado');
+      this.showMatchConfirmation = false;
+
+      // Update game data with detected match info
+      if (this.gameData && lcuMatch.gameId) {
+        this.gameData.originalMatchId = lcuMatch.gameId;
+        this.gameData.riotId = lcuMatch.platformId ? `${lcuMatch.platformId}_${lcuMatch.gameId}` : `BR1_${lcuMatch.gameId}`;
+      }
+
+      // Show manual declaration interface since no winner was auto-detected
+      this.gameStatus = 'ended';
+
+      alert('✅ Partida confirmada! Como o vencedor não pôde ser detectado automaticamente, declare o vencedor manualmente abaixo.');
     }
   }
 
@@ -532,7 +708,6 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
 
     return lcuMatch.participants.filter((participant: any) => participant.teamId === teamId);
   }
-
   // Missing utility methods
   private stopTimers(): void {
     if (this.gameTimer) {
@@ -543,6 +718,10 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
       this.lcuDetectionTimer.unsubscribe();
       this.lcuDetectionTimer = null;
     }
+
+    // Reset linking state
+    this.currentLiveMatchId = null;
+    this.matchLinkingEnabled = false;
   }
 
   private generateGameId(): string {
