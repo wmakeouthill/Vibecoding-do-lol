@@ -104,7 +104,7 @@
             <div class="result-indicator">
               <span class="result-text">{{ match.playerStats?.isWin ? 'V' : 'D' }}</span>
             </div>
-            <div class="match-type">{{ getGameModeDisplay(match.gameMode) }}</div>
+            <div class="match-type">{{ isRiotTab() ? getGameModeDisplay(match.gameMode) : 'Customizada' }}</div>
             <div class="match-duration">{{ getMatchDuration(match) }}</div>
           </div>          <!-- Champion Info -->
           <div class="champion-info">
@@ -471,16 +471,8 @@
         </button>
       </div>
     </div>    <!-- Custom Matches Tab Content -->
-    <div *ngIf="isCustomTab()" class="custom-matches-content">      <!-- Debug info -->
-      <div style="background: #f0f0f0; padding: 10px; margin: 10px 0; border: 1px solid #ccc;">
-        <strong>🔍 DEBUG INFO:</strong><br>
-        activeTab: {{ activeTab }}<br>
-        isCustomTab(): {{ isCustomTab() }}<br>
-        customMatches.length: {{ customMatches.length }}<br>
-        getCurrentMatches().length: {{ getCurrentMatches().length }}<br>
-        getSimpleMatchCount(): {{ getSimpleMatchCount() }}<br>
-        <button (click)="debugCustomMatches()">Log Debug Info</button>
-      </div>      <!-- Summary Stats for Custom Matches -->
+    <div *ngIf="isCustomTab()" class="custom-matches-content">
+      <!-- Summary Stats for Custom Matches -->
       <div class="summary-stats custom-theme">
         <div class="summary-card">
           <div class="summary-value">{{ getTabStats().totalWins }}/{{ getCurrentMatches().length }}</div>
@@ -501,22 +493,10 @@
           </div>
           <div class="summary-label">MMR Total</div>
         </div>
-      </div><!-- Custom Match List -->
+      </div>
+
+      <!-- Custom Match List -->
       <div class="match-list custom-style">
-        <!-- Debug: Teste simples de renderização -->
-        <div style="background: yellow; padding: 10px; margin: 10px 0;">
-          <strong>🚨 TESTE DE RENDERIZAÇÃO:</strong><br>
-          Total de partidas: {{ getCurrentMatches().length }}<br>
-          Primeira partida ID: {{ getCurrentMatches()[0].id || 'Nenhuma partida' }}<br>
-          Primeira partida campeão: {{ getCurrentMatches()[0].playerStats?.champion || 'Sem campeão' }}
-        </div>
-
-        <!-- Lista simples sem estrutura complexa -->
-        <div *ngFor="let match of getCurrentMatches(); let i = index; trackBy: trackMatch"
-             style="background: lightblue; padding: 5px; margin: 5px 0; border: 1px solid blue;">
-          <strong>Partida {{ i + 1 }}:</strong> {{ match.playerStats?.champion }} - {{ match.playerStats?.isWin ? 'VITÓRIA' : 'DERROTA' }}
-        </div>
-
         <div *ngFor="let match of getCurrentMatches(); trackBy: trackMatch"
              class="match-item custom-match"
              [class.win]="match.playerStats?.isWin"
@@ -576,10 +556,17 @@
                 <div *ngIf="!item || item === 0" class="empty-item"></div>
               </div>
             </div>
+          </div>          <!-- LP/MMR Change -->
+          <div class="lp-change" *ngIf="isRiotTab()">
+            <span class="lp-value"
+                  [class.positive]="(match.playerStats?.lpChange || 0) > 0"
+                  [class.negative]="(match.playerStats?.lpChange || 0) < 0">
+              {{ (match.playerStats?.lpChange || 0) > 0 ? '+' : '' }}{{ match.playerStats?.lpChange || 0 }} LP
+            </span>
           </div>
 
           <!-- MMR Change -->
-          <div class="mmr-change">
+          <div class="mmr-change" *ngIf="isCustomTab()">
             <span class="mmr-value"
                   [class.positive]="(match.playerStats?.mmrChange || 0) > 0"
                   [class.negative]="(match.playerStats?.mmrChange || 0) < 0">
