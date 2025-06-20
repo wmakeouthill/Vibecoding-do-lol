@@ -237,39 +237,93 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
   async retryAutoDetection() {
     console.log('🔄 [MANUAL] Tentando detectar vencedor via histórico do LCU...');
 
-    try {      // Get the last match from LCU history instead of current game
-      const historyResponse = await this.apiService.getLCUMatchHistoryAll(0, 1, false).toPromise();
+    try {
+      // Check if this is a simulation based on a real match
+      const originalMatchId = this.gameData?.originalMatchId;
 
-      if (!historyResponse || !historyResponse.success || !historyResponse.matches || historyResponse.matches.length === 0) {
-        console.log('⚠️ [MANUAL] Nenhuma partida encontrada no histórico do LCU');
-        alert('Nenhuma partida encontrada no histórico do LCU. Certifique-se de que o League of Legends está aberto e você jogou pelo menos uma partida.');
-        return;
-      }
+      if (originalMatchId) {
+        console.log('🎯 [MANUAL] Simulação baseada em partida real, ID:', originalMatchId);
 
-      const lastMatch = historyResponse.matches[0];
-      console.log('🔍 [MANUAL] Última partida do LCU:', lastMatch);
+        // For simulations, get more matches to find the specific one
+        const historyResponse = await this.apiService.getLCUMatchHistoryAll(0, 10, false).toPromise();
 
-      // Check if this match has teams and winner information
-      if (lastMatch.teams && lastMatch.teams.length === 2) {
-        const winningTeam = lastMatch.teams.find((team: any) => team.win === true);
-        if (winningTeam) {
-          const winner = winningTeam.teamId === 100 ? 'blue' : 'red';
-          console.log('🏆 [MANUAL] Vencedor detectado via histórico do LCU:', winner);
-          this.selectedWinner = winner;
-
-          // Show confirmation to user
-          const teamName = winner === 'blue' ? 'Azul' : 'Vermelho';
-          const confirmed = confirm(`🏆 Vencedor detectado!\n\nTime ${teamName} venceu a última partida.\n\nConfirmar este resultado?`);
-
-          if (confirmed) {
-            this.autoCompleteGame(winner, true);
-          }
+        if (!historyResponse || !historyResponse.success || !historyResponse.matches || historyResponse.matches.length === 0) {
+          console.log('⚠️ [MANUAL] Nenhuma partida encontrada no histórico do LCU');
+          alert('Nenhuma partida encontrada no histórico do LCU. Certifique-se de que o League of Legends está aberto.');
           return;
         }
-      }
 
-      console.log('⚠️ [MANUAL] Última partida não tem informação de vencedor');
-      alert('A última partida no histórico do LCU não contém informação de vencedor. Tente novamente após completar uma partida.');
+        // Find the specific match that corresponds to the simulation
+        const targetMatch = historyResponse.matches.find((match: any) => match.gameId === originalMatchId);
+
+        if (!targetMatch) {
+          console.log('⚠️ [MANUAL] Partida original não encontrada no histórico do LCU');
+          alert(`Partida original (ID: ${originalMatchId}) não encontrada no histórico do LCU. Tente usar "Detectar Última Partida" como alternativa.`);
+          return;
+        }
+
+        console.log('🔍 [MANUAL] Partida correspondente encontrada no LCU:', targetMatch);
+
+        // Check if this match has teams and winner information
+        if (targetMatch.teams && targetMatch.teams.length === 2) {
+          const winningTeam = targetMatch.teams.find((team: any) => team.win === true);
+          if (winningTeam) {
+            const winner = winningTeam.teamId === 100 ? 'blue' : 'red';
+            console.log('🏆 [MANUAL] Vencedor detectado na partida correspondente:', winner);
+            this.selectedWinner = winner;
+
+            // Show confirmation to user with more specific info
+            const teamName = winner === 'blue' ? 'Azul' : 'Vermelho';
+            const matchDate = new Date(targetMatch.gameCreation).toLocaleString();
+            const confirmed = confirm(`🏆 Vencedor detectado!\n\nPartida: ${matchDate}\nID: ${originalMatchId}\n\nTime ${teamName} venceu esta partida.\n\nConfirmar este resultado?`);
+
+            if (confirmed) {
+              this.autoCompleteGame(winner, true);
+            }
+            return;
+          }
+        }
+
+        console.log('⚠️ [MANUAL] Partida correspondente não tem informação de vencedor');
+        alert('A partida correspondente no histórico do LCU não contém informação de vencedor.');
+
+      } else {
+        // For non-simulation games, get the last match
+        console.log('🔍 [MANUAL] Jogo normal (não simulação), buscando última partida...');
+
+        const historyResponse = await this.apiService.getLCUMatchHistoryAll(0, 1, false).toPromise();
+
+        if (!historyResponse || !historyResponse.success || !historyResponse.matches || historyResponse.matches.length === 0) {
+          console.log('⚠️ [MANUAL] Nenhuma partida encontrada no histórico do LCU');
+          alert('Nenhuma partida encontrada no histórico do LCU. Certifique-se de que o League of Legends está aberto e você jogou pelo menos uma partida.');
+          return;
+        }
+
+        const lastMatch = historyResponse.matches[0];
+        console.log('🔍 [MANUAL] Última partida do LCU:', lastMatch);
+
+        // Check if this match has teams and winner information
+        if (lastMatch.teams && lastMatch.teams.length === 2) {
+          const winningTeam = lastMatch.teams.find((team: any) => team.win === true);
+          if (winningTeam) {
+            const winner = winningTeam.teamId === 100 ? 'blue' : 'red';
+            console.log('🏆 [MANUAL] Vencedor detectado via histórico do LCU:', winner);
+            this.selectedWinner = winner;
+
+            // Show confirmation to user
+            const teamName = winner === 'blue' ? 'Azul' : 'Vermelho';
+            const confirmed = confirm(`🏆 Vencedor detectado!\n\nTime ${teamName} venceu a última partida.\n\nConfirmar este resultado?`);
+
+            if (confirmed) {
+              this.autoCompleteGame(winner, true);
+            }
+            return;
+          }
+        }
+
+        console.log('⚠️ [MANUAL] Última partida não tem informação de vencedor');
+        alert('A última partida no histórico do LCU não contém informação de vencedor. Tente novamente após completar uma partida.');
+      }
 
     } catch (error) {
       console.log('❌ [MANUAL] Erro ao detectar via histórico do LCU:', error);

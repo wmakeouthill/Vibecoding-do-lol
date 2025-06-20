@@ -911,20 +911,18 @@ export class App implements OnInit, OnDestroy {
 
     this.simulateMatchFromData(newResponse.matches[0]);
   }  private simulateMatchFromData(matchData: any): void {
-    console.log('🎮 Simulando partida com dados REAIS:', matchData);
-
-    // Processar dados dos teams corretamente (podem ser strings ou números)
+    console.log('🎮 Simulando partida com dados REAIS:', matchData);    // Processar dados dos teams corretamente (podem ser strings ou números)
     let team1Players: any[] = [];
     let team2Players: any[] = [];
 
     try {
       const rawTeam1 = JSON.parse(matchData.team1_players || '[]');
       const rawTeam2 = JSON.parse(matchData.team2_players || '[]');
-      
+
       // Garantir que temos arrays válidos
       team1Players = Array.isArray(rawTeam1) ? rawTeam1 : [rawTeam1];
       team2Players = Array.isArray(rawTeam2) ? rawTeam2 : [rawTeam2];
-      
+
     } catch (error) {
       console.error('Erro ao processar dados dos times:', error);
       team1Players = [1]; // Fallback
@@ -983,12 +981,60 @@ export class App implements OnInit, OnDestroy {
       console.log('🔄 Pick/ban simulados criados:', realPickBanData);
     }
 
+    // Converter players para objetos adequados para o template
+    const processedTeam1Players = team1Players.map((playerData, index) => {
+      // Se já é um objeto, usar como está
+      if (typeof playerData === 'object' && playerData !== null) {
+        return playerData;
+      }
+
+      // Se é string (nome do player), criar objeto com dados dos picks
+      const playerName = playerData.toString();
+      const playerPick = realPickBanData?.team1Picks?.[index];
+
+      return {
+        id: playerName,
+        name: playerName,
+        summonerName: playerName,
+        champion: playerPick ? {
+          name: playerPick.champion,
+          id: playerPick.championId
+        } : null,
+        role: playerPick?.lane || 'UNKNOWN'
+      };
+    });
+
+    const processedTeam2Players = team2Players.map((playerData, index) => {
+      // Se já é um objeto, usar como está
+      if (typeof playerData === 'object' && playerData !== null) {
+        return playerData;
+      }
+
+      // Se é string (nome do player), criar objeto com dados dos picks
+      const playerName = playerData.toString();
+      const playerPick = realPickBanData?.team2Picks?.[index];
+
+      return {
+        id: playerName,
+        name: playerName,
+        summonerName: playerName,
+        champion: playerPick ? {
+          name: playerPick.champion,
+          id: playerPick.championId
+        } : null,
+        role: playerPick?.lane || 'UNKNOWN'
+      };
+    });
+
+    console.log('🎯 Team 1 players com objetos completos:', processedTeam1Players);
+    console.log('🎯 Team 2 players com objetos completos:', processedTeam2Players);
+
     // Criar dados do jogo baseados na partida REAL
     this.gameData = {
       sessionId: 'simulate_real_' + Date.now(),
       gameId: 'simulate_real_' + matchData.id,
-      team1: team1Players,
-      team2: team2Players,
+      team1: processedTeam1Players,
+      team2: processedTeam2Players,
       startTime: new Date(),
       pickBanData: realPickBanData,
       isCustomGame: true,
