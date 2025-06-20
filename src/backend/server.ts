@@ -188,21 +188,9 @@ app.get('/api/player/current-details', (async (req: Request, res: Response) => {
       }
     } catch (lcuRankError: any) {
       console.log('[CURRENT DETAILS] LCU ranked stats unavailable:', lcuRankError.message);
-    }
-
-    // Try to get Riot API data as additional information, but don't fail if it's unavailable
-    try {
-      console.log('[CURRENT DETAILS] Attempting to get Riot API data...');
-      const playerData = await playerService.getPlayerBySummonerNameWithDetails(riotId, region);
-      console.log('[CURRENT DETAILS] Riot API data fetched successfully');
-      
-      baseData.riotApi = playerData;
-      baseData.partialData = false;
-      
-    } catch (playerError: any) {
-      console.log('[CURRENT DETAILS] Riot API data unavailable, using LCU-only data:', playerError.message);
-      baseData.partialData = true;
-    }
+    }    // Skip Riot API - we prioritize LCU only
+    console.log('[CURRENT DETAILS] Using LCU-only data (Riot API disabled by design)');
+    baseData.partialData = true;
 
     console.log('[CURRENT DETAILS] Returning data, partialData:', baseData.partialData);
     res.json({ 
