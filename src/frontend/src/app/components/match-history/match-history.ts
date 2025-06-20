@@ -180,12 +180,14 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
             console.log('🔍 [DEBUG] Angular change detection - customMatches.length:', this.customMatches.length);
             console.log('🔍 [DEBUG] Angular change detection - activeTab:', this.activeTab);
             console.log('🔍 [DEBUG] Angular change detection - isCustomTab():', this.isCustomTab());
-            console.log('🔍 [DEBUG] Angular change detection - getCurrentMatches().length:', this.getCurrentMatches().length);
-
-            // Forçar detecção de mudanças
+            console.log('🔍 [DEBUG] Angular change detection - getCurrentMatches().length:', this.getCurrentMatches().length);            // Forçar detecção de mudanças
             console.log('🔄 [DEBUG] Forçando detecção de mudanças...');
             this.cdr.detectChanges();
             console.log('✅ [DEBUG] Detecção de mudanças forçada concluída');
+
+            // Debug adicional para verificar estado
+            this.debugCurrentState();
+            this.debugTemplateVisibility();
           } else {
             console.log('⚠️ [DEBUG] Nenhuma partida encontrada');
             this.customMatches = [];
@@ -1577,5 +1579,48 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     const count = this.activeTab === 'custom' ? this.customMatches.length : this.riotMatches.length;
     console.log('🎯 [DEBUG] getSimpleMatchCount() - activeTab:', this.activeTab, 'count:', count);
     return count;
+  }
+
+  // ========== DEBUG METHODS ==========
+  debugCurrentState(): void {
+    console.log('🔍 [DEBUG] Estado atual completo:', {
+      activeTab: this.activeTab,
+      loading: this.loading,
+      error: this.error,
+      customMatches: {
+        length: this.customMatches.length,
+        array: this.customMatches,
+        isValid: Array.isArray(this.customMatches)
+      },
+      riotMatches: {
+        length: this.riotMatches.length,
+        array: this.riotMatches,
+        isValid: Array.isArray(this.riotMatches)
+      },
+      getCurrentMatches: {
+        length: this.getCurrentMatches().length,
+        array: this.getCurrentMatches(),
+        isValid: Array.isArray(this.getCurrentMatches())
+      },
+      templateConditions: {
+        notLoading: !this.loading,
+        noError: !this.error,
+        hasMatches: this.getCurrentMatches().length > 0,
+        shouldShowContent: !this.loading && !this.error && this.getCurrentMatches().length > 0
+      }
+    });
+  }
+
+  debugTemplateVisibility(): void {
+    const matches = this.getCurrentMatches();
+    console.log('🎨 [DEBUG] Template visibility:', {
+      loading: this.loading,
+      error: this.error,
+      matchesLength: matches.length,
+      shouldShowTabContent: !this.loading && !this.error && matches.length > 0,
+      isRiotTab: this.isRiotTab(),
+      isCustomTab: this.isCustomTab(),
+      activeTab: this.activeTab
+    });
   }
 }

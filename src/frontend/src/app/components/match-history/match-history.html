@@ -18,12 +18,13 @@
           (click)="setActiveTab('custom')">
           🎮 Partidas Customizadas
         </button>
-      </div>
-
-      <div class="history-stats" *ngIf="getCurrentMatches().length > 0">
+      </div>      <div class="history-stats" *ngIf="getCurrentMatches().length > 0">
         <div class="stat-summary">
           <span class="total-matches">{{ getCurrentMatches().length }} partidas</span>
           <span class="win-rate">{{ getWinRate() }}% de vitória</span>
+          <!-- DEBUG TEMPORÁRIO -->
+          <button style="margin-left: 10px; background: red; color: white; padding: 5px;"
+                  (click)="debugCurrentState(); debugTemplateVisibility()">🔍 DEBUG</button>
         </div>
       </div>
     </div>
@@ -63,41 +64,41 @@
     <h3>{{ getTabEmptyMessage() }}</h3>
     <p>{{ getTabEmptyDescription() }}</p>
     <button class="btn btn-primary" (click)="loadCurrentTabMatches()">Recarregar</button>
-  </div>
-  <!-- Tab Content -->
+  </div>  <!-- Tab Content UNIFIED-->
   <div class="tab-content" *ngIf="!loading && !error && getCurrentMatches().length > 0">
-    <!-- Riot API Tab Content -->
-    <div *ngIf="isRiotTab()" class="riot-matches-content">      <!-- Summary Stats for Riot Matches -->
-      <div class="summary-stats riot-theme">
-        <div class="summary-card">
-          <div class="summary-value">{{ getTabStats().totalWins }}/{{ getCurrentMatches().length }}</div>
-          <div class="summary-label">Vitórias Ranqueadas</div>
-        </div>
-
-        <div class="summary-card">
-          <div class="summary-value">{{ getTabWinStreakInfo().current }}</div>
-          <div class="summary-label">Sequência Atual</div>
-        </div>
-
-        <div class="summary-card">
-          <div class="summary-value">{{ getTabWinStreakInfo().longest }}</div>
-          <div class="summary-label">Maior Sequência</div>
-        </div>
-
-        <div class="summary-card">
-          <div class="summary-value" [class.positive]="getTabStats().totalMMRGained > 0">
-            {{ getTabStats().totalMMRGained > 0 ? '+' : '' }}{{ getTabStats().totalMMRGained }}
-          </div>
-          <div class="summary-label">LP Total</div>
-        </div>
+    <!-- Summary Stats (adapts to current tab automatically) -->
+    <div class="summary-stats" [class.riot-theme]="isRiotTab()" [class.custom-theme]="isCustomTab()">
+      <div class="summary-card">
+        <div class="summary-value">{{ getTabStats().totalWins }}/{{ getCurrentMatches().length }}</div>
+        <div class="summary-label">{{ isRiotTab() ? 'Vitórias Ranqueadas' : 'Vitórias Customizadas' }}</div>
       </div>
 
-      <!-- Riot Match List -->
-      <div class="match-list riot-style">
-        <div *ngFor="let match of getCurrentMatches(); trackBy: trackMatch"
-             class="match-item riot-match"
-             [class.win]="match.playerStats?.isWin"
-             [class.loss]="!match.playerStats?.isWin">
+      <div class="summary-card">
+        <div class="summary-value">{{ getTabWinStreakInfo().current }}</div>
+        <div class="summary-label">Sequência Atual</div>
+      </div>
+
+      <div class="summary-card">
+        <div class="summary-value">{{ getTabWinStreakInfo().longest }}</div>
+        <div class="summary-label">Maior Sequência</div>
+      </div>
+
+      <div class="summary-card">
+        <div class="summary-value" [class.positive]="getTabStats().totalMMRGained > 0">
+          {{ getTabStats().totalMMRGained > 0 ? '+' : '' }}{{ getTabStats().totalMMRGained }}
+        </div>
+        <div class="summary-label">{{ isRiotTab() ? 'LP Total' : 'MMR Total' }}</div>
+      </div>
+    </div>
+
+    <!-- Match List UNIFIED (works for both tabs) -->
+    <div class="match-list" [class.riot-style]="isRiotTab()" [class.custom-style]="isCustomTab()">
+      <div *ngFor="let match of getCurrentMatches(); trackBy: trackMatch"
+           class="match-item"
+           [class.riot-match]="isRiotTab()"
+           [class.custom-match]="isCustomTab()"
+           [class.win]="match.playerStats?.isWin"
+           [class.loss]="!match.playerStats?.isWin">
 
           <!-- Match Result -->
           <div class="match-result">
