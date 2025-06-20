@@ -131,8 +131,8 @@
             <div class="kda-stats">
               <span class="kda">{{ getKDA(match) }}</span>
               <span class="kda-ratio">{{ getKDARatio(match).toFixed(2) }} KDA</span>
-            </div>
-            <div class="kda-badges">
+            </div>            <div class="kda-badges">
+              <span *ngIf="match.playerStats?.firstBloodKill" class="badge first-blood">🩸 First Blood</span>
               <span *ngIf="match.playerStats?.doubleKills" class="badge double-kill">{{ match.playerStats?.doubleKills }}x Double</span>
               <span *ngIf="match.playerStats?.tripleKills" class="badge triple-kill">{{ match.playerStats?.tripleKills }}x Triple</span>
               <span *ngIf="match.playerStats?.quadraKills" class="badge quadra-kill">{{ match.playerStats?.quadraKills }}x Quadra</span>
@@ -182,8 +182,7 @@
             <div class="teams-composition">
               <h4>Composição dos Times</h4>
 
-              <div class="teams-container-side-by-side">
-                <!-- Team 1 (Blue Side) -->
+              <div class="teams-container-side-by-side">                <!-- Team 1 (Blue Side) -->
                 <div class="team-section blue-team" [class.winner]="match.winner === 1">
                   <div class="team-header">
                     <h5 class="team-title">
@@ -238,6 +237,11 @@
                             <span class="separator">/</span>
                             <span class="assists">{{ participant.assists }}</span>
                           </div>                          <div class="kda-ratio">{{ getParticipantKDARatio(participant).toFixed(2) }}:1 KDA</div>
+
+                          <!-- First Blood Badge -->
+                          <div class="participant-badges" *ngIf="participant.firstBloodKill">
+                            <span class="badge first-blood">🩸 First Blood</span>
+                          </div>
                         </div>
 
                         <!-- Items Section -->
@@ -276,9 +280,7 @@
                       </div>
                     </div>
                   </div>
-                </div>
-
-                <!-- Team 2 (Red Side) -->
+                </div>                <!-- Team 2 (Red Side) -->
                 <div class="team-section red-team" [class.winner]="match.winner === 2">
                   <div class="team-header">
                     <h5 class="team-title">
@@ -333,6 +335,11 @@
                             <span class="separator">/</span>
                             <span class="assists">{{ participant.assists }}</span>
                           </div>                          <div class="kda-ratio">{{ getParticipantKDARatio(participant).toFixed(2) }}:1 KDA</div>
+
+                          <!-- First Blood Badge -->
+                          <div class="participant-badges" *ngIf="participant.firstBloodKill">
+                            <span class="badge first-blood">🩸 First Blood</span>
+                          </div>
                         </div>
 
                         <!-- Items Section -->

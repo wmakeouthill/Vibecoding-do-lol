@@ -127,6 +127,7 @@ export interface Match {
     isWin: boolean;
     championLevel?: number;
     lane?: string; // Adicionando propriedade para a lane
+    firstBloodKill?: boolean; // Indica se o jogador fez o primeiro sangue
     doubleKills?: number;
     tripleKills?: number;
     quadraKills?: number;

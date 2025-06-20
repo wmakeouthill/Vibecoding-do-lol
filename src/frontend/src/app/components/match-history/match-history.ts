@@ -363,14 +363,14 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       );      if (!playerData) {
         // console.warn('⚠️ Jogador não encontrado na partida:', matchData.metadata?.matchId);
         return this.createDefaultMatch();
-      }
-
-      // Mapear participantes com dados completos para exibição
+      }      // Mapear participantes com dados completos para exibição
       const enhancedParticipants = matchData.info.participants.map((p: any) => ({
         ...p,
         // Adicionar summonerName se não existir - usar riotIdGameName + riotIdTagline
-        summonerName: p.summonerName || (p.riotIdGameName ? `${p.riotIdGameName}#${p.riotIdTagline}` : 'Unknown')
-      }));      // Separar participantes em times com dados completos
+        summonerName: p.summonerName || (p.riotIdGameName ? `${p.riotIdGameName}#${p.riotIdTagline}` : 'Unknown'),
+        // Adicionar firstBloodKill
+        firstBloodKill: p.firstBloodKill || false
+      }));// Separar participantes em times com dados completos
       const team1 = enhancedParticipants.filter((p: any) => p.teamId === 100);
       const team2 = enhancedParticipants.filter((p: any) => p.teamId === 200);
 
@@ -390,8 +390,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         teams: matchData.info.teams,
         team1: team1,
         team2: team2,
-        winner: matchWinner,
-        playerStats: {
+        winner: matchWinner,        playerStats: {
           champion: playerData.championName,
           kills: playerData.kills,
           deaths: playerData.deaths,
@@ -399,6 +398,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           mmrChange: playerData.win ? 15 : -12, // Mock MMR - API não fornece
           isWin: playerData.win,
           championLevel: playerData.champLevel,
+          firstBloodKill: playerData.firstBloodKill || false,
           doubleKills: playerData.doubleKills || 0,
           tripleKills: playerData.tripleKills || 0,
           quadraKills: playerData.quadraKills || 0,
@@ -1482,9 +1482,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           } else if (player.gameName) {
             displayName = player.gameName;
           }
-        }
-
-        return {
+        }        return {
           ...p,
           championName: getChampionName(p.championId),
           summonerName: displayName,
@@ -1493,6 +1491,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           deaths: p.stats?.deaths || 0,
           assists: p.stats?.assists || 0,
           champLevel: p.stats?.champLevel || 1,
+          firstBloodKill: p.stats?.firstBloodKill || false,
           goldEarned: p.stats?.goldEarned || 0,
           totalDamageDealt: p.stats?.totalDamageDealt || 0,
           totalDamageDealtToChampions: p.stats?.totalDamageDealtToChampions || 0,
@@ -1528,8 +1527,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         teams: lcuMatch.teams,
         team1: team1,
         team2: team2,
-        winner: lcuMatch.teams?.find((t: any) => t.win)?.teamId === 100 ? 1 : 2,
-        playerStats: {
+        winner: lcuMatch.teams?.find((t: any) => t.win)?.teamId === 100 ? 1 : 2,        playerStats: {
           champion: getChampionName(currentPlayerData.championId) || 'Aatrox',
           kills: currentPlayerData.stats?.kills || currentPlayerData.kills || 0,
           deaths: currentPlayerData.stats?.deaths || currentPlayerData.deaths || 0,
@@ -1537,6 +1535,11 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           mmrChange: 0,
           isWin: currentPlayerData.stats?.win || false,
           championLevel: currentPlayerData.stats?.champLevel || currentPlayerData.champLevel || 1,
+          firstBloodKill: currentPlayerData.stats?.firstBloodKill || currentPlayerData.firstBloodKill || false,
+          doubleKills: currentPlayerData.stats?.doubleKills || currentPlayerData.doubleKills || 0,
+          tripleKills: currentPlayerData.stats?.tripleKills || currentPlayerData.tripleKills || 0,
+          quadraKills: currentPlayerData.stats?.quadraKills || currentPlayerData.quadraKills || 0,
+          pentaKills: currentPlayerData.stats?.pentaKills || currentPlayerData.pentaKills || 0,
           items: [
             currentPlayerData.stats?.item0 || currentPlayerData.item0 || 0,
             currentPlayerData.stats?.item1 || currentPlayerData.item1 || 0,
@@ -1557,7 +1560,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           visionScore: currentPlayerData.stats?.visionScore || currentPlayerData.visionScore || 0,
           summoner1Id: currentPlayerData.spell1Id || 0,
           summoner2Id: currentPlayerData.spell2Id || 0
-        }      };    } catch (error: any) {
+        }};    } catch (error: any) {
       console.error('❌ Erro ao mapear partida LCU:', error);
       return null;
     }

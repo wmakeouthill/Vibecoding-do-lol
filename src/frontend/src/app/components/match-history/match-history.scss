@@ -426,14 +426,21 @@
                 background: linear-gradient(135deg, rgba(255, 140, 0, 0.3), rgba(255, 140, 0, 0.1));
                 color: #ff8c00;
                 border: 1px solid rgba(255, 140, 0, 0.5);
-              }
-
-              &.penta-kill {
+              }              &.penta-kill {
                 background: linear-gradient(135deg, rgba(255, 215, 0, 0.4), rgba(255, 215, 0, 0.2));
                 color: #ffd700;
                 border: 1px solid rgba(255, 215, 0, 0.7);
                 animation: glow 2s infinite alternate;
                 box-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
+              }
+
+              &.first-blood {
+                background: linear-gradient(135deg, rgba(220, 20, 60, 0.3), rgba(220, 20, 60, 0.1));
+                color: #dc143c;
+                border: 1px solid rgba(220, 20, 60, 0.5);
+                font-size: 8px;
+                padding: 2px 4px;
+                font-weight: 600;
               }
             }
           }
@@ -1150,7 +1157,26 @@
       height: 100%;
       background: rgba(15, 25, 35, 0.6);
       border: 1px solid rgba(200, 155, 60, 0.2);
+      border-radius: 3px;    }
+  }
+
+  /* Participant Badges */
+  .participant-badges {
+    margin-top: 4px;
+    display: flex;
+    justify-content: center;
+
+    .badge.first-blood {
+      background: linear-gradient(135deg, rgba(220, 20, 60, 0.3), rgba(220, 20, 60, 0.1));
+      color: #dc143c;
+      border: 1px solid rgba(220, 20, 60, 0.5);
+      font-size: 8px;
+      padding: 1px 2px;
       border-radius: 3px;
+      font-weight: 600;
+      text-transform: uppercase;
+      margin-top: 6px;
+      letter-spacing: 0.2px;
     }
   }
 
