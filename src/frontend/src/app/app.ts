@@ -1087,14 +1087,16 @@ export class App implements OnInit, OnDestroy {
       let playerName = '';
 
       if (participantIdentity && participantIdentity.player) {
-        const player = participantIdentity.player;
-
-        // Log detalhado da estrutura do participante para debug
+        const player = participantIdentity.player;        // Log detalhado da estrutura do participante para debug
         console.log(`🔍 Participante ${index + 1}:`, {
           participant: {
             participantId: participant.participantId,
             teamId: participant.teamId,
             championId: participant.championId,
+            lane: participant.lane,
+            teamPosition: participant.teamPosition,
+            individualPosition: participant.individualPosition,
+            timeline: participant.timeline,
             allFields: Object.keys(participant)
           },
           player: {
@@ -1120,34 +1122,60 @@ export class App implements OnInit, OnDestroy {
         playerName = `Player${index + 1}`;
       }
 
-      console.log(`✅ Nome final do jogador ${index + 1}: "${playerName}"`);
-
-      const playerId = participant.summonerId || participant.participantId || playerName;
+      console.log(`✅ Nome final do jogador ${index + 1}: "${playerName}"`);      const playerId = participant.summonerId || participant.participantId || playerName;
       const championId = participant.championId || participant.champion || 0;
       const championName = participant.championName || this.getChampionNameById(championId) || `Champion${championId}`;
-      const lane = participant.lane || participant.teamPosition || participant.individualPosition || 'UNKNOWN';
+
+      // Melhorar extração da lane/posição
+      let lane = 'UNKNOWN';
+      if (participant.timeline && participant.timeline.lane) {
+        lane = participant.timeline.lane;
+      } else if (participant.timeline && participant.timeline.role) {
+        lane = participant.timeline.role;
+      } else if (participant.lane) {
+        lane = participant.lane;
+      } else if (participant.teamPosition) {
+        lane = participant.teamPosition;
+      } else if (participant.individualPosition) {
+        lane = participant.individualPosition;
+      }
+
+      // Converter códigos de lane para nomes mais amigáveis
+      const laneMap: { [key: string]: string } = {
+        'TOP': 'Top',
+        'JUNGLE': 'Jungle',
+        'MIDDLE': 'Mid',
+        'MID': 'Mid',
+        'BOTTOM': 'ADC',
+        'BOT': 'ADC',
+        'UTILITY': 'Support',
+        'SUPPORT': 'Support',
+        'DUO_CARRY': 'ADC',
+        'DUO_SUPPORT': 'Support'
+      };
+
+      const friendlyLane = laneMap[lane.toUpperCase()] || lane;
+
+      console.log(`🎯 Lane/Posição do jogador ${playerName}: "${lane}" -> "${friendlyLane}"`);
 
       // Verificar se este é o player atual
       if (currentPlayerSummonerName && playerName.includes(currentPlayerSummonerName)) {
         currentPlayerInMatch = true;
         currentPlayerTeam = participant.teamId;
         console.log(`🎯 Player atual encontrado na partida: ${playerName} (Team ${participant.teamId})`);
-      }
-
-      if (participant.teamId === 100) {
+      }      if (participant.teamId === 100) {
         team1Players.push(playerName); // Usar nome real ao invés de ID genérico
         team1Picks.push({
           champion: championName,
           player: playerName, // Usar nome real
-          lane: lane,
+          lane: friendlyLane,
           championId: championId
         });
-      } else if (participant.teamId === 200) {
-        team2Players.push(playerName); // Usar nome real ao invés de ID genérico
+      } else if (participant.teamId === 200) {        team2Players.push(playerName); // Usar nome real ao invés de ID genérico
         team2Picks.push({
           champion: championName,
           player: playerName, // Usar nome real
-          lane: lane,
+          lane: friendlyLane,
           championId: championId
         });
       }
