@@ -276,71 +276,53 @@ export class App implements OnInit, OnDestroy {
     this.clearGameState();
   }  // Save custom match to database
   private async saveCustomMatch(gameResult: any): Promise<void> {
-    try {
-      // Se esta é uma simulação baseada em partida real, usar dados corretos
-      const isSimulatedFromReal = this.gameData?.originalMatchId;
+    try {      // Para TODAS as partidas (simuladas ou não), criar uma nova entrada na tabela custom_matches
+      console.log('💾 Salvando partida customizada no banco de dados');
+      console.log('🔍 Game Result:', gameResult);
+      console.log('🔍 Game Data:', this.gameData);
 
-      if (isSimulatedFromReal) {
-        console.log('💾 Salvando resultado de simulação baseada em partida real');
-        console.log('🆔 Riot ID original:', gameResult.riotId);
+      // Criar dados no formato correto para a tabela custom_matches
+      const matchData = {
+        title: this.gameData?.originalMatchId
+          ? `Simulação - Partida ${this.gameData.originalMatchId}`
+          : `Partida Customizada ${new Date().toLocaleDateString()}`,
+        description: this.gameData?.originalMatchId
+          ? `Simulação baseada na partida real ${this.gameData.originalMatchId}`
+          : `Partida entre ${gameResult.team1.length}v${gameResult.team2.length}`,
+        team1Players: gameResult.team1.map((player: any) => {
+          // Garantir que temos um identificador válido
+          return player.id?.toString() || player.summonerName || player.toString();
+        }),
+        team2Players: gameResult.team2.map((player: any) => {
+          // Garantir que temos um identificador válido
+          return player.id?.toString() || player.summonerName || player.toString();
+        }),
+        createdBy: this.currentPlayer?.id?.toString() || this.currentPlayer?.summonerName || '1',
+        gameMode: 'CLASSIC',
+        winnerTeam: gameResult.winner === 'blue' ? 1 : 2,
+        duration: Math.floor(gameResult.duration / 60), // Converter segundos para minutos
+        pickBanData: gameResult.pickBanData ? JSON.stringify(gameResult.pickBanData) : null,
+        riotGameId: gameResult.riotId || this.gameData?.riotId || null,
+        detectedByLCU: gameResult.detectedByLCU ? 1 : 0,
+        status: 'completed'
+      };
 
-        // Para simulações baseadas em partidas reais, atualizar a partida original no banco
-        const updateData = {
-          matchId: this.gameData.originalMatchId,
-          winner: gameResult.winner === 'blue' ? 1 : 2,
-          duration: gameResult.duration,
-          detectedByLCU: gameResult.detectedByLCU,
-          endTime: gameResult.endTime,
-          completed: true,
-          riotId: gameResult.riotId, // Preservar Riot ID
-          pickBanData: gameResult.pickBanData // Preservar dados de pick/ban REAIS
-        };
+      console.log('� Dados de criação enviados:', matchData);
 
-        const response = await this.apiService.updateCustomMatchResult(updateData).toPromise();
+      const response = await this.apiService.saveCustomMatch(matchData).toPromise();
 
-        if (response && response.success) {
-          console.log('✅ Resultado da partida real atualizado com sucesso');
-          console.log('🎯 Pick/ban reais preservados:', gameResult.pickBanData?.isReal);
-          this.addNotification('success', 'Resultado Salvo', 'O resultado da sua partida customizada foi detectado e salvo com dados REAIS!');
+      if (response && response.success) {
+        console.log('✅ Partida customizada salva com sucesso');
+        console.log('🆔 Nova partida criada com ID:', response.matchId);
+
+        if (this.gameData?.originalMatchId) {
+          this.addNotification('success', 'Simulação Salva', 'A simulação da partida foi salva no histórico!');
         } else {
-          console.warn('⚠️ Falha ao atualizar resultado da partida real');
-          this.addNotification('warning', 'Erro ao Salvar', 'Não foi possível salvar o resultado.');
+          this.addNotification('success', 'Dados Salvos', 'A partida foi salva no histórico!');
         }
       } else {
-        // Para partidas normais (não simulações), criar nova entrada
-        // Criar dados no formato correto para a tabela custom_matches
-        const matchData = {
-          title: `Partida Customizada ${new Date().toLocaleDateString()}`,
-          description: `Partida entre ${gameResult.team1.length}v${gameResult.team2.length}`,
-          team1Players: gameResult.team1.map((player: any) => {
-            // Garantir que temos um identificador válido
-            return player.id?.toString() || player.summonerName || player.toString();
-          }),
-          team2Players: gameResult.team2.map((player: any) => {
-            // Garantir que temos um identificador válido
-            return player.id?.toString() || player.summonerName || player.toString();
-          }),
-          createdBy: this.currentPlayer?.id?.toString() || this.currentPlayer?.summonerName || '1',
-          gameMode: 'CLASSIC',
-          winnerTeam: gameResult.winner === 'blue' ? 1 : 2,
-          duration: Math.floor(gameResult.duration / 60), // Converter segundos para minutos
-          pickBanData: gameResult.pickBanData ? JSON.stringify(gameResult.pickBanData) : null,
-          riotGameId: gameResult.riotId || null,
-          detectedByLCU: gameResult.detectedByLCU ? 1 : 0,
-          status: 'completed'
-        };
-
-        console.log('💾 Salvando partida customizada com dados formatados:', matchData);
-
-        const response = await this.apiService.saveCustomMatch(matchData).toPromise();
-
-        if (response && response.success) {
-          console.log('✅ Partida customizada salva com sucesso');
-          this.addNotification('success', 'Dados Salvos', 'A partida foi salva no histórico!');
-        } else {
-          console.warn('⚠️ Falha ao salvar partida customizada');
-          this.addNotification('warning', 'Erro ao Salvar', 'Não foi possível salvar a partida no histórico.');
-        }
+        console.warn('⚠️ Falha ao salvar partida customizada');
+        this.addNotification('warning', 'Erro ao Salvar', 'Não foi possível salvar a partida no histórico.');
       }
     } catch (error) {
       console.error('❌ Erro ao salvar partida customizada:', error);

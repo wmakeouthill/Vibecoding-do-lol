@@ -626,9 +626,7 @@ export class DatabaseManager {
     if (extraData.notes !== undefined) {
       updateFields.push('notes = ?');
       updateValues.push(extraData.notes);
-    }
-
-    updateValues.push(matchId); // WHERE condition
+    }    updateValues.push(matchId); // WHERE condition
 
     const query = `UPDATE custom_matches SET ${updateFields.join(', ')} WHERE id = ?`;
     
@@ -636,9 +634,19 @@ export class DatabaseManager {
     console.log('🔧 Query SQL:', query);
     console.log('🔧 Valores:', updateValues);
     
-    await this.db.run(query, updateValues);
-
-    console.log(`✅ Partida personalizada ${matchId} finalizada - Vencedor: Time ${winnerTeam}`);
+    const result = await this.db.run(query, updateValues);
+    console.log('🔄 Resultado da atualização:', result);
+    
+    // Verificar se alguma linha foi afetada
+    if (result.changes === 0) {
+      console.warn(`⚠️ Nenhuma partida encontrada com ID ${matchId} para atualizar`);
+      
+      // Verificar se a partida existe
+      const existingMatch = await this.db.get('SELECT * FROM custom_matches WHERE id = ?', [matchId]);
+      console.log('🔍 Partida existente no banco:', existingMatch);
+      
+      throw new Error(`Partida com ID ${matchId} não encontrada no banco de dados`);
+    }    console.log(`✅ Partida personalizada ${matchId} finalizada - Vencedor: Time ${winnerTeam} (${result.changes} linha(s) afetada(s))`);
   }
 
   async getCustomMatches(limit: number = 20, offset: number = 0): Promise<any[]> {
@@ -777,19 +785,17 @@ export class DatabaseManager {
     if (!this.db) throw new Error('Banco de dados não inicializado');
     
     console.log('🧹 [DatabaseManager.cleanupTestMatches] Iniciando limpeza de partidas de teste...');
-    
-    // Critérios para identificar partidas de teste:
-    // 1. Partidas com session_id contendo "simulate_" ou "test_"
+      // Critérios para identificar partidas de teste:
+    // 1. Partidas com session_id contendo "test_" (excluindo "simulate_real_" que são válidas)
     // 2. Partidas com player_identifier contendo "Player" genérico
-    // 3. Partidas criadas há mais de 24h sem winner_team
+    // 3. Partidas criadas há mais de 24h sem winner_team E sem riot_game_id (não vinculadas)
     
     const deleteQuery = `
       DELETE FROM custom_matches 
       WHERE 
-        session_id LIKE '%simulate_%' OR 
-        session_id LIKE '%test_%' OR
+        (session_id LIKE '%test_%' AND session_id NOT LIKE '%simulate_real_%') OR
         player_identifier LIKE '%Player%' OR
-        (winner_team IS NULL AND created_at < datetime('now', '-1 day'))
+        (winner_team IS NULL AND riot_game_id IS NULL AND created_at < datetime('now', '-1 day'))
     `;
     
     const result = await this.db.run(deleteQuery);

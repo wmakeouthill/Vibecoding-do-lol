@@ -957,13 +957,50 @@ app.put('/api/matches/custom/:matchId/result', (async (req: Request, res: Respon
     const matchId = parseInt(req.params.matchId);
     const updateData = req.body;
     
-    console.log(`🔄 [PUT /api/matches/custom/${matchId}/result] Atualizando resultado:`, updateData);
+    console.log(`🔄 [PUT /api/matches/custom/${matchId}/result] Tentativa de atualização:`, updateData);
 
     if (!matchId || isNaN(matchId)) {
       return res.status(400).json({ error: 'ID da partida inválido' });
     }
 
-    // Usar o método completeCustomMatch que já existe
+    // Verificar se a partida existe antes de tentar atualizar
+    const existingMatch = await dbManager.getCustomMatchById(matchId);
+    
+    if (!existingMatch) {
+      console.warn(`⚠️ [PUT /api/matches/custom/${matchId}/result] Partida não encontrada - criando nova simulação`);
+      
+      // Se a partida não existe, criar uma nova simulação baseada nos dados recebidos
+      const simulationData = {
+        title: `Simulação - Partida ${matchId}`,
+        description: `Simulação baseada na partida real ${matchId}`,
+        team1Players: updateData.team1 ? updateData.team1.map((p: any) => p.id?.toString() || p.summonerName || p.toString()) : ['1', '2', '3', '4', '5'],
+        team2Players: updateData.team2 ? updateData.team2.map((p: any) => p.id?.toString() || p.summonerName || p.toString()) : ['6', '7', '8', '9', '10'],
+        createdBy: '1',
+        gameMode: 'CLASSIC',
+        winnerTeam: updateData.winner,
+        duration: Math.floor((updateData.duration || 1200) / 60),
+        pickBanData: updateData.pickBanData ? JSON.stringify(updateData.pickBanData) : null,
+        riotGameId: matchId.toString(),
+        detectedByLCU: updateData.detectedByLCU ? 1 : 0,
+        status: 'completed'
+      };
+
+      const newMatchId = await dbManager.createCustomMatch(simulationData);
+      
+      console.log(`✅ [PUT /api/matches/custom/${matchId}/result] Nova simulação criada com ID:`, newMatchId);
+      
+      return res.json({ 
+        success: true, 
+        message: 'Simulação criada com sucesso (partida original não encontrada)',
+        originalMatchId: matchId,
+        newMatchId: newMatchId,
+        winner: updateData.winner,
+        detectedByLCU: updateData.detectedByLCU,
+        wasCreated: true
+      });
+    }
+
+    // Se a partida existe, atualizar normalmente
     await dbManager.completeCustomMatch(matchId, updateData.winner, {
       duration: updateData.duration,
       detectedByLCU: updateData.detectedByLCU,
@@ -978,7 +1015,8 @@ app.put('/api/matches/custom/:matchId/result', (async (req: Request, res: Respon
       message: 'Resultado da partida atualizado com sucesso',
       matchId: matchId,
       winner: updateData.winner,
-      detectedByLCU: updateData.detectedByLCU
+      detectedByLCU: updateData.detectedByLCU,
+      wasCreated: false
     });
 
   } catch (error: any) {

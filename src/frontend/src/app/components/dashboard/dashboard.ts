@@ -195,9 +195,11 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
 
     // Tentar buscar do LCU primeiro (mais confiável para dados detalhados)
     this.loadFromLCU();
-  }
-  private loadFromLCU(): void {
+  }  private loadFromLCU(): void {
     console.log('🎮 Loading match history from LCU (primary source)...');
+
+    // First try to load custom matches from database
+    this.loadCustomMatchesFromDatabase();
 
     const lcuHistorySub = this.apiService.getLCUMatchHistoryAll(0, 3, true) // customOnly = true
       .subscribe({
@@ -581,6 +583,13 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
     this.subscriptions.forEach(sub => sub.unsubscribe());
   }
 
+  // Public method to refresh all dashboard data
+  public refreshAllData(): void {
+    console.log('🔄 Atualizando todos os dados do dashboard');
+    this.loadRecentMatches();
+    this.loadCustomMatchesFromDatabase();
+  }
+
   // Event handlers
   onJoinQueue(): void {
     this.joinQueue.emit();
@@ -638,5 +647,96 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
     setTimeout(() => {
       button.style.transform = '';
     }, 150);
+  }
+
+  public loadCustomMatchesFromDatabase(): void {
+    if (!this.player) return;
+
+    console.log('💾 Loading custom matches from database...');
+
+    const playerIdentifier = this.player.summonerName || this.player.id.toString();
+
+    const customMatchesSub = this.apiService.getCustomMatches(playerIdentifier, 0, 3)
+      .subscribe({
+        next: (response) => {
+          if (response && response.success && response.matches && response.matches.length > 0) {
+            console.log('✅ Custom matches loaded from database:', response.matches.length);
+
+            // Convert custom matches to dashboard format and add to recent matches
+            const customMatchesForDashboard = this.convertCustomMatchesToDashboard(response.matches);
+
+            // Merge with existing matches if any, avoiding duplicates
+            this.recentMatches = [...customMatchesForDashboard, ...this.recentMatches]
+              .slice(0, 3); // Keep only the 3 most recent
+
+            console.log('🎯 Total recent matches (including custom):', this.recentMatches.length);
+          } else {
+            console.log('📝 No custom matches found in database');
+          }
+        },
+        error: (error) => {
+          console.warn('⚠️ Failed to load custom matches from database:', error);
+        }
+      });
+
+    this.subscriptions.push(customMatchesSub);
+  }
+
+  private convertCustomMatchesToDashboard(customMatches: any[]): any[] {
+    return customMatches.map((match: any) => {
+      // Parse JSON fields safely
+      let team1Players = [];
+      let team2Players = [];
+      let pickBanData = null;
+
+      try {
+        team1Players = typeof match.team1_players === 'string' ? JSON.parse(match.team1_players) : (match.team1_players || []);
+        team2Players = typeof match.team2_players === 'string' ? JSON.parse(match.team2_players) : (match.team2_players || []);
+
+        if (match.pick_ban_data) {
+          pickBanData = typeof match.pick_ban_data === 'string' ? JSON.parse(match.pick_ban_data) : match.pick_ban_data;
+        }
+      } catch (e) {
+        console.warn('⚠️ Error parsing custom match data:', e);
+      }
+
+      // Determine player's champion from pick/ban data
+      let playerChampion = 'Unknown';
+      try {
+        if (pickBanData && pickBanData.team1Picks) {
+          const playerTeam = match.player_team || (match.player_won && match.winner_team === 1 ? 1 : 2);
+          const picks = playerTeam === 1 ? pickBanData.team1Picks : pickBanData.team2Picks;
+
+          if (picks && picks.length > 0) {
+            const currentPlayerName = this.player?.summonerName?.toLowerCase();
+            let playerPick = picks.find((pick: any) =>
+              pick.player && pick.player.toString().toLowerCase().includes(currentPlayerName || '')
+            );
+
+            if (!playerPick && picks.length > 0) {
+              playerPick = picks[0]; // Fallback to first pick
+            }
+
+            if (playerPick && playerPick.champion) {
+              playerChampion = playerPick.champion;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('⚠️ Error extracting player champion:', e);
+      }
+
+      return {
+        id: match.id || match.match_id,
+        timestamp: new Date(match.created_at).getTime(),
+        isVictory: match.player_won || false,
+        duration: (match.duration || 25) * 60, // Convert minutes to seconds
+        mmrChange: match.player_won ? 15 : -10, // Mock MMR change for custom matches
+        gameMode: 'CUSTOM',
+        champion: playerChampion,
+        kda: '0/0/0', // Custom matches don't store detailed stats yet
+        isCustomMatch: true // Flag to identify custom matches
+      };
+    });
   }
 }

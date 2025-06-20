@@ -60,11 +60,13 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
   showMatchConfirmation: boolean = false;
   detectedLCUMatch: any = null;
   matchComparisonResult: any = null;
-
   // Live match linking
   currentLiveMatchId: string | null = null;
   matchLinkingEnabled: boolean = true;
   lastLinkingAttempt: number = 0;
+  linkingAttempts: number = 0;
+  maxLinkingAttempts: number = 5;
+  linkingStartTime: number = 0;
 
   // Timers
   private gameTimer: Subscription | null = null;
@@ -81,12 +83,12 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     this.stopTimers();
-  }
-  private initializeGame() {
+  }  private initializeGame() {
     if (!this.gameData) return;
 
     this.gameStartTime = new Date();
     this.gameStatus = 'waiting';
+    this.linkingStartTime = Date.now(); // Inicializar tempo para vinculação
 
     console.log('🎮 Partida iniciada:', {
       sessionId: this.gameData.sessionId,
@@ -124,9 +126,29 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
       this.tryLinkToLiveMatch();
     });
   }
-
   private async tryLinkToLiveMatch(): Promise<void> {
     const now = Date.now();
+
+    // Check if we've exceeded the maximum number of attempts
+    if (this.linkingAttempts >= this.maxLinkingAttempts) {
+      console.log('🚫 Máximo de tentativas de vinculação atingido:', this.linkingAttempts);
+      if (this.lcuDetectionTimer) {
+        this.lcuDetectionTimer.unsubscribe();
+        this.lcuDetectionTimer = null;
+      }
+      return;
+    }
+
+    // Check if we've exceeded the time limit (10 minutes)
+    const timeLimitMs = 10 * 60 * 1000; // 10 minutes
+    if (now - this.linkingStartTime > timeLimitMs) {
+      console.log('⏰ Tempo limite de vinculação excedido (10 minutos)');
+      if (this.lcuDetectionTimer) {
+        this.lcuDetectionTimer.unsubscribe();
+        this.lcuDetectionTimer = null;
+      }
+      return;
+    }
 
     // Avoid too frequent attempts
     if (now - this.lastLinkingAttempt < 30000) { // 30 seconds cooldown
@@ -134,9 +156,10 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
     }
 
     this.lastLinkingAttempt = now;
+    this.linkingAttempts++;
 
     try {
-      console.log('🔗 Tentando vincular com partida ao vivo do LoL...');
+      console.log(`🔗 Tentando vincular com partida ao vivo do LoL... (Tentativa ${this.linkingAttempts}/${this.maxLinkingAttempts})`);
 
       // Get current game from LCU
       const gameState = await this.apiService.getCurrentGame().toPromise();
