@@ -1064,10 +1064,9 @@ export class App implements OnInit, OnDestroy {
     this.simulateMatchFromData(convertedMatch);
   }  private convertLCUMatchToInternalFormat(lcuMatch: any): any {
     // Converter estrutura do LCU para formato interno
-    console.log('🔄 Convertendo dados do LCU para formato interno:', lcuMatch);
-
-    // Extrair informações dos participantes
+    console.log('🔄 Convertendo dados do LCU para formato interno:', lcuMatch);    // Extrair informações dos participantes - usar AMBOS participants E participantIdentities
     const participants = lcuMatch.participants || [];
+    const participantIdentities = lcuMatch.participantIdentities || [];
     const team1Players: string[] = [];
     const team2Players: string[] = [];
     const team1Picks: any[] = [];
@@ -1076,17 +1075,60 @@ export class App implements OnInit, OnDestroy {
     // Identificar o player atual na partida
     const currentPlayerSummonerName = this.currentPlayer?.summonerName;
     let currentPlayerTeam = null;
-    let currentPlayerInMatch = false;    // Separar jogadores por time e extrair champions (team 100 = blue, team 200 = red)
+    let currentPlayerInMatch = false;
+
+    // Combinar dados de participants (champion info) com participantIdentities (player info)
     participants.forEach((participant: any, index: number) => {
-      // Usar summoner name quando possível para identificação real
-      const playerName = participant.summonerName || participant.playerName || `Player${index + 1}`;
+      // Buscar dados do jogador correspondente em participantIdentities
+      const participantIdentity = participantIdentities.find(
+        (identity: any) => identity.participantId === participant.participantId
+      );
+
+      let playerName = '';
+
+      if (participantIdentity && participantIdentity.player) {
+        const player = participantIdentity.player;
+
+        // Log detalhado da estrutura do participante para debug
+        console.log(`🔍 Participante ${index + 1}:`, {
+          participant: {
+            participantId: participant.participantId,
+            teamId: participant.teamId,
+            championId: participant.championId,
+            allFields: Object.keys(participant)
+          },
+          player: {
+            gameName: player.gameName,
+            tagLine: player.tagLine,
+            summonerName: player.summonerName,
+            allFields: Object.keys(player)
+          }
+        });
+
+        // Formar nome real usando dados do participantIdentities
+        if (player.gameName && player.tagLine) {
+          playerName = `${player.gameName}#${player.tagLine}`;
+        } else if (player.summonerName) {
+          playerName = player.summonerName;
+        } else if (player.gameName) {
+          playerName = player.gameName;
+        }
+      }
+
+      // Se ainda não tem nome, usar fallback genérico
+      if (!playerName) {
+        playerName = `Player${index + 1}`;
+      }
+
+      console.log(`✅ Nome final do jogador ${index + 1}: "${playerName}"`);
+
       const playerId = participant.summonerId || participant.participantId || playerName;
       const championId = participant.championId || participant.champion || 0;
       const championName = participant.championName || this.getChampionNameById(championId) || `Champion${championId}`;
       const lane = participant.lane || participant.teamPosition || participant.individualPosition || 'UNKNOWN';
 
       // Verificar se este é o player atual
-      if (currentPlayerSummonerName && playerName === currentPlayerSummonerName) {
+      if (currentPlayerSummonerName && playerName.includes(currentPlayerSummonerName)) {
         currentPlayerInMatch = true;
         currentPlayerTeam = participant.teamId;
         console.log(`🎯 Player atual encontrado na partida: ${playerName} (Team ${participant.teamId})`);

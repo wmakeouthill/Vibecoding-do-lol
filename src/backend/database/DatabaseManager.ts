@@ -735,5 +735,29 @@ export class DatabaseManager {
     };
   }
 
-  // ===== END CUSTOM MATCHES METHODS =====
+  async cleanupTestMatches(): Promise<number> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+    
+    console.log('🧹 [DatabaseManager.cleanupTestMatches] Iniciando limpeza de partidas de teste...');
+    
+    // Critérios para identificar partidas de teste:
+    // 1. Partidas com session_id contendo "simulate_" ou "test_"
+    // 2. Partidas com player_identifier contendo "Player" genérico
+    // 3. Partidas criadas há mais de 24h sem winner_team
+    
+    const deleteQuery = `
+      DELETE FROM custom_matches 
+      WHERE 
+        session_id LIKE '%simulate_%' OR 
+        session_id LIKE '%test_%' OR
+        player_identifier LIKE '%Player%' OR
+        (winner_team IS NULL AND created_at < datetime('now', '-1 day'))
+    `;
+    
+    const result = await this.db.run(deleteQuery);
+    const deletedCount = result.changes || 0;
+    
+    console.log(`✅ [DatabaseManager.cleanupTestMatches] ${deletedCount} partidas de teste removidas`);
+    return deletedCount;
+  }
 }

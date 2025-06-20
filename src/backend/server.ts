@@ -747,17 +747,41 @@ app.post('/api/test/create-lcu-based-match', (req: Request, res: Response) => {
       });
     }
 
-    console.log('🎮 [CREATE-LCU-MATCH] Criando partida personalizada baseada no LCU:', lcuMatchData.gameId);
-
-    // Extrair informações dos participantes
+    console.log('🎮 [CREATE-LCU-MATCH] Criando partida personalizada baseada no LCU:', lcuMatchData.gameId);    // Extrair informações dos participantes - usar AMBOS participants E participantIdentities
     const participants = lcuMatchData.participants || [];
+    const participantIdentities = lcuMatchData.participantIdentities || [];
     const team1Players: string[] = [];
     const team2Players: string[] = [];
     const team1Picks: any[] = [];
-    const team2Picks: any[] = [];    // Separar jogadores por time e extrair champions
+    const team2Picks: any[] = [];
+
+    // Combinar dados de participants (champion info) com participantIdentities (player info)
     participants.forEach((participant: any, index: number) => {
-      // Usar summoner name quando possível para melhor correlação
-      const playerName = participant.summonerName || participant.playerName || `Player${index + 1}`;
+      // Buscar dados do jogador correspondente em participantIdentities
+      const participantIdentity = participantIdentities.find(
+        (identity: any) => identity.participantId === participant.participantId
+      );
+
+      let playerName = '';
+      
+      if (participantIdentity && participantIdentity.player) {
+        const player = participantIdentity.player;
+        
+        // Formar nome real usando dados do participantIdentities
+        if (player.gameName && player.tagLine) {
+          playerName = `${player.gameName}#${player.tagLine}`;
+        } else if (player.summonerName) {
+          playerName = player.summonerName;
+        } else if (player.gameName) {
+          playerName = player.gameName;
+        }
+      }
+
+      // Se ainda não tem nome, usar fallback genérico
+      if (!playerName) {
+        playerName = `Player${index + 1}`;
+      }
+
       const playerId = participant.summonerId || participant.participantId || playerName;
       const championId = participant.championId || participant.champion || 0;
       const championName = participant.championName || `Champion${championId}`;
@@ -908,13 +932,14 @@ app.delete('/api/matches/cleanup-test-matches', (async (req: Request, res: Respo
   try {
     console.log('🧹 [DELETE /api/matches/cleanup-test-matches] Iniciando limpeza de partidas de teste...');
     
-    // Simple cleanup - for now just return success
-    // TODO: Implement actual cleanup in DatabaseManager if needed
-    console.log('✅ [DELETE /api/matches/cleanup-test-matches] Limpeza concluída (simulada)');
+    // Executar limpeza real usando DatabaseManager
+    const deletedCount = await dbManager.cleanupTestMatches();
+    
+    console.log(`✅ [DELETE /api/matches/cleanup-test-matches] Limpeza concluída - ${deletedCount} partidas removidas`);
     res.json({ 
       success: true, 
-      message: 'Partidas de teste removidas com sucesso',
-      deletedCount: 0
+      message: `${deletedCount} partidas de teste removidas com sucesso`,
+      deletedCount: deletedCount
     });
 
   } catch (error: any) {
