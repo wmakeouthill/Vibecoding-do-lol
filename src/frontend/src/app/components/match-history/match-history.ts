@@ -468,10 +468,11 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         team1Players = [];
         team2Players = [];
         pickBanData = null;
-      }
-
-      // Determinar o campeão do jogador a partir dos dados de pick/ban
+      }      // Determinar o campeão do jogador a partir dos dados de pick/ban
       let playerChampion = 'Unknown';
+      let currentPlayerIndex = -1; // Índice do jogador atual nos times
+      let currentPlayerTeam = -1;  // Time do jogador atual (1 ou 2)
+
       try {
         if (pickBanData && pickBanData.team1Picks) {
           const playerTeam = match.player_team || (match.player_won && match.winner_team === 1 ? 1 : 2);
@@ -480,13 +481,20 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           if (picks && picks.length > 0) {
             // Tentar encontrar o pick do jogador atual
             const currentPlayerName = this.player?.summonerName?.toLowerCase();
-            let playerPick = picks.find((pick: any) =>
-              pick.player && pick.player.toString().toLowerCase().includes(currentPlayerName || '')
-            );
+            let playerPick = picks.find((pick: any, index: number) => {
+              if (pick.player && pick.player.toString().toLowerCase().includes(currentPlayerName || '')) {
+                currentPlayerIndex = index;
+                currentPlayerTeam = playerTeam;
+                return true;
+              }
+              return false;
+            });
 
             if (!playerPick && picks.length > 0) {
               // Se não encontrou por nome, usar o primeiro pick como fallback
               playerPick = picks[0];
+              currentPlayerIndex = 0;
+              currentPlayerTeam = playerTeam;
             }
 
             if (playerPick && playerPick.champion) {
@@ -512,20 +520,33 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         id: match.id || match.match_id,
         createdAt: new Date(match.created_at),
         duration: match.duration ? (match.duration * 60) : 1500, // Converter minutos para segundos
-        gameMode: match.game_mode || 'CUSTOM',
-        team1: team1Players.map((playerId: any, index: number) => {
+        gameMode: match.game_mode || 'CUSTOM',        team1: team1Players.map((playerId: any, index: number) => {
           let championName = 'Unknown';
+          let playerName = 'Unknown Player';
+
           try {
             if (pickBanData && pickBanData.team1Picks && pickBanData.team1Picks[index]) {
               championName = pickBanData.team1Picks[index].champion || 'Unknown';
+              // Tentar usar o nome real do jogador dos dados de pick/ban
+              if (pickBanData.team1Picks[index].player) {
+                playerName = pickBanData.team1Picks[index].player.toString();
+              }
             }
           } catch (e) {
             // Silently handle error
           }
 
+          // Se é o jogador atual, usar seus dados reais
+          if (currentPlayerTeam === 1 && currentPlayerIndex === index && this.player?.summonerName) {
+            playerName = this.player.summonerName;
+          }
+
           return {
             name: playerId.toString(),
             champion: championName,
+            championName: championName, // Para compatibilidade com o template
+            summonerName: playerName, // Nome real do jogador
+            puuid: currentPlayerTeam === 1 && currentPlayerIndex === index ? this.player?.puuid || `custom_player_${playerId}_${index}` : `custom_player_${playerId}_${index}`,
             teamId: 100,
             kills: Math.floor(Math.random() * 10) + 2,
             deaths: Math.floor(Math.random() * 8) + 1,
@@ -536,6 +557,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
             neutralMinionsKilled: Math.floor(Math.random() * 50) + 10,
             totalDamageDealtToChampions: Math.floor(Math.random() * 20000) + 15000,
             visionScore: Math.floor(Math.random() * 40) + 20,
+            firstBloodKill: Math.random() > 0.9, // 10% chance de first blood
             item0: simulatedItems[0],
             item1: simulatedItems[1],
             item2: simulatedItems[2],
@@ -546,17 +568,31 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         }),
         team2: team2Players.map((playerId: any, index: number) => {
           let championName = 'Unknown';
+          let playerName = 'Unknown Player';
+
           try {
             if (pickBanData && pickBanData.team2Picks && pickBanData.team2Picks[index]) {
               championName = pickBanData.team2Picks[index].champion || 'Unknown';
+              // Tentar usar o nome real do jogador dos dados de pick/ban
+              if (pickBanData.team2Picks[index].player) {
+                playerName = pickBanData.team2Picks[index].player.toString();
+              }
             }
           } catch (e) {
             // Silently handle error
           }
 
+          // Se é o jogador atual, usar seus dados reais
+          if (currentPlayerTeam === 2 && currentPlayerIndex === index && this.player?.summonerName) {
+            playerName = this.player.summonerName;
+          }
+
           return {
             name: playerId.toString(),
             champion: championName,
+            championName: championName, // Para compatibilidade com o template
+            summonerName: playerName, // Nome real do jogador
+            puuid: currentPlayerTeam === 2 && currentPlayerIndex === index ? this.player?.puuid || `custom_player_${playerId}_${index + 5}` : `custom_player_${playerId}_${index + 5}`,
             teamId: 200,
             kills: Math.floor(Math.random() * 10) + 2,
             deaths: Math.floor(Math.random() * 8) + 1,
@@ -567,6 +603,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
             neutralMinionsKilled: Math.floor(Math.random() * 50) + 10,
             totalDamageDealtToChampions: Math.floor(Math.random() * 20000) + 15000,
             visionScore: Math.floor(Math.random() * 40) + 20,
+            firstBloodKill: Math.random() > 0.9, // 10% chance de first blood
             item0: simulatedItems[0],
             item1: simulatedItems[1],
             item2: simulatedItems[2],
@@ -582,8 +619,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         teams: [
           { teamId: 100, win: (match.winner_team === 1) },
           { teamId: 200, win: (match.winner_team === 2) }
-        ],
-        // Determine if current player won
+        ],        // Determine if current player won
         playerStats: {
           champion: playerChampion,
           kills: simulatedKills,
@@ -592,6 +628,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           mmrChange: match.player_won ? (Math.floor(Math.random() * 20) + 10) : -(Math.floor(Math.random() * 15) + 5),
           isWin: isWin,
           championLevel: Math.floor(Math.random() * 6) + 13,
+          firstBloodKill: Math.random() > 0.85, // 15% chance de first blood para o jogador
           doubleKills: Math.random() > 0.7 ? Math.floor(Math.random() * 2) + 1 : 0,
           tripleKills: Math.random() > 0.9 ? 1 : 0,
           quadraKills: Math.random() > 0.98 ? 1 : 0,
@@ -605,7 +642,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           neutralMinionsKilled: Math.floor(Math.random() * 60) + 20,
           wardsPlaced: Math.floor(Math.random() * 15) + 8,
           wardsKilled: Math.floor(Math.random() * 10) + 3,
-          visionScore: Math.floor(Math.random() * 50) + 25        }      };
+          visionScore: Math.floor(Math.random() * 50) + 25}      };
 
       console.log(`✅ [DEBUG] Partida ${index + 1} mapeada:`, {
         id: mappedMatch.id,
