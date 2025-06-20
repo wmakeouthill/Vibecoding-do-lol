@@ -89,7 +89,7 @@ export class RiotAPIService {
         this.apiKey = process.env.RIOT_API_KEY || null; // MODIFICADO: Atribuir null se não definida
         if (this.apiKey && this.apiKey.trim() !== '') {
             this.apiKeyConfigured = true;
-            console.log('[RiotAPIService] Chave da API da Riot carregada da variável de ambiente.');
+            // console.log('[RiotAPIService] Chave da API da Riot carregada da variável de ambiente.');
         } else {
             this.apiKeyConfigured = false;
             console.warn('[RiotAPIService] Chave da API da Riot não encontrada nas variáveis de ambiente.');
@@ -124,7 +124,7 @@ export class RiotAPIService {
             this.apiKeyConfigured = true;
             // GARANTE QUE A INSTÂNCIA AXIOS TENHA A CHAVE ATUALIZADA
             this.axiosInstance.defaults.headers['X-Riot-Token'] = this.apiKey;
-            console.log(`[RiotAPIService] Chave da API da Riot atualizada e configurada no cliente HTTP.`);
+            // console.log(`[RiotAPIService] Chave da API da Riot atualizada e configurada no cliente HTTP.`);
         } else {
             this.apiKey = null; // MODIFICADO: Definir como null
             this.apiKeyConfigured = false;
@@ -165,7 +165,7 @@ export class RiotAPIService {
             headers: { 'X-Riot-Token': this.apiKey },
             timeout: 8000 
           });
-          console.log(`✅ Validação da chave da API para a região ${region} bem-sucedida.`);
+          // console.log(`✅ Validação da chave da API para a região ${region} bem-sucedida.`);
           return true;
         } catch (error: any) {
           if (error.response) {
@@ -227,7 +227,7 @@ export class RiotAPIService {
             });
             accountData = accountResponse.data;
           } catch (error) {
-            console.log('ℹ️ Não foi possível buscar dados da conta (gameName/tagLine):', error instanceof Error ? error.message : 'Erro desconhecido');
+            // console.log('ℹ️ Não foi possível buscar dados da conta (gameName/tagLine):', error instanceof Error ? error.message : 'Erro desconhecido');
           }
 
           const soloQueueData = rankedData.find((entry: any) => entry.queueType === 'RANKED_SOLO_5x5');

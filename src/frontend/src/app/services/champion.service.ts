@@ -232,7 +232,7 @@ export class ChampionService {
       all: this.allChampions
     };
 
-    console.log(`🏷️ ChampionService: Total de campeões na base: ${this.allChampions.length}`);
+    // console.log(`🏷️ ChampionService: Total de campeões na base: ${this.allChampions.length}`);
 
     this.allChampions.forEach(champion => {
       // Top lane
@@ -259,16 +259,14 @@ export class ChampionService {
       if (champion.tags.some(tag => this.roleMapping.support.includes(tag))) {
         result.support.push(champion);
       }
-    });
-
-    console.log(`🏷️ ChampionService: Campeões por role:`, {
-      all: result.all.length,
-      top: result.top.length,
-      jungle: result.jungle.length,
-      mid: result.mid.length,
-      adc: result.adc.length,
-      support: result.support.length
-    });
+    });    // console.log(`🏷️ ChampionService: Campeões por role:`, {
+    //   all: result.all.length,
+    //   top: result.top.length,
+    //   jungle: result.jungle.length,
+    //   mid: result.mid.length,
+    //   adc: result.adc.length,
+    //   support: result.support.length
+    // });
 
     return result;
   }

@@ -145,7 +145,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
 
   onProfileIconError(event: Event): void {
     // Fallback para ícone padrão se falhar o carregamento
-    console.log('Erro ao carregar ícone de perfil no queue, tentando fallback');
+    // console.log('Erro ao carregar ícone de perfil no queue, tentando fallback');
 
     const target = event.target as HTMLImageElement;
     if (!target) return;

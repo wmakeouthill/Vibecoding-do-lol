@@ -25,7 +25,7 @@ export class PlayerService {
         summonerId = summonerData.id;
         puuid = summonerData.puuid;
       } catch (error) {
-        console.log(`⚠️ Não foi possível buscar dados da Riot API para ${summonerName}`);
+        // console.log(`⚠️ Não foi possível buscar dados da Riot API para ${summonerName}`);
         // Continuar sem os dados da Riot API
       }      // Criar jogador no banco
       const playerId = await this.dbManager.createPlayer({
@@ -51,13 +51,13 @@ export class PlayerService {
             await this.dbManager.updatePlayerMMR(playerId, initialMMR);
           }
         } catch (error) {
-          console.log(`⚠️ Não foi possível buscar dados ranqueados para ${summonerName}`);
+          // console.log(`⚠️ Não foi possível buscar dados ranqueados para ${summonerName}`);
         }
       }      const player = await this.dbManager.getPlayer(playerId);
       if (!player) {
         throw new Error(`Erro ao buscar jogador criado: ${playerId}`);
       }
-      console.log(`✅ Jogador registrado: ${summonerName} (MMR inicial: ${player.current_mmr})`);
+      // console.log(`✅ Jogador registrado: ${summonerName} (MMR inicial: ${player.current_mmr})`);
       
       return player;
     } catch (error: any) {

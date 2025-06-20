@@ -86,16 +86,15 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
   }  private initializeGame() {
     if (!this.gameData) return;
 
-    this.gameStartTime = new Date();
-    this.gameStatus = 'waiting';
+    this.gameStartTime = new Date();    this.gameStatus = 'waiting';
     this.linkingStartTime = Date.now(); // Inicializar tempo para vinculação
 
-    console.log('🎮 Partida iniciada:', {
-      sessionId: this.gameData.sessionId,
-      team1: this.gameData.team1.length,
-      team2: this.gameData.team2.length,
-      isCustom: this.gameData.isCustomGame
-    });
+    // console.log('🎮 Partida iniciada:', {
+    //   sessionId: this.gameData.sessionId,
+    //   team1: this.gameData.team1.length,
+    //   team2: this.gameData.team2.length,
+    //   isCustom: this.gameData.isCustomGame
+    // });
 
     // Start game timer
     this.startGameTimer();
@@ -111,12 +110,11 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
       }
     });
   }
-
   // Live match linking system - tries to link to actual LoL match every 2 minutes
   private startLiveMatchLinking() {
     if (!this.matchLinkingEnabled) return;
 
-    console.log('🔗 Iniciando sistema de vinculação de partidas ao vivo...');
+    // console.log('🔗 Iniciando sistema de vinculação de partidas ao vivo...');
 
     // Try to link immediately
     this.tryLinkToLiveMatch();
@@ -124,14 +122,14 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
     // Then try every 2 minutes
     this.lcuDetectionTimer = interval(120000).subscribe(() => { // 2 minutes
       this.tryLinkToLiveMatch();
-    });
-  }
+    });  }
+
   private async tryLinkToLiveMatch(): Promise<void> {
     const now = Date.now();
 
     // Check if we've exceeded the maximum number of attempts
     if (this.linkingAttempts >= this.maxLinkingAttempts) {
-      console.log('🚫 Máximo de tentativas de vinculação atingido:', this.linkingAttempts);
+      // console.log('🚫 Máximo de tentativas de vinculação atingido:', this.linkingAttempts);
       if (this.lcuDetectionTimer) {
         this.lcuDetectionTimer.unsubscribe();
         this.lcuDetectionTimer = null;
@@ -141,8 +139,9 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
 
     // Check if we've exceeded the time limit (10 minutes)
     const timeLimitMs = 10 * 60 * 1000; // 10 minutes
+
     if (now - this.linkingStartTime > timeLimitMs) {
-      console.log('⏰ Tempo limite de vinculação excedido (10 minutos)');
+      // console.log('⏰ Tempo limite de vinculação excedido (10 minutos)');
       if (this.lcuDetectionTimer) {
         this.lcuDetectionTimer.unsubscribe();
         this.lcuDetectionTimer = null;
@@ -159,23 +158,22 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
     this.linkingAttempts++;
 
     try {
-      console.log(`🔗 Tentando vincular com partida ao vivo do LoL... (Tentativa ${this.linkingAttempts}/${this.maxLinkingAttempts})`);
+      // console.log(`🔗 Tentando vincular com partida ao vivo do LoL... (Tentativa ${this.linkingAttempts}/${this.maxLinkingAttempts})`);
 
       // Get current game from LCU
       const gameState = await this.apiService.getCurrentGame().toPromise();
 
       if (!gameState || !gameState.success || !gameState.data) {
-        console.log('📡 Nenhum jogo ativo detectado no LCU');
+        // console.log('📡 Nenhum jogo ativo detectado no LCU');
         return;
       }
 
       const currentGame = gameState.data;
 
       // Check if this is a valid game to link
-      if (currentGame.gameMode && currentGame.gameId) {
-        // Check if we're already linked to this match
+      if (currentGame.gameMode && currentGame.gameId) {        // Check if we're already linked to this match
         if (this.currentLiveMatchId === currentGame.gameId.toString()) {
-          console.log('🔗 Já vinculado à partida:', currentGame.gameId);
+          // console.log('🔗 Já vinculado à partida:', currentGame.gameId);
           return;
         }
 
@@ -183,11 +181,11 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
         const linkingScore = this.calculateLiveLinkingScore(currentGame);
 
         if (linkingScore.shouldLink) {
-          console.log('✅ Vinculando à partida ao vivo:', {
-            gameId: currentGame.gameId,
-            score: linkingScore.score,
-            reason: linkingScore.reason
-          });
+          // console.log('✅ Vinculando à partida ao vivo:', {
+          //   gameId: currentGame.gameId,
+          //   score: linkingScore.score,
+          //   reason: linkingScore.reason
+          // });
 
           // Link to this match
           this.currentLiveMatchId = currentGame.gameId.toString();
@@ -196,18 +194,16 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
           if (this.gameData) {
             this.gameData.originalMatchId = currentGame.gameId;
             this.gameData.riotId = `BR1_${currentGame.gameId}`;
-          }
-
-          // Notify user about successful linking
-          console.log('🎯 Partida vinculada automaticamente! ID:', currentGame.gameId);
+          }          // Notify user about successful linking
+          // console.log('🎯 Partida vinculada automaticamente! ID:', currentGame.gameId);
 
         } else {
-          console.log('⚠️ Partida ao vivo não corresponde ao draft atual:', linkingScore.reason);
+          // console.log('⚠️ Partida ao vivo não corresponde ao draft atual:', linkingScore.reason);
         }
       }
 
     } catch (error) {
-      console.log('❌ Erro ao tentar vincular partida ao vivo:', error);
+      // console.log('❌ Erro ao tentar vincular partida ao vivo:', error);
     }
   }
 
@@ -295,21 +291,18 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
           // Game was detected but now we're not in game anymore
           this.onLCUGameEnded(null);
         }
-      }
-    } catch (error) {
-      console.log('🔍 LCU não disponível para detecção automática');
+      }        } catch (error) {
+      // console.log('🔍 LCU não disponível para detecção automática');
     }
   }
-
   private onLCUGameDetected(gameData: any) {
-    console.log('🎮 Jogo detectado pelo LCU:', gameData);
+    // console.log('🎮 Jogo detectado pelo LCU:', gameData);
     this.lcuGameDetected = true;
     this.gameStatus = 'in-progress';
     this.currentGameSession = gameData;
   }
-
   private onLCUGameEnded(endGameData: any) {
-    console.log('🏁 Fim de jogo detectado pelo LCU:', endGameData);
+    // console.log('🏁 Fim de jogo detectado pelo LCU:', endGameData);
 
     if (endGameData && endGameData.teams) {
       // Try to detect winner from LCU data
@@ -340,9 +333,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
       originalMatchId: this.gameData.originalMatchId,
       originalMatchData: this.gameData.originalMatchData,
       riotId: this.gameData.riotId
-    };
-
-    console.log('✅ Partida concluída automaticamente:', result);
+    };    // console.log('✅ Partida concluída automaticamente:', result);
     this.onGameComplete.emit(result);
   }
 
@@ -366,25 +357,21 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
       originalMatchId: this.gameData.originalMatchId,
       originalMatchData: this.gameData.originalMatchData,
       riotId: this.gameData.riotId
-    };
-
-    console.log('✅ Partida concluída manualmente:', result);
+    };    // console.log('✅ Partida concluída manualmente:', result);
     this.onGameComplete.emit(result);
-  }
-  // Cancel game
+  }  // Cancel game
   cancelGame() {
-    console.log('❌ Partida cancelada');
+    // console.log('❌ Partida cancelada');
     this.onGameCancel.emit();
   }
-
   // Try to auto-resolve winner on component load (useful after app restart)
   private async tryAutoResolveWinner() {
-    console.log('🔄 Tentando auto-resolver vencedor...');
+    // console.log('🔄 Tentando auto-resolver vencedor...');
 
     // First, try to get winner from LCU
     const lcuWinner = await this.tryGetWinnerFromLCU();
     if (lcuWinner) {
-      console.log('🏆 Vencedor detectado via LCU:', lcuWinner);
+      // console.log('🏆 Vencedor detectado via LCU:', lcuWinner);
       this.autoCompleteGame(lcuWinner, true);
       return;
     }
@@ -392,12 +379,13 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
     // If LCU fails, try to compare with last custom match
     const historyWinner = await this.tryGetWinnerFromHistory();
     if (historyWinner) {
-      console.log('🏆 Vencedor detectado via histórico:', historyWinner);
+      // console.log('🏆 Vencedor detectado via histórico:', historyWinner);
       this.autoCompleteGame(historyWinner, false);
       return;
     }
 
-    console.log('⚠️ Não foi possível auto-resolver o vencedor');  }
+    // console.log('⚠️ Não foi possível auto-resolver o vencedor');
+  }
   // Enhanced method to detect winner with confirmation modal
   async retryAutoDetection() {
     console.log('🔄 [MANUAL] Detectando vencedor via comparação com LCU...');

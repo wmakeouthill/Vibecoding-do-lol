@@ -412,7 +412,7 @@ export class P2PStatusComponent implements OnInit, OnDestroy {
     this.subscriptions.push(
       this.queueStateService.queueState$.subscribe((state: QueueState) => {
         this.globalQueueState = state;
-        console.log('🔄 Estado global da fila atualizado no P2P:', state);
+        // console.log('🔄 Estado global da fila atualizado no P2P:', state);
       })
     );    // Estado dos peers conectados
     this.subscriptions.push(

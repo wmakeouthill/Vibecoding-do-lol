@@ -64,7 +64,7 @@ export class QueueStateService {
       activeSystem: data.isInQueue ? 'centralized' : currentState.activeSystem
     });
 
-    console.log('🔄 Estado da fila centralizada atualizado:', this.queueStateSubject.value);
+    // console.log('🔄 Estado da fila centralizada atualizado:', this.queueStateSubject.value);
   }
 
   // Atualizar estado da fila P2P
@@ -86,7 +86,7 @@ export class QueueStateService {
       activeSystem: data.isInQueue ? 'p2p' : currentState.activeSystem
     });
 
-    console.log('🔗 Estado da fila P2P atualizado:', this.queueStateSubject.value);
+    // console.log('🔗 Estado da fila P2P atualizado:', this.queueStateSubject.value);
   }
 
   // Resetar estado quando sair de qualquer fila
@@ -97,7 +97,7 @@ export class QueueStateService {
       activeSystem: 'none'
     });
 
-    console.log('🔄 Estado da fila resetado');
+    // console.log('🔄 Estado da fila resetado');
   }
 
   // Verificar se está em alguma fila

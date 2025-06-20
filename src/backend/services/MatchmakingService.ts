@@ -71,20 +71,18 @@ export class MatchmakingService {
   constructor(dbManager: DatabaseManager, wss?: any) {
     this.dbManager = dbManager;
     this.wss = wss;
-  }
-  async initialize(): Promise<void> {
-    console.log('🔍 Inicializando sistema de matchmaking...');
+  }  async initialize(): Promise<void> {
+    // console.log('🔍 Inicializando sistema de matchmaking...');
     
     // Adicionar atividades iniciais
     this.addActivity('system_update', 'Sistema de matchmaking inicializado');
-    this.addActivity('system_update', 'Aguardando jogadores para a fila');
-    
+    this.addActivity('system_update', 'Aguardando jogadores para a fila');    
     // Iniciar processamento de matchmaking a cada 5 segundos
     this.matchmakingInterval = setInterval(() => {
       this.processMatchmaking();
     }, 5000);
 
-    console.log('✅ Sistema de matchmaking ativo');
+    // console.log('✅ Sistema de matchmaking ativo');
   }async addPlayerToQueue(websocket: WebSocket, requestData: any): Promise<void> {
     try {
       // Validar dados da requisição
@@ -92,10 +90,8 @@ export class MatchmakingService {
         throw new Error('Dados da requisição não fornecidos');
       }      // Extrair player e preferences dos dados
       const playerData = requestData.player;
-      const preferences = requestData.preferences;
-
-      console.log('🔍 Dados recebidos - playerData:', playerData);
-      console.log('🔍 Dados recebidos - preferences:', preferences);
+      const preferences = requestData.preferences;      // console.log('🔍 Dados recebidos - playerData:', playerData);
+      // console.log('🔍 Dados recebidos - preferences:', preferences);
 
       // Validar dados do jogador
       if (!playerData) {
@@ -104,7 +100,8 @@ export class MatchmakingService {
 
       if (!playerData.summonerName) {
         throw new Error('Nome do invocador é obrigatório');
-      }      console.log('🔍 Dados do jogador recebidos:', playerData);
+      }
+      // console.log('🔍 Dados do jogador recebidos:', playerData);
 
       // Buscar jogador no banco ou criar novo
       let player = await this.dbManager.getPlayerBySummonerName(playerData.summonerName);
@@ -160,7 +157,7 @@ export class MatchmakingService {
         preferences?.primaryLane
       );
 
-      console.log(`✅ ${player.summoner_name} entrou na fila como ${primaryLaneName}`);
+      // console.log(`✅ ${player.summoner_name} entrou na fila como ${primaryLaneName}`);
 
       // Notificar jogador sobre entrada na fila
       websocket.send(JSON.stringify({
@@ -175,7 +172,7 @@ export class MatchmakingService {
       // Broadcast atualização da fila
       this.broadcastQueueUpdate();
 
-      console.log(`➕ ${player.summoner_name} entrou na fila (Posição: ${this.queue.length}, MMR: ${player.current_mmr})`);
+      // console.log(`➕ ${player.summoner_name} entrou na fila (Posição: ${this.queue.length}, MMR: ${player.current_mmr})`);
 
     } catch (error: any) {
       console.error('Erro ao adicionar jogador à fila:', error);
@@ -184,12 +181,11 @@ export class MatchmakingService {
         message: 'Falha ao entrar na fila: ' + error.message
       }));
     }
-  }
-  removePlayerFromQueue(websocket: WebSocket): void {
-    console.log('🔍 removePlayerFromQueue chamado');
+  }  removePlayerFromQueue(websocket: WebSocket): void {
+    // console.log('🔍 removePlayerFromQueue chamado');
     const playerIndex = this.queue.findIndex(player => player.websocket === websocket);
-    console.log('🔍 Player index encontrado:', playerIndex);
-    console.log('🔍 Tamanho da fila antes:', this.queue.length);
+    // console.log('🔍 Player index encontrado:', playerIndex);
+    // console.log('🔍 Tamanho da fila antes:', this.queue.length);
       if (playerIndex !== -1) {
       const player = this.queue[playerIndex];
       const playerTag = player.summonerName.includes('#') ? '' : ''; // Tag já incluída no summonerName se existir
@@ -205,14 +201,13 @@ export class MatchmakingService {
 
       // Atualizar posições na fila
       this.queue.forEach((p, index) => {
-        p.queuePosition = index + 1;
-      });
+        p.queuePosition = index + 1;      });
 
-      console.log(`➖ ${player.summonerName} saiu da fila`);
-      console.log('🔍 Tamanho da fila depois:', this.queue.length);
+      // console.log(`➖ ${player.summonerName} saiu da fila`);
+      // console.log('🔍 Tamanho da fila depois:', this.queue.length);
       this.broadcastQueueUpdate();
     } else {
-      console.log('⚠️ Jogador não encontrado na fila para remoção');
+      // console.log('⚠️ Jogador não encontrado na fila para remoção');
     }
   }
 
@@ -220,9 +215,8 @@ export class MatchmakingService {
   addPlayerToQueueDirect(playerData: any): void {
     try {
       // Verificar se o jogador já está na fila
-      const existingPlayer = this.queue.find(p => p.id === playerData.id);
-      if (existingPlayer) {
-        console.log(`⚠️ Jogador ${playerData.summonerName} já está na fila`);
+      const existingPlayer = this.queue.find(p => p.id === playerData.id);      if (existingPlayer) {
+        // console.log(`⚠️ Jogador ${playerData.summonerName} já está na fila`);
         return;
       }
 
