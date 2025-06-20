@@ -57,38 +57,36 @@
     <p>{{ error }}</p>
     <button class="btn btn-primary" (click)="loadCurrentTabMatches()">Tentar Novamente</button>
   </div>
-
   <!-- Empty State -->
   <div *ngIf="!loading && !error && getCurrentMatches().length === 0" class="empty-container">
     <div class="empty-icon">{{ isRiotTab() ? '🏆' : '🎮' }}</div>
-    <h3>{{ isRiotTab() ? 'Nenhuma partida ranqueada encontrada' : 'Nenhuma partida customizada encontrada' }}</h3>
-    <p>{{ isRiotTab() ? 'Você ainda não jogou nenhuma partida ranqueada.' : 'Ainda não há partidas customizadas registradas.' }}</p>
+    <h3>{{ getTabEmptyMessage() }}</h3>
+    <p>{{ getTabEmptyDescription() }}</p>
     <button class="btn btn-primary" (click)="loadCurrentTabMatches()">Recarregar</button>
   </div>
   <!-- Tab Content -->
   <div class="tab-content" *ngIf="!loading && !error && getCurrentMatches().length > 0">
     <!-- Riot API Tab Content -->
-    <div *ngIf="isRiotTab()" class="riot-matches-content">
-      <!-- Summary Stats for Riot Matches -->
+    <div *ngIf="isRiotTab()" class="riot-matches-content">      <!-- Summary Stats for Riot Matches -->
       <div class="summary-stats riot-theme">
         <div class="summary-card">
-          <div class="summary-value">{{ getRiotStats().totalWins }}/{{ riotMatches.length }}</div>
+          <div class="summary-value">{{ getTabStats().totalWins }}/{{ getCurrentMatches().length }}</div>
           <div class="summary-label">Vitórias Ranqueadas</div>
         </div>
 
         <div class="summary-card">
-          <div class="summary-value">{{ getRiotWinStreakInfo().current }}</div>
+          <div class="summary-value">{{ getTabWinStreakInfo().current }}</div>
           <div class="summary-label">Sequência Atual</div>
         </div>
 
         <div class="summary-card">
-          <div class="summary-value">{{ getRiotWinStreakInfo().longest }}</div>
+          <div class="summary-value">{{ getTabWinStreakInfo().longest }}</div>
           <div class="summary-label">Maior Sequência</div>
         </div>
 
         <div class="summary-card">
-          <div class="summary-value" [class.positive]="getRiotStats().totalMMRGained > 0">
-            {{ getRiotStats().totalMMRGained > 0 ? '+' : '' }}{{ getRiotStats().totalMMRGained }}
+          <div class="summary-value" [class.positive]="getTabStats().totalMMRGained > 0">
+            {{ getTabStats().totalMMRGained > 0 ? '+' : '' }}{{ getTabStats().totalMMRGained }}
           </div>
           <div class="summary-label">LP Total</div>
         </div>
@@ -96,7 +94,7 @@
 
       <!-- Riot Match List -->
       <div class="match-list riot-style">
-        <div *ngFor="let match of riotMatches; trackBy: trackMatch"
+        <div *ngFor="let match of getCurrentMatches(); trackBy: trackMatch"
              class="match-item riot-match"
              [class.win]="match.playerStats?.isWin"
              [class.loss]="!match.playerStats?.isWin">
@@ -443,22 +441,22 @@
           <div class="performance-card">
             <h4>KDA Médio</h4>
             <div class="performance-value">
-              {{ getAverageKDA() }}
+              {{ getTabAverageKDA() }}
             </div>
           </div>
 
           <div class="performance-card">
             <h4>LP por Partida</h4>
             <div class="performance-value"
-                 [class.positive]="getAverageGain() > 0">
-              {{ getAverageGain().toFixed(1) }}
+                 [class.positive]="getTabAverageGain() > 0">
+              {{ getTabAverageGain().toFixed(1) }}
             </div>
           </div>
 
           <div class="performance-card">
             <h4>Champion Favorito</h4>
             <div class="performance-value">
-              {{ getMostPlayedChampion() }}
+              {{ getTabMostPlayedChampion() }}
             </div>
           </div>
         </div>
@@ -482,29 +480,28 @@
         getCurrentMatches().length: {{ getCurrentMatches().length }}<br>
         getSimpleMatchCount(): {{ getSimpleMatchCount() }}<br>
         <button (click)="debugCustomMatches()">Log Debug Info</button>
-      </div>
-      <!-- Summary Stats for Custom Matches -->
+      </div>      <!-- Summary Stats for Custom Matches -->
       <div class="summary-stats custom-theme">
         <div class="summary-card">
-          <div class="summary-value">{{ getCustomStats().totalWins }}/{{ getCurrentMatches().length }}</div>
+          <div class="summary-value">{{ getTabStats().totalWins }}/{{ getCurrentMatches().length }}</div>
           <div class="summary-label">Vitórias Customizadas</div>
         </div>
 
         <div class="summary-card">
-          <div class="summary-value">{{ getCustomWinStreakInfo().current }}</div>
+          <div class="summary-value">{{ getTabWinStreakInfo().current }}</div>
           <div class="summary-label">Sequência Atual</div>
         </div>
 
         <div class="summary-card">
-          <div class="summary-value">{{ getCustomWinStreakInfo().longest }}</div>
+          <div class="summary-value">{{ getTabWinStreakInfo().longest }}</div>
           <div class="summary-label">Maior Sequência</div>
         </div>        <div class="summary-card">
-          <div class="summary-value" [class.positive]="getCustomStats().totalMMRGained > 0">
-            {{ getCustomStats().totalMMRGained > 0 ? '+' : '' }}{{ getCustomStats().totalMMRGained }}
+          <div class="summary-value" [class.positive]="getTabStats().totalMMRGained > 0">
+            {{ getTabStats().totalMMRGained > 0 ? '+' : '' }}{{ getTabStats().totalMMRGained }}
           </div>
           <div class="summary-label">MMR Total</div>
         </div>
-      </div>      <!-- Custom Match List -->
+      </div><!-- Custom Match List -->
       <div class="match-list custom-style">
         <!-- Debug: Teste simples de renderização -->
         <div style="background: yellow; padding: 10px; margin: 10px 0;">
@@ -875,22 +872,22 @@
           <div class="performance-card">
             <h4>KDA Médio</h4>
             <div class="performance-value">
-              {{ getAverageKDA() }}
+              {{ getTabAverageKDA() }}
             </div>
           </div>
 
           <div class="performance-card">
             <h4>MMR por Partida</h4>
             <div class="performance-value"
-                 [class.positive]="getAverageGain() > 0">
-              {{ getAverageGain().toFixed(1) }}
+                 [class.positive]="getTabAverageGain() > 0">
+              {{ getTabAverageGain().toFixed(1) }}
             </div>
           </div>
 
           <div class="performance-card">
             <h4>Champion Favorito</h4>
             <div class="performance-value">
-              {{ getMostPlayedChampion() }}
+              {{ getTabMostPlayedChampion() }}
             </div>
           </div>
         </div>

@@ -38,19 +38,86 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
   private refreshInterval: Subscription | null = null;
   private destroy$ = new Subject<void>();
 
-  constructor(private apiService: ApiService, private cdr: ChangeDetectorRef) {}
-  // ========== LOADING METHODS ==========
+  // Strategy objects for different data sources
+  private dataStrategies = {
+    riot: {
+      loadMethod: () => this.loadRiotMatches(),
+      getMatches: () => this.riotMatches,
+      getStats: () => this.getRiotStats(),
+      getWinStreak: () => this.getRiotWinStreakInfo(),
+      getAverageGain: () => this.getAverageGain(),
+      getMostPlayedChampion: () => this.getMostPlayedChampion(),
+      getAverageKDA: () => this.getAverageKDA(),
+      emptyMessage: 'Nenhuma partida ranqueada encontrada',
+      emptyDescription: 'Você ainda não jogou nenhuma partida ranqueada.'
+    },
+    custom: {
+      loadMethod: () => this.loadCustomMatches(),
+      getMatches: () => this.customMatches,
+      getStats: () => this.getCustomStats(),
+      getWinStreak: () => this.getCustomWinStreakInfo(),
+      getAverageGain: () => this.getAverageGain(),
+      getMostPlayedChampion: () => this.getMostPlayedChampion(),
+      getAverageKDA: () => this.getAverageKDA(),
+      emptyMessage: 'Nenhuma partida customizada encontrada',
+      emptyDescription: 'Ainda não há partidas customizadas registradas.'
+    }
+  };
+
+  constructor(private apiService: ApiService, private cdr: ChangeDetectorRef) {}  // ========== UNIFIED LOADING METHODS ==========
+
+  /**
+   * Loads matches for the current active tab using Strategy Pattern
+   */
   loadCurrentTabMatches(): void {
     console.log('⚡ [DEBUG] loadCurrentTabMatches chamado');
     console.log('⚡ [DEBUG] Tab ativa:', this.activeTab);
 
-    if (this.activeTab === 'riot') {
-      console.log('⚡ [DEBUG] Carregando partidas da Riot API');
-      this.loadRiotMatches();
+    const strategy = this.getCurrentStrategy();
+    if (strategy) {
+      strategy.loadMethod();
     } else {
-      console.log('⚡ [DEBUG] Carregando partidas customizadas');
-      this.loadCustomMatches();
+      console.error('❌ [DEBUG] Strategy não encontrada para tab:', this.activeTab);
     }
+  }
+
+  /**
+   * Gets the current data strategy based on active tab
+   */
+  private getCurrentStrategy() {
+    return this.dataStrategies[this.activeTab as keyof typeof this.dataStrategies];
+  }
+
+  /**
+   * Gets current matches using strategy pattern
+   */
+  getCurrentMatches(): Match[] {
+    const strategy = this.getCurrentStrategy();
+    const result = strategy ? strategy.getMatches() : [];
+
+    console.log('📋 [DEBUG] getCurrentMatches() via strategy:', {
+      activeTab: this.activeTab,
+      result: result.length,
+      resultType: typeof result,
+      resultIsArray: Array.isArray(result),
+      primeiraPartida: result[0] ? {
+        id: result[0].id,
+        champion: result[0].playerStats?.champion,
+        hasPlayerStats: !!result[0].playerStats
+      } : 'Nenhuma partida'
+    });
+
+    return result;
+  }
+
+  /**
+   * Gets win rate for current tab
+   */
+  getWinRate(): string {
+    const matches = this.getCurrentMatches();
+    if (matches.length === 0) return '0.0';
+    const wins = matches.filter(m => m.playerStats?.isWin).length;
+    return ((wins / matches.length) * 100).toFixed(1);
   }loadRiotMatches(): void {
     if (!this.player) {
       // console.warn('⚠️ Nenhum player disponível para carregar partidas');
@@ -180,37 +247,12 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     console.log('🎯 [DEBUG] isCustomTab():', result, 'activeTab:', this.activeTab);
     return result;
   }
-
   isRiotTab(): boolean {
     const result = this.activeTab === 'riot';
     console.log('🏆 [DEBUG] isRiotTab():', result, 'activeTab:', this.activeTab);
     return result;
-  }  getCurrentMatches(): Match[] {
-    const result = this.activeTab === 'riot' ? this.riotMatches : this.customMatches;
-    console.log('📋 [DEBUG] getCurrentMatches() detalhado:', {
-      activeTab: this.activeTab,
-      riotMatches: this.riotMatches.length,
-      customMatches: this.customMatches.length,
-      customMatchesType: typeof this.customMatches,
-      customMatchesIsArray: Array.isArray(this.customMatches),
-      result: result.length,
-      resultType: typeof result,
-      resultIsArray: Array.isArray(result),
-      primeiraPartida: result[0] ? {
-        id: result[0].id,
-        champion: result[0].playerStats?.champion,
-        hasPlayerStats: !!result[0].playerStats
-      } : 'Nenhuma partida'
-    });
-    return result;
   }
 
-  getWinRate(): string {
-    const matches = this.getCurrentMatches();
-    if (matches.length === 0) return '0.0';
-    const wins = matches.filter(m => m.playerStats?.isWin).length;
-    return ((wins / matches.length) * 100).toFixed(1);
-  }
   ngOnInit() {
     // NO MORE MOCK DATA BY DEFAULT - only load real data
     // Only show mock data if explicitly needed for demo purposes
@@ -843,6 +885,75 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
 
     longest = Math.max(longest, temp);
     return { current, longest };
+  }
+
+  // ========== UNIFIED STATS METHODS USING STRATEGY PATTERN ==========
+
+  /**
+   * Gets statistics for current tab using strategy pattern
+   */
+  getTabStats() {
+    const strategy = this.getCurrentStrategy();
+    return strategy ? strategy.getStats() : { totalWins: 0, totalMMRGained: 0 };
+  }
+
+  /**
+   * Gets win streak info for current tab
+   */
+  getTabWinStreakInfo() {
+    const strategy = this.getCurrentStrategy();
+    return strategy ? strategy.getWinStreak() : { current: 0, longest: 0 };
+  }
+
+  /**
+   * Gets average gain for current tab
+   */
+  getTabAverageGain() {
+    const strategy = this.getCurrentStrategy();
+    return strategy ? strategy.getAverageGain() : 0;
+  }
+
+  /**
+   * Gets most played champion for current tab
+   */
+  getTabMostPlayedChampion() {
+    const strategy = this.getCurrentStrategy();
+    return strategy ? strategy.getMostPlayedChampion() : 'N/A';
+  }
+
+  /**
+   * Gets average KDA for current tab
+   */
+  getTabAverageKDA() {
+    const strategy = this.getCurrentStrategy();
+    return strategy ? strategy.getAverageKDA() : '0.0:1';
+  }
+
+  /**
+   * Gets empty state message for current tab
+   */
+  getTabEmptyMessage() {
+    const strategy = this.getCurrentStrategy();
+    return strategy ? strategy.emptyMessage : 'Nenhuma partida encontrada';
+  }
+
+  /**
+   * Gets empty state description for current tab
+   */
+  getTabEmptyDescription() {
+    const strategy = this.getCurrentStrategy();
+    return strategy ? strategy.emptyDescription : 'Nenhuma partida encontrada';
+  }
+
+  // ========== LEGACY STATS METHODS (mantidos para compatibilidade) ==========
+  getLegacyStats() {
+    return {
+      totalKills: this.matches.reduce((sum, m) => sum + (m.playerStats?.kills || 0), 0),
+      totalDeaths: this.matches.reduce((sum, m) => sum + (m.playerStats?.deaths || 0), 0),
+      totalAssists: this.matches.reduce((sum, m) => sum + (m.playerStats?.assists || 0), 0),
+      totalWins: this.matches.filter(m => m.playerStats?.isWin).length,
+      totalMMRGained: this.matches.reduce((sum, m) => sum + (m.playerStats?.mmrChange || 0), 0)
+    };
   }
 
   // ========== UI HELPER METHODS ==========
