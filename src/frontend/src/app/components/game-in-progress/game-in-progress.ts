@@ -64,12 +64,10 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
   // Game tracking
   private currentGameSession: any = null;
 
-  constructor(private apiService: ApiService) {}
-  ngOnInit() {
+  constructor(private apiService: ApiService) {}  ngOnInit() {
     this.initializeGame();
-    this.startLCUDetection();
-    // Try to auto-resolve on component load (useful after app restart)
-    this.tryAutoResolveWinner();
+    // Removed automatic LCU detection and auto-resolve
+    // These will only happen when user manually clicks buttons
   }
 
   ngOnDestroy() {
@@ -233,7 +231,50 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
       return;
     }
 
-    console.log('⚠️ Não foi possível auto-resolver o vencedor');
+    console.log('⚠️ Não foi possível auto-resolver o vencedor');  }
+
+  // Manual method to retry detection when user clicks button
+  async retryAutoDetection() {
+    console.log('🔄 [MANUAL] Tentando detectar vencedor via histórico do LCU...');
+
+    try {      // Get the last match from LCU history instead of current game
+      const historyResponse = await this.apiService.getLCUMatchHistoryAll(0, 1, false).toPromise();
+
+      if (!historyResponse || !historyResponse.success || !historyResponse.matches || historyResponse.matches.length === 0) {
+        console.log('⚠️ [MANUAL] Nenhuma partida encontrada no histórico do LCU');
+        alert('Nenhuma partida encontrada no histórico do LCU. Certifique-se de que o League of Legends está aberto e você jogou pelo menos uma partida.');
+        return;
+      }
+
+      const lastMatch = historyResponse.matches[0];
+      console.log('🔍 [MANUAL] Última partida do LCU:', lastMatch);
+
+      // Check if this match has teams and winner information
+      if (lastMatch.teams && lastMatch.teams.length === 2) {
+        const winningTeam = lastMatch.teams.find((team: any) => team.win === true);
+        if (winningTeam) {
+          const winner = winningTeam.teamId === 100 ? 'blue' : 'red';
+          console.log('🏆 [MANUAL] Vencedor detectado via histórico do LCU:', winner);
+          this.selectedWinner = winner;
+
+          // Show confirmation to user
+          const teamName = winner === 'blue' ? 'Azul' : 'Vermelho';
+          const confirmed = confirm(`🏆 Vencedor detectado!\n\nTime ${teamName} venceu a última partida.\n\nConfirmar este resultado?`);
+
+          if (confirmed) {
+            this.autoCompleteGame(winner, true);
+          }
+          return;
+        }
+      }
+
+      console.log('⚠️ [MANUAL] Última partida não tem informação de vencedor');
+      alert('A última partida no histórico do LCU não contém informação de vencedor. Tente novamente após completar uma partida.');
+
+    } catch (error) {
+      console.log('❌ [MANUAL] Erro ao detectar via histórico do LCU:', error);
+      alert('Erro ao acessar o histórico do LCU. Certifique-se de que o League of Legends está aberto.');
+    }
   }
 
   // Try to get winner from current LCU game
@@ -272,11 +313,11 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
 
       // Para o sistema buscar corretamente, vamos usar múltiplos identificadores
       let playerIdentifiers = [this.currentPlayer.id.toString()];
-      
+
       if (this.currentPlayer?.summonerName) {
         playerIdentifiers.push(this.currentPlayer.summonerName);
       }
-      
+
       // Para usuário especial, adicionar IDs conhecidos
       if (this.currentPlayer?.summonerName === 'popcorn seller' && this.currentPlayer?.tagLine === 'coup') {
         playerIdentifiers.push('1'); // ID numérico
@@ -289,7 +330,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
       for (const identifier of playerIdentifiers) {
         console.log(`🔍 Tentando buscar com identificador: ${identifier}`);
         history = await this.apiService.getCustomMatches(identifier, 0, 10).toPromise();
-        
+
         if (history && history.success && history.matches && history.matches.length > 0) {
           console.log(`✅ Encontrado histórico com identificador: ${identifier}`);
           break;
@@ -431,26 +472,12 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
     }
 
     return matches / maxLength;
-  }
-  // Toggle LCU detection
+  }  // Toggle LCU detection
   toggleLCUDetection() {
     this.lcuDetectionEnabled = !this.lcuDetectionEnabled;
-
-    if (this.lcuDetectionEnabled) {
-      this.startLCUDetection();
-    } else {
-      if (this.lcuDetectionTimer) {
-        this.lcuDetectionTimer.unsubscribe();
-        this.lcuDetectionTimer = null;
-      }
-    }
+    // Removed automatic detection - LCU is now only used for manual detection via buttons
+    console.log(`🔧 LCU Detection ${this.lcuDetectionEnabled ? 'habilitada' : 'desabilitada'} (apenas para detecção manual)`);
   }
-  // Manual retry of auto-detection
-  retryAutoDetection() {
-    console.log('🔄 Tentativa manual de auto-detecção iniciada pelo usuário');
-    this.tryAutoResolveWinner();
-  }
-
   // Simulate a game based on the last custom match for testing
   async simulateLastMatch() {
     console.log('🎭 Simulando jogo baseado na última partida customizada...');
