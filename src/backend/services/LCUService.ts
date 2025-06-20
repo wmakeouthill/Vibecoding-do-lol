@@ -196,17 +196,18 @@ export class LCUService {
     } catch (error) {
       return null;
     }
-  }
-  async getCurrentMatchDetails(): Promise<any> {
+  }  async getCurrentMatchDetails(): Promise<any> {
     if (!this.client) {
       throw new Error('Cliente LCU não conectado');
     }
 
     try {
       const gameflowPhase = await this.getGameflowPhase();
+      console.log(`🔍 [LCU] Gameflow phase atual: ${gameflowPhase}`);
       
       // Check if in champion select
       if (gameflowPhase === 'ChampSelect') {
+        console.log('🎯 [LCU] Em seleção de campeões, buscando dados...');
         const champSelectSession = await this.client.get('/lol-champ-select/v1/session');
         return {
           phase: 'ChampSelect',
@@ -217,6 +218,7 @@ export class LCUService {
       
       // Check if in game
       if (['InProgress', 'WaitingForStats', 'PreEndOfGame', 'EndOfGame'].includes(gameflowPhase)) {
+        console.log(`🎮 [LCU] Em partida (${gameflowPhase}), buscando dados...`);
         // Get current game info from the client
         const gameData = await this.client.get('/lol-gameflow/v1/session');
         return {
@@ -226,13 +228,14 @@ export class LCUService {
         };
       }
       
+      console.log(`⚠️ [LCU] Fase não ativa para detecção de partida: ${gameflowPhase}`);
       return {
         phase: gameflowPhase,
         details: null,
         isInGame: false
       };
     } catch (error) {
-      console.error('Error getting current match details:', error);
+      console.error('💥 [LCU] Error getting current match details:', error);
       return {
         phase: 'Unknown',
         details: null,

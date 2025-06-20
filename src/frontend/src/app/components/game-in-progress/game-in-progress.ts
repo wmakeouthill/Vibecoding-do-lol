@@ -268,19 +268,34 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
       if (!this.currentPlayer?.id) {
         console.log('❌ ID do jogador atual não encontrado');
         return null;
+      }      console.log('🔍 Buscando histórico para player ID:', this.currentPlayer.id);
+
+      // Para o sistema buscar corretamente, vamos usar múltiplos identificadores
+      let playerIdentifiers = [this.currentPlayer.id.toString()];
+      
+      if (this.currentPlayer?.summonerName) {
+        playerIdentifiers.push(this.currentPlayer.summonerName);
       }
-
-      console.log('🔍 Buscando histórico para player ID:', this.currentPlayer.id);
-
-      // Para usuário especial, usar ID correto
-      let playerIdForSearch = this.currentPlayer.id.toString();
+      
+      // Para usuário especial, adicionar IDs conhecidos
       if (this.currentPlayer?.summonerName === 'popcorn seller' && this.currentPlayer?.tagLine === 'coup') {
-        playerIdForSearch = '1'; // Usar ID numérico conhecido
-        console.log('🎯 Usando ID numérico especial para busca no histórico:', playerIdForSearch);
+        playerIdentifiers.push('1'); // ID numérico
+        playerIdentifiers.push('popcorn seller'); // Nome do summoner
+        console.log('🎯 Usando múltiplos identificadores para busca:', playerIdentifiers);
       }
 
-      // Get custom match history specifically
-      const history = await this.apiService.getCustomMatches(playerIdForSearch, 0, 10).toPromise();
+      // Tentar buscar com cada identificador até encontrar partidas
+      let history: any = null;
+      for (const identifier of playerIdentifiers) {
+        console.log(`🔍 Tentando buscar com identificador: ${identifier}`);
+        history = await this.apiService.getCustomMatches(identifier, 0, 10).toPromise();
+        
+        if (history && history.success && history.matches && history.matches.length > 0) {
+          console.log(`✅ Encontrado histórico com identificador: ${identifier}`);
+          break;
+        }
+      }
+
       console.log('📋 Resposta do histórico de partidas:', history);
 
       if (!history || !history.success || !history.matches || history.matches.length === 0) {

@@ -913,13 +913,18 @@ export class App implements OnInit, OnDestroy {
   }  private simulateMatchFromData(matchData: any): void {
     console.log('🎮 Simulando partida com dados REAIS:', matchData);
 
-    // Processar dados dos teams corretamente
-    let team1Players: number[] = [];
-    let team2Players: number[] = [];
+    // Processar dados dos teams corretamente (podem ser strings ou números)
+    let team1Players: any[] = [];
+    let team2Players: any[] = [];
 
     try {
-      team1Players = JSON.parse(matchData.team1_players || '[]');
-      team2Players = JSON.parse(matchData.team2_players || '[]');
+      const rawTeam1 = JSON.parse(matchData.team1_players || '[]');
+      const rawTeam2 = JSON.parse(matchData.team2_players || '[]');
+      
+      // Garantir que temos arrays válidos
+      team1Players = Array.isArray(rawTeam1) ? rawTeam1 : [rawTeam1];
+      team2Players = Array.isArray(rawTeam2) ? rawTeam2 : [rawTeam2];
+      
     } catch (error) {
       console.error('Erro ao processar dados dos times:', error);
       team1Players = [1]; // Fallback
@@ -1011,43 +1016,57 @@ export class App implements OnInit, OnDestroy {
 
     // Usar o método de simulação existente
     this.simulateMatchFromData(convertedMatch);
-  }
-  private convertLCUMatchToInternalFormat(lcuMatch: any): any {
+  }  private convertLCUMatchToInternalFormat(lcuMatch: any): any {
     // Converter estrutura do LCU para formato interno
     console.log('🔄 Convertendo dados do LCU para formato interno:', lcuMatch);
 
     // Extrair informações dos participantes
     const participants = lcuMatch.participants || [];
-    const team1Players: number[] = [];
-    const team2Players: number[] = [];
+    const team1Players: string[] = [];
+    const team2Players: string[] = [];
     const team1Picks: any[] = [];
     const team2Picks: any[] = [];
 
-    // Separar jogadores por time e extrair champions (team 100 = blue, team 200 = red)
+    // Identificar o player atual na partida
+    const currentPlayerSummonerName = this.currentPlayer?.summonerName;
+    let currentPlayerTeam = null;
+    let currentPlayerInMatch = false;    // Separar jogadores por time e extrair champions (team 100 = blue, team 200 = red)
     participants.forEach((participant: any, index: number) => {
-      const playerId = participant.summonerId || participant.participantId || (index + 1);
+      // Usar summoner name quando possível para identificação real
+      const playerName = participant.summonerName || participant.playerName || `Player${index + 1}`;
+      const playerId = participant.summonerId || participant.participantId || playerName;
       const championId = participant.championId || participant.champion || 0;
       const championName = participant.championName || this.getChampionNameById(championId) || `Champion${championId}`;
       const lane = participant.lane || participant.teamPosition || participant.individualPosition || 'UNKNOWN';
 
+      // Verificar se este é o player atual
+      if (currentPlayerSummonerName && playerName === currentPlayerSummonerName) {
+        currentPlayerInMatch = true;
+        currentPlayerTeam = participant.teamId;
+        console.log(`🎯 Player atual encontrado na partida: ${playerName} (Team ${participant.teamId})`);
+      }
+
       if (participant.teamId === 100) {
-        team1Players.push(playerId);
+        team1Players.push(playerName); // Usar nome real ao invés de ID genérico
         team1Picks.push({
           champion: championName,
-          player: playerId,
+          player: playerName, // Usar nome real
           lane: lane,
           championId: championId
         });
       } else if (participant.teamId === 200) {
-        team2Players.push(playerId);
+        team2Players.push(playerName); // Usar nome real ao invés de ID genérico
         team2Picks.push({
           champion: championName,
-          player: playerId,
+          player: playerName, // Usar nome real
           lane: lane,
           championId: championId
         });
       }
     });
+
+    // REMOVIDO: Lógica que adicionava IDs genéricos do player atual
+    // Agora os nomes reais já estão nos arrays e não precisamos sobrescrever
 
     console.log('🎯 Champions extraídos - Team 1 picks:', team1Picks);
     console.log('🎯 Champions extraídos - Team 2 picks:', team2Picks);

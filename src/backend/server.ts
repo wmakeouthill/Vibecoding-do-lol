@@ -494,6 +494,83 @@ app.get('/api/lcu/current-summoner', (async (req: Request, res: Response) => {
   }
 }) as RequestHandler);
 
+// Rota para buscar histórico completo do LCU (incluindo partidas customizadas)
+app.get('/api/lcu/match-history-all', (async (req: Request, res: Response) => {
+  try {
+    const startIndex = parseInt(req.query.startIndex as string) || 0;
+    const count = parseInt(req.query.count as string) || 10;
+    const customOnly = req.query.customOnly === 'true';
+
+    console.log(`🔍 [LCU Match History] Buscando histórico: startIndex=${startIndex}, count=${count}, customOnly=${customOnly}`);
+
+    if (!lcuService.isClientConnected()) {
+      return res.status(503).json({ error: 'Cliente do LoL não conectado' });
+    }
+
+    const matches = await lcuService.getMatchHistory(startIndex, count);
+    
+    // Filtrar apenas partidas customizadas se solicitado
+    let filteredMatches = matches;
+    if (customOnly) {
+      filteredMatches = matches.filter((match: any) => {
+        // Verificar se é partida customizada baseado no tipo de fila
+        const queueId = match.queueId || 0;
+        const gameMode = match.gameMode || '';
+        const gameType = match.gameType || '';
+        
+        // IDs de filas customizadas/não rankeadas
+        const customQueueIds = [0, 400, 420, 430, 440, 450, 460, 470, 830, 840, 850, 900, 1020, 1300, 1400];
+        return customQueueIds.includes(queueId) || 
+               gameMode.includes('CUSTOM') || 
+               gameType.includes('CUSTOM_GAME');
+      });
+    }
+
+    console.log(`📊 [LCU Match History] Retornando ${filteredMatches.length} partidas (de ${matches.length} totais)`);
+
+    res.json({
+      success: true,
+      matches: filteredMatches,
+      totalMatches: matches.length,
+      filteredCount: filteredMatches.length,
+      pagination: {
+        startIndex,
+        count,
+        customOnly
+      }
+    });
+
+  } catch (error: any) {
+    console.error('💥 [LCU Match History] Erro:', error);
+    res.status(503).json({ error: 'Erro ao buscar histórico do LCU: ' + error.message });
+  }
+}) as RequestHandler);
+
+// Rota para buscar detalhes da partida atual no LCU
+app.get('/api/lcu/current-match-details', (async (req: Request, res: Response) => {
+  try {
+    if (!lcuService.isClientConnected()) {
+      return res.status(503).json({ error: 'Cliente do LoL não conectado' });
+    }
+    
+    // Tentar obter dados da partida atual usando método mais robusto
+    const currentMatchDetails = await lcuService.getCurrentMatchDetails();
+    
+    if (!currentMatchDetails || !currentMatchDetails.details) {
+      return res.status(404).json({ error: 'Nenhuma partida ativa encontrada' });
+    }
+
+    res.json({
+      success: true,
+      match: currentMatchDetails
+    });
+
+  } catch (error: any) {
+    console.error('💥 [LCU Current Match] Erro:', error);
+    res.status(503).json({ error: 'Erro ao buscar partida atual do LCU: ' + error.message });
+  }
+}) as RequestHandler);
+
 // NEW: Update Riot API key in settings
 app.post('/api/settings/riot-api-key', (async (req: Request, res: Response) => {
   try {
@@ -658,565 +735,137 @@ app.get('/api/matches/custom/:playerId', (req: Request, res: Response) => {
   })();
 });
 
-// Current game monitoring route
-app.get('/api/lcu/current-match-details', (async (req: Request, res: Response) => {
-  try {
-    if (!lcuService.isClientConnected()) {
-      return res.status(503).json({ 
-        success: false,
-        error: 'Cliente do LoL não conectado' 
-      });
-    }
-
-    const matchDetails = await lcuService.getCurrentMatchDetails();
-    
-    res.json({
-      success: true,
-      currentGame: matchDetails,
-      isInGame: matchDetails.isInGame,
-      phase: matchDetails.phase
-    });
-
-  } catch (error: any) {
-    console.error('❌ Erro ao buscar detalhes da partida atual:', error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message || 'Erro ao buscar status da partida atual'
-    });
-  }
-}) as RequestHandler);
-
-// LCU Match History endpoint
-app.get('/api/lcu/match-history', (async (req: Request, res: Response) => {
-  try {
-    if (!lcuService.isClientConnected()) {
-      return res.status(503).json({ 
-        success: false,
-        error: 'Cliente do LoL não conectado' 
-      });
-    }
-
-    const startIndex = parseInt(req.query.startIndex as string) || 0;
-    const count = parseInt(req.query.count as string) || 20;
-
-    console.log(`📊 Buscando histórico LCU: startIndex=${startIndex}, count=${count}`);
-    
-    const matches = await lcuService.getMatchHistory(startIndex, count);
-    
-    if (!matches || matches.length === 0) {
-      return res.json({
-        success: true,
-        matches: [],
-        message: 'Nenhuma partida encontrada no histórico do League Client'
-      });
-    }
-
-    // Filter only real matches (not custom games, avoid practice tool, etc.)
-    const realMatches = matches.filter(match => {
-      return match.gameMode === 'CLASSIC' || 
-             match.gameMode === 'ARAM' ||
-             match.gameMode === 'RANKED_SOLO_5x5' ||
-             match.gameMode === 'RANKED_FLEX_SR' ||
-             match.gameMode === 'RANKED_FLEX_TT';
-    });
-
-    console.log(`✅ Partidas reais encontradas: ${realMatches.length}/${matches.length}`);
-    
-    res.json({
-      success: true,
-      matches: realMatches,
-      totalMatches: matches.length,
-      realMatches: realMatches.length
-    });
-
-  } catch (error: any) {
-    console.error('❌ Erro ao buscar histórico LCU:', error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message || 'Erro ao buscar histórico do League Client'
-    });
-  }
-}) as RequestHandler);
-
-// LCU Match History endpoint - ALL matches (including custom games) for dashboard
-app.get('/api/lcu/match-history-all', (async (req: Request, res: Response) => {
-  try {
-    if (!lcuService.isClientConnected()) {
-      return res.status(503).json({ 
-        success: false,
-        error: 'Cliente do LoL não conectado' 
-      });
-    }
-
-    const startIndex = parseInt(req.query.startIndex as string) || 0;
-    const count = parseInt(req.query.count as string) || 5; // Apenas 5 para o dashboard
-    const customOnly = req.query.customOnly === 'true'; // Novo parâmetro para filtrar apenas personalizadas
-
-    console.log(`📊 Buscando partidas LCU para dashboard: startIndex=${startIndex}, count=${count}, customOnly=${customOnly}`);
-    
-    // Buscar mais partidas para garantir que temos suficientes personalizadas
-    const searchCount = customOnly ? count * 10 : count; // Se buscar apenas personalizadas, buscar mais
-    const allMatches = await lcuService.getMatchHistory(startIndex, searchCount);
-    
-    if (!allMatches || allMatches.length === 0) {
-      return res.json({
-        success: true,
-        matches: [],
-        message: 'Nenhuma partida encontrada no histórico do League Client'
-      });
-    }
-
-    let matches = allMatches;
-
-    // Filtrar apenas partidas personalizadas se solicitado
-    if (customOnly) {
-      matches = allMatches.filter(match => 
-        match.gameType === 'CUSTOM_GAME' || 
-        match.queueType === 'CUSTOM' ||
-        match.gameMode === 'CUSTOM'
-      );
-      console.log(`🎮 Partidas personalizadas encontradas: ${matches.length} de ${allMatches.length} totais`);
-      
-      // Pegar apenas a quantidade solicitada
-      matches = matches.slice(0, count);
-    }
-
-    console.log(`✅ Partidas retornadas: ${matches.length}`);
-    
-    res.json({
-      success: true,
-      matches: matches,
-      totalMatches: matches.length
-    });
-
-  } catch (error: any) {
-    console.error('❌ Erro ao buscar histórico completo LCU:', error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message || 'Erro ao buscar histórico do League Client'
-    });
-  }
-}) as RequestHandler);
-
-// ===== MATCH LINKING SYSTEM =====
-
-// Create a new match linking session
-app.post('/api/match-linking/create', (async (req: Request, res: Response) => {
-  try {
-    const sessionData = req.body;
-    
-    console.log('🔗 Criando sessão de vinculação:', sessionData.id);
-    
-    // Save to database
-    const linkingSession = await dbManager.createMatchLinkingSession(sessionData);
-    
-    res.json({
-      success: true,
-      session: linkingSession,
-      message: 'Sessão de vinculação criada com sucesso'
-    });
-    
-  } catch (error: any) {
-    console.error('❌ Erro ao criar sessão de vinculação:', error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message || 'Erro ao criar sessão de vinculação'
-    });
-  }
-}) as RequestHandler);
-
-// Update match linking session
-app.put('/api/match-linking/:sessionId', (async (req: Request, res: Response) => {
-  try {
-    const { sessionId } = req.params;
-    const updateData = req.body;
-    
-    console.log('🔄 Atualizando sessão de vinculação:', sessionId);
-    
-    const updatedSession = await dbManager.updateMatchLinkingSession(sessionId, updateData);
-    
-    res.json({
-      success: true,
-      session: updatedSession,
-      message: 'Sessão atualizada com sucesso'
-    });
-    
-  } catch (error: any) {
-    console.error('❌ Erro ao atualizar sessão de vinculação:', error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message || 'Erro ao atualizar sessão de vinculação'
-    });
-  }
-}) as RequestHandler);
-
-// Complete match linking with post-game results
-app.post('/api/match-linking/complete', (async (req: Request, res: Response) => {
-  try {
-    const postGameData = req.body;
-    
-    console.log('🎯 Vinculando resultados pós-jogo para partida:', postGameData.queueMatchId);
-    
-    // Link the queue match with the real game results
-    const linkingResult = await dbManager.completeMatchLinking(postGameData);
-    
-    // Update player MMR based on results
-    await updatePlayerMMRFromResults(postGameData.playerResults);
-    
-    res.json({
-      success: true,
-      linkingResult,
-      message: 'Resultados vinculados com sucesso'
-    });
-    
-  } catch (error: any) {
-    console.error('❌ Erro ao vincular resultados:', error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message || 'Erro ao vincular resultados pós-jogo'
-    });
-  }
-}) as RequestHandler);
-
-// Get linked matches for a player
-app.get('/api/match-linking/player/:playerId', (async (req: Request, res: Response) => {
-  try {
-    const { playerId } = req.params;
-    const limit = parseInt(req.query.limit as string) || 20;
-    
-    const linkedMatches = await dbManager.getLinkedMatches(parseInt(playerId), limit);
-    
-    res.json({
-      success: true,
-      matches: linkedMatches,
-      count: linkedMatches.length
-    });
-    
-  } catch (error: any) {
-    console.error('❌ Erro ao buscar partidas vinculadas:', error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message || 'Erro ao buscar partidas vinculadas'
-    });
-  }
-}) as RequestHandler);
-
-// Get linking statistics
-app.get('/api/match-linking/stats', (async (req: Request, res: Response) => {
-  try {
-    const stats = await dbManager.getMatchLinkingStats();
-    
-    res.json({
-      success: true,
-      stats: {
-        totalSessions: stats.total || 0,
-        successfulLinks: stats.successful || 0,
-        successRate: stats.total > 0 ? ((stats.successful / stats.total) * 100).toFixed(1) : '0.0',
-        averageLinkTime: stats.averageTime || 0
-      }
-    });
-    
-  } catch (error: any) {
-    console.error('❌ Erro ao buscar estatísticas:', error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message || 'Erro ao buscar estatísticas de vinculação'
-    });
-  }
-}) as RequestHandler);
-
-// Helper function to update player MMR based on game results
-async function updatePlayerMMRFromResults(playerResults: any[]): Promise<void> {
-  for (const result of playerResults) {
-    if (result.dodged) continue; // Skip players who dodged
-    
+// Endpoint para criar partida personalizada baseada em dados do LCU
+app.post('/api/test/create-lcu-based-match', (req: Request, res: Response) => {
+  (async () => {
     try {
-      const mmrChange = result.won ? 
-        Math.floor(Math.random() * 20) + 10 : // Win: +10 to +30
-        -(Math.floor(Math.random() * 15) + 10); // Loss: -10 to -25
-      
-      await dbManager.updatePlayerMMR(result.playerId, mmrChange);
-      console.log(`📊 MMR atualizado para jogador ${result.playerId}: ${mmrChange > 0 ? '+' : ''}${mmrChange}`);
-      
-    } catch (error) {
-      console.error(`❌ Erro ao atualizar MMR do jogador ${result.playerId}:`, error);
-    }
-  }
-}
-
-// Novas rotas para partidas personalizadas
-
-// Obter todas as partidas personalizadas (para admin/overview)
-app.get('/api/matches/custom', (async (req: Request, res: Response) => {
-  try {
-    const limit = parseInt(req.query.limit as string) || 20;
-    const offset = parseInt(req.query.offset as string) || 0;
-
-    const matches = await dbManager.getCustomMatches(limit, offset);
+      const { lcuMatchData, playerIdentifier } = req.body;
     
-    res.json({
-      success: true,
-      matches,
-      pagination: {
-        offset,
-        limit,
-        total: matches.length
+    if (!lcuMatchData || !playerIdentifier) {
+      return res.status(400).json({ 
+        error: 'Dados do LCU e identificador do jogador são obrigatórios' 
+      });
+    }
+
+    console.log('🎮 [CREATE-LCU-MATCH] Criando partida personalizada baseada no LCU:', lcuMatchData.gameId);
+
+    // Extrair informações dos participantes
+    const participants = lcuMatchData.participants || [];
+    const team1Players: string[] = [];
+    const team2Players: string[] = [];
+    const team1Picks: any[] = [];
+    const team2Picks: any[] = [];    // Separar jogadores por time e extrair champions
+    participants.forEach((participant: any, index: number) => {
+      // Usar summoner name quando possível para melhor correlação
+      const playerName = participant.summonerName || participant.playerName || `Player${index + 1}`;
+      const playerId = participant.summonerId || participant.participantId || playerName;
+      const championId = participant.championId || participant.champion || 0;
+      const championName = participant.championName || `Champion${championId}`;
+      const lane = participant.lane || participant.teamPosition || 'UNKNOWN';
+
+      if (participant.teamId === 100) {
+        team1Players.push(playerName); // Usar nome real para melhor identificação
+        team1Picks.push({
+          champion: championName,
+          player: playerName, // Usar nome real
+          lane: lane,
+          championId: championId
+        });
+      } else if (participant.teamId === 200) {
+        team2Players.push(playerName); // Usar nome real para melhor identificação
+        team2Picks.push({
+          champion: championName,
+          player: playerName, // Usar nome real
+          lane: lane,
+          championId: championId
+        });
       }
     });
-  } catch (error: any) {
-    console.error('Erro ao buscar partidas personalizadas:', error);
-    res.status(500).json({ error: error.message });
-  }
-}) as RequestHandler);
 
-// Obter uma partida personalizada específica
-app.get('/api/matches/custom/details/:matchId', (async (req: Request, res: Response) => {
-  try {
-    const matchId = parseInt(req.params.matchId);
-    
-    if (!matchId) {
-      return res.status(400).json({ error: 'Match ID é obrigatório' });
-    }
-
-    const match = await dbManager.getCustomMatchById(matchId);
-    
-    if (!match) {
-      return res.status(404).json({ error: 'Partida não encontrada' });
-    }
-
-    res.json({
-      success: true,
-      match
-    });
-  } catch (error: any) {
-    console.error('Erro ao buscar partida personalizada:', error);
-    res.status(500).json({ error: error.message });
-  }
-}) as RequestHandler);
-
-// Atualizar status de uma partida personalizada
-app.put('/api/matches/custom/:matchId/status', (async (req: Request, res: Response) => {
-  try {
-    const matchId = parseInt(req.params.matchId);
-    const { status } = req.body;
-    
-    if (!matchId || !status) {
-      return res.status(400).json({ error: 'Match ID e status são obrigatórios' });
-    }
-
-    await dbManager.updateCustomMatchStatus(matchId, status);
-    
-    res.json({
-      success: true,
-      message: `Status da partida atualizado para: ${status}`
-    });
-  } catch (error: any) {
-    console.error('Erro ao atualizar status da partida:', error);
-    res.status(500).json({ error: error.message });
-  }
-}) as RequestHandler);
-
-// Deletar uma partida personalizada
-app.delete('/api/matches/custom/:matchId', (async (req: Request, res: Response) => {
-  try {
-    const matchId = parseInt(req.params.matchId);
-    
-    if (!matchId) {
-      return res.status(400).json({ error: 'Match ID é obrigatório' });
-    }
-
-    await dbManager.deleteCustomMatch(matchId);
-    
-    res.json({
-      success: true,
-      message: 'Partida personalizada deletada com sucesso'
-    });
-  } catch (error: any) {
-    console.error('Erro ao deletar partida personalizada:', error);
-    res.status(500).json({ error: error.message });
-  }
-}) as RequestHandler);
-
-// Obter estatísticas das partidas personalizadas
-app.get('/api/matches/custom/stats', (async (req: Request, res: Response) => {
-  try {
-    const stats = await dbManager.getCustomMatchStats();
-    
-    res.json({
-      success: true,
-      stats
-    });
-  } catch (error: any) {
-    console.error('Erro ao buscar estatísticas das partidas personalizadas:', error);
-    res.status(500).json({ error: error.message });
-  }
-}) as RequestHandler);
-
-// Test endpoint to simulate saving a custom match result
-app.post('/api/test/save-custom-match', (async (req: Request, res: Response) => {
-  try {
-    const testMatchData = {
-      team1Players: [1, 2, 3, 4, 5],
-      team2Players: [6, 7, 8, 9, 10],
-      averageMMR1: 1300,
-      averageMMR2: 1250,
-      winner: Math.random() > 0.5 ? 1 : 2,
-      completed: true,
-      mmrChanges: {
-        1: 15, 2: 12, 3: 18, 4: 10, 5: 14,
-        6: -15, 7: -12, 8: -18, 9: -10, 10: -14
+    // Garantir que o player identifier está nos times se identificado
+    if (playerIdentifier) {
+      const playerInTeam1 = team1Players.includes(playerIdentifier);
+      const playerInTeam2 = team2Players.includes(playerIdentifier);
+      
+      // Se o player não está explicitamente nos times, adicionar baseado em heurísticas
+      if (!playerInTeam1 && !playerInTeam2) {
+        // Por padrão, adicionar ao time 1 se não conseguir determinar
+        team1Players.push(playerIdentifier);
+        console.log(`✅ Player identifier adicionado ao time 1: ${playerIdentifier}`);
       }
-    };
-
-    await lcuService.saveCustomMatchResult(testMatchData);
-    
-    res.json({
-      success: true,
-      message: 'Partida customizada de teste salva com sucesso',
-      matchData: testMatchData
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-}) as RequestHandler);
-
-// Test endpoint para criar uma partida customizada com dados do jogador atual
-app.post('/api/test/create-sample-match/:playerId', (async (req: Request, res: Response) => {
-  try {
-    const playerIdParam = req.params.playerId;
-    
-    if (!playerIdParam) {
-      return res.status(400).json({ error: 'Player ID é obrigatório' });
     }
 
+    // Criar dados de pick/ban reais
+    const pickBanData = {
+      team1Picks: team1Picks,
+      team2Picks: team2Picks,
+      team1Bans: [], // LCU geralmente não tem dados de ban
+      team2Bans: [],
+      isReal: true,
+      source: 'LCU_MATCH_HISTORY'
+    };    // Buscar o jogador para pegar o nome
     let player: any = null;
-    let playerId: number = 0;
-
-    // Tentar primeiro como ID numérico
-    const numericId = parseInt(playerIdParam);
-    if (!isNaN(numericId)) {
-      player = await dbManager.getPlayer(numericId);
-      if (player) {
-        playerId = numericId;
+    if (playerIdentifier.length > 10) {
+      player = await dbManager.getPlayerBySummonerName(playerIdentifier);
+    } else {
+      const numericId = parseInt(playerIdentifier);
+      if (!isNaN(numericId)) {
+        player = await dbManager.getPlayer(numericId);
       }
     }
 
-    // Se não encontrou como ID numérico, tentar buscar pelo summonerName
-    if (!player) {
-      // Se o parâmetro parece ser um hash ou PUUID, tentar buscar pelo summonerName "popcorn seller"
-      if (playerIdParam.length > 10) {
-        player = await dbManager.getPlayerBySummonerName('popcorn seller');
-        if (player) {
-          playerId = player.id;
-        }
-      }
-    }
+    const createdBy = player?.summoner_name || 'Sistema';
 
-    if (!player) {
-      return res.status(404).json({ error: 'Jogador não encontrado' });
-    }
-
-    // Criar dados de partida de exemplo com o jogador
-    const sampleMatchData = {
-      playerId: playerId,
-      matchData: {
-        team1Players: [playerId], // Jogador atual no time 1
-        team2Players: [999, 998, 997, 996, 995], // IDs fictícios para o time adversário
-        averageMMR1: player.current_mmr || 1200,
-        averageMMR2: 1200,
-        completed: true,
-        winner: Math.random() > 0.5 ? 1 : 2, // Resultado aleatório
-        duration: Math.floor(Math.random() * 30) + 15, // 15-45 minutos
-        pickBanData: {
-          team1Bans: ['Yasuo', 'Zed', 'Azir'],
-          team2Bans: ['Jinx', 'Thresh', 'Lee Sin'],
-          team1Picks: [
-            { champion: 'Garen', player: playerId, lane: 'top' }
-          ],
-          team2Picks: [
-            { champion: 'Darius', player: 999, lane: 'top' },
-            { champion: 'Graves', player: 998, lane: 'jungle' },
-            { champion: 'Orianna', player: 997, lane: 'mid' },
-            { champion: 'Caitlyn', player: 996, lane: 'bot' },
-            { champion: 'Leona', player: 995, lane: 'support' }
-          ]
-        },
-        mmrChanges: {
-          [playerId]: Math.random() > 0.5 ? 15 : -12
-        }
-      }
+    // Criar partida personalizada
+    const matchData = {
+      title: `Partida LCU ${lcuMatchData.gameId}`,
+      description: `Partida baseada em dados reais do LCU - Game ID: ${lcuMatchData.gameId}`,
+      team1Players: team1Players,
+      team2Players: team2Players,
+      createdBy: createdBy,
+      gameMode: lcuMatchData.gameMode || 'CLASSIC'
     };
 
-    // Salvar a partida no banco
-    const team1Players = sampleMatchData.matchData.team1Players;
-    const team2Players = sampleMatchData.matchData.team2Players;
-    const matchId = await dbManager.createMatch(
-      team1Players, 
-      team2Players, 
-      sampleMatchData.matchData.averageMMR1, 
-      sampleMatchData.matchData.averageMMR2
-    );
+    const matchId = await dbManager.createCustomMatch(matchData);
     
-    // Completar a partida
-    await dbManager.completeMatch(
-      matchId, 
-      sampleMatchData.matchData.winner, 
-      sampleMatchData.matchData.mmrChanges
-    );
+    // Se a partida já terminou, completar com resultado
+    if (lcuMatchData.endOfGameResult === 'GameComplete' && lcuMatchData.teams) {
+      let winner = null;
+      if (lcuMatchData.teams.length >= 2) {
+        const team1Won = lcuMatchData.teams[0]?.win === true;
+        const team2Won = lcuMatchData.teams[1]?.win === true;
+        winner = team1Won ? 1 : (team2Won ? 2 : null);
+      }
 
-    res.json({
-      success: true,
-      message: 'Partida customizada de exemplo criada com sucesso',
-      matchId: matchId,
-      matchData: sampleMatchData.matchData
-    });
-  } catch (error: any) {
-    console.error('Erro ao criar partida de exemplo:', error);
-    res.status(500).json({ error: error.message });
-  }
-}) as RequestHandler);
-
-// Endpoint para atualizar resultado de partida personalizada existente
-app.put('/api/matches/custom/:matchId/result', (async (req: Request, res: Response) => {
-  try {
-    const matchId = parseInt(req.params.matchId);
-    const { winner, duration, detectedByLCU, endTime, riotId, pickBanData, scoreTeam1, scoreTeam2, notes } = req.body;
-
-    if (!matchId || !winner) {
-      return res.status(400).json({ error: 'Match ID e winner são obrigatórios' });
+      if (winner) {
+        const duration = Math.floor((lcuMatchData.gameDuration || 0) / 60); // Converter para minutos
+        
+        await dbManager.completeCustomMatch(matchId, winner, {
+          duration: duration,
+          pickBanData: pickBanData,
+          detectedByLCU: true,
+          riotGameId: lcuMatchData.gameId?.toString(),
+          notes: `Partida real detectada via LCU - ${lcuMatchData.endOfGameResult}`
+        });
+      }
     }
 
-    console.log('🎯 [PUT /api/matches/custom/result] Atualizando partida personalizada:', matchId, 'Winner:', winner);
-    console.log('🆔 [PUT /api/matches/custom/result] Riot ID:', riotId);
-    console.log('🎮 [PUT /api/matches/custom/result] Pick/Ban data:', pickBanData?.isReal ? 'DADOS REAIS' : 'dados simulados');
-
-    // Usar o novo método para partidas personalizadas
-    await dbManager.completeCustomMatch(matchId, winner, {
-      duration: duration,
-      riotGameId: riotId,
-      pickBanData: pickBanData,
-      detectedByLCU: detectedByLCU,
-      scoreTeam1: scoreTeam1,
-      scoreTeam2: scoreTeam2,
-      notes: notes
-    });
-
-    console.log('✅ [PUT /api/matches/custom/result] Partida personalizada atualizada com sucesso');
+    console.log('✅ [CREATE-LCU-MATCH] Partida personalizada criada com sucesso:', matchId);
 
     res.json({
       success: true,
-      message: 'Resultado da partida personalizada atualizado com sucesso',
+      message: 'Partida personalizada baseada no LCU criada com sucesso',
       matchId: matchId,
-      winner: winner,
-      riotId: riotId,
-      hasRealPickBan: pickBanData?.isReal || false
+      gameId: lcuMatchData.gameId,
+      hasRealData: true,
+      pickBanData: pickBanData
     });
-
   } catch (error: any) {
-    console.error('💥 [PUT /api/matches/custom/result] Erro:', error);
+    console.error('💥 [CREATE-LCU-MATCH] Erro:', error);
     res.status(500).json({ error: error.message });
   }
-}) as RequestHandler);
+})();
+});
 
 // Endpoint para limpar partidas de teste/incompletas/canceladas
 app.delete('/api/matches/cleanup-test-matches', (req: Request, res: Response) => {
