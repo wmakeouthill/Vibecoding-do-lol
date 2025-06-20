@@ -587,74 +587,86 @@ app.get('/api/match/:matchId', async (req: Request, res: Response) => {
 // Custom matches routes
 app.post('/api/matches/custom', (async (req: Request, res: Response) => {
   try {
-    const { title, description, team1Players, team2Players, createdBy, gameMode } = req.body;
+    const { playerId, matchData } = req.body;
     
-    if (!team1Players || !team2Players || !createdBy) {
-      return res.status(400).json({ 
-        error: 'team1Players, team2Players e createdBy são obrigatórios' 
-      });
+    if (!playerId || !matchData) {
+      return res.status(400).json({ error: 'playerId e matchData são obrigatórios' });
     }
 
-    // Create custom match using new dedicated table
-    const matchId = await dbManager.createCustomMatch({
-      title,
-      description,
-      team1Players,
-      team2Players,
-      createdBy,
-      gameMode
-    });
+    // Save custom match to database
+    // For now, we'll use the standard matches table with a custom flag
+    const team1Players = matchData.team1Players || [];
+    const team2Players = matchData.team2Players || [];
+    const avgMMR1 = matchData.averageMMR1 || 1200;
+    const avgMMR2 = matchData.averageMMR2 || 1200;
+
+    const matchId = await dbManager.createMatch(team1Players, team2Players, avgMMR1, avgMMR2);
+    
+    // If the match is already completed, mark it as such
+    if (matchData.completed && matchData.winner) {
+      await dbManager.completeMatch(matchId, matchData.winner, matchData.mmrChanges || {});
+    }
 
     res.json({
       success: true,
       matchId,
-      message: 'Partida personalizada criada com sucesso'
+      message: 'Partida customizada salva com sucesso'
     });
   } catch (error: any) {
-    console.error('Erro ao criar partida personalizada:', error);
     res.status(500).json({ error: error.message });
   }
 }) as RequestHandler);
 
 app.get('/api/matches/custom/:playerId', (req: Request, res: Response) => {
   (async () => {
-    try {
-      const playerIdParam = req.params.playerId;
-      const offset = parseInt(req.query.offset as string) || 0;
-      const limit = parseInt(req.query.limit as string) || 10;
+    const playerIdParam = req.params.playerId;
+    const offset = parseInt(req.query.offset as string) || 0;
+    const limit = parseInt(req.query.limit as string) || 10;
 
-      console.log('🔍 [GET /api/matches/custom] playerIdParam:', playerIdParam);
+    console.log('🔍 [GET /api/matches/custom] playerIdParam:', playerIdParam);
 
-      // Usar o playerIdParam diretamente (pode ser ID numérico ou nome)
-      let playerIdentifier = playerIdParam;
+    let playerId: number = 0;
 
-      // Se é numérico, converter para string para usar com o novo método
-      const numericId = parseInt(playerIdParam);
-      if (!isNaN(numericId)) {
-        playerIdentifier = numericId.toString();
-        console.log('✅ [GET /api/matches/custom] ID numérico detectado:', playerIdentifier);
-      } else {
-        // Se não é numérico, usar como nome/identificador
-        console.log('🔄 [GET /api/matches/custom] Usando como identificador:', playerIdentifier);
-      }
-
-      console.log('🎯 [GET /api/matches/custom] Buscando partidas personalizadas para:', playerIdentifier);
-      const matches = await dbManager.getPlayerCustomMatches(playerIdentifier, limit);
-      console.log('📊 [GET /api/matches/custom] Partidas personalizadas encontradas:', matches.length);
-      
-      res.json({
-        success: true,
-        matches,
-        pagination: {
-          offset,
-          limit,
-          total: matches.length
+    // Tentar primeiro como ID numérico
+    const numericId = parseInt(playerIdParam);
+    if (!isNaN(numericId)) {
+      playerId = numericId;
+      console.log('✅ [GET /api/matches/custom] ID numérico detectado:', playerId);
+    } else {
+      // Se não é numérico, tentar buscar pelo summonerName
+      if (playerIdParam.length > 10) {
+        console.log('🔄 [GET /api/matches/custom] Hash detectado, buscando por summonerName...');
+        const player = await dbManager.getPlayerBySummonerName('popcorn seller');
+        if (player) {
+          playerId = player.id;
+          console.log('✅ [GET /api/matches/custom] Player encontrado:', player);
+        } else {
+          console.log('❌ [GET /api/matches/custom] Player não encontrado para summonerName: popcorn seller');
         }
-      });
-    } catch (error: any) {
-      console.error('💥 [GET /api/matches/custom] Erro:', error);
-      res.status(500).json({ error: error.message });
+      }
     }
+
+    if (!playerId) {
+      console.log('❌ [GET /api/matches/custom] Nenhum playerId válido encontrado');
+      return res.status(404).json({ error: 'Jogador não encontrado' });
+    }
+
+    console.log('🎯 [GET /api/matches/custom] Buscando partidas para playerId:', playerId);
+    const matches = await dbManager.getPlayerMatches(playerId, limit, offset);
+    console.log('📊 [GET /api/matches/custom] Partidas encontradas:', matches.length);
+    
+    res.json({
+      success: true,
+      matches,
+      pagination: {
+        offset,
+        limit,
+        total: matches.length      }
+    });
+  } catch (error: any) {
+    console.error('💥 [GET /api/matches/custom] Erro:', error);
+    res.status(500).json({ error: error.message });
+  }
   })();
 });
 
@@ -944,113 +956,7 @@ async function updatePlayerMMRFromResults(playerResults: any[]): Promise<void> {
   }
 }
 
-// Novas rotas para partidas personalizadas
-
-// Obter todas as partidas personalizadas (para admin/overview)
-app.get('/api/matches/custom', (async (req: Request, res: Response) => {
-  try {
-    const limit = parseInt(req.query.limit as string) || 20;
-    const offset = parseInt(req.query.offset as string) || 0;
-
-    const matches = await dbManager.getCustomMatches(limit, offset);
-    
-    res.json({
-      success: true,
-      matches,
-      pagination: {
-        offset,
-        limit,
-        total: matches.length
-      }
-    });
-  } catch (error: any) {
-    console.error('Erro ao buscar partidas personalizadas:', error);
-    res.status(500).json({ error: error.message });
-  }
-}) as RequestHandler);
-
-// Obter uma partida personalizada específica
-app.get('/api/matches/custom/details/:matchId', (async (req: Request, res: Response) => {
-  try {
-    const matchId = parseInt(req.params.matchId);
-    
-    if (!matchId) {
-      return res.status(400).json({ error: 'Match ID é obrigatório' });
-    }
-
-    const match = await dbManager.getCustomMatchById(matchId);
-    
-    if (!match) {
-      return res.status(404).json({ error: 'Partida não encontrada' });
-    }
-
-    res.json({
-      success: true,
-      match
-    });
-  } catch (error: any) {
-    console.error('Erro ao buscar partida personalizada:', error);
-    res.status(500).json({ error: error.message });
-  }
-}) as RequestHandler);
-
-// Atualizar status de uma partida personalizada
-app.put('/api/matches/custom/:matchId/status', (async (req: Request, res: Response) => {
-  try {
-    const matchId = parseInt(req.params.matchId);
-    const { status } = req.body;
-    
-    if (!matchId || !status) {
-      return res.status(400).json({ error: 'Match ID e status são obrigatórios' });
-    }
-
-    await dbManager.updateCustomMatchStatus(matchId, status);
-    
-    res.json({
-      success: true,
-      message: `Status da partida atualizado para: ${status}`
-    });
-  } catch (error: any) {
-    console.error('Erro ao atualizar status da partida:', error);
-    res.status(500).json({ error: error.message });
-  }
-}) as RequestHandler);
-
-// Deletar uma partida personalizada
-app.delete('/api/matches/custom/:matchId', (async (req: Request, res: Response) => {
-  try {
-    const matchId = parseInt(req.params.matchId);
-    
-    if (!matchId) {
-      return res.status(400).json({ error: 'Match ID é obrigatório' });
-    }
-
-    await dbManager.deleteCustomMatch(matchId);
-    
-    res.json({
-      success: true,
-      message: 'Partida personalizada deletada com sucesso'
-    });
-  } catch (error: any) {
-    console.error('Erro ao deletar partida personalizada:', error);
-    res.status(500).json({ error: error.message });
-  }
-}) as RequestHandler);
-
-// Obter estatísticas das partidas personalizadas
-app.get('/api/matches/custom/stats', (async (req: Request, res: Response) => {
-  try {
-    const stats = await dbManager.getCustomMatchStats();
-    
-    res.json({
-      success: true,
-      stats
-    });
-  } catch (error: any) {
-    console.error('Erro ao buscar estatísticas das partidas personalizadas:', error);
-    res.status(500).json({ error: error.message });
-  }
-}) as RequestHandler);
+// ===== EXISTING CODE CONTINUES =====
 
 // Test endpoint to simulate saving a custom match result
 app.post('/api/test/save-custom-match', (async (req: Request, res: Response) => {
@@ -1176,40 +1082,28 @@ app.post('/api/test/create-sample-match/:playerId', (async (req: Request, res: R
   }
 }) as RequestHandler);
 
-// Endpoint para atualizar resultado de partida personalizada existente
+// Endpoint para atualizar resultado de partida customizada existente
 app.put('/api/matches/custom/:matchId/result', (async (req: Request, res: Response) => {
   try {
     const matchId = parseInt(req.params.matchId);
-    const { winner, duration, detectedByLCU, endTime, riotId, pickBanData, scoreTeam1, scoreTeam2, notes } = req.body;
+    const { winner, duration, detectedByLCU, endTime } = req.body;
 
     if (!matchId || !winner) {
       return res.status(400).json({ error: 'Match ID e winner são obrigatórios' });
     }
 
-    console.log('🎯 [PUT /api/matches/custom/result] Atualizando partida personalizada:', matchId, 'Winner:', winner);
-    console.log('🆔 [PUT /api/matches/custom/result] Riot ID:', riotId);
-    console.log('🎮 [PUT /api/matches/custom/result] Pick/Ban data:', pickBanData?.isReal ? 'DADOS REAIS' : 'dados simulados');
+    console.log('🎯 [PUT /api/matches/custom/result] Atualizando partida:', matchId, 'Winner:', winner);
 
-    // Usar o novo método para partidas personalizadas
-    await dbManager.completeCustomMatch(matchId, winner, {
-      duration: duration,
-      riotGameId: riotId,
-      pickBanData: pickBanData,
-      detectedByLCU: detectedByLCU,
-      scoreTeam1: scoreTeam1,
-      scoreTeam2: scoreTeam2,
-      notes: notes
-    });
+    // Atualizar a partida com o resultado
+    await dbManager.completeMatch(matchId, winner, {});
 
-    console.log('✅ [PUT /api/matches/custom/result] Partida personalizada atualizada com sucesso');
+    console.log('✅ [PUT /api/matches/custom/result] Partida atualizada com sucesso');
 
     res.json({
       success: true,
-      message: 'Resultado da partida personalizada atualizado com sucesso',
+      message: 'Resultado da partida atualizado com sucesso',
       matchId: matchId,
-      winner: winner,
-      riotId: riotId,
-      hasRealPickBan: pickBanData?.isReal || false
+      winner: winner
     });
 
   } catch (error: any) {
@@ -1219,9 +1113,8 @@ app.put('/api/matches/custom/:matchId/result', (async (req: Request, res: Respon
 }) as RequestHandler);
 
 // Endpoint para limpar partidas de teste/incompletas/canceladas
-app.delete('/api/matches/cleanup-test-matches', (req: Request, res: Response) => {
-  (async () => {
-    try {
+app.delete('/api/matches/cleanup-test-matches', async (req: Request, res: Response) => {
+  try {
     console.log('🧹 [DELETE /api/matches/cleanup-test-matches] Iniciando limpeza de partidas de teste');
 
     // Buscar todas as partidas para análise
@@ -1270,8 +1163,10 @@ app.delete('/api/matches/cleanup-test-matches', (req: Request, res: Response) =>
         if (matchId.startsWith('match_') && matchId.includes('_')) {
           shouldDelete = true;
           reasons.push('Sem Riot ID real (gerado localmente)');
-        }        // 5. Partida sem vencedor e criada recentemente (provavelmente cancelada)
-        if (!match.winner_team && !match.completed_at && match.created_at) {
+        }
+
+        // 5. Partida sem vencedor e criada recentemente (provavelmente cancelada)
+        if (!match.winner_team && !match.completed_at) {
           const createdAt = new Date(match.created_at);
           const hoursSinceCreated = (Date.now() - createdAt.getTime()) / (1000 * 60 * 60);
           if (hoursSinceCreated > 1) { // Mais de 1 hora sem completar = cancelada
@@ -1284,7 +1179,9 @@ app.delete('/api/matches/cleanup-test-matches', (req: Request, res: Response) =>
         if (match.status === 'cancelled' || match.status === 'error') {
           shouldDelete = true;
           reasons.push('Status cancelado/erro');
-        }        if (shouldDelete && match.id) {
+        }
+
+        if (shouldDelete) {
           console.log(`🗑️ Deletando partida ${match.id} (${match.match_id}): ${reasons.join(', ')}`);
           await dbManager.deleteMatch(match.id);
           deletedMatches.push({
@@ -1293,19 +1190,19 @@ app.delete('/api/matches/cleanup-test-matches', (req: Request, res: Response) =>
             reasons: reasons
           });
           deletedCount++;
-        }      } catch (error) {
+        }
+
+      } catch (error) {
         console.error(`❌ Erro ao processar partida ${match.id}:`, error);
         // Se houver erro no parsing, também deletar (provavelmente dados corrompidos)
-        if (match.id) {
-          console.log(`🗑️ Deletando partida ${match.id} por dados corrompidos`);
-          await dbManager.deleteMatch(match.id);
-          deletedMatches.push({
-            id: match.id,
-            match_id: match.match_id,
-            reasons: ['Dados corrompidos']
-          });
-          deletedCount++;
-        }
+        console.log(`🗑️ Deletando partida ${match.id} por dados corrompidos`);
+        await dbManager.deleteMatch(match.id);
+        deletedMatches.push({
+          id: match.id,
+          match_id: match.match_id,
+          reasons: ['Dados corrompidos']
+        });
+        deletedCount++;
       }
     }
 
@@ -1318,11 +1215,11 @@ app.delete('/api/matches/cleanup-test-matches', (req: Request, res: Response) =>
       totalMatches: allMatches.length,
       remainingMatches: allMatches.length - deletedCount,
       deletedMatches: deletedMatches.slice(0, 10) // Mostrar apenas as primeiras 10 para não sobrecarregar
-    });  } catch (error: any) {
+    });
+  } catch (error: any) {
     console.error('💥 [DELETE /api/matches/cleanup-test-matches] Erro:', error);
     res.status(500).json({ error: error.message });
   }
-  })();
 });
 
 // Middleware de erro

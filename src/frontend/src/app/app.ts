@@ -131,6 +131,9 @@ export class App implements OnInit, OnDestroy {
     // Load player data from local storage initially
     this.loadPlayerData();
 
+    // Try to recover any ongoing game state
+    this.recoverGameState();
+
     // Try to fetch real player data from LCU first
     this.tryLoadRealPlayerData();
 
@@ -207,6 +210,9 @@ export class App implements OnInit, OnDestroy {
     // Enter game phase
     this.inGamePhase = true;
 
+    // Persist game state for recovery
+    this.persistGameState();
+
     console.log('✅ Dados do jogo preparados:', this.gameData);
   }
 
@@ -260,46 +266,80 @@ export class App implements OnInit, OnDestroy {
     this.exitGame();
     this.addNotification('info', 'Partida Cancelada', 'A partida foi cancelada.');
   }
-
   // Exit game phase
   exitGame(): void {
     this.inGamePhase = false;
     this.gameData = null;
     this.currentView = 'dashboard';
-  }
-  // Save custom match to database
+
+    // Clear persisted game state
+    this.clearGameState();
+  }  // Save custom match to database
   private async saveCustomMatch(gameResult: any): Promise<void> {
     try {
-      const matchData = {
-        playerId: this.currentPlayer?.id || 1,
-        matchData: {
-          sessionId: gameResult.sessionId,
-          gameId: gameResult.gameId,
-          type: 'custom',
+      // Se esta é uma simulação baseada em partida real, usar dados corretos
+      const isSimulatedFromReal = this.gameData?.originalMatchId;
+
+      if (isSimulatedFromReal) {
+        console.log('💾 Salvando resultado de simulação baseada em partida real');
+        console.log('🆔 Riot ID original:', gameResult.riotId);
+
+        // Para simulações baseadas em partidas reais, atualizar a partida original no banco
+        const updateData = {
+          matchId: this.gameData.originalMatchId,
+          winner: gameResult.winner === 'blue' ? 1 : 2,
           duration: gameResult.duration,
-          team1Players: gameResult.team1.map((player: any) => player.id),
-          team2Players: gameResult.team2.map((player: any) => player.id),
-          averageMMR1: this.calculateTeamMMR(gameResult.team1),
-          averageMMR2: this.calculateTeamMMR(gameResult.team2),
-          pickBanData: gameResult.pickBanData,
           detectedByLCU: gameResult.detectedByLCU,
           endTime: gameResult.endTime,
-          startTime: this.gameData?.startTime || new Date(),
-          isCustomGame: true,
           completed: true,
-          winner: gameResult.winner === 'blue' ? 1 : 2,
-          mmrChanges: {} // Could be implemented later
+          riotId: gameResult.riotId, // Preservar Riot ID
+          pickBanData: gameResult.pickBanData // Preservar dados de pick/ban REAIS
+        };
+
+        const response = await this.apiService.updateCustomMatchResult(updateData).toPromise();
+
+        if (response && response.success) {
+          console.log('✅ Resultado da partida real atualizado com sucesso');
+          console.log('🎯 Pick/ban reais preservados:', gameResult.pickBanData?.isReal);
+          this.addNotification('success', 'Resultado Salvo', 'O resultado da sua partida customizada foi detectado e salvo com dados REAIS!');
+        } else {
+          console.warn('⚠️ Falha ao atualizar resultado da partida real');
+          this.addNotification('warning', 'Erro ao Salvar', 'Não foi possível salvar o resultado.');
         }
-      };
-
-      const response = await this.apiService.saveCustomMatch(matchData).toPromise();
-
-      if (response && response.success) {
-        console.log('✅ Partida customizada salva com sucesso');
-        this.addNotification('success', 'Dados Salvos', 'A partida foi salva no histórico!');
       } else {
-        console.warn('⚠️ Falha ao salvar partida customizada');
-        this.addNotification('warning', 'Erro ao Salvar', 'Não foi possível salvar a partida no histórico.');
+        // Para partidas normais (não simulações), criar nova entrada
+        const matchData = {
+          playerId: this.currentPlayer?.id || 1,
+          matchData: {
+            sessionId: gameResult.sessionId,
+            gameId: gameResult.gameId,
+            type: 'custom',
+            duration: gameResult.duration,
+            team1Players: gameResult.team1.map((player: any) => player.id || player),
+            team2Players: gameResult.team2.map((player: any) => player.id || player),
+            averageMMR1: this.calculateTeamMMR(gameResult.team1),
+            averageMMR2: this.calculateTeamMMR(gameResult.team2),
+            pickBanData: gameResult.pickBanData,
+            detectedByLCU: gameResult.detectedByLCU,
+            endTime: gameResult.endTime,
+            startTime: this.gameData?.startTime || new Date(),
+            isCustomGame: true,
+            completed: true,
+            winner: gameResult.winner === 'blue' ? 1 : 2,
+            riotId: gameResult.riotId, // Preservar Riot ID se disponível
+            mmrChanges: {} // Could be implemented later
+          }
+        };
+
+        const response = await this.apiService.saveCustomMatch(matchData).toPromise();
+
+        if (response && response.success) {
+          console.log('✅ Partida customizada salva com sucesso');
+          this.addNotification('success', 'Dados Salvos', 'A partida foi salva no histórico!');
+        } else {
+          console.warn('⚠️ Falha ao salvar partida customizada');
+          this.addNotification('warning', 'Erro ao Salvar', 'Não foi possível salvar a partida no histórico.');
+        }
       }
     } catch (error) {
       console.error('❌ Erro ao salvar partida customizada:', error);
@@ -318,6 +358,189 @@ export class App implements OnInit, OnDestroy {
     return Math.round(totalMMR / team.length);
   }
 
+  // Persist game state for recovery after app restart
+  private persistGameState(): void {
+    if (!this.gameData) return;
+
+    const gameState = {
+      inGamePhase: this.inGamePhase,
+      gameData: this.gameData,
+      currentPlayer: this.currentPlayer,
+      timestamp: Date.now()
+    };
+
+    localStorage.setItem('currentGameState', JSON.stringify(gameState));
+    console.log('💾 Estado da partida salvo para recuperação');
+  }
+
+  // Clear persisted game state
+  private clearGameState(): void {
+    localStorage.removeItem('currentGameState');
+    console.log('🗑️ Estado da partida removido');
+  }
+
+  // Recover game state after app restart
+  private async recoverGameState(): Promise<void> {
+    try {
+      const savedState = localStorage.getItem('currentGameState');
+      if (!savedState) return;
+
+      const gameState = JSON.parse(savedState);
+
+      // Check if state is not too old (max 6 hours)
+      const maxAge = 6 * 60 * 60 * 1000; // 6 hours in ms
+      if (Date.now() - gameState.timestamp > maxAge) {
+        console.log('⏰ Estado da partida muito antigo, ignorando');
+        this.clearGameState();
+        return;
+      }
+
+      console.log('🔄 Recuperando estado da partida:', gameState);
+
+      // Restore game state
+      this.gameData = gameState.gameData;
+      this.inGamePhase = gameState.inGamePhase;
+
+      if (gameState.currentPlayer && !this.currentPlayer) {
+        this.currentPlayer = gameState.currentPlayer;
+      }
+
+      // Try to detect current LCU match and compare picks
+      await this.tryAutoResolveFromLCU();
+
+      this.addNotification('info', 'Partida Recuperada',
+        'Estado da partida anterior foi recuperado. Verificando resultado via LCU...');
+
+    } catch (error) {
+      console.error('❌ Erro ao recuperar estado da partida:', error);
+      this.clearGameState();
+    }
+  }
+
+  // Try to automatically resolve game result from LCU
+  private async tryAutoResolveFromLCU(): Promise<void> {
+    try {
+      // Get current LCU match details
+      const currentGame = await this.apiService.getCurrentGame().toPromise();
+
+      if (!currentGame || !currentGame.success || !currentGame.data) {
+        console.log('📡 Nenhum jogo ativo detectado no LCU');
+        return;
+      }
+
+      const lcuGameData = currentGame.data;
+
+      // Check if this is the match we're looking for by comparing picks
+      if (await this.isMatchingGame(lcuGameData)) {
+        console.log('🎯 Partida correspondente encontrada no LCU!');
+
+        // Check if game has ended
+        if (lcuGameData.phase === 'EndOfGame' || lcuGameData.phase === 'PostGame') {
+          await this.resolveWinnerFromLCU(lcuGameData);
+        } else {
+          console.log('🎮 Partida ainda em andamento, continuando monitoramento...');
+        }
+      } else {
+        console.log('🔍 Partida atual do LCU não corresponde à partida customizada');
+      }
+
+    } catch (error) {
+      console.error('❌ Erro ao verificar LCU para auto-resolução:', error);
+    }
+  }
+
+  // Check if current LCU game matches our custom game by comparing picks
+  private async isMatchingGame(lcuGameData: any): Promise<boolean> {
+    if (!this.gameData || !this.gameData.pickBanData) return false;
+
+    try {
+      // Get our custom game picks
+      const ourBluePicks = this.gameData.pickBanData.blueTeamPicks || [];
+      const ourRedPicks = this.gameData.pickBanData.redTeamPicks || [];
+
+      // Extract champion names from our picks
+      const ourBlueChampions = ourBluePicks.map((pick: any) =>
+        pick.champion?.name || '').filter((name: string) => name);
+      const ourRedChampions = ourRedPicks.map((pick: any) =>
+        pick.champion?.name || '').filter((name: string) => name);
+
+      console.log('🔍 Comparando picks:', {
+        ourBlue: ourBlueChampions,
+        ourRed: ourRedChampions,
+        lcuData: lcuGameData
+      });
+
+      // Try to extract champion data from LCU
+      // This would need to be adapted based on the actual LCU data structure
+      // For now, we'll use a simpler approach - check if we have matching team compositions
+
+      // If we can't get detailed champion data, fall back to team size matching
+      const expectedTeamSize = this.gameData.team1.length;
+
+      // At minimum, check if the game has the expected number of players
+      if (lcuGameData.details && lcuGameData.details.participants) {
+        const participants = lcuGameData.details.participants;
+        return participants.length === expectedTeamSize * 2;
+      }
+
+      return false;
+
+    } catch (error) {
+      console.error('❌ Erro ao comparar jogos:', error);
+      return false;
+    }
+  }
+
+  // Resolve winner from LCU game data
+  private async resolveWinnerFromLCU(lcuGameData: any): Promise<void> {
+    try {
+      let winner: 'blue' | 'red' | null = null;
+
+      // Try to extract winner from LCU data
+      if (lcuGameData.details && lcuGameData.details.teams) {
+        const winningTeam = lcuGameData.details.teams.find((team: any) => team.win === true);
+        if (winningTeam) {
+          winner = winningTeam.teamId === 100 ? 'blue' : 'red';
+        }
+      }
+
+      if (winner) {
+        console.log(`🏆 Vencedor detectado automaticamente via LCU: ${winner === 'blue' ? 'Time Azul' : 'Time Vermelho'}`);
+
+        // Auto-complete the game with detected winner
+        const gameResult = {
+          sessionId: this.gameData!.sessionId,
+          gameId: this.gameData!.gameId,
+          winner: winner,
+          duration: Math.floor((Date.now() - new Date(this.gameData!.startTime).getTime()) / 1000),
+          endTime: new Date(),
+          team1: this.gameData!.team1,
+          team2: this.gameData!.team2,
+          pickBanData: this.gameData!.pickBanData,
+          detectedByLCU: true,
+          isCustomGame: true
+        };
+
+        // Save and complete
+        await this.saveCustomMatch(gameResult);
+        this.exitGame();
+
+        const winnerText = winner === 'blue' ? 'Time Azul' : 'Time Vermelho';
+        this.addNotification('success', 'Partida Auto-Resolvida',
+          `${winnerText} venceu! Resultado detectado automaticamente via LCU.`);
+
+      } else {
+        console.log('⚠️ Não foi possível detectar o vencedor automaticamente');
+        this.addNotification('warning', 'Auto-Resolução Falhou',
+          'Não foi possível detectar o vencedor automaticamente. Declare manualmente.');
+      }
+
+    } catch (error) {
+      console.error('❌ Erro ao resolver vencedor via LCU:', error);
+      this.addNotification('error', 'Erro na Auto-Resolução',
+        'Erro ao detectar vencedor automaticamente. Use declaração manual.');
+    }
+  }
   // Método para determinar se o jogador atual é líder da partida
   private determineMatchLeader(): void {
     if (!this.draftData || !this.currentPlayer) {
@@ -510,7 +733,439 @@ export class App implements OnInit, OnDestroy {
   private isAuthorizedForBots(): boolean {
     return this.currentPlayer?.summonerName === 'popcorn seller' &&
            this.currentPlayer?.tagLine === 'coup';
+  }  // Método para limpar partidas de teste (apenas para usuário autorizado)
+  async cleanupTestMatches(): Promise<void> {
+    // Verificar se o usuário atual é autorizado
+    if (!this.isAuthorizedForBots()) {
+      this.addNotification('error', 'Não Autorizado', 'Você não tem permissão para limpar partidas');
+      return;
+    }
+
+    // Confirmação do usuário
+    const confirmed = confirm('⚠️ ATENÇÃO: Esta ação irá deletar TODAS as partidas de teste/simulação do banco de dados.\n\nIsso inclui:\n- Partidas sem Riot ID real\n- Partidas com IDs fictícios\n- Partidas canceladas/incompletas\n\nEsta ação NÃO PODE ser desfeita.\n\nDeseja continuar?');
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      this.addNotification('info', 'Limpando Banco', 'Removendo partidas de teste do banco de dados...');
+      console.log('🧹 Iniciando limpeza de partidas de teste');
+
+      const response = await this.apiService.cleanupTestMatches().toPromise();
+      console.log('✅ Resposta da limpeza:', response);
+
+      if (response && response.success) {
+        this.addNotification('success', 'Limpeza Concluída',
+          `✅ ${response.deletedCount} partidas de teste removidas! Restaram ${response.remainingMatches} partidas reais.`);
+
+        console.log(`📊 Limpeza concluída: ${response.deletedCount} deletadas, ${response.remainingMatches} restantes`);
+
+        if (response.deletedMatches && response.deletedMatches.length > 0) {
+          console.log('🗑️ Exemplos de partidas deletadas:');
+          response.deletedMatches.forEach((match: any, i: number) => {
+            console.log(`${i + 1}. ID ${match.id} (${match.match_id}): ${match.reasons?.join(', ')}`);
+          });
+        }
+      } else {
+        this.addNotification('warning', 'Limpeza Sem Resultado', 'Nenhuma partida de teste foi encontrada para remoção.');
+      }
+
+    } catch (error) {
+      console.error('❌ Erro ao limpar partidas de teste:', error);
+      this.addNotification('error', 'Erro na Limpeza', 'Erro ao limpar partidas de teste do banco de dados');
+    }
   }
+
+  // Método para simular última partida customizada (apenas para usuário autorizado)
+  async simulateLastCustomMatch(): Promise<void> {
+    // Verificar se o usuário atual é autorizado
+    if (!this.isAuthorizedForBots()) {
+      this.addNotification('error', 'Não Autorizado', 'Você não tem permissão para simular partidas');
+      return;
+    }
+
+    if (!this.currentPlayer?.id) {
+      this.addNotification('error', 'Erro', 'Dados do jogador não disponíveis');
+      return;
+    }    try {
+      this.addNotification('info', 'Buscando Partida', 'Procurando sua última partida customizada REAL do LCU...');
+
+      console.log('Player ID para simulação:', this.currentPlayer.id);
+      console.log('Player data completo:', this.currentPlayer);
+
+      // PRIMEIRA TENTATIVA: Buscar partidas customizadas REAIS do LCU
+      const lcuMatches = await this.apiService.getLCUMatchHistoryAll(0, 10, true).toPromise();
+      console.log('🎮 Partidas customizadas do LCU:', lcuMatches);
+
+      if (lcuMatches && lcuMatches.success && lcuMatches.matches && lcuMatches.matches.length > 0) {
+        // Encontrou partidas customizadas reais no LCU
+        const lastLCUMatch = lcuMatches.matches[0];
+        console.log('✅ Partida customizada REAL encontrada no LCU:', lastLCUMatch);
+
+        this.addNotification('success', 'Partida LCU Encontrada', 'Usando partida customizada real do seu histórico do LoL!');
+        this.simulateMatchFromLCUData(lastLCUMatch);
+        return;
+      }
+
+      // SEGUNDA TENTATIVA: Buscar no banco interno (com filtros melhorados)
+      console.log('⚠️ Nenhuma partida customizada encontrada no LCU, buscando no banco interno...');
+
+      // Para o usuário especial "popcorn seller#coup", usar ID numérico 1
+      let playerIdForSearch = this.currentPlayer.id.toString();
+      if (this.currentPlayer?.summonerName === 'popcorn seller' && this.currentPlayer?.tagLine === 'coup') {
+        playerIdForSearch = '1'; // Usar ID numérico conhecido
+        console.log('🎯 Usando ID numérico especial para popcorn seller:', playerIdForSearch);
+      }
+
+      // Buscar partidas customizadas do jogador (buscar mais para filtrar exemplos)
+      const response = await this.apiService.getCustomMatches(playerIdForSearch, 0, 20).toPromise();
+      console.log('🔍 Resposta da busca no banco interno:', response);      if (!response || !response.matches || response.matches.length === 0) {
+        this.addNotification('warning', 'Sem Histórico', 'Você ainda não jogou nenhuma partida customizada real. Para testar a detecção de vencedor, jogue uma partida customizada no LoL primeiro.');
+        console.log('❌ Nenhuma partida encontrada no banco interno.');
+        return;
+      }      // Filtrar partidas REAIS (não partidas de exemplo/teste)
+      const realMatches = response.matches.filter((match: any) => {
+        // Detectar partidas de exemplo pelos critérios mais específicos:
+        // 1. Match ID contém "sample", "test" ou "example"
+        // 2. Partidas sem vencedor definido (incompletas)
+        // 3. Partidas muito recentes (últimos 5 minutos) que podem ser de teste rápido
+        // 4. Times com APENAS IDs negativos (claramente de teste)
+
+        const team1Players = JSON.parse(match.team1_players || '[]');
+        const team2Players = JSON.parse(match.team2_players || '[]');
+        const allPlayerIds = [...team1Players, ...team2Players];
+
+        const matchId = match.match_id || '';
+        const hasTestMatchId = matchId.includes('sample') || matchId.includes('test') || matchId.includes('example');
+
+        // Verificar se TODOS os IDs são negativos (claramente de teste)
+        const allNegativeIds = allPlayerIds.length > 0 && allPlayerIds.every((id: number) => id < 0);
+
+        // Partida sem vencedor (incompleta)
+        const isIncomplete = !match.winner_team;
+
+        // Data muito recente (últimos 5 minutos) - pode ser teste
+        const isVeryRecent = Date.now() - new Date(match.created_at).getTime() < 300000; // 5 minutos
+
+        // Considerar como teste apenas se:
+        // - Tem ID de teste OU
+        // - Todos os IDs são negativos OU
+        // - É incompleta E muito recente (provavelmente cancelada/teste)
+        const isExampleMatch = hasTestMatchId || allNegativeIds || (isIncomplete && isVeryRecent);        console.log(`🔍 Analisando partida ${match.id}:`, {
+          matchId: matchId,
+          team1Players: team1Players,
+          team2Players: team2Players,
+          allNegativeIds,
+          hasTestMatchId,
+          isVeryRecent,
+          isIncomplete,
+          isExampleMatch: isExampleMatch,
+          winnerTeam: match.winner_team
+        });
+
+        return !isExampleMatch; // Manter apenas partidas reais
+      });
+
+      console.log(`📊 Partidas filtradas: ${realMatches.length} reais de ${response.matches.length} totais`);      if (realMatches.length === 0) {
+        this.addNotification('warning', 'Apenas Partidas de Teste',
+          `Não foram encontradas partidas customizadas reais. Todas as ${response.matches.length} partidas encontradas são de teste/exemplo. Para testar a detecção de vencedor, jogue uma partida customizada real no LoL primeiro.`);
+        console.log('❌ Nenhuma partida customizada REAL encontrada. Todas são de teste/exemplo.');
+        return;
+      }
+
+      // Usar a última partida REAL
+      const lastRealMatch = realMatches[0]; // Já ordenadas por data
+      console.log('✅ Partida REAL encontrada:', lastRealMatch);
+
+      this.addNotification('success', 'Partida Encontrada', 'Usando sua última partida customizada real!');
+      this.simulateMatchFromData(lastRealMatch);
+
+    } catch (error) {
+      console.error('Erro ao simular última partida:', error);
+      this.addNotification('error', 'Erro', 'Erro ao buscar/criar partida customizada');
+    }
+  }
+
+  private async createSampleMatchAndSimulate(playerIdForSearch: string): Promise<void> {
+    // Se não há partidas reais, criar uma de exemplo
+    this.addNotification('info', 'Criando Partida', 'Criando partida de exemplo para simulação...');
+
+    const sampleResponse = await this.apiService.createSampleMatch(playerIdForSearch).toPromise();
+    console.log('✨ Resposta da criação de partida de exemplo:', sampleResponse);
+
+    if (!sampleResponse || !sampleResponse.success) {
+      this.addNotification('error', 'Erro', 'Erro ao criar partida de exemplo');
+      return;
+    }
+
+    // Buscar novamente após criar a partida
+    const newResponse = await this.apiService.getLastCustomMatch(playerIdForSearch).toPromise();
+    console.log('🔍 Resposta da segunda busca após criação:', newResponse);
+
+    if (!newResponse || !newResponse.matches || newResponse.matches.length === 0) {
+      this.addNotification('error', 'Erro', 'Falha ao buscar partida após criação');
+      console.error('❌ Falha na segunda busca. NewResponse:', newResponse);
+      return;
+    }
+
+    this.simulateMatchFromData(newResponse.matches[0]);
+  }  private simulateMatchFromData(matchData: any): void {
+    console.log('🎮 Simulando partida com dados REAIS:', matchData);
+
+    // Processar dados dos teams corretamente
+    let team1Players: number[] = [];
+    let team2Players: number[] = [];
+
+    try {
+      team1Players = JSON.parse(matchData.team1_players || '[]');
+      team2Players = JSON.parse(matchData.team2_players || '[]');
+    } catch (error) {
+      console.error('Erro ao processar dados dos times:', error);
+      team1Players = [1]; // Fallback
+      team2Players = [999, 998, 997, 996, 995]; // Fallback
+    }
+
+    console.log('👥 Team 1 players processados:', team1Players);
+    console.log('👥 Team 2 players processados:', team2Players);
+
+    // Usar dados REAIS de pick/ban da partida histórica se disponível
+    let realPickBanData = null;
+    try {
+      if (matchData.pick_ban_data && typeof matchData.pick_ban_data === 'string') {
+        realPickBanData = JSON.parse(matchData.pick_ban_data);
+        console.log('🎯 Usando pick/ban REAIS da partida (string parsed):', realPickBanData);
+      } else if (matchData.pick_ban_data && typeof matchData.pick_ban_data === 'object') {
+        realPickBanData = matchData.pick_ban_data;
+        console.log('🎯 Usando pick/ban REAIS da partida (objeto direto):', realPickBanData);
+      }
+
+      // Verificar se temos dados reais válidos
+      if (realPickBanData && (realPickBanData.team1Picks?.length > 0 || realPickBanData.team2Picks?.length > 0)) {
+        console.log('✅ Pick/ban REAIS confirmados:', {
+          team1Picks: realPickBanData.team1Picks?.length || 0,
+          team2Picks: realPickBanData.team2Picks?.length || 0,
+          source: realPickBanData.source || 'UNKNOWN'
+        });
+      } else {
+        console.log('⚠️ Dados de pick/ban inválidos ou vazios, usando fallback');
+        realPickBanData = null;
+      }
+    } catch (error) {
+      console.error('Erro ao processar pick/ban data:', error);
+      realPickBanData = null;
+    }
+
+    // Se não temos dados reais de pick/ban, usar dados simulados básicos
+    if (!realPickBanData) {
+      console.log('⚠️ Criando pick/ban simulados porque dados reais não estão disponíveis');
+      realPickBanData = {
+        team1Bans: ['Yasuo', 'Zed', 'Azir'],
+        team2Bans: ['Jinx', 'Thresh', 'Lee Sin'],
+        team1Picks: team1Players.map((playerId, index) => ({
+          champion: ['Garen', 'Ahri', 'Graves', 'Thresh', 'Jinx'][index] || 'Garen',
+          player: playerId,
+          lane: ['top', 'mid', 'jungle', 'bot', 'support'][index] || 'top'
+        })),
+        team2Picks: team2Players.map((playerId, index) => ({
+          champion: ['Darius', 'Zed', 'Lee Sin', 'Lucian', 'Leona'][index] || 'Darius',
+          player: playerId,
+          lane: ['top', 'mid', 'jungle', 'bot', 'support'][index] || 'top'
+        })),
+        isReal: false,
+        source: 'SIMULATED_FALLBACK'
+      };
+      console.log('🔄 Pick/ban simulados criados:', realPickBanData);
+    }
+
+    // Criar dados do jogo baseados na partida REAL
+    this.gameData = {
+      sessionId: 'simulate_real_' + Date.now(),
+      gameId: 'simulate_real_' + matchData.id,
+      team1: team1Players,
+      team2: team2Players,
+      startTime: new Date(),
+      pickBanData: realPickBanData,
+      isCustomGame: true,
+      // Adicionar referência à partida original para correlação
+      originalMatchId: matchData.id,
+      originalMatchData: matchData,
+      riotId: matchData.riotId || null
+    };
+
+    console.log('✨ GameData REAL criado com picks REAIS:', this.gameData);
+
+    // Transicionar para tela de jogo em andamento
+    this.inGamePhase = true;
+    this.currentView = 'dashboard'; // O componente de jogo será exibido automaticamente
+
+    const sourceMessage = realPickBanData?.isReal ? 'com PICKS/CHAMPIONS REAIS' : 'com picks simulados (dados reais não disponíveis)';
+    this.addNotification('success', 'Partida Simulada', `Jogo em andamento baseado na sua ÚLTIMA partida customizada real ${sourceMessage}. O sistema detectará automaticamente o resultado.`);
+  }
+
+  private simulateMatchFromLCUData(lcuMatchData: any): void {
+    console.log('🎮 Simulando partida com dados REAIS do LCU:', lcuMatchData);
+
+    // Converter dados do LCU para formato compatível
+    const convertedMatch = this.convertLCUMatchToInternalFormat(lcuMatchData);
+
+    // Usar o método de simulação existente
+    this.simulateMatchFromData(convertedMatch);
+  }
+  private convertLCUMatchToInternalFormat(lcuMatch: any): any {
+    // Converter estrutura do LCU para formato interno
+    console.log('🔄 Convertendo dados do LCU para formato interno:', lcuMatch);
+
+    // Extrair informações dos participantes
+    const participants = lcuMatch.participants || [];
+    const team1Players: number[] = [];
+    const team2Players: number[] = [];
+    const team1Picks: any[] = [];
+    const team2Picks: any[] = [];
+
+    // Separar jogadores por time e extrair champions (team 100 = blue, team 200 = red)
+    participants.forEach((participant: any, index: number) => {
+      const playerId = participant.summonerId || participant.participantId || (index + 1);
+      const championId = participant.championId || participant.champion || 0;
+      const championName = participant.championName || this.getChampionNameById(championId) || `Champion${championId}`;
+      const lane = participant.lane || participant.teamPosition || participant.individualPosition || 'UNKNOWN';
+
+      if (participant.teamId === 100) {
+        team1Players.push(playerId);
+        team1Picks.push({
+          champion: championName,
+          player: playerId,
+          lane: lane,
+          championId: championId
+        });
+      } else if (participant.teamId === 200) {
+        team2Players.push(playerId);
+        team2Picks.push({
+          champion: championName,
+          player: playerId,
+          lane: lane,
+          championId: championId
+        });
+      }
+    });
+
+    console.log('🎯 Champions extraídos - Team 1 picks:', team1Picks);
+    console.log('🎯 Champions extraídos - Team 2 picks:', team2Picks);
+
+    // Criar dados de pick/ban reais baseados nos participants - FORMATO CORRETO
+    const pickBanData = {
+      team1Picks: team1Picks,
+      team2Picks: team2Picks,
+      team1Bans: [], // LCU geralmente não tem dados de ban em match history
+      team2Bans: [],
+      isReal: true, // Marcar como dados reais
+      source: 'LCU_MATCH_HISTORY'
+    };
+
+    const convertedMatch = {
+      id: lcuMatch.gameId || Date.now(),
+      match_id: `lcu_${lcuMatch.gameId || Date.now()}`,
+      team1_players: JSON.stringify(team1Players),
+      team2_players: JSON.stringify(team2Players),
+      winner_team: lcuMatch.teams ? this.extractWinnerFromLCU(lcuMatch.teams) : null,
+      created_at: new Date(lcuMatch.gameCreation || Date.now()).toISOString(),
+      pick_ban_data: JSON.stringify(pickBanData),
+      isLCUSource: true, // Marcar como originário do LCU
+      riotId: lcuMatch.platformId ? `${lcuMatch.platformId}_${lcuMatch.gameId}` : null
+    };
+
+    console.log('✅ Dados convertidos do LCU com picks REAIS:', convertedMatch);
+    return convertedMatch;
+  }
+
+  private getChampionNameById(championId: number): string | null {
+    // Lista básica de champions mais comuns (pode ser expandida)
+    const championMap: { [key: number]: string } = {
+      1: 'Annie', 2: 'Olaf', 3: 'Galio', 4: 'Twisted Fate', 5: 'Xin Zhao',
+      6: 'Urgot', 7: 'LeBlanc', 8: 'Vladimir', 9: 'Fiddlesticks', 10: 'Kayle',
+      11: 'Master Yi', 12: 'Alistar', 13: 'Ryze', 14: 'Sion', 15: 'Sivir',
+      16: 'Soraka', 17: 'Teemo', 18: 'Tristana', 19: 'Warwick', 20: 'Nunu',
+      21: 'Miss Fortune', 22: 'Ashe', 23: 'Tryndamere', 24: 'Jax', 25: 'Morgana',
+      26: 'Zilean', 27: 'Singed', 28: 'Evelynn', 29: 'Twitch', 30: 'Karthus',
+      31: 'Cho\'Gath', 32: 'Amumu', 33: 'Rammus', 34: 'Anivia', 35: 'Shaco',
+      36: 'Dr. Mundo', 37: 'Sona', 38: 'Kassadin', 39: 'Irelia', 40: 'Janna',
+      41: 'Gangplank', 42: 'Corki', 43: 'Karma', 44: 'Taric', 45: 'Veigar',
+      48: 'Trundle', 50: 'Swain', 51: 'Caitlyn', 53: 'Blitzcrank', 54: 'Malphite',
+      55: 'Katarina', 56: 'Nocturne', 57: 'Maokai', 58: 'Renekton', 59: 'Jarvan IV',
+      60: 'Elise', 61: 'Orianna', 62: 'Wukong', 63: 'Brand', 64: 'Lee Sin',
+      67: 'Vayne', 68: 'Rumble', 69: 'Cassiopeia', 72: 'Skarner', 74: 'Heimerdinger',
+      75: 'Nasus', 76: 'Nidalee', 77: 'Udyr', 78: 'Poppy', 79: 'Gragas',
+      80: 'Pantheon', 81: 'Ezreal', 82: 'Mordekaiser', 83: 'Yorick', 84: 'Akali',
+      85: 'Kennen', 86: 'Garen', 89: 'Leona', 90: 'Malzahar', 91: 'Talon',
+      92: 'Riven', 96: 'Kog\'Maw', 98: 'Shen', 99: 'Lux', 101: 'Xerath',
+      102: 'Shyvana', 103: 'Ahri', 104: 'Graves', 105: 'Fizz', 106: 'Volibear',
+      107: 'Rengar', 110: 'Varus', 111: 'Nautilus', 112: 'Viktor', 113: 'Sejuani',
+      114: 'Fiora', 115: 'Ziggs', 117: 'Lulu', 119: 'Draven', 120: 'Hecarim',
+      121: 'Kha\'Zix', 122: 'Darius', 126: 'Jayce', 127: 'Lissandra', 131: 'Diana',
+      133: 'Quinn', 134: 'Syndra', 136: 'Aurelion Sol', 141: 'Kayn', 142: 'Zoe',
+      143: 'Zyra', 145: 'Kai\'Sa', 147: 'Seraphine', 150: 'Gnar', 154: 'Zac',
+      157: 'Yasuo', 161: 'Vel\'Koz', 163: 'Taliyah', 164: 'Camille', 166: 'Akshan',
+      200: 'Bel\'Veth', 201: 'Braum', 202: 'Jhin', 203: 'Kindred', 221: 'Zeri',
+      222: 'Jinx', 223: 'Tahm Kench', 234: 'Viego', 235: 'Senna', 236: 'Lucian',
+      238: 'Zed', 240: 'Kled', 245: 'Ekko', 246: 'Qiyana', 254: 'Vi',
+      266: 'Aatrox', 267: 'Nami', 268: 'Azir', 350: 'Yuumi', 360: 'Samira',
+      412: 'Thresh', 420: 'Illaoi', 421: 'Rek\'Sai', 427: 'Ivern', 429: 'Kalista',
+      432: 'Bard', 516: 'Ornn', 517: 'Sylas', 518: 'Neeko', 523: 'Aphelios',
+      526: 'Rell', 555: 'Pyke', 777: 'Yone', 875: 'Sett', 876: 'Lillia',
+      887: 'Gwen', 888: 'Renata Glasc', 895: 'Nilah', 897: 'K\'Sante', 901: 'Smolder',
+      902: 'Milio', 910: 'Hwei', 950: 'Naafiri'
+    };
+    return championMap[championId] || null;
+  }
+
+  private extractWinnerFromLCU(teams: any[]): number | null {
+    const winningTeam = teams.find(team => team.win === true);
+    if (winningTeam) {
+      return winningTeam.teamId === 100 ? 1 : 2; // 1 = blue/team1, 2 = red/team2
+    }
+    return null;
+  }
+
+  private extractPickBanFromLCU(championSelections: any[]): any {
+    const team1Picks: any[] = [];
+    const team2Picks: any[] = [];
+    const team1Bans: string[] = [];
+    const team2Bans: string[] = [];
+
+    championSelections.forEach((selection: any) => {
+      const champion = selection.championName || selection.champion || 'Unknown';
+
+      if (selection.spell1Id && selection.spell2Id) {
+        // É um pick
+        const pick = {
+          champion: champion,
+          player: selection.summonerId || selection.participantId,
+          lane: selection.lane || 'unknown'
+        };
+
+        if (selection.teamId === 100) {
+          team1Picks.push(pick);
+        } else if (selection.teamId === 200) {
+          team2Picks.push(pick);
+        }
+      } else if (selection.isBan) {
+        // É um ban
+        if (selection.teamId === 100) {
+          team1Bans.push(champion);
+        } else if (selection.teamId === 200) {
+          team2Bans.push(champion);
+        }
+      }
+    });
+
+    return {
+      team1Picks,
+      team2Picks,
+      team1Bans,
+      team2Bans
+    };
+  }
+
   // Métodos para partida encontrada
   async onAcceptMatch(matchId: number): Promise<void> {
     try {
@@ -796,6 +1451,7 @@ export class App implements OnInit, OnDestroy {
 
     return Math.round(baseMMR + rankBonus + lpBonus);
   }
+
   // Method to refresh player data manually
   async refreshPlayerData(): Promise<void> {
     if (!this.currentPlayer) {
@@ -850,8 +1506,7 @@ export class App implements OnInit, OnDestroy {
         }
       });
     } catch (error: any) {
-      console.error('Unexpected error in refreshPlayerData by Riot ID:', error);
-      this.addNotification('error', 'Erro Inesperado', error.message || 'Ocorreu um erro inesperado.');
+      this.addNotification('error', 'Erro', error.message || 'Erro ao salvar configurações');
     }
   }
 

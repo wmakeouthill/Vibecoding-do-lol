@@ -449,6 +449,22 @@ export class ApiService {
         catchError(this.handleError)
       );
   }
+
+  // Método para buscar a última partida customizada do jogador para teste
+  getLastCustomMatch(playerId: string): Observable<any> {
+    return this.http.get(`${this.baseUrl}/matches/custom/${playerId}?offset=0&limit=1`)
+      .pipe(
+        catchError(this.handleError)
+      );
+  }
+
+  // Método para criar uma partida customizada de exemplo (apenas para testes)
+  createSampleMatch(playerId: string): Observable<any> {
+    return this.http.post(`${this.baseUrl}/test/create-sample-match/${playerId}`, {})
+      .pipe(
+        catchError(this.handleError)
+      );
+  }
   // Métodos para buscar histórico de partidas da Riot API
   getRiotApiMatchHistory(puuid: string, region: string, start: number = 0, count: number = 20): Observable<any> {
     return this.http.get<any>(`${this.baseUrl}/riot/match-history/${puuid}?region=${region}&start=${start}&count=${count}`)
@@ -479,7 +495,8 @@ export class ApiService {
       );
   }
 
-  // Queue endpoints
+  // Queue endpointsnpm run dev
+
   joinQueue(playerData: any, preferences: any): Observable<any> {
     return this.http.post(`${this.baseUrl}/queue/join`, { player: playerData, preferences })
       .pipe(
@@ -541,6 +558,22 @@ export class ApiService {
     return this.http.post(`${this.baseUrl}/queue/leave-legacy`, { playerId })
       .pipe(
         retry(1),
+        catchError(this.handleError)
+      );
+  }
+
+  // Método para atualizar resultado de partida customizada existente (para simulações baseadas em partidas reais)
+  updateCustomMatchResult(updateData: any): Observable<any> {
+    return this.http.put(`${this.baseUrl}/matches/custom/${updateData.matchId}/result`, updateData)
+      .pipe(
+        catchError(this.handleError)
+      );
+  }
+
+  // Método para limpar partidas de teste do banco de dados
+  cleanupTestMatches(): Observable<any> {
+    return this.http.delete(`${this.baseUrl}/matches/cleanup-test-matches`)
+      .pipe(
         catchError(this.handleError)
       );
   }

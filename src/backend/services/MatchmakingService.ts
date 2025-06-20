@@ -108,15 +108,20 @@ export class MatchmakingService {
 
       // Buscar jogador no banco ou criar novo
       let player = await this.dbManager.getPlayerBySummonerName(playerData.summonerName);
-      
-      if (!player) {
+        if (!player) {
         // Criar novo jogador se não existir
-        const playerId = await this.dbManager.createPlayer(
-          playerData.summonerName,
-          playerData.region,
-          playerData.summonerId,
-          playerData.puuid
-        );
+        const playerId = await this.dbManager.createPlayer({
+          summoner_name: playerData.summonerName,
+          summoner_id: playerData.summonerId,
+          puuid: playerData.puuid,
+          region: playerData.region,
+          current_mmr: 1000,
+          peak_mmr: 1000,
+          games_played: 0,
+          wins: 0,
+          losses: 0,
+          win_streak: 0
+        });
         player = await this.dbManager.getPlayer(playerId);
       }
 
@@ -136,7 +141,7 @@ export class MatchmakingService {
         return;
       }      // Adicionar à fila
       const queuedPlayer: QueuedPlayer = {
-        id: player.id,
+        id: player.id!,
         summonerName: player.summoner_name,
         region: player.region,
         currentMMR: player.current_mmr,
@@ -144,16 +149,14 @@ export class MatchmakingService {
         websocket: websocket,
         queuePosition: this.queue.length + 1,
         preferences: preferences
-      };      this.queue.push(queuedPlayer);
-
-      // Adicionar atividade
+      };      this.queue.push(queuedPlayer);      // Adicionar atividade
       const primaryLaneName = this.getLaneDisplayName(preferences?.primaryLane);
-      const playerTag = player.tag_line ? `#${player.tag_line}` : '';
+      const playerTag = ''; // Remover tag_line que não existe no Player
       this.addActivity(
         'player_joined', 
-        `${player.summoner_name}${playerTag} entrou na fila como ${primaryLaneName}`,
+        `${player.summoner_name} entrou na fila como ${primaryLaneName}`,
         player.summoner_name,
-        player.tag_line,
+        '', // tag_line removido
         preferences?.primaryLane
       );
 
@@ -234,9 +237,8 @@ export class MatchmakingService {
       };
 
       this.queue.push(queuedPlayer);
-      
-      // Registrar entrada na fila no banco
-      this.dbManager.recordQueueAction(playerData.id, 'join');
+        // Registrar entrada na fila no banco
+      this.dbManager.recordQueueAction('join', queuedPlayer.id);
       
       console.log(`🎯 Jogador ${playerData.summonerName} adicionado à fila automaticamente (posição ${queuedPlayer.queuePosition})`);
       

@@ -78,7 +78,9 @@
           [currentPlayer]="currentPlayer"
           (joinQueue)="joinQueue($event)"
           (leaveQueue)="leaveQueue()"
-          (addBot)="addBotToQueue()">
+          (addBot)="addBotToQueue()"
+          (simulateLastMatch)="simulateLastCustomMatch()"
+          (cleanupTestMatches)="cleanupTestMatches()">>
         </app-queue>
       </div>
 

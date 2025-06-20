@@ -371,13 +371,18 @@ export class LCUService {
         const summoner = playerData.summoner;
         const existingPlayer = await this.dbManager?.getPlayerBySummonerName(summoner.displayName);
         
-        if (!existingPlayer && this.dbManager) {
-          await this.dbManager.createPlayer(
-            summoner.displayName,
-            'br1', // região padrão
-            summoner.summonerId.toString(),
-            summoner.puuid
-          );
+        if (!existingPlayer && this.dbManager) {          await this.dbManager.createPlayer({
+            summoner_name: summoner.displayName,
+            summoner_id: summoner.summonerId.toString(),
+            puuid: summoner.puuid,
+            region: 'br1', // região padrão
+            current_mmr: 1000,
+            peak_mmr: 1000,
+            games_played: 0,
+            wins: 0,
+            losses: 0,
+            win_streak: 0
+          });
           console.log(`👤 Jogador ${summoner.displayName} registrado automaticamente`);
         }
       } catch (error) {

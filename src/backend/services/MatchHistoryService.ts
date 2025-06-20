@@ -234,11 +234,9 @@ export class MatchHistoryService {
           ].filter(item => item > 0)
         }
       };      // Salvar no banco de dados
-      await this.dbManager.saveRiotMatch(matchToSave);
-
-      // Atualizar MMR do jogador baseado no resultado
+      await this.dbManager.saveRiotMatch(matchToSave);      // Atualizar MMR do jogador baseado no resultado
       const player = await this.dbManager.getPlayerByPuuid(playerPuuid);
-      if (player) {
+      if (player && player.id) {
         const mmrChange = won ? 25 : -20; // Ganho/perda base
         const newMMR = player.current_mmr + mmrChange;
         
@@ -273,13 +271,11 @@ export class MatchHistoryService {
           winRate: 0,
           averageKDA: { kills: 0, deaths: 0, assists: 0 }
         };
-      }
-
-      const wins = matches.filter(m => m.won).length;
+      }      const wins = matches.filter((m: any) => m.won).length;
       const losses = matches.length - wins;
       const winRate = Math.round((wins / matches.length) * 100);
 
-      const kdaSum = matches.reduce((acc, match) => ({
+      const kdaSum = matches.reduce((acc: any, match: any) => ({
         kills: acc.kills + (match.kills || 0),
         deaths: acc.deaths + (match.deaths || 0),
         assists: acc.assists + (match.assists || 0)

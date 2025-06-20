@@ -134,9 +134,7 @@
   <!-- Settings Section -->
   <div class="settings-section">
     <div class="settings-card">
-      <h4>Configurações</h4>
-
-      <div class="setting-item">
+      <h4>Configurações</h4>      <div class="setting-item">
         <label class="setting-label">
           <input type="checkbox"
                  [(ngModel)]="lcuDetectionEnabled"
@@ -146,6 +144,21 @@
         </label>
         <p class="setting-description">
           Detectar automaticamente o fim da partida através do cliente do League of Legends
+        </p>
+      </div>      <div class="setting-item">
+        <div class="detection-buttons">
+          <button class="btn btn-outline retry-detection-btn" (click)="retryAutoDetection()">
+            <span class="btn-icon">🔄</span>
+            Tentar Detectar Vencedor
+          </button>
+
+          <button class="btn btn-outline simulate-last-match-btn" (click)="simulateLastMatch()">
+            <span class="btn-icon">🎭</span>
+            Detectar Última Partida
+          </button>
+        </div>
+        <p class="setting-description">
+          Tenta detectar o vencedor automaticamente via LCU ou comparando com o histórico. Use "Detectar Última Partida" para simular um jogo igual à sua última partida.
         </p>
       </div>
     </div>

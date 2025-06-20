@@ -20,9 +20,10 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   @Input() currentPlayer: Player | null = null;
   @Output() joinQueue = new EventEmitter<QueuePreferences>();
   @Output() leaveQueue = new EventEmitter<void>();
-
   // Adicionar outputs para funcionalidade de bots
   @Output() addBot = new EventEmitter<void>();
+  @Output() simulateLastMatch = new EventEmitter<void>();
+  @Output() cleanupTestMatches = new EventEmitter<void>();
 
   queueTimer = 0;
   private timerInterval?: number;
@@ -231,5 +232,23 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       return;
     }
     this.addBot.emit();
+  }
+
+  // Método para simular última partida customizada (apenas para usuário especial)
+  onSimulateLastMatch(): void {
+    if (!this.isSpecialUser()) {
+      console.warn('Usuário não autorizado para simular partidas');
+      return;
+    }
+    this.simulateLastMatch.emit();
+  }
+
+  // Método para limpar partidas de teste (apenas para usuário especial)
+  onCleanupTestMatches(): void {
+    if (!this.isSpecialUser()) {
+      console.warn('Usuário não autorizado para limpar partidas de teste');
+      return;
+    }
+    this.cleanupTestMatches.emit();
   }
 }

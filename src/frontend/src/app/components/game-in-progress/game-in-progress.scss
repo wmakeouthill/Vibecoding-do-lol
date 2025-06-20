@@ -456,9 +456,7 @@
         color: #a09b8c;
         cursor: not-allowed;
       }
-    }
-
-    &.btn-secondary {
+    }    &.btn-secondary {
       background: #3c3c41;
       color: #e0e6ed;
       border: 1px solid #5a5a5a;
@@ -468,6 +466,37 @@
         transform: translateY(-2px);
       }
     }
+
+    &.btn-outline {
+      background: transparent;
+      color: #c8aa6e;
+      border: 2px solid #c8aa6e;
+
+      &:hover {
+        background: #c8aa6e;
+        color: #1e2328;
+        transform: translateY(-2px);
+      }    }
+  }
+
+  .detection-buttons {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 8px;
+
+    .btn {
+      flex: 1;
+    }
+  }
+
+  .retry-detection-btn,
+  .simulate-last-match-btn {
+    min-width: 0; // Allow buttons to shrink
+  }
+
+  // Fallback for single button (backward compatibility)
+  .retry-detection-btn:only-child {
+    width: 100%;
   }
 }
 

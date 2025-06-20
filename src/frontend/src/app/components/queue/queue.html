@@ -108,6 +108,24 @@
           <span>Adicionar Bot na Fila</span>
         </button>
         <small class="bot-note">Os bots serão criados com lanes aleatórias disponíveis</small>
+
+        <!-- Botão para simular última partida customizada -->
+        <button class="queue-btn simulate-btn"
+                [disabled]="!queueStatus.isActive"
+                (click)="onSimulateLastMatch()">
+          <i class="icon-play"></i>
+          <span>🎮 Simular Última Partida</span>
+        </button>
+        <small class="simulate-note">Cria um jogo em andamento baseado na sua última partida customizada</small>
+
+        <!-- Botão para limpar partidas de teste -->
+        <button class="queue-btn cleanup-btn"
+                [disabled]="!queueStatus.isActive"
+                (click)="onCleanupTestMatches()">
+          <i class="icon-trash"></i>
+          <span>🗑️ Limpar Partidas de Teste</span>
+        </button>
+        <small class="cleanup-note">Remove todas as partidas simuladas/canceladas do banco de dados</small>
       </div>
     </div>
 

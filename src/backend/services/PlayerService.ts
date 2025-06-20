@@ -27,10 +27,19 @@ export class PlayerService {
       } catch (error) {
         console.log(`⚠️ Não foi possível buscar dados da Riot API para ${summonerName}`);
         // Continuar sem os dados da Riot API
-      }
-
-      // Criar jogador no banco
-      const playerId = await this.dbManager.createPlayer(summonerName, region, summonerId, puuid);
+      }      // Criar jogador no banco
+      const playerId = await this.dbManager.createPlayer({
+        summoner_name: summonerName,
+        summoner_id: summonerId,
+        puuid: puuid,
+        region: region,
+        current_mmr: 1000,
+        peak_mmr: 1000,
+        games_played: 0,
+        wins: 0,
+        losses: 0,
+        win_streak: 0
+      });
       
       // Se conseguiu dados da Riot API, atualizar MMR inicial baseado no rank
       if (summonerId) {
@@ -44,9 +53,10 @@ export class PlayerService {
         } catch (error) {
           console.log(`⚠️ Não foi possível buscar dados ranqueados para ${summonerName}`);
         }
+      }      const player = await this.dbManager.getPlayer(playerId);
+      if (!player) {
+        throw new Error(`Erro ao buscar jogador criado: ${playerId}`);
       }
-
-      const player = await this.dbManager.getPlayer(playerId);
       console.log(`✅ Jogador registrado: ${summonerName} (MMR inicial: ${player.current_mmr})`);
       
       return player;
