@@ -47,109 +47,92 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     } else {
       this.loadCustomMatches();
     }
-  }
-  loadRiotMatches(): void {
+  }  loadRiotMatches(): void {
     if (!this.player) {
       console.warn('⚠️ Nenhum player disponível para carregar partidas');
       return;
-    }    console.log('🚀 Iniciando carregamento de partidas do LCU (prioridade) para:', {
+    }
+
+    console.log('🚀 Carregando histórico EXCLUSIVAMENTE do LCU para:', {
       player: this.player.summonerName,
       puuid: this.player.puuid
     });
 
     this.loading = true;
-    this.error = null;
+    this.error = null;    // USAR APENAS LCU - Sem fallback para Riot API
+    console.log('📡 Buscando partidas do League of Legends Client (LCU)...');
+    this.apiService.getLCUMatchHistoryAll(0, 20, false).subscribe({
+      next: (lcuResponse: any) => {
+        console.log('📬 Resposta LCU recebida:', {
+          success: lcuResponse?.success,
+          matchCount: lcuResponse?.matches?.length || 0
+        });
 
-    try {
-      // PRIORIDADE: Buscar partidas do LCU (League Client)
-      console.log('📡 Carregando via LCU (fonte preferencial)...');
-      this.apiService.getLCUMatchHistory().subscribe({
-        next: (lcuResponse: any) => {
-          console.log('📬 Resposta LCU recebida:', {
-            success: lcuResponse?.success,
-            matchCount: lcuResponse?.matches?.length || 0
-          });
-
-          if (lcuResponse && lcuResponse.success && lcuResponse.matches && lcuResponse.matches.length > 0) {
-            console.log('✅ Partidas obtidas via LCU:', lcuResponse.matches.length);
-            this.processLCUMatches(lcuResponse.matches);
-            this.loading = false;
-            return;
-          } else {
-            console.log('ℹ️ LCU não retornou partidas, usando Riot API apenas como backup...');
-            // If LCU fails, try Riot API with PUUID
-            if (this.player && this.player.puuid) {
-              this.apiService.getPlayerMatchHistoryFromRiot(this.player.puuid, 'americas', 20).subscribe({
-                next: (response: any) => {
-                  if (response && response.success && response.matches && response.matches.length > 0) {
-                    console.log('✅ Partidas obtidas via Riot API:', response.matches.length);
-                    this.processRiotMatches(response.matches);
-                  } else {
-                    console.log('ℹ️ Nenhuma partida encontrada via Riot API');
-                    this.riotMatches = [];
-                  }
-                  this.loading = false;
-                },
-                error: (error: any) => {
-                  console.log('❌ Falha ao carregar via Riot API:', error);
-                  this.riotMatches = [];
-                  this.loading = false;
-                }
-              });
-            } else {
-              console.log('ℹ️ Sem PUUID disponível, nenhuma partida carregada');
-              this.riotMatches = [];
-              this.loading = false;
-            }
-          }
-        },
-        error: (error: any) => {
-          console.log('❌ Falha ao carregar via LCU:', error);
-          // Fallback to Riot API
-          if (this.player && this.player.puuid) {
-            this.apiService.getPlayerMatchHistoryFromRiot(this.player.puuid, 'americas', 20).subscribe({
-              next: (response: any) => {
-                if (response && response.success && response.matches && response.matches.length > 0) {
-                  this.processRiotMatches(response.matches);
-                } else {
-                  this.riotMatches = [];
-                }
-                this.loading = false;
-              },
-              error: () => {
-                this.riotMatches = [];
-                this.loading = false;
-              }
-            });
-          } else {
-            this.riotMatches = [];
-            this.loading = false;
-          }
+        if (lcuResponse && lcuResponse.success && lcuResponse.matches && lcuResponse.matches.length > 0) {
+          console.log('✅ Partidas do LCU encontradas:', lcuResponse.matches.length);
+          this.processLCUMatches(lcuResponse.matches);
+        } else {
+          console.log('ℹ️ LCU não retornou partidas - pode não haver histórico recente');
+          this.riotMatches = [];
+          this.error = 'Nenhuma partida encontrada no histórico do League of Legends. Certifique-se de que o LoL está aberto e você jogou partidas recentemente.';
         }
-      });
-    } catch (error: any) {
-      this.error = error.message || 'Erro ao carregar histórico da Riot API';
-      this.loading = false;
-      console.error('Error loading Riot match history:', error);
+        this.loading = false;
+      },
+      error: (error: any) => {
+        console.log('❌ Erro ao acessar LCU:', error);
+        this.riotMatches = [];
+
+        // Mensagem mais específica baseada no tipo de erro
+        if (error.message && error.message.includes('404')) {
+          this.error = 'League of Legends não está aberto ou não há partidas ativas. Abra o cliente do LoL para ver o histórico.';
+        } else if (error.message && error.message.includes('current-match-details')) {
+          this.error = 'Nenhuma partida ativa encontrada. Para ver o histórico, certifique-se de que o LoL está aberto.';
+        } else {
+          this.error = 'Não foi possível conectar ao League of Legends. Verifique se o cliente está aberto e funcionando.';
+        }
+
+        this.loading = false;
+      }
+    });
+  }  loadCustomMatches(): void {
+    if (!this.player) {
+      console.warn('⚠️ Nenhum player disponível para carregar partidas customizadas');
+      return;
     }
-  }
-  loadCustomMatches(): void {
-    if (!this.player) return;
+
+    console.log('🎯 Carregando partidas customizadas para:', {
+      playerId: this.player.id,
+      summonerName: this.player.summonerName
+    });
 
     this.loading = true;
-    this.error = null;
+    this.error = null;    try {
+      // Primeiro tentar com o nome do summoner, depois com o ID
+      const playerIdentifier = this.player.summonerName || this.player.id.toString();
+      console.log('🔍 Usando identificador:', playerIdentifier);
 
-    try {
-      this.apiService.getCustomMatches(this.player.id.toString(), this.currentPage * this.matchesPerPage, this.matchesPerPage).subscribe({
+      this.apiService.getCustomMatches(playerIdentifier, this.currentPage * this.matchesPerPage, this.matchesPerPage).subscribe({
         next: (response) => {
+          console.log('📦 Resposta de partidas customizadas:', response);
+
           if (response && response.success && response.matches && response.matches.length > 0) {
             console.log('✅ Partidas customizadas encontradas:', response.matches.length);
             this.customMatches = this.mapApiMatchesToModel(response.matches);
             this.totalMatches = response.pagination.total;
+
+            console.log('🔄 Partidas mapeadas:', {
+              totalMapeadas: this.customMatches.length,
+              primeirasPartidas: this.customMatches.slice(0, 2).map(m => ({
+                id: m.id,
+                winner: m.winner,
+                playerWon: m.playerStats?.isWin
+              }))
+            });
           } else {
             console.log('ℹ️ Nenhuma partida customizada encontrada');
             this.customMatches = [];
             this.totalMatches = 0;
+            this.error = 'Você ainda não jogou nenhuma partida customizada. Complete uma partida personalizada para vê-la aparecer aqui.';
           }
           this.loading = false;
         },
@@ -234,13 +217,15 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
   }  private checkCurrentGame(): void {
     if (!this.player) return;
 
-    // Use the new LCU endpoint for more accurate current game status
-    this.apiService.getCurrentGame().subscribe({
+    // Use LCU status check instead of current-match-details to avoid 404s
+    this.apiService.getLCUStatus().subscribe({
       next: (response: any) => {
-        if (response && response.success && response.currentGame) {
-          this.currentGame = response.currentGame;
-          this.isInGame = response.isInGame;
-          this.gamePhase = response.phase;
+        if (response && response.isConnected) {
+          // LCU is connected, but we don't need to check for active games here
+          // This was causing the 404 errors. We'll just update the connection status.
+          this.isInGame = false;
+          this.currentGame = null;
+          this.gamePhase = '';
         } else {
           this.isInGame = false;
           this.currentGame = null;
@@ -248,7 +233,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         }
       },
       error: (err: any) => {
-        console.error('Failed to get current game from LCU:', err);
+        console.error('Failed to get LCU status:', err);
         this.isInGame = false;
         this.currentGame = null;
         this.gamePhase = '';
@@ -287,68 +272,13 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           this.loading = false;
         }, 1000);
       }
-    });
-  }  private processRiotMatches(matchIds: string[]): void {
-    if (!matchIds || matchIds.length === 0) {
-      this.riotMatches = this.generateMockRiotMatches();
-      this.totalMatches = this.riotMatches.length;
-      this.loading = false;
-      return;
-    }
+    });  }
 
-    console.log('🔄 Processando', matchIds.length, 'partidas da Riot API');
+  // MÉTODO REMOVIDO: processRiotMatches
+  // Agora usamos apenas LCU via processLCUMatches
+  // A aba "Riot API" usa exclusivamente dados do League of Legends Client (LCU)
 
-    // Fetch detailed match data for all match IDs
-    const matchPromises = matchIds.map(matchId =>
-      this.apiService.getMatchDetails(matchId).toPromise()
-    );
-
-    Promise.allSettled(matchPromises).then(results => {
-      const validMatches: any[] = [];
-
-      results.forEach((result, index) => {
-        if (result.status === 'fulfilled' && result.value?.success) {
-          const matchData = result.value.match;
-          console.log(`✅ Partida ${matchIds[index]} carregada:`, {
-            gameMode: matchData.info.gameMode,
-            duration: matchData.info.gameDuration,
-            participants: matchData.info.participants.length,
-            playerFound: !!matchData.info.participants.find((p: any) => p.puuid === this.player?.puuid)
-          });
-          validMatches.push(matchData);
-        } else {
-          console.warn(`❌ Falha ao carregar partida ${matchIds[index]}:`, result);
-        }
-      });
-
-      if (validMatches.length > 0) {
-        console.log('📊 Mapeando', validMatches.length, 'partidas válidas');
-        this.riotMatches = this.mapRiotMatchesToModel(validMatches);
-        this.totalMatches = this.riotMatches.length;
-          // Debug: Log do primeiro match processado
-        if (this.riotMatches.length > 0) {
-          const firstMatch = this.riotMatches[0];
-          console.log('🎮 Primeira partida processada:', {
-            id: firstMatch.id,
-            mode: firstMatch.gameMode,
-            playerChampion: firstMatch.playerStats?.champion,
-            team1Size: firstMatch.team1?.length || 0,
-            team2Size: firstMatch.team2?.length || 0,
-            winner: firstMatch.winner
-          });
-        }
-      } else {
-        console.warn('⚠️ Nenhuma partida válida encontrada, usando dados mock');
-        this.riotMatches = this.generateMockRiotMatches();
-        this.totalMatches = this.riotMatches.length;
-      }
-
-      this.loading = false;
-    }).catch(error => {
-      console.error('💥 Erro ao processar partidas:', error);
-      this.fallbackToLocalMatches();
-    });
-  }  private mapRiotMatchesToModel(riotMatches: any[]): Match[] {
+  private mapRiotMatchesToModel(riotMatches: any[]): Match[] {
     return riotMatches.map(matchData => {
       // Validar estrutura dos dados
       if (!matchData?.info?.participants || !Array.isArray(matchData.info.participants)) {
@@ -457,8 +387,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         isWin: false
       }
     };
-  }
-  private mapApiMatchesToModel(apiMatches: any[]): Match[] {
+  }  private mapApiMatchesToModel(apiMatches: any[]): Match[] {
     console.log('🔄 Mapeando partidas da API para modelo do frontend:', apiMatches.length);
 
     return apiMatches.map(match => {
@@ -468,44 +397,101 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         winnerTeam: match.winner_team,
         playerWon: match.player_won,
         status: match.status,
-        duration: match.duration
+        duration: match.duration,
+        hasPickBanData: !!match.pick_ban_data
       });
 
       // Parse JSON fields safely
       let team1Players = [];
       let team2Players = [];
+      let pickBanData = null;
 
       try {
         team1Players = typeof match.team1_players === 'string' ? JSON.parse(match.team1_players) : (match.team1_players || []);
         team2Players = typeof match.team2_players === 'string' ? JSON.parse(match.team2_players) : (match.team2_players || []);
+
+        if (match.pick_ban_data) {
+          pickBanData = typeof match.pick_ban_data === 'string' ? JSON.parse(match.pick_ban_data) : match.pick_ban_data;
+        }
       } catch (e) {
-        console.warn('⚠️ Erro ao fazer parse dos times:', e);
+        console.warn('⚠️ Erro ao fazer parse dos dados da partida:', e);
         team1Players = [];
         team2Players = [];
+        pickBanData = null;
+      }
+
+      // Determinar o campeão do jogador a partir dos dados de pick/ban
+      let playerChampion = 'Unknown';
+      try {
+        if (pickBanData && pickBanData.team1Picks) {
+          const playerTeam = match.player_team || (match.player_won && match.winner_team === 1 ? 1 : 2);
+          const picks = playerTeam === 1 ? pickBanData.team1Picks : pickBanData.team2Picks;
+
+          if (picks && picks.length > 0) {
+            // Tentar encontrar o pick do jogador atual
+            const currentPlayerName = this.player?.summonerName?.toLowerCase();
+            let playerPick = picks.find((pick: any) =>
+              pick.player && pick.player.toString().toLowerCase().includes(currentPlayerName || '')
+            );
+
+            if (!playerPick && picks.length > 0) {
+              // Se não encontrou por nome, usar o primeiro pick como fallback
+              playerPick = picks[0];
+            }
+
+            if (playerPick && playerPick.champion) {
+              playerChampion = playerPick.champion;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('⚠️ Erro ao extrair campeão do jogador:', e);
       }
 
       // Convert database match to our frontend Match interface
       const mappedMatch = {
         id: match.id || match.match_id,
         createdAt: new Date(match.created_at),
-        duration: match.duration ? (match.duration * 60) : 1200, // Converter minutos para segundos se necessário
-        gameMode: match.game_mode || 'CLASSIC',
-        team1: team1Players.map((playerId: any) => ({
-          name: playerId,
-          champion: 'Unknown',
-          teamId: 100
-        })),
-        team2: team2Players.map((playerId: any) => ({
-          name: playerId,
-          champion: 'Unknown',
-          teamId: 200
-        })),
+        duration: match.duration ? (match.duration * 60) : 1500, // Converter minutos para segundos
+        gameMode: match.game_mode || 'CUSTOM',
+        team1: team1Players.map((playerId: any, index: number) => {
+          let championName = 'Unknown';
+          try {
+            if (pickBanData && pickBanData.team1Picks && pickBanData.team1Picks[index]) {
+              championName = pickBanData.team1Picks[index].champion || 'Unknown';
+            }
+          } catch (e) {
+            console.warn('⚠️ Erro ao obter campeão do time 1:', e);
+          }
+
+          return {
+            name: playerId.toString(),
+            champion: championName,
+            teamId: 100
+          };
+        }),
+        team2: team2Players.map((playerId: any, index: number) => {
+          let championName = 'Unknown';
+          try {
+            if (pickBanData && pickBanData.team2Picks && pickBanData.team2Picks[index]) {
+              championName = pickBanData.team2Picks[index].champion || 'Unknown';
+            }
+          } catch (e) {
+            console.warn('⚠️ Erro ao obter campeão do time 2:', e);
+          }
+
+          return {
+            name: playerId.toString(),
+            champion: championName,
+            teamId: 200
+          };
+        }),
         winner: match.winner_team || 0,
         averageMMR1: 1200, // Mock value for custom matches
         averageMMR2: 1200, // Mock value for custom matches
         // Determine if current player won
         playerStats: {
-          champion: 'Unknown', // Custom matches don't store individual champion data yet
+          champion: playerChampion,
           kills: 0, // Not stored yet for custom matches
           deaths: 0, // Not stored yet for custom matches
           assists: 0, // Not stored yet for custom matches
@@ -519,6 +505,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       console.log('✅ Partida mapeada:', {
         id: mappedMatch.id,
         winner: mappedMatch.winner,
+        playerChampion: mappedMatch.playerStats?.champion,
         playerWon: mappedMatch.playerStats?.isWin,
         team1Count: mappedMatch.team1.length,
         team2Count: mappedMatch.team2.length
