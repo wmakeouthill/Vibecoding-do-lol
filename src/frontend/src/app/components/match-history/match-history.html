@@ -18,13 +18,9 @@
           (click)="setActiveTab('custom')">
           🎮 Partidas Customizadas
         </button>
-      </div>      <div class="history-stats" *ngIf="getCurrentMatches().length > 0">
-        <div class="stat-summary">
+      </div>      <div class="history-stats" *ngIf="getCurrentMatches().length > 0">        <div class="stat-summary">
           <span class="total-matches">{{ getCurrentMatches().length }} partidas</span>
           <span class="win-rate">{{ getWinRate() }}% de vitória</span>
-          <!-- DEBUG TEMPORÁRIO -->
-          <button style="margin-left: 10px; background: red; color: white; padding: 5px;"
-                  (click)="debugCurrentState()">🔍 DEBUG</button>
         </div>
       </div>
     </div>

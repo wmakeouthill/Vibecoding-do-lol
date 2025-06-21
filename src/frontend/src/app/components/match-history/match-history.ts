@@ -68,13 +68,12 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
 
   /**
    * Loads matches for the current active tab using Strategy Pattern
-   */
-  loadCurrentTabMatches(): void {
+   */  loadCurrentTabMatches(): void {
     const strategy = this.getCurrentStrategy();
     if (strategy) {
       strategy.loadMethod();
     } else {
-      console.error('❌ [DEBUG] Strategy não encontrada para tab:', this.activeTab);
+      console.error('❌ Strategy não encontrada para tab:', this.activeTab);
     }
   }
 
@@ -148,49 +147,37 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           if (response && response.success && response.matches && response.matches.length > 0) {
 
             this.customMatches = this.mapApiMatchesToModel(response.matches);
-            this.totalMatches = response.pagination.total;            // Logs para detecção de mudanças no Angular
-            // Forçar detecção de mudanças
+            this.totalMatches = response.pagination.total;            // Logs para detecção de mudanças no Angular            // Forçar detecção de mudanças
             this.cdr.detectChanges();
-
-            // Debug adicional para verificar estado
-            this.debugCurrentState();
           } else {
             this.customMatches = [];
             this.totalMatches = 0;
             this.error = 'Você ainda não jogou nenhuma partida customizada. Complete uma partida personalizada para vê-la aparecer aqui.';
           }
-          this.loading = false;
-        },error: (error) => {
-          console.error('❌ [DEBUG] Erro na requisição:', error);
+          this.loading = false;        },
+        error: (error) => {
+          console.error('❌ Erro na requisição:', error);
 
           // FALLBACK TEMPORÁRIO: Usar dados mock para testar o frontend
-          console.log('🔧 [DEBUG] Usando dados mock temporários para teste...');
           this.customMatches = this.generateMockCustomMatches();
           this.totalMatches = this.customMatches.length;
           this.loading = false;
           this.error = null; // Remover erro para mostrar os dados mock
 
           // Forçar detecção de mudanças para mock data também
-          console.log('🔄 [DEBUG] Forçando detecção de mudanças (mock)...');
           this.cdr.detectChanges();
-          console.log('✅ [DEBUG] Detecção de mudanças forçada concluída (mock)');
         }
       });    } catch (error: any) {
-      console.error('❌ [DEBUG] Erro no try/catch:', error);
+      console.error('❌ Erro no try/catch:', error);
 
       // FALLBACK TEMPORÁRIO: Usar dados mock para testar o frontend
-      console.log('🔧 [DEBUG] Usando dados mock temporários para teste (try/catch)...');
       this.customMatches = this.generateMockCustomMatches();
       this.totalMatches = this.customMatches.length;
       this.loading = false;
       this.error = null; // Remover erro para mostrar os dados mock
 
-      console.log('🎮 [DEBUG] Mock data carregado (try/catch):', this.customMatches);
-
       // Forçar detecção de mudanças para mock data também
-      console.log('🔄 [DEBUG] Forçando detecção de mudanças (try/catch)...');
       this.cdr.detectChanges();
-      console.log('✅ [DEBUG] Detecção de mudanças forçada concluída (try/catch)');
     }
   }  // ========== TAB SYSTEM ==========
   setActiveTab(tab: string): void {
@@ -1615,52 +1602,14 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       return null;
     }
   }
-
   // Debug method para template
   debugCustomMatches(): void {
-    console.log('🔥 [DEBUG] debugCustomMatches chamado do template:');
-    console.log('🔥 [DEBUG] activeTab:', this.activeTab);
-    console.log('🔥 [DEBUG] isCustomTab():', this.isCustomTab());
-    console.log('🔥 [DEBUG] customMatches.length:', this.customMatches.length);
-    console.log('🔥 [DEBUG] getCurrentMatches().length:', this.getCurrentMatches().length);
-    console.log('🔥 [DEBUG] customMatches array:', this.customMatches);
-    console.log('🔥 [DEBUG] getCurrentMatches() result:', this.getCurrentMatches());
+    // Método de debug removido - não é mais necessário
   }
 
   // Método super simples para verificar se os dados estão corretos
   getSimpleMatchCount(): number {
     const count = this.activeTab === 'custom' ? this.customMatches.length : this.riotMatches.length;
-    console.log('🎯 [DEBUG] getSimpleMatchCount() - activeTab:', this.activeTab, 'count:', count);
     return count;
-  }
-
-  // ========== DEBUG METHODS ==========
-  debugCurrentState(): void {
-    console.log('🔍 [DEBUG] Estado atual completo:', {
-      activeTab: this.activeTab,
-      loading: this.loading,
-      error: this.error,
-      customMatches: {
-        length: this.customMatches.length,
-        array: this.customMatches,
-        isValid: Array.isArray(this.customMatches)
-      },
-      riotMatches: {
-        length: this.riotMatches.length,
-        array: this.riotMatches,
-        isValid: Array.isArray(this.riotMatches)
-      },
-      getCurrentMatches: {
-        length: this.getCurrentMatches().length,
-        array: this.getCurrentMatches(),
-        isValid: Array.isArray(this.getCurrentMatches())
-      },
-      templateConditions: {
-        notLoading: !this.loading,
-        noError: !this.error,
-        hasMatches: this.getCurrentMatches().length > 0,
-        shouldShowContent: !this.loading && !this.error && this.getCurrentMatches().length > 0
-      }
-    });
   }
 }
