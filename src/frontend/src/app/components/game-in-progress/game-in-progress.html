@@ -110,12 +110,17 @@
       </div>
     </div>
   </div>
-
   <!-- Winner Declaration Section -->
   <div class="winner-section" *ngIf="gameStatus === 'ended' || !lcuDetectionEnabled">
     <div class="winner-declaration">
       <h3>Declarar Vencedor</h3>
-      <p>Selecione o time vencedor da partida:</p>
+      <div class="auto-detection-info" *ngIf="lcuDetectionEnabled">
+        <p class="info-message">
+          ℹ️ <strong>Detecção Automática Ativada:</strong>
+          Use o botão "Tentar Detectar Vencedor" para que o sistema identifique automaticamente o resultado da partida.
+        </p>
+      </div>
+      <p>Ou selecione manualmente o time vencedor da partida:</p>
 
       <div class="winner-buttons">
         <button class="team-button team-blue-btn"
@@ -161,14 +166,19 @@
         <p class="setting-description">
           Detectar automaticamente o fim da partida através do cliente do League of Legends
         </p>
-      </div>      <div class="setting-item">
-        <div class="detection-buttons">
-          <button class="btn btn-outline retry-detection-btn" (click)="retryAutoDetection()">
-            <span class="btn-icon">🔄</span>
-            Tentar Detectar Vencedor
+      </div>      <div class="setting-item">        <div class="detection-buttons">
+          <button class="btn btn-outline retry-detection-btn"
+                  (click)="retryAutoDetection()"
+                  [disabled]="isAutoDetecting">
+            <span class="btn-icon" *ngIf="!isAutoDetecting">🔄</span>
+            <span class="btn-icon spinning" *ngIf="isAutoDetecting">⏳</span>
+            <span *ngIf="!isAutoDetecting">Tentar Detectar Vencedor</span>
+            <span *ngIf="isAutoDetecting">Detectando...</span>
           </button>
 
-          <button class="btn btn-outline simulate-last-match-btn" (click)="simulateLastMatch()">
+          <button class="btn btn-outline simulate-last-match-btn"
+                  (click)="simulateLastMatch()"
+                  [disabled]="isAutoDetecting">
             <span class="btn-icon">🎭</span>
             Detectar Última Partida
           </button>

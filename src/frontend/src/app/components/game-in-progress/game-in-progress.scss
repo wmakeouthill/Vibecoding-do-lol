@@ -525,7 +525,38 @@
   }
 }
 
-// Responsive Design
+// Auto detection loading animation
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+  display: inline-block;
+}
+
+// Auto detection info message
+.auto-detection-info {
+  background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
+  border: 1px solid #3d6fa7;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+
+  .info-message {
+    margin: 0;
+    color: #e0e6ed;
+    font-size: 14px;
+    line-height: 1.4;
+
+    strong {
+      color: #4fc3f7;
+    }
+  }
+}
+
+/* Responsive Design */
 @media (max-width: 768px) {
   .teams-section {
     grid-template-columns: 1fr;

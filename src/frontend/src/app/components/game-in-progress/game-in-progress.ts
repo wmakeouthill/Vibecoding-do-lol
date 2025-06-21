@@ -60,6 +60,10 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
   showMatchConfirmation: boolean = false;
   detectedLCUMatch: any = null;
   matchComparisonResult: any = null;
+
+  // Auto detection state
+  isAutoDetecting: boolean = false;
+
   // Live match linking
   currentLiveMatchId: string | null = null;
   matchLinkingEnabled: boolean = true;
@@ -300,13 +304,12 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
     this.lcuGameDetected = true;
     this.gameStatus = 'in-progress';
     this.currentGameSession = gameData;
-  }
-  private onLCUGameEnded(endGameData: any) {
+  }  private onLCUGameEnded(endGameData: any) {
     // console.log('🏁 Fim de jogo detectado pelo LCU:', endGameData);
 
     if (endGameData && endGameData.teams) {
       // Try to detect winner from LCU data
-      const winningTeam = endGameData.teams.find((team: any) => team.win === true);
+      const winningTeam = endGameData.teams.find((team: any) => team.win === "Win" || team.win === true);
       if (winningTeam) {
         const winner = winningTeam.teamId === 100 ? 'blue' : 'red';
         this.autoCompleteGame(winner, true);
@@ -336,9 +339,8 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
     };    // console.log('✅ Partida concluída automaticamente:', result);
     this.onGameComplete.emit(result);
   }
-
   // Novo método para completar jogo com dados reais do LCU
-  private autoCompleteGameWithRealData(winner: 'blue' | 'red', detectedByLCU: boolean, lcuMatchData: any) {
+  private autoCompleteGameWithRealData(winner: 'blue' | 'red' | null, detectedByLCU: boolean, lcuMatchData: any) {
     if (!this.gameData) return;
 
     const result: GameResult = {
@@ -357,7 +359,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
       riotId: this.gameData.riotId || (lcuMatchData.platformId ? `${lcuMatchData.platformId}_${lcuMatchData.gameId}` : `BR1_${lcuMatchData.gameId}`)
     };
 
-    console.log('✅ Partida concluída com dados reais do LCU:', result);
+    console.log('✅ Partida concluída automaticamente com dados reais do LCU:', result);
     this.onGameComplete.emit(result);
   }
 
@@ -418,10 +420,12 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
     }
 
     // console.log('⚠️ Não foi possível auto-resolver o vencedor');
-  }
-  // Enhanced method to detect winner with confirmation modal
+  }  // Enhanced method to detect winner with automatic confirmation
   async retryAutoDetection() {
     console.log('🔄 [MANUAL] Detectando vencedor via comparação com LCU...');
+
+    // Set loading state
+    this.isAutoDetecting = true;
 
     try {
       // Get LCU match history to compare
@@ -446,14 +450,20 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
 
       console.log('✅ [MANUAL] Partida correspondente encontrada:', matchResult);
 
-      // Store detected match data for modal
+      // Store detected match data
       this.detectedLCUMatch = matchResult.match;
-      this.matchComparisonResult = matchResult;      // Open confirmation modal
-      this.showMatchConfirmation = true;
+      this.matchComparisonResult = matchResult;
+
+      // Automatically confirm the match without showing modal
+      console.log('⚡ [AUTO] Confirmando partida automaticamente...');
+      this.confirmDetectedMatch();
 
     } catch (error) {
       console.log('❌ [MANUAL] Erro ao detectar via histórico do LCU:', error);
       alert('Erro ao acessar o histórico do LCU. Certifique-se de que o League of Legends está aberto.');
+    } finally {
+      // Reset loading state
+      this.isAutoDetecting = false;
     }
   }
   // Find matching LCU game based on current game data
@@ -573,12 +583,10 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
           reasons.push(`Horário compatível (${Math.round(timeDifference)} min de diferença)`);
         }
       }
-    }
-
-    // Check if match has ended and has winner
+    }    // Check if match has ended and has winner
     if (lcuMatch.teams && lcuMatch.teams.length === 2) {
       maxScore += 30; // Complete match worth 30 points
-      const hasWinner = lcuMatch.teams.some((team: any) => team.win === true);
+      const hasWinner = lcuMatch.teams.some((team: any) => team.win === "Win" || team.win === true);
       if (hasWinner) {
         totalScore += 30;
         reasons.push('Partida finalizada com vencedor definido');
@@ -638,19 +646,25 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
   confirmDetectedMatch(): void {
     if (!this.detectedLCUMatch || !this.matchComparisonResult) return;
 
-    const lcuMatch = this.detectedLCUMatch;
-
-    // Extract winner from LCU match
+    const lcuMatch = this.detectedLCUMatch;    // Extract winner from LCU match
     let winner: 'blue' | 'red' | null = null;
     if (lcuMatch.teams && lcuMatch.teams.length === 2) {
-      const winningTeam = lcuMatch.teams.find((team: any) => team.win === true);
+      // LCU teams use string values: "Win" or "Fail"
+      const winningTeam = lcuMatch.teams.find((team: any) => team.win === "Win" || team.win === true);
       if (winningTeam) {
         winner = winningTeam.teamId === 100 ? 'blue' : 'red';
       }
     }
 
-    console.log('✅ Partida confirmada pelo usuário - salvando no banco de dados');
-    console.log('🎮 Dados da partida LCU:', lcuMatch.gameId);    // Preparar dados para salvar no banco - usar gameName#tagLine como identificador
+    console.log('🔍 Detecção de vencedor:', {
+      teams: lcuMatch.teams?.map((t: any) => ({ teamId: t.teamId, win: t.win })),
+      detectedWinner: winner
+    });
+
+    console.log('✅ Partida confirmada automaticamente - salvando no banco de dados');
+    console.log('🎮 Dados da partida LCU:', lcuMatch.gameId);
+
+    // Preparar dados para salvar no banco - usar gameName#tagLine como identificador
     const playerIdentifier = this.currentPlayer?.gameName && this.currentPlayer?.tagLine
                             ? `${this.currentPlayer.gameName}#${this.currentPlayer.tagLine}`
                             : this.currentPlayer?.summonerName ||
@@ -660,37 +674,33 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
     // Salvar partida imediatamente no banco de dados usando endpoint LCU
     this.saveDetectedMatchToDatabase(lcuMatch, playerIdentifier, winner);
 
+    // Fechar modal imediatamente
+    this.showMatchConfirmation = false;
+
+    // Atualizar gameData com informações da partida real
+    if (this.gameData) {
+      this.gameData.originalMatchId = lcuMatch.gameId;
+      this.gameData.riotId = lcuMatch.platformId ? `${lcuMatch.platformId}_${lcuMatch.gameId}` : `BR1_${lcuMatch.gameId}`;
+      this.gameData.originalMatchData = lcuMatch;
+    }
+
     if (winner) {
-      console.log('🏆 Vencedor confirmado via LCU:', winner);
+      console.log('🏆 Vencedor detectado automaticamente via LCU:', winner);
       this.selectedWinner = winner;
-      this.showMatchConfirmation = false;
 
-      // Atualizar gameData com informações da partida real ANTES de completar
-      if (this.gameData) {
-        this.gameData.originalMatchId = lcuMatch.gameId;
-        this.gameData.riotId = lcuMatch.platformId ? `${lcuMatch.platformId}_${lcuMatch.gameId}` : `BR1_${lcuMatch.gameId}`;
-        // Incluir dados completos da partida do LCU
-        this.gameData.originalMatchData = lcuMatch;
-      }
+      // Completar jogo automaticamente com dados reais
+      this.autoCompleteGameWithRealData(winner, true, lcuMatch);    } else {
+      console.log('⚠️ Partida confirmada mas sem vencedor detectado - completando partida como inconclusiva');
 
-      this.autoCompleteGameWithRealData(winner, true, lcuMatch);
-    } else {
-      // No winner detected, but user confirmed this is the right match
-      console.log('✅ Partida confirmada pelo usuário, mas sem vencedor detectado');
-      this.showMatchConfirmation = false;
+      // Mesmo sem vencedor detectado, completar a partida automaticamente
+      // Marca como null (inconclusivo) mas salva no histórico
+      this.autoCompleteGameWithRealData(null, true, lcuMatch);
 
-      // Update game data with detected match info
-      if (this.gameData && lcuMatch.gameId) {
-        this.gameData.originalMatchId = lcuMatch.gameId;
-        this.gameData.riotId = lcuMatch.platformId ? `${lcuMatch.platformId}_${lcuMatch.gameId}` : `BR1_${lcuMatch.gameId}`;
-        // Incluir dados completos da partida do LCU
-        this.gameData.originalMatchData = lcuMatch;
-      }
-
-      // Show manual declaration interface since no winner was auto-detected
-      this.gameStatus = 'ended';
-
-      alert('✅ Partida confirmada e salva! Como o vencedor não pôde ser detectado automaticamente, declare o vencedor manualmente abaixo.');
+      // Mostrar notificação de que a partida foi salva mas sem vencedor definido
+      this.showSuccessNotification(
+        'Partida salva!',
+        'A partida foi detectada e salva no histórico, mas o vencedor não pôde ser determinado automaticamente.'
+      );
     }
   }
 
@@ -758,11 +768,11 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
     const seconds = gameDuration % 60;
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   }
-
   getLCUMatchWinner(lcuMatch: any): 'blue' | 'red' | null {
     if (!lcuMatch || !lcuMatch.teams || lcuMatch.teams.length !== 2) return null;
 
-    const winningTeam = lcuMatch.teams.find((team: any) => team.win === true);
+    // LCU teams use string values: "Win" or "Fail"
+    const winningTeam = lcuMatch.teams.find((team: any) => team.win === "Win" || team.win === true);
     if (!winningTeam) return null;
 
     return winningTeam.teamId === 100 ? 'blue' : 'red';
@@ -803,12 +813,10 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
         return null;
       }
 
-      const currentGame = gameState.data;
-
-      // Check if game has ended and get winner
+      const currentGame = gameState.data;      // Check if game has ended and get winner
       if (currentGame.gamePhase === 'EndOfGame' || currentGame.gamePhase === 'PostGame') {
         if (currentGame.teams) {
-          const winningTeam = currentGame.teams.find((team: any) => team.win === true);
+          const winningTeam = currentGame.teams.find((team: any) => team.win === "Win" || team.win === true);
           if (winningTeam) {
             return winningTeam.teamId === 100 ? 'blue' : 'red';
           }

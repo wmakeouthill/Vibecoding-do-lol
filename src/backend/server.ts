@@ -956,15 +956,22 @@ app.post('/api/test/create-lcu-based-match', (req: Request, res: Response) => {
       notes: `Partida real do LCU - Game ID: ${lcuMatchData.gameId}`,
       gameMode: lcuMatchData.gameMode || 'CLASSIC'
     });
-    
-    // Se a partida já terminou, marcar como completa com vencedor
+      // Se a partida já terminou, marcar como completa com vencedor
     if (lcuMatchData.endOfGameResult === 'GameComplete' && lcuMatchData.teams) {
       let winner = null;
       if (lcuMatchData.teams.length >= 2) {
-        const team1Won = lcuMatchData.teams[0]?.win === true;
-        const team2Won = lcuMatchData.teams[1]?.win === true;
+        // LCU retorna "Win"/"Fail" para times, não boolean
+        const team1Won = lcuMatchData.teams[0]?.win === "Win" || lcuMatchData.teams[0]?.win === true;
+        const team2Won = lcuMatchData.teams[1]?.win === "Win" || lcuMatchData.teams[1]?.win === true;
         winner = team1Won ? 1 : (team2Won ? 2 : null);
-      }      if (winner) {
+        
+        console.log('🔍 [CREATE-LCU-MATCH] Detecção de vencedor:', {
+          teams: lcuMatchData.teams?.map((t: any) => ({ teamId: t.teamId, win: t.win })),
+          team1Won,
+          team2Won,
+          detectedWinner: winner
+        });
+      }if (winner) {
         await dbManager.completeCustomMatch(matchId, winner, {
           duration: duration,
           pickBanData: pickBanData,
@@ -1232,14 +1239,21 @@ app.post('/api/lcu/fetch-and-save-match/:gameId', (req: Request, res: Response) 
         notes: `Partida real detectada automaticamente - Game ID: ${gameId}`,
         gameMode: matchData.gameMode || 'CLASSIC'
       });
-      
-      // SEMPRE marcar como completa quando confirmada pelo usuário via modal
+        // SEMPRE marcar como completa quando confirmada pelo usuário via modal
       // (já que chegou até aqui, significa que o usuário confirmou a partida)
       let winner = null;
       if (matchData.teams && matchData.teams.length >= 2) {
-        const team1Won = matchData.teams[0]?.win === true;
-        const team2Won = matchData.teams[1]?.win === true;
+        // LCU retorna "Win"/"Fail" para times, não boolean
+        const team1Won = matchData.teams[0]?.win === "Win" || matchData.teams[0]?.win === true;
+        const team2Won = matchData.teams[1]?.win === "Win" || matchData.teams[1]?.win === true;
         winner = team1Won ? 1 : (team2Won ? 2 : null);
+        
+        console.log('🔍 [BACKEND] Detecção de vencedor:', {
+          teams: matchData.teams?.map((t: any) => ({ teamId: t.teamId, win: t.win })),
+          team1Won,
+          team2Won,
+          detectedWinner: winner
+        });
       }
 
       // Se não detectou vencedor automaticamente, marcar como completada sem vencedor

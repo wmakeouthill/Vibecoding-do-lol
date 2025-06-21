@@ -494,11 +494,10 @@ export class App implements OnInit, OnDestroy {
   // Resolve winner from LCU game data
   private async resolveWinnerFromLCU(lcuGameData: any): Promise<void> {
     try {
-      let winner: 'blue' | 'red' | null = null;
-
-      // Try to extract winner from LCU data
+      let winner: 'blue' | 'red' | null = null;      // Try to extract winner from LCU data
       if (lcuGameData.details && lcuGameData.details.teams) {
-        const winningTeam = lcuGameData.details.teams.find((team: any) => team.win === true);
+        // LCU teams use string values: "Win" or "Fail"
+        const winningTeam = lcuGameData.details.teams.find((team: any) => team.win === "Win" || team.win === true);
         if (winningTeam) {
           winner = winningTeam.teamId === 100 ? 'blue' : 'red';
         }
@@ -1234,9 +1233,9 @@ export class App implements OnInit, OnDestroy {
     };
     return championMap[championId] || null;
   }
-
   private extractWinnerFromLCU(teams: any[]): number | null {
-    const winningTeam = teams.find(team => team.win === true);
+    // LCU teams use string values: "Win" or "Fail"
+    const winningTeam = teams.find(team => team.win === "Win" || team.win === true);
     if (winningTeam) {
       return winningTeam.teamId === 100 ? 1 : 2; // 1 = blue/team1, 2 = red/team2
     }
