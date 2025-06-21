@@ -49,12 +49,10 @@ export class MatchLinkingService {
     this.activeSessions.set(session.id, session);
     this.currentSession$.next(session);
 
-    console.log('🔗 Nova sessão de vinculação criada:', session);
-
     // Save to backend
     this.saveLinkingSession(session).subscribe({
       next: (response) => {
-        console.log('✅ Sessão salva no backend:', response);
+        // console.log('✅ Sessão salva no backend:', response); // Removido
       },
       error: (error) => {
         console.error('❌ Erro ao salvar sessão:', error);
@@ -145,10 +143,7 @@ export class MatchLinkingService {
 
           // Verify this is our match by checking players
           if (this.isOurMatch(session, recentMatch)) {
-            console.log('🎯 Partida encontrada no histórico LCU:', recentMatch);
             this.markGameCompleted(sessionId, recentMatch);
-          } else {
-            console.log('⚠️ Partida mais recente não corresponde à nossa sessão');
           }
         }
       },
@@ -169,8 +164,6 @@ export class MatchLinkingService {
     const commonPlayers = sessionPlayerIds.filter(id => matchPlayerIds.includes(id));
     const matchPercentage = commonPlayers.length / sessionPlayerIds.length;
 
-    console.log(`📊 Match verification: ${commonPlayers.length}/${sessionPlayerIds.length} players matched (${(matchPercentage * 100).toFixed(1)}%)`);
-
     return matchPercentage >= 0.8; // 80% match required
   }
 
@@ -188,7 +181,6 @@ export class MatchLinkingService {
     // Send to backend
     this.linkPostGameResults(postGameData).subscribe({
       next: (response) => {
-        console.log('✅ Resultados pós-jogo vinculados:', response);
         this.cleanupSession(session.id);
       },
       error: (error) => {

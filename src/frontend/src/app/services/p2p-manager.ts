@@ -59,14 +59,12 @@ export class P2PManager {
   constructor() {
     // Gerar ID único para este peer
     this.localPeerId = this.generatePeerId();
-    console.log(`🔗 P2P Manager inicializado com ID: ${this.localPeerId}`);
   }
 
   async initialize(playerData: { summonerName: string; region: string; mmr: number }): Promise<void> {
     if (this.isInitialized) return;
 
     try {
-      console.log('🚀 Inicializando sistema P2P...');
 
       // Atualizar ID com dados do jogador
       this.localPeerId = this.generatePeerId(playerData.summonerName, playerData.region);
@@ -78,7 +76,6 @@ export class P2PManager {
       this.startHeartbeat();
 
       this.isInitialized = true;
-      console.log('✅ Sistema P2P inicializado com sucesso');
 
       this.p2pReadySubject.next();
     } catch (error) {
@@ -95,7 +92,6 @@ export class P2PManager {
   }
 
   private async startPeerDiscovery(): Promise<void> {
-    console.log('🔍 Iniciando descoberta de peers...');
     this.simulatePeerDiscovery();
   }
   private simulatePeerDiscovery(): void {
@@ -105,7 +101,6 @@ export class P2PManager {
     // 3. WebRTC signaling server
 
     // Para demonstração, simular alguns peers mas sem conexões ativas
-    console.log('📡 Descoberta de peers simulada - aguardando peers reais...');
 
     // Não criar peers falsos, apenas aguardar conexões reais
     // O sistema funcionará quando múltiplas instâncias do app estiverem rodando
@@ -114,20 +109,16 @@ export class P2PManager {
   private handlePeerDiscovered(peerInfo: PeerInfo): void {
     if (peerInfo.id === this.localPeerId) return;
 
-    console.log(`🤝 Peer descoberto: ${peerInfo.summonerName} (${peerInfo.id})`);
-
     this.peers.set(peerInfo.id, peerInfo);
     this.connectToPeer(peerInfo.id);
   }
 
   private async connectToPeer(peerId: string): Promise<boolean> {
     if (this.connections.has(peerId)) {
-      console.log(`⚠️ Conexão com ${peerId} já existe`);
       return true;
     }
 
     try {
-      console.log(`🔗 Conectando ao peer ${peerId}...`);
 
       // Configuração RTCPeerConnection
       const configuration: RTCConfiguration = {
@@ -153,7 +144,6 @@ export class P2PManager {
 
       // Simular conexão bem-sucedida (em implementação real, seria via signaling)
       setTimeout(() => {
-        console.log(`✅ Simulação de conexão P2P com ${peerId} estabelecida`);
         this.peerConnectedSubject.next(peerId);
         this.updateConnectedPeersList();
       }, 1000 + Math.random() * 2000);
@@ -167,7 +157,6 @@ export class P2PManager {
 
   private setupDataChannelEvents(peerId: string, dataChannel: RTCDataChannel): void {
     dataChannel.onopen = () => {
-      console.log(`📡 Data channel aberto com ${peerId}`);
     };
 
     dataChannel.onmessage = (event) => {
@@ -179,15 +168,12 @@ export class P2PManager {
     };
 
     dataChannel.onclose = () => {
-      console.log(`🔌 Data channel fechado com ${peerId}`);
       this.handlePeerDisconnection(peerId);
     };
   }
 
   private setupPeerConnectionEvents(peerId: string, peerConnection: RTCPeerConnection): void {
     peerConnection.onconnectionstatechange = () => {
-      console.log(`🔄 Estado da conexão com ${peerId}: ${peerConnection.connectionState}`);
-
       if (peerConnection.connectionState === 'disconnected' ||
           peerConnection.connectionState === 'failed' ||
           peerConnection.connectionState === 'closed') {
@@ -205,7 +191,6 @@ export class P2PManager {
   private handlePeerMessage(peerId: string, data: string): void {
     try {
       const message: P2PMessage = JSON.parse(data);
-      console.log(`📨 Mensagem recebida de ${peerId}:`, message.type);
 
       this.peerMessageSubject.next({
         peerId,
@@ -227,7 +212,7 @@ export class P2PManager {
           this.handleMatchProposal(peerId, message);
           break;
         default:
-          console.log(`🔍 Tipo de mensagem desconhecido: ${message.type}`);
+          // console.log(`🔍 Tipo de mensagem desconhecido: ${message.type}`); // Removido
       }
     } catch (error) {
       console.error('❌ Erro ao processar mensagem P2P:', error);
@@ -243,7 +228,6 @@ export class P2PManager {
   }
 
   private handleQueueJoin(peerId: string, message: P2PMessage): void {
-    console.log(`👥 ${peerId} entrou na fila distribuída`);
     this.queueUpdateSubject.next({
       action: 'join',
       peerId,
@@ -252,7 +236,6 @@ export class P2PManager {
   }
 
   private handleQueueLeave(peerId: string, message: P2PMessage): void {
-    console.log(`👋 ${peerId} saiu da fila distribuída`);
     this.queueUpdateSubject.next({
       action: 'leave',
       peerId,
@@ -261,7 +244,6 @@ export class P2PManager {
   }
 
   private handleMatchProposal(peerId: string, message: P2PMessage): void {
-    console.log(`🎯 Proposta de match recebida de ${peerId}`);
     this.matchProposalSubject.next({
       proposerId: peerId,
       proposal: message.data
@@ -284,7 +266,6 @@ export class P2PManager {
 
     this.peers.delete(peerId);
 
-    console.log(`🔌 Peer ${peerId} desconectado`);
     this.peerDisconnectedSubject.next(peerId);
     this.updateConnectedPeersList();
   }
@@ -323,14 +304,10 @@ export class P2PManager {
         successCount++;
       }
     }
-
-    console.log(`📡 Mensagem enviada para ${successCount}/${this.dataChannels.size} peers`);
   }
 
   // Método para entrar na fila distribuída
   joinDistributedQueue(preferences: QueuePreferences): void {
-    console.log('🎮 Entrando na fila distribuída...');
-
     this.broadcastToNetwork({
       type: 'queue_join',
       data: {
@@ -346,8 +323,6 @@ export class P2PManager {
 
   // Método para sair da fila distribuída
   leaveDistributedQueue(): void {
-    console.log('👋 Saindo da fila distribuída...');
-
     this.broadcastToNetwork({
       type: 'queue_leave',
       data: {
@@ -358,8 +333,6 @@ export class P2PManager {
 
   // Propor um match para a rede
   proposeMatch(players: any[]): void {
-    console.log('🎯 Propondo match para a rede...');
-
     this.broadcastToNetwork({
       type: 'match_proposal',
       data: {
@@ -408,8 +381,6 @@ export class P2PManager {
 
   // Cleanup
   destroy(): void {
-    console.log('🧹 Destruindo P2P Manager...');
-
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
     }
@@ -438,7 +409,5 @@ export class P2PManager {
     this.isInitialized = false;
 
     this.connectedPeersSubject.next([]);
-
-    console.log('✅ P2P Manager destruído');
   }
 }

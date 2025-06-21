@@ -1669,7 +1669,6 @@ export class App implements OnInit, OnDestroy {
             this.currentPlayer = processedPlayer;
             localStorage.setItem('currentPlayer', JSON.stringify(this.currentPlayer));
             this.addNotification('success', 'Dados Atualizados', 'Informações do jogador atualizadas com sucesso!');
-            console.log('Player data refreshed by Riot ID:', this.currentPlayer);
           } else {
             this.addNotification('error', 'Erro na Atualização', response.error || 'Falha ao processar a resposta do servidor.');
           }

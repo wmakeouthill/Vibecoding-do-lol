@@ -376,21 +376,12 @@ export class ApiService {
             (mappedPlayer as any)._isPartialData = response.data.partialData || false;
             (mappedPlayer as any)._dataSource = response.data.partialData ? 'LCU apenas' : 'LCU + Riot API';
 
-            // Log the data source for debugging
-            if (response.data.partialData) {
-              console.log('📡 Dados carregados apenas do LCU (Riot API indisponível)');
-            } else {
-              console.log('✅ Dados completos carregados do LCU + Riot API');
-            }
-
             return mappedPlayer;
           }
           throw new Error('Nenhum jogador conectado no League of Legends');
         }),
         catchError((error: any) => {
           // If combined endpoint fails due to Riot API, try LCU-only endpoint
-          console.log('💡 Combined LCU+Riot endpoint failed, trying LCU-only approach:', error.message);
-
           if (error.message?.includes('Riot API') || error.message?.includes('não encontrado')) {
             return this.getLCUOnlyPlayerData();
           }
@@ -403,8 +394,6 @@ export class ApiService {
 
   // Fallback method: Get player data from LCU only (no Riot API dependency)
   private getLCUOnlyPlayerData(): Observable<Player> {
-    console.log('🎮 Falling back to LCU-only data (Riot API unavailable)');
-
     return this.http.get<any>(`${this.baseUrl}/lcu/current-summoner`)
       .pipe(
         retry(1),
@@ -429,7 +418,6 @@ export class ApiService {
             losses: undefined
           };
 
-          console.log('✅ Player data created from LCU-only (Riot API offline):', lcuPlayer.summonerName);
           return lcuPlayer;
         }),
         catchError(this.handleError)

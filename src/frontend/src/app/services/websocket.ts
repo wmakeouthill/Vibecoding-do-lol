@@ -47,18 +47,18 @@ export class WebsocketService {
   async connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
-        this.socket = new WebSocket(this.serverUrl);        this.socket.onopen = (event) => {
-          // console.log('🌐 WebSocket conectado');
+        this.socket = new WebSocket(this.serverUrl);
+        this.socket.onopen = (event) => {
           this.connectionSubject.next(true);
           this.reconnectAttempts = 0;
 
           // Enviar ping para testar conexão
           this.send({ type: 'ping' });
           resolve();
-        };        this.socket.onmessage = (event) => {
+        };
+        this.socket.onmessage = (event) => {
           try {
             const message: WebSocketMessage = JSON.parse(event.data);
-            // console.log('📨 Mensagem recebida:', message);
             this.messageSubject.next(message);
           } catch (error) {
             console.error('Erro ao parsear mensagem WebSocket:', error);
@@ -66,7 +66,6 @@ export class WebsocketService {
         };
 
         this.socket.onclose = (event) => {
-          // console.log('🔌 WebSocket desconectado:', event.code, event.reason);
           this.connectionSubject.next(false);
           this.socket = null;
 
@@ -101,7 +100,7 @@ export class WebsocketService {
     }
 
     this.reconnectAttempts++;
-    const delay = this.reconnectInterval * Math.pow(2, this.reconnectAttempts - 1); // Backoff exponencial    // console.log(`🔄 Tentando reconectar em ${delay}ms (tentativa ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+    const delay = this.reconnectInterval * Math.pow(2, this.reconnectAttempts - 1); // Backoff exponencial
 
     this.reconnectTimer = setTimeout(async () => {
       try {
@@ -126,7 +125,7 @@ export class WebsocketService {
     this.connectionSubject.next(false);
   }
   private send(message: WebSocketMessage): void {
-    if (this.socket && this.socket.readyState === WebSocket.OPEN) {      // console.log('📤 Enviando mensagem WebSocket:', message);
+    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify(message));
     } else {
       console.warn('⚠️ WebSocket não está conectado, mensagem ignorada:', message);

@@ -70,9 +70,6 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
    * Loads matches for the current active tab using Strategy Pattern
    */
   loadCurrentTabMatches(): void {
-    console.log('⚡ [DEBUG] loadCurrentTabMatches chamado');
-    console.log('⚡ [DEBUG] Tab ativa:', this.activeTab);
-
     const strategy = this.getCurrentStrategy();
     if (strategy) {
       strategy.loadMethod();
@@ -94,18 +91,6 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
   getCurrentMatches(): Match[] {
     const strategy = this.getCurrentStrategy();
     const result = strategy ? strategy.getMatches() : [];
-
-    console.log('📋 [DEBUG] getCurrentMatches() via strategy:', {
-      activeTab: this.activeTab,
-      result: result.length,
-      resultType: typeof result,
-      resultIsArray: Array.isArray(result),
-      primeiraPartida: result[0] ? {
-        id: result[0].id,
-        champion: result[0].playerStats?.champion,
-        hasPlayerStats: !!result[0].playerStats
-      } : 'Nenhuma partida'
-    });
 
     return result;
   }
@@ -148,14 +133,9 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       }
     });
   }  loadCustomMatches(): void {
-    console.log('🔍 [DEBUG] loadCustomMatches chamado');
-
     if (!this.player) {
-      console.log('❌ [DEBUG] Nenhum player disponível');
       return;
     }
-
-    console.log('📋 [DEBUG] Player disponível:', this.player);
 
     this.loading = true;
     this.error = null;
@@ -163,39 +143,23 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     try {
       // Primeiro tentar com o nome do summoner, depois com o ID
       const playerIdentifier = this.player.summonerName || this.player.id.toString();
-      console.log('🎯 [DEBUG] Usando playerIdentifier:', playerIdentifier);
 
       this.apiService.getCustomMatches(playerIdentifier, this.currentPage * this.matchesPerPage, this.matchesPerPage).subscribe({        next: (response) => {
-          console.log('✅ [DEBUG] Resposta recebida:', response);          if (response && response.success && response.matches && response.matches.length > 0) {
-            console.log('📊 [DEBUG] Mapeando partidas:', response.matches.length);
-            console.log('📊 [DEBUG] Dados raw das partidas:', response.matches);
-            console.log('📊 [DEBUG] Primeira partida raw completa:', JSON.stringify(response.matches[0], null, 2));
+          if (response && response.success && response.matches && response.matches.length > 0) {
 
             this.customMatches = this.mapApiMatchesToModel(response.matches);
-            this.totalMatches = response.pagination.total;            console.log('🎮 [DEBUG] Partidas customizadas mapeadas:', this.customMatches);
-            console.log('🎮 [DEBUG] Primeira partida mapeada completa:', JSON.stringify(this.customMatches[0], null, 2));
-            console.log('🎮 [DEBUG] PlayerStats da primeira partida:', this.customMatches[0]?.playerStats);
-            console.log('🎮 [DEBUG] Array customMatches é válido?', Array.isArray(this.customMatches));
-            console.log('🎮 [DEBUG] Tipo de customMatches[0]:', typeof this.customMatches[0]);            // Logs para detecção de mudanças no Angular
-            console.log('🔍 [DEBUG] Angular change detection - customMatches.length:', this.customMatches.length);
-            console.log('🔍 [DEBUG] Angular change detection - activeTab:', this.activeTab);
-            console.log('🔍 [DEBUG] Angular change detection - isCustomTab():', this.isCustomTab());
-            console.log('🔍 [DEBUG] Angular change detection - getCurrentMatches().length:', this.getCurrentMatches().length);            // Forçar detecção de mudanças
-            console.log('🔄 [DEBUG] Forçando detecção de mudanças...');
+            this.totalMatches = response.pagination.total;            // Logs para detecção de mudanças no Angular
+            // Forçar detecção de mudanças
             this.cdr.detectChanges();
-            console.log('✅ [DEBUG] Detecção de mudanças forçada concluída');
 
             // Debug adicional para verificar estado
             this.debugCurrentState();
-            this.debugTemplateVisibility();
           } else {
-            console.log('⚠️ [DEBUG] Nenhuma partida encontrada');
             this.customMatches = [];
             this.totalMatches = 0;
             this.error = 'Você ainda não jogou nenhuma partida customizada. Complete uma partida personalizada para vê-la aparecer aqui.';
           }
           this.loading = false;
-          console.log('🏁 [DEBUG] Loading finalizado. customMatches:', this.customMatches.length);
         },error: (error) => {
           console.error('❌ [DEBUG] Erro na requisição:', error);
 
@@ -205,8 +169,6 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           this.totalMatches = this.customMatches.length;
           this.loading = false;
           this.error = null; // Remover erro para mostrar os dados mock
-
-          console.log('🎮 [DEBUG] Mock data carregado:', this.customMatches);
 
           // Forçar detecção de mudanças para mock data também
           console.log('🔄 [DEBUG] Forçando detecção de mudanças (mock)...');
@@ -232,26 +194,18 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     }
   }  // ========== TAB SYSTEM ==========
   setActiveTab(tab: string): void {
-    console.log('🔄 [DEBUG] setActiveTab chamado com:', tab);
-    console.log('🔄 [DEBUG] Tab anterior:', this.activeTab);
-
     this.activeTab = tab;
     this.currentPage = 0;
-
-    console.log('🔄 [DEBUG] Nova tab ativa:', this.activeTab);
-    console.log('🔄 [DEBUG] Chamando loadCurrentTabMatches...');
 
     this.loadCurrentTabMatches();
   }
   // Helper function para evitar erro de lint no template
   isCustomTab(): boolean {
     const result = this.activeTab === 'custom';
-    console.log('🎯 [DEBUG] isCustomTab():', result, 'activeTab:', this.activeTab);
     return result;
   }
   isRiotTab(): boolean {
     const result = this.activeTab === 'riot';
-    console.log('🏆 [DEBUG] isRiotTab():', result, 'activeTab:', this.activeTab);
     return result;
   }
 
@@ -445,12 +399,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         isWin: false
       }
     };  }  private mapApiMatchesToModel(apiMatches: any[]): Match[] {
-    console.log('🔄 [DEBUG] mapApiMatchesToModel chamado com:', apiMatches.length, 'partidas');
-    console.log('🔄 [DEBUG] Primeira partida a ser mapeada:', apiMatches[0]);
-
     return apiMatches.map((match, index) => {
-      console.log(`🔄 [DEBUG] Mapeando partida ${index + 1}:`, match.id || match.match_id);
-
       // Parse JSON fields safely
       let team1Players = [];
       let team2Players = [];
@@ -506,8 +455,6 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       }      // Verificar se temos dados reais dos participantes
       const hasRealData = match.participants_data && Array.isArray(match.participants_data) && match.participants_data.length > 0;
 
-      console.log(`🔍 [DEBUG] Partida ${match.id} - hasRealData:`, hasRealData);
-
       let playerRealData = null;
       if (hasRealData) {
         // Encontrar dados reais do jogador atual
@@ -516,8 +463,6 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           const currentName = this.player?.summonerName?.toLowerCase() || '';
           return pName === currentName || pName.includes(currentName) || currentName.includes(pName);
         });
-
-        console.log(`🎯 [DEBUG] Dados reais do jogador encontrados:`, playerRealData);
       }
 
       // Função para obter dados reais de um participante por nome
@@ -693,7 +638,8 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
             items: playerItems,
             goldEarned: playerRealData?.goldEarned ?? Math.floor(Math.random() * 10000) + 15000,
             totalDamageDealt: playerRealData?.totalDamageDealt ?? Math.floor(Math.random() * 50000) + 80000,
-            totalDamageDealtToChampions: playerRealData?.totalDamageDealtToChampions ?? Math.floor(Math.random() * 25000) + 20000,          totalDamageTaken: playerRealData?.totalDamageTaken ?? Math.floor(Math.random() * 20000) + 15000,
+            totalDamageDealtToChampions: playerRealData?.totalDamageDealtToChampions ?? Math.floor(Math.random() * 25000) + 20000,
+            totalDamageTaken: playerRealData?.totalDamageTaken ?? Math.floor(Math.random() * 20000) + 15000,
             totalMinionsKilled: playerRealData?.totalMinionsKilled ?? Math.floor(Math.random() * 180) + 120,
             neutralMinionsKilled: playerRealData?.neutralMinionsKilled ?? Math.floor(Math.random() * 60) + 20,
             wardsPlaced: playerRealData?.wardsPlaced ?? Math.floor(Math.random() * 15) + 8,
@@ -709,15 +655,6 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           player_won: match.player_won || false,
           lp_changes: match.lp_changes || {}
         };
-
-      console.log(`✅ [DEBUG] Partida ${index + 1} mapeada:`, {
-        id: mappedMatch.id,
-        champion: mappedMatch.playerStats?.champion,
-        isWin: mappedMatch.playerStats?.isWin,
-        hasPlayerStats: !!mappedMatch.playerStats,
-        team1Length: mappedMatch.team1?.length,
-        team2Length: mappedMatch.team2?.length
-      });
 
       return mappedMatch;
     });
@@ -938,8 +875,6 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
 
     return stats;
   }  getCustomStats() {
-    console.log('📊 [DEBUG] getCustomStats chamado, customMatches.length:', this.customMatches.length);
-
     const stats = {
       totalKills: 0,
       totalDeaths: 0,
@@ -955,11 +890,10 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         stats.totalAssists += match.playerStats.assists;
         if (match.playerStats.isWin) stats.totalWins++;
         // Para partidas customizadas, usar lpChange em vez de mmrChange
-        stats.totalMMRGained += match.playerStats.lpChange || match.player_lp_change || 0;
+        stats.totalMMRGained += match.playerStats.lpChange || match.player_mmr_change || 0;
       }
     });
 
-    console.log('📊 [DEBUG] getCustomStats resultado:', stats);
     return stats;
   }
 
@@ -1182,7 +1116,6 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
   }
   trackMatch(index: number, match: Match): string {
     const trackId = match.id.toString();
-    console.log('🔍 [DEBUG] trackMatch chamado - index:', index, 'match.id:', match.id, 'trackId:', trackId);
     return trackId;
   }
   toggleMatchDetails(matchId: string): void {
@@ -1714,19 +1647,6 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         hasMatches: this.getCurrentMatches().length > 0,
         shouldShowContent: !this.loading && !this.error && this.getCurrentMatches().length > 0
       }
-    });
-  }
-
-  debugTemplateVisibility(): void {
-    const matches = this.getCurrentMatches();
-    console.log('🎨 [DEBUG] Template visibility:', {
-      loading: this.loading,
-      error: this.error,
-      matchesLength: matches.length,
-      shouldShowTabContent: !this.loading && !this.error && matches.length > 0,
-      isRiotTab: this.isRiotTab(),
-      isCustomTab: this.isCustomTab(),
-      activeTab: this.activeTab
     });
   }
 }
