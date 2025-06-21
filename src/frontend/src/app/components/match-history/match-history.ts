@@ -138,11 +138,11 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     }
 
     this.loading = true;
-    this.error = null;
-
-    try {
-      // Primeiro tentar com o nome do summoner, depois com o ID
-      const playerIdentifier = this.player.summonerName || this.player.id.toString();
+    this.error = null;    try {
+      // Usar gameName#tagLine como identificador principal, com fallbacks
+      const playerIdentifier = this.player.gameName && this.player.tagLine
+                              ? `${this.player.gameName}#${this.player.tagLine}`
+                              : this.player.summonerName || this.player.id.toString();
 
       this.apiService.getCustomMatches(playerIdentifier, this.currentPage * this.matchesPerPage, this.matchesPerPage).subscribe({        next: (response) => {
           if (response && response.success && response.matches && response.matches.length > 0) {

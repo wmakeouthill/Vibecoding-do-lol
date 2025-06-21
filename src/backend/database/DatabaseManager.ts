@@ -51,17 +51,15 @@ export interface Match {
 export class DatabaseManager {
   private db: Database | null = null;
   private dbPath: string;
-
   constructor() {
-    const userDataPath = process.env.NODE_ENV === 'development' 
-      ? path.join(process.cwd(), 'data')
-      : path.join(process.env.APPDATA || process.env.HOME || '.', 'lol-matchmaking');
+    // Usar database.sqlite que fica na pasta src/backend/database/
+    const databaseDir = path.join(__dirname); // __dirname já aponta para src/backend/database/
     
-    if (!fs.existsSync(userDataPath)) {
-      fs.mkdirSync(userDataPath, { recursive: true });
+    if (!fs.existsSync(databaseDir)) {
+      fs.mkdirSync(databaseDir, { recursive: true });
     }
 
-    this.dbPath = path.join(userDataPath, 'matchmaking.db');
+    this.dbPath = path.join(databaseDir, 'database.sqlite');
   }
 
   async initialize(): Promise<void> {
@@ -136,10 +134,26 @@ export class DatabaseManager {
         await this.db.exec('ALTER TABLE custom_matches ADD COLUMN average_mmr_team2 INTEGER');
         console.log('✅ Coluna average_mmr_team2 adicionada');
       }
-      
-      if (!customMatchColumnNames.includes('participants_data')) {
+        if (!customMatchColumnNames.includes('participants_data')) {
         await this.db.exec('ALTER TABLE custom_matches ADD COLUMN participants_data TEXT');
         console.log('✅ Coluna participants_data adicionada');
+      }
+      
+      if (!customMatchColumnNames.includes('riot_game_id')) {
+        await this.db.exec('ALTER TABLE custom_matches ADD COLUMN riot_game_id TEXT');
+        console.log('✅ Coluna riot_game_id adicionada');
+      }
+      
+      if (!customMatchColumnNames.includes('detected_by_lcu')) {
+        await this.db.exec('ALTER TABLE custom_matches ADD COLUMN detected_by_lcu INTEGER DEFAULT 0');
+        console.log('✅ Coluna detected_by_lcu adicionada');
+      }
+        if (!customMatchColumnNames.includes('notes')) {
+        await this.db.exec('ALTER TABLE custom_matches ADD COLUMN notes TEXT');
+        console.log('✅ Coluna notes adicionada');
+      }        if (!customMatchColumnNames.includes('updated_at')) {
+        await this.db.exec('ALTER TABLE custom_matches ADD COLUMN updated_at DATETIME');
+        console.log('✅ Coluna updated_at adicionada');
       }
       
     } catch (error) {
@@ -823,6 +837,73 @@ export class DatabaseManager {
     }    console.log(`✅ Partida personalizada ${matchId} finalizada - Vencedor: Time ${winnerTeam} (${result.changes} linha(s) afetada(s))`);
   }
 
+  async updateCustomMatchWithRealData(matchId: number, realData: any): Promise<void> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+
+    console.log('📊 [updateCustomMatchWithRealData] Atualizando partida com dados reais:', matchId);
+
+    const updateFields = [];
+    const updateValues = [];
+
+    // Atualizar campos com dados reais
+    if (realData.duration !== undefined) {
+      updateFields.push('duration = ?');
+      updateValues.push(realData.duration);
+    }
+
+    if (realData.pickBanData) {
+      updateFields.push('pick_ban_data = ?');
+      updateValues.push(JSON.stringify(realData.pickBanData));
+    }
+
+    if (realData.participantsData) {
+      updateFields.push('participants_data = ?');
+      updateValues.push(JSON.stringify(realData.participantsData));
+    }
+
+    if (realData.riotGameId) {
+      updateFields.push('riot_game_id = ?');
+      updateValues.push(realData.riotGameId);
+    }
+
+    if (realData.detectedByLCU !== undefined) {
+      updateFields.push('detected_by_lcu = ?');
+      updateValues.push(realData.detectedByLCU ? 1 : 0);
+    }
+
+    if (realData.notes) {
+      updateFields.push('notes = ?');
+      updateValues.push(realData.notes);
+    }
+
+    if (realData.gameMode) {
+      updateFields.push('game_mode = ?');
+      updateValues.push(realData.gameMode);
+    }
+
+    if (updateFields.length === 0) {
+      console.log('⚠️ Nenhum campo para atualizar');
+      return;
+    }
+
+    updateFields.push('updated_at = CURRENT_TIMESTAMP');
+    updateValues.push(matchId);
+
+    const query = `UPDATE custom_matches SET ${updateFields.join(', ')} WHERE id = ?`;
+    
+    console.log('🔧 Query SQL:', query);
+    console.log('🔧 Valores:', updateValues);
+    
+    const result = await this.db.run(query, updateValues);
+    console.log('🔄 Resultado da atualização:', result);
+    
+    if (result.changes === 0) {
+      throw new Error(`Partida com ID ${matchId} não encontrada para atualização`);
+    }
+
+    console.log(`✅ Partida ${matchId} atualizada com dados reais (${result.changes} linha(s) afetada(s))`);
+  }
+
   async getCustomMatches(limit: number = 20, offset: number = 0): Promise<any[]> {
     if (!this.db) throw new Error('Banco de dados não inicializado');
 
@@ -857,13 +938,11 @@ export class DatabaseManager {
   async getPlayerCustomMatches(playerIdentifier: string, limit: number = 20): Promise<any[]> {
     if (!this.db) throw new Error('Banco de dados não inicializado');
 
-    console.log('🔍 Buscando partidas customizadas para:', playerIdentifier);
-
-    // Buscar tanto por ID numérico quanto por nome
+    console.log('🔍 Buscando partidas customizadas para:', playerIdentifier);    // Buscar tanto por ID numérico quanto por nome - incluir partidas com dados reais
     const matches = await this.db.all(`
       SELECT * FROM custom_matches 
       WHERE (team1_players LIKE '%' || ? || '%' OR team2_players LIKE '%' || ? || '%')
-      AND status = 'completed'
+      AND participants_data IS NOT NULL
       ORDER BY created_at DESC 
       LIMIT ?
     `, [playerIdentifier, playerIdentifier, limit]);

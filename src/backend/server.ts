@@ -941,11 +941,23 @@ app.post('/api/test/create-lcu-based-match', (req: Request, res: Response) => {
       team2Players: team2Players,
       createdBy: createdBy,
       gameMode: lcuMatchData.gameMode || 'CLASSIC'
-    };
-
-    const matchId = await dbManager.createCustomMatch(matchData);
+    };    const matchId = await dbManager.createCustomMatch(matchData);
     
-    // Se a partida já terminou, completar com resultado
+    // SEMPRE salvar os dados dos participantes e informações da partida real
+    const duration = Math.floor((lcuMatchData.gameDuration || 0) / 60); // Converter para minutos
+    
+    // Salvar dados completos da partida, independente se terminou ou não
+    await dbManager.updateCustomMatchWithRealData(matchId, {
+      duration: duration,
+      pickBanData: pickBanData,
+      participantsData: participantsData,
+      detectedByLCU: true,
+      riotGameId: lcuMatchData.gameId?.toString(),
+      notes: `Partida real do LCU - Game ID: ${lcuMatchData.gameId}`,
+      gameMode: lcuMatchData.gameMode || 'CLASSIC'
+    });
+    
+    // Se a partida já terminou, marcar como completa com vencedor
     if (lcuMatchData.endOfGameResult === 'GameComplete' && lcuMatchData.teams) {
       let winner = null;
       if (lcuMatchData.teams.length >= 2) {
@@ -953,15 +965,13 @@ app.post('/api/test/create-lcu-based-match', (req: Request, res: Response) => {
         const team2Won = lcuMatchData.teams[1]?.win === true;
         winner = team1Won ? 1 : (team2Won ? 2 : null);
       }      if (winner) {
-        const duration = Math.floor((lcuMatchData.gameDuration || 0) / 60); // Converter para minutos
-        
         await dbManager.completeCustomMatch(matchId, winner, {
           duration: duration,
           pickBanData: pickBanData,
-          participantsData: participantsData, // Incluir dados reais dos participantes
+          participantsData: participantsData,
           detectedByLCU: true,
           riotGameId: lcuMatchData.gameId?.toString(),
-          notes: `Partida real detectada via LCU - ${lcuMatchData.endOfGameResult}`
+          notes: `Partida real finalizada via LCU - ${lcuMatchData.endOfGameResult}`
         });
       }
     }
@@ -983,167 +993,289 @@ app.post('/api/test/create-lcu-based-match', (req: Request, res: Response) => {
 })();
 });
 
-// Endpoint para atualizar resultado de partida customizada existente (para simulações baseadas em partidas reais)
-app.put('/api/matches/custom/:matchId/result', (async (req: Request, res: Response) => {
-  try {
-    const matchId = parseInt(req.params.matchId);
-    const updateData = req.body;
-    
-    console.log(`🔄 [PUT /api/matches/custom/${matchId}/result] Tentativa de atualização:`, updateData);
+// Endpoint para buscar partida do LCU pelo Game ID e salvar automaticamente
+app.post('/api/lcu/fetch-and-save-match/:gameId', (req: Request, res: Response) => {
+  (async () => {
+    try {
+      const gameId = parseInt(req.params.gameId);
+      const { playerIdentifier } = req.body;
 
-    if (!matchId || isNaN(matchId)) {
-      return res.status(400).json({ error: 'ID da partida inválido' });
-    }
+      if (!gameId || isNaN(gameId)) {
+        return res.status(400).json({ error: 'Game ID inválido' });
+      }
 
-    // Verificar se a partida existe antes de tentar atualizar
-    const existingMatch = await dbManager.getCustomMatchById(matchId);
-    
-    if (!existingMatch) {
-      console.warn(`⚠️ [PUT /api/matches/custom/${matchId}/result] Partida não encontrada - criando nova simulação`);
+      if (!playerIdentifier) {
+        return res.status(400).json({ error: 'Player identifier é obrigatório' });
+      }
+
+      console.log(`🎮 [FETCH-SAVE-MATCH] Buscando partida ${gameId} do LCU...`);
+
+      if (!lcuService.isClientConnected()) {
+        return res.status(503).json({ error: 'Cliente do LoL não conectado' });
+      }
+
+      // Buscar dados completos da partida
+      const matchData = await lcuService.getMatchDetails(gameId);
       
-      // Se a partida não existe, criar uma nova simulação baseada nos dados recebidos
-      const simulationData = {
-        title: `Simulação - Partida ${matchId}`,
-        description: `Simulação baseada na partida real ${matchId}`,
-        team1Players: updateData.team1 ? updateData.team1.map((p: any) => p.id?.toString() || p.summonerName || p.toString()) : ['1', '2', '3', '4', '5'],
-        team2Players: updateData.team2 ? updateData.team2.map((p: any) => p.id?.toString() || p.summonerName || p.toString()) : ['6', '7', '8', '9', '10'],
-        createdBy: '1',
-        gameMode: 'CLASSIC',
-        winnerTeam: updateData.winner,
-        duration: Math.floor((updateData.duration || 1200) / 60),
-        pickBanData: updateData.pickBanData ? JSON.stringify(updateData.pickBanData) : null,
-        riotGameId: matchId.toString(),
-        detectedByLCU: updateData.detectedByLCU ? 1 : 0,
-        status: 'completed'
+      if (!matchData) {
+        return res.status(404).json({ error: `Partida ${gameId} não encontrada no LCU` });
+      }
+
+      if (!matchData.participants || matchData.participants.length === 0) {
+        return res.status(400).json({ error: `Partida ${gameId} não possui dados de participantes` });
+      }
+
+      console.log(`✅ [FETCH-SAVE-MATCH] Dados obtidos: ${matchData.participants.length} participantes`);
+
+      // Usar o endpoint existente para processar e salvar os dados
+      const participants = matchData.participants || [];
+      const participantIdentities = matchData.participantIdentities || [];
+      const team1Players: string[] = [];
+      const team2Players: string[] = [];
+      const team1Picks: any[] = [];
+      const team2Picks: any[] = [];
+
+      // Combinar dados de participants com participantIdentities
+      const participantsData: any[] = [];
+      
+      participants.forEach((participant: any, index: number) => {
+        // Buscar dados do jogador correspondente
+        const participantIdentity = participantIdentities.find(
+          (identity: any) => identity.participantId === participant.participantId
+        );
+
+        let playerName = '';
+        
+        if (participantIdentity && participantIdentity.player) {
+          const player = participantIdentity.player;
+          
+          if (player.gameName && player.tagLine) {
+            playerName = `${player.gameName}#${player.tagLine}`;
+          } else if (player.summonerName) {
+            playerName = player.summonerName;
+          } else if (player.gameName) {
+            playerName = player.gameName;
+          }
+        }
+
+        if (!playerName) {
+          playerName = `Player${index + 1}`;
+        }
+
+        const championId = participant.championId || participant.champion || 0;
+        const championName = participant.championName || `Champion${championId}`;
+        const lane = participant.lane || participant.teamPosition || participant.individualPosition || 'UNKNOWN';        // Extrair dados completos do participante (dados estão em participant.stats.*)
+        const stats = participant.stats || {};
+        const timeline = participant.timeline || {};
+        
+        const participantData = {
+          participantId: participant.participantId,
+          teamId: participant.teamId,
+          championId: championId,
+          championName: championName,
+          summonerName: playerName,
+          riotIdGameName: participantIdentity?.player?.gameName || '',
+          riotIdTagline: participantIdentity?.player?.tagLine || '',
+          lane: timeline.lane || participant.lane || participant.teamPosition || participant.individualPosition || 'UNKNOWN',
+          individualPosition: participant.individualPosition || timeline.lane || lane,
+          teamPosition: participant.teamPosition || timeline.lane || lane,
+          
+          // KDA e estatísticas básicas
+          kills: stats.kills || 0,
+          deaths: stats.deaths || 0,
+          assists: stats.assists || 0,
+          champLevel: stats.champLevel || 1,
+          
+          // Ouro e farm
+          goldEarned: stats.goldEarned || 0,
+          goldSpent: stats.goldSpent || 0,
+          totalMinionsKilled: stats.totalMinionsKilled || 0,
+          neutralMinionsKilled: stats.neutralMinionsKilled || 0,
+          
+          // Dano
+          totalDamageDealt: stats.totalDamageDealt || 0,
+          totalDamageDealtToChampions: stats.totalDamageDealtToChampions || 0,
+          totalDamageTaken: stats.totalDamageTaken || 0,
+          magicDamageDealt: stats.magicDamageDealt || 0,
+          magicDamageDealtToChampions: stats.magicDamageDealtToChampions || 0,
+          physicalDamageDealt: stats.physicalDamageDealt || 0,
+          physicalDamageDealtToChampions: stats.physicalDamageDealtToChampions || 0,
+          trueDamageDealt: stats.trueDamageDealt || 0,
+          trueDamageDealtToChampions: stats.trueDamageDealtToChampions || 0,
+          
+          // Visão
+          wardsPlaced: stats.wardsPlaced || 0,
+          wardsKilled: stats.wardsKilled || 0,
+          visionScore: stats.visionScore || 0,
+          visionWardsBoughtInGame: stats.visionWardsBoughtInGame || 0,
+          
+          // Conquistas especiais
+          firstBloodKill: stats.firstBloodKill || false,
+          firstBloodAssist: stats.firstBloodAssist || false,
+          firstTowerKill: stats.firstTowerKill || false,
+          firstTowerAssist: stats.firstTowerAssist || false,
+          
+          // Multi-kills
+          doubleKills: stats.doubleKills || 0,
+          tripleKills: stats.tripleKills || 0,
+          quadraKills: stats.quadraKills || 0,
+          pentaKills: stats.pentaKills || 0,
+          
+          // Outras estatísticas
+          killingSprees: stats.killingSprees || 0,
+          largestKillingSpree: stats.largestKillingSpree || 0,
+          largestMultiKill: stats.largestMultiKill || 0,
+          longestTimeSpentLiving: stats.longestTimeSpentLiving || 0,
+          totalHeal: stats.totalHeal || 0,
+          totalTimeCrowdControlDealt: stats.totalTimeCrowdControlDealt || 0,
+          timeCCingOthers: stats.timeCCingOthers || 0,
+          
+          // Objetivos
+          turretKills: stats.turretKills || 0,
+          inhibitorKills: stats.inhibitorKills || 0,
+          damageDealtToObjectives: stats.damageDealtToObjectives || 0,
+          damageDealtToTurrets: stats.damageDealtToTurrets || 0,
+          damageSelfMitigated: stats.damageSelfMitigated || 0,
+          
+          // Itens
+          item0: stats.item0 || 0,
+          item1: stats.item1 || 0,
+          item2: stats.item2 || 0,
+          item3: stats.item3 || 0,
+          item4: stats.item4 || 0,
+          item5: stats.item5 || 0,
+          item6: stats.item6 || 0,
+          
+          // Spells
+          summoner1Id: participant.spell1Id || 0,
+          summoner2Id: participant.spell2Id || 0,
+          
+          // Runas
+          perk0: stats.perk0 || 0,
+          perk1: stats.perk1 || 0,
+          perk2: stats.perk2 || 0,
+          perk3: stats.perk3 || 0,
+          perk4: stats.perk4 || 0,
+          perk5: stats.perk5 || 0,
+          perkPrimaryStyle: stats.perkPrimaryStyle || 0,
+          perkSubStyle: stats.perkSubStyle || 0,
+          
+          // Resultado da partida
+          win: stats.win || false
+        };
+        
+        participantsData.push(participantData);
+
+        if (participant.teamId === 100) {
+          team1Players.push(playerName);
+          team1Picks.push({
+            champion: championName,
+            player: playerName,
+            lane: lane,
+            championId: championId
+          });
+        } else if (participant.teamId === 200) {
+          team2Players.push(playerName);
+          team2Picks.push({
+            champion: championName,
+            player: playerName,
+            lane: lane,
+            championId: championId
+          });
+        }
+      });
+
+      // Criar dados de pick/ban
+      const pickBanData = {
+        team1Picks: team1Picks,
+        team2Picks: team2Picks,
+        team1Bans: [],
+        team2Bans: [],
+        isReal: true,
+        source: 'LCU_MATCH_DETAILS'
       };
 
-      const newMatchId = await dbManager.createCustomMatch(simulationData);
-      
-      console.log(`✅ [PUT /api/matches/custom/${matchId}/result] Nova simulação criada com ID:`, newMatchId);
-      
-      return res.json({ 
-        success: true, 
-        message: 'Simulação criada com sucesso (partida original não encontrada)',
-        originalMatchId: matchId,
-        newMatchId: newMatchId,
-        winner: updateData.winner,
-        detectedByLCU: updateData.detectedByLCU,
-        wasCreated: true
-      });
-    }
-
-    // Se a partida existe, atualizar normalmente
-    await dbManager.completeCustomMatch(matchId, updateData.winner, {
-      duration: updateData.duration,
-      detectedByLCU: updateData.detectedByLCU,
-      riotGameId: updateData.riotId,
-      pickBanData: updateData.pickBanData,
-      notes: `Detectado ${updateData.detectedByLCU ? 'automaticamente via LCU' : 'manualmente'}`
-    });
-
-    console.log(`✅ [PUT /api/matches/custom/${matchId}/result] Resultado atualizado com sucesso`);
-    res.json({ 
-      success: true, 
-      message: 'Resultado da partida atualizado com sucesso',
-      matchId: matchId,
-      winner: updateData.winner,
-      detectedByLCU: updateData.detectedByLCU,
-      wasCreated: false
-    });
-
-  } catch (error: any) {
-    console.error(`💥 [PUT /api/matches/custom] Erro:`, error);
-    res.status(500).json({ error: error.message });
-  }
-}) as RequestHandler);
-
-// Endpoint para limpar partidas de teste do banco de dados
-app.delete('/api/matches/cleanup-test-matches', (async (req: Request, res: Response) => {
-  try {
-    console.log('🧹 [DELETE /api/matches/cleanup-test-matches] Iniciando limpeza de partidas de teste...');
-    
-    // Executar limpeza real usando DatabaseManager
-    const deletedCount = await dbManager.cleanupTestMatches();
-    
-    console.log(`✅ [DELETE /api/matches/cleanup-test-matches] Limpeza concluída - ${deletedCount} partidas removidas`);
-    res.json({ 
-      success: true, 
-      message: `${deletedCount} partidas de teste removidas com sucesso`,
-      deletedCount: deletedCount
-    });
-
-  } catch (error: any) {
-    console.error('💥 [DELETE /api/matches/cleanup-test-matches] Erro:', error);
-    res.status(500).json({ error: error.message });
-  }
-}) as RequestHandler);
-
-// Endpoint para recalcular LP de partidas customizadas existentes
-app.post('/api/admin/recalculate-custom-lp', (async (req: Request, res: Response) => {
-  try {
-    console.log('🔧 [ADMIN] Recalculando LP das partidas customizadas...');
-    
-    // Buscar todas as partidas customizadas completadas
-    const matches = await dbManager.getCustomMatches(1000); // Pegar muitas partidas
-    console.log(`📊 [ADMIN] Encontradas ${matches.length} partidas para recalcular`);
-    
-    let updatedMatches = 0;
-    
-    for (const match of matches) {
-      if (match.status === 'completed' && match.winner_team) {
-        console.log(`🔄 [ADMIN] Recalculando partida ${match.id}...`);
-        
-        // Usar o método completeCustomMatch para recalcular LP
-        try {
-          await dbManager.completeCustomMatch(match.id, match.winner_team, {
-            duration: match.duration,
-            riotGameId: match.riot_game_id,
-            pickBanData: match.pick_ban_data,
-            detectedByLCU: match.detected_by_lcu,
-            scoreTeam1: match.score_team1,
-            scoreTeam2: match.score_team2,
-            notes: match.notes
-          });
-          updatedMatches++;
-          console.log(`✅ [ADMIN] Partida ${match.id} recalculada com sucesso`);
-        } catch (error) {
-          console.error(`❌ [ADMIN] Erro ao recalcular partida ${match.id}:`, error);
+      // Buscar o jogador
+      let player: any = null;
+      if (playerIdentifier.length > 10) {
+        player = await dbManager.getPlayerBySummonerName(playerIdentifier);
+      } else {
+        const numericId = parseInt(playerIdentifier);
+        if (!isNaN(numericId)) {
+          player = await dbManager.getPlayer(numericId);
         }
       }
-    }
-    
-    res.json({
-      success: true,
-      message: `LP recalculado para ${updatedMatches} partidas`,
-      totalMatches: matches.length,
-      updatedMatches
-    });
-  } catch (error: any) {
-    console.error('💥 [ADMIN] Erro ao recalcular LP:', error);
-    res.status(500).json({ error: error.message });
-  }
-}) as RequestHandler);
 
-// Endpoint para consultar MMR de um jogador específico
-app.get('/api/player/:identifier/custom-stats', (async (req: Request, res: Response) => {
-  try {
-    const playerIdentifier = req.params.identifier;
-    
-    const player = await dbManager.getPlayerCustomStats(playerIdentifier);
-    
-    if (!player) {
-      return res.status(404).json({ error: 'Jogador não encontrado' });
+      const createdBy = player?.summoner_name || 'Sistema LCU';
+
+      // Criar partida personalizada
+      const customMatchData = {
+        title: `Partida LCU ${gameId}`,
+        description: `Partida real detectada pelo LCU - Game ID: ${gameId}`,
+        team1Players: team1Players,
+        team2Players: team2Players,
+        createdBy: createdBy,
+        gameMode: matchData.gameMode || 'CLASSIC'
+      };
+
+      const matchId = await dbManager.createCustomMatch(customMatchData);
+        // Calcular duração em minutos
+      const duration = Math.floor((matchData.gameDuration || 0) / 60);
+      
+      // Atualizar com dados completos
+      await dbManager.updateCustomMatchWithRealData(matchId, {
+        duration: duration,
+        pickBanData: pickBanData,
+        participantsData: participantsData,
+        detectedByLCU: true,
+        riotGameId: gameId.toString(),
+        notes: `Partida real detectada automaticamente - Game ID: ${gameId}`,
+        gameMode: matchData.gameMode || 'CLASSIC'
+      });
+      
+      // SEMPRE marcar como completa quando confirmada pelo usuário via modal
+      // (já que chegou até aqui, significa que o usuário confirmou a partida)
+      let winner = null;
+      if (matchData.teams && matchData.teams.length >= 2) {
+        const team1Won = matchData.teams[0]?.win === true;
+        const team2Won = matchData.teams[1]?.win === true;
+        winner = team1Won ? 1 : (team2Won ? 2 : null);
+      }
+
+      // Se não detectou vencedor automaticamente, marcar como completada sem vencedor
+      // O usuário pode declarar o vencedor depois
+      if (winner) {
+        await dbManager.completeCustomMatch(matchId, winner, {
+          duration: duration,
+          pickBanData: pickBanData,
+          participantsData: participantsData,
+          detectedByLCU: true,
+          riotGameId: gameId.toString(),
+          notes: `Partida real finalizada - Vencedor detectado automaticamente`
+        });      } else {
+        // Marcar como completed mas sem vencedor definido
+        await dbManager.updateCustomMatchStatus(matchId, 'completed');
+        console.log(`✅ [FETCH-SAVE-MATCH] Partida ${gameId} marcada como completed (sem vencedor detectado)`);
+      }
+
+      console.log(`✅ [FETCH-SAVE-MATCH] Partida ${gameId} salva com sucesso: ${matchId}`);
+
+      res.json({
+        success: true,
+        message: `Partida ${gameId} buscada e salva com sucesso`,
+        matchId: matchId,
+        gameId: gameId,
+        participants: participantsData.length,
+        hasCompleteData: true,
+        isCompleted: true  // Sempre true já que confirmamos a partida
+      });
+
+    } catch (error: any) {
+      console.error(`💥 [FETCH-SAVE-MATCH] Erro ao buscar partida ${req.params.gameId}:`, error);
+      res.status(500).json({ error: error.message });
     }
-    
-    res.json({
-      success: true,
-      player
-    });
-  } catch (error: any) {
-    console.error('💥 Erro ao buscar stats customizadas:', error);
-    res.status(500).json({ error: error.message });
-  }
-}) as RequestHandler);
+  })();
+});
 
 // Middleware de erro
 app.use((error: any, req: Request, res: Response, next: NextFunction) => {

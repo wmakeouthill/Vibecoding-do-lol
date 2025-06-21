@@ -3,6 +3,7 @@
 export interface Player {
   id: number;
   summonerName: string;
+  gameName?: string;  // Nome do Riot ID (sem tag)
   summonerId?: string;
   puuid?: string;
   tagLine?: string;
@@ -19,7 +20,7 @@ export interface Player {
   };
   wins?: number;
   losses?: number;
-  lastMatchDate?: Date;  rankedData?: {
+  lastMatchDate?: Date;rankedData?: {
     soloQueue?: any;
     flexQueue?: any;
   };

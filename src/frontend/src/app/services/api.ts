@@ -456,11 +456,10 @@ export class ApiService {
     const lcuRankedStats = data.lcuRankedStats || null;
 
     // Process rank data from multiple sources
-    const rankedData = this.processRankedData(riotApi, lcuRankedStats);
-
-    return {
+    const rankedData = this.processRankedData(riotApi, lcuRankedStats);    return {
       id: riotApi.id || lcuData.summonerId || 0,
       summonerName: riotAccount.gameName || riotApi.gameName || riotApi.name || lcuData.gameName || lcuData.displayName || 'Unknown',
+      gameName: riotAccount.gameName || riotApi.gameName || lcuData.gameName || null,
       tagLine: riotAccount.tagLine || riotApi.tagLine || lcuData.tagLine || null,
       summonerId: riotApi.id || lcuData.summonerId?.toString() || '0',
       puuid: riotAccount.puuid || riotApi.puuid || lcuData.puuid || '',
@@ -579,10 +578,13 @@ export class ApiService {
         catchError(this.handleError)
       );
   }
-
   // Método para criar partida customizada com dados reais do LCU
   createLCUBasedMatch(data: { lcuMatchData: any, playerIdentifier: string }): Observable<any> {
-    return this.http.post(`${this.baseUrl}/test/create-lcu-based-match`, data)
+    // Usar o endpoint correto que busca dados reais do LCU
+    const gameId = data.lcuMatchData.gameId;
+    return this.http.post(`${this.baseUrl}/lcu/fetch-and-save-match/${gameId}`, {
+      playerIdentifier: data.playerIdentifier
+    })
       .pipe(
         catchError(this.handleError)
       );
