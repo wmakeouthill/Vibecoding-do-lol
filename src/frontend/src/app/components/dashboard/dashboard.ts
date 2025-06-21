@@ -33,10 +33,16 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
   matchHistoryError: string | null = null;
 
   constructor(private apiService: ApiService, private cdr: ChangeDetectorRef) {}
-
   // Detectar mudanças no player
   ngOnChanges(): void {
     if (this.player) {
+      console.log('🎮 [DASHBOARD] Player data received:', {
+        summonerName: this.player.summonerName,
+        gameName: this.player.gameName,
+        tagLine: this.player.tagLine,
+        rank: this.player.rank,
+        rankedData: this.player.rankedData
+      });
       this.loadRecentMatches();
       this.leaderboardPosition = this.getLeaderboardPosition();
     }
