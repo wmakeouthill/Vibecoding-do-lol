@@ -806,9 +806,7 @@ export class App implements OnInit, OnDestroy {
         this.addNotification('success', 'Partida LCU Encontrada', 'Usando partida customizada real do seu histórico do LoL!');
         this.simulateMatchFromLCUData(lastLCUMatch);
         return;
-      }
-
-      // SEGUNDA TENTATIVA: Buscar no banco interno (com filtros melhorados)
+      }      // SEGUNDA TENTATIVA: Buscar no banco interno - PRIMEIRO tentar método mais direto
       console.log('⚠️ Nenhuma partida customizada encontrada no LCU, buscando no banco interno...');
 
       // Para o usuário especial "popcorn seller#coup", usar ID numérico 1
@@ -818,54 +816,38 @@ export class App implements OnInit, OnDestroy {
         console.log('🎯 Usando ID numérico especial para popcorn seller:', playerIdForSearch);
       }
 
-      // Buscar partidas customizadas do jogador (buscar mais para filtrar exemplos)
+      // TENTATIVA 2A: Usar método direto getLastCustomMatch (mais eficiente)
+      try {
+        console.log('🎯 Tentando buscar última partida customizada diretamente...');
+        const lastMatchResponse = await this.apiService.getLastCustomMatch(playerIdForSearch).toPromise();
+
+        if (lastMatchResponse && lastMatchResponse.matches && lastMatchResponse.matches.length > 0) {
+          const lastMatch = lastMatchResponse.matches[0];
+
+          // Verificar se é uma partida REAL (não de teste)
+          const isRealMatch = this.isRealCustomMatch(lastMatch);
+
+          if (isRealMatch) {
+            console.log('✅ Última partida customizada REAL encontrada diretamente:', lastMatch);
+            this.addNotification('success', 'Partida Encontrada', 'Usando sua última partida customizada real!');
+            this.simulateMatchFromData(lastMatch);
+            return;
+          } else {
+            console.log('⚠️ Última partida encontrada é de teste, buscando mais partidas...');
+          }
+        }
+      } catch (error) {
+        console.log('❌ Erro ao buscar última partida diretamente:', error);
+      }
+
+      // TENTATIVA 2B: Buscar mais partidas para filtrar (fallback)
       const response = await this.apiService.getCustomMatches(playerIdForSearch, 0, 20).toPromise();
-      console.log('🔍 Resposta da busca no banco interno:', response);      if (!response || !response.matches || response.matches.length === 0) {
+      console.log('🔍 Resposta da busca no banco interno (fallback):', response);if (!response || !response.matches || response.matches.length === 0) {
         this.addNotification('warning', 'Sem Histórico', 'Você ainda não jogou nenhuma partida customizada real. Para testar a detecção de vencedor, jogue uma partida customizada no LoL primeiro.');
         console.log('❌ Nenhuma partida encontrada no banco interno.');
         return;
-      }      // Filtrar partidas REAIS (não partidas de exemplo/teste)
-      const realMatches = response.matches.filter((match: any) => {
-        // Detectar partidas de exemplo pelos critérios mais específicos:
-        // 1. Match ID contém "sample", "test" ou "example"
-        // 2. Partidas sem vencedor definido (incompletas)
-        // 3. Partidas muito recentes (últimos 5 minutos) que podem ser de teste rápido
-        // 4. Times com APENAS IDs negativos (claramente de teste)
-
-        const team1Players = JSON.parse(match.team1_players || '[]');
-        const team2Players = JSON.parse(match.team2_players || '[]');
-        const allPlayerIds = [...team1Players, ...team2Players];
-
-        const matchId = match.match_id || '';
-        const hasTestMatchId = matchId.includes('sample') || matchId.includes('test') || matchId.includes('example');
-
-        // Verificar se TODOS os IDs são negativos (claramente de teste)
-        const allNegativeIds = allPlayerIds.length > 0 && allPlayerIds.every((id: number) => id < 0);
-
-        // Partida sem vencedor (incompleta)
-        const isIncomplete = !match.winner_team;
-
-        // Data muito recente (últimos 5 minutos) - pode ser teste
-        const isVeryRecent = Date.now() - new Date(match.created_at).getTime() < 300000; // 5 minutos
-
-        // Considerar como teste apenas se:
-        // - Tem ID de teste OU
-        // - Todos os IDs são negativos OU
-        // - É incompleta E muito recente (provavelmente cancelada/teste)
-        const isExampleMatch = hasTestMatchId || allNegativeIds || (isIncomplete && isVeryRecent);        console.log(`🔍 Analisando partida ${match.id}:`, {
-          matchId: matchId,
-          team1Players: team1Players,
-          team2Players: team2Players,
-          allNegativeIds,
-          hasTestMatchId,
-          isVeryRecent,
-          isIncomplete,
-          isExampleMatch: isExampleMatch,
-          winnerTeam: match.winner_team
-        });
-
-        return !isExampleMatch; // Manter apenas partidas reais
-      });
+      }      // Filtrar partidas REAIS (não partidas de exemplo/teste)      // Filtrar partidas REAIS (não partidas de exemplo/teste) usando método helper
+      const realMatches = response.matches.filter((match: any) => this.isRealCustomMatch(match));
 
       console.log(`📊 Partidas filtradas: ${realMatches.length} reais de ${response.matches.length} totais`);      if (realMatches.length === 0) {
         this.addNotification('warning', 'Apenas Partidas de Teste',
@@ -1887,5 +1869,52 @@ export class App implements OnInit, OnDestroy {
 
     console.log('✅ Draft phase simulado ativado');
     this.addNotification('info', 'Teste', 'Draft phase ativado para teste');
+  }
+
+  // Método helper para verificar se uma partida customizada é real (não de teste)
+  private isRealCustomMatch(match: any): boolean {
+    if (!match) return false;
+
+    try {
+      const team1Players = JSON.parse(match.team1_players || '[]');
+      const team2Players = JSON.parse(match.team2_players || '[]');
+      const allPlayerIds = [...team1Players, ...team2Players];
+
+      const matchId = match.match_id || '';
+      const hasTestMatchId = matchId.includes('sample') || matchId.includes('test') || matchId.includes('example');
+
+      // Verificar se TODOS os IDs são negativos (claramente de teste)
+      const allNegativeIds = allPlayerIds.length > 0 && allPlayerIds.every((id: number) => id < 0);
+
+      // Partida sem vencedor (incompleta)
+      const isIncomplete = !match.winner_team;
+
+      // Data muito recente (últimos 5 minutos) - pode ser teste
+      const isVeryRecent = Date.now() - new Date(match.created_at).getTime() < 300000; // 5 minutos
+
+      // Considerar como teste apenas se:
+      // - Tem ID de teste OU
+      // - Todos os IDs são negativos OU
+      // - É incompleta E muito recente (provavelmente cancelada/teste)
+      const isExampleMatch = hasTestMatchId || allNegativeIds || (isIncomplete && isVeryRecent);
+
+      console.log(`🔍 Verificando se partida ${match.id} é real:`, {
+        matchId: matchId,
+        team1Count: team1Players.length,
+        team2Count: team2Players.length,
+        allNegativeIds,
+        hasTestMatchId,
+        isVeryRecent,
+        isIncomplete,
+        isExampleMatch: isExampleMatch,
+        winnerTeam: match.winner_team,
+        isReal: !isExampleMatch
+      });
+
+      return !isExampleMatch; // Retornar true se NÃO for partida de exemplo
+    } catch (error) {
+      console.warn('⚠️ Erro ao analisar partida:', error);
+      return false; // Em caso de erro, considerar como não-real para segurança
+    }
   }
 }

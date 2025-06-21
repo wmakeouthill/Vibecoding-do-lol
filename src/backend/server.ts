@@ -516,8 +516,7 @@ app.get('/api/lcu/match-history-all', (async (req: Request, res: Response) => {
     }
 
     const matches = await lcuService.getMatchHistory(startIndex, count);
-    
-    // Filtrar apenas partidas customizadas se solicitado
+      // Filtrar apenas partidas customizadas se solicitado
     let filteredMatches = matches;
     if (customOnly) {
       filteredMatches = matches.filter((match: any) => {
@@ -526,11 +525,17 @@ app.get('/api/lcu/match-history-all', (async (req: Request, res: Response) => {
         const gameMode = match.gameMode || '';
         const gameType = match.gameType || '';
         
-        // IDs de filas customizadas/não rankeadas
-        const customQueueIds = [0, 400, 420, 430, 440, 450, 460, 470, 830, 840, 850, 900, 1020, 1300, 1400];
-        return customQueueIds.includes(queueId) || 
-               gameMode.includes('CUSTOM') || 
-               gameType.includes('CUSTOM_GAME');
+        // Apenas partidas customizadas REAIS
+        // queueId 0 = Custom games
+        // Verificar explicitamente por CUSTOM_GAME no gameType
+        const isCustomGame = queueId === 0 || 
+                           gameType === 'CUSTOM_GAME' || 
+                           gameMode === 'CUSTOM' ||
+                           (gameMode === 'CLASSIC' && gameType === 'CUSTOM_GAME');
+        
+        console.log(`🔍 Verificando partida - queueId: ${queueId}, gameMode: ${gameMode}, gameType: ${gameType}, isCustom: ${isCustomGame}`);
+        
+        return isCustomGame;
       });
     }
 
