@@ -642,7 +642,9 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
     }
 
     return (matches / Math.max(list1.length, list2.length)) * 50; // Max 50 points per team
-  }  // Modal actions
+  }
+
+  // Modal actions
   confirmDetectedMatch(): void {
     if (!this.detectedLCUMatch || !this.matchComparisonResult) return;
 
@@ -661,18 +663,8 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
       detectedWinner: winner
     });
 
-    console.log('✅ Partida confirmada automaticamente - salvando no banco de dados');
+    console.log('✅ Partida confirmada automaticamente');
     console.log('🎮 Dados da partida LCU:', lcuMatch.gameId);
-
-    // Preparar dados para salvar no banco - usar gameName#tagLine como identificador
-    const playerIdentifier = this.currentPlayer?.gameName && this.currentPlayer?.tagLine
-                            ? `${this.currentPlayer.gameName}#${this.currentPlayer.tagLine}`
-                            : this.currentPlayer?.summonerName ||
-                              this.currentPlayer?.gameName ||
-                              this.currentPlayer?.id?.toString() || '1';
-
-    // Salvar partida imediatamente no banco de dados usando endpoint LCU
-    this.saveDetectedMatchToDatabase(lcuMatch, playerIdentifier, winner);
 
     // Fechar modal imediatamente
     this.showMatchConfirmation = false;
@@ -688,7 +680,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
       console.log('🏆 Vencedor detectado automaticamente via LCU:', winner);
       this.selectedWinner = winner;
 
-      // Completar jogo automaticamente com dados reais
+      // Completar jogo automaticamente com dados reais - APENAS uma vez via evento onGameComplete
       this.autoCompleteGameWithRealData(winner, true, lcuMatch);    } else {
       console.log('⚠️ Partida confirmada mas sem vencedor detectado - completando partida como inconclusiva');
 
@@ -987,41 +979,9 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
 
     return null;
   }
-
   isMyTeamWinner(): boolean {
     const myTeam = this.getMyTeam();
     return myTeam === this.selectedWinner;
-  }
-
-  // Novo método para salvar partida detectada no banco de dados
-  private async saveDetectedMatchToDatabase(lcuMatch: any, playerIdentifier: string, winner: 'blue' | 'red' | null): Promise<void> {
-    try {
-      console.log('💾 Salvando partida detectada do LCU no banco de dados...');
-      console.log('🔍 LCU Match Data:', lcuMatch.gameId);
-      console.log('🎮 Player Identifier:', playerIdentifier);
-      console.log('🏆 Winner:', winner);
-
-      // Usar o endpoint createLCUBasedMatch para salvar a partida
-      const response = await this.apiService.createLCUBasedMatch({
-        lcuMatchData: lcuMatch,
-        playerIdentifier: playerIdentifier
-      }).toPromise();
-
-      if (response && response.success) {
-        console.log('✅ Partida salva com sucesso no banco de dados!');
-        console.log('🆔 Match ID:', response.matchId);
-        console.log('📊 Dados reais incluídos:', response.hasRealData);
-
-        // Mostrar notificação de sucesso
-        this.showSuccessNotification('Partida salva com sucesso!', 'A partida foi detectada e salva com todos os dados reais (KDA, itens, etc.)');
-      } else {
-        console.warn('⚠️ Resposta do servidor indica falha ao salvar partida');
-        this.showErrorNotification('Erro ao salvar', 'Não foi possível salvar a partida no banco de dados.');
-      }
-    } catch (error) {
-      console.error('❌ Erro ao salvar partida detectada:', error);
-      this.showErrorNotification('Erro ao salvar', 'Ocorreu um erro ao tentar salvar a partida.');
-    }
   }
 
   // Métodos de notificação simplificados (podem ser integrados com um serviço de notificações mais complexo)
