@@ -132,10 +132,14 @@ export class DatabaseManager {
         await this.db.exec('ALTER TABLE custom_matches ADD COLUMN average_mmr_team1 INTEGER');
         console.log('✅ Coluna average_mmr_team1 adicionada');
       }
-      
-      if (!customMatchColumnNames.includes('average_mmr_team2')) {
+        if (!customMatchColumnNames.includes('average_mmr_team2')) {
         await this.db.exec('ALTER TABLE custom_matches ADD COLUMN average_mmr_team2 INTEGER');
         console.log('✅ Coluna average_mmr_team2 adicionada');
+      }
+      
+      if (!customMatchColumnNames.includes('participants_data')) {
+        await this.db.exec('ALTER TABLE custom_matches ADD COLUMN participants_data TEXT');
+        console.log('✅ Coluna participants_data adicionada');
       }
       
     } catch (error) {
@@ -212,13 +216,13 @@ export class DatabaseManager {
         pick_ban_data TEXT, -- JSON com dados de pick/ban
         game_mode TEXT DEFAULT 'CLASSIC',
         status TEXT DEFAULT 'pending', -- pending, in_progress, completed, cancelled
-        created_by TEXT, -- quem criou a partida
-        riot_game_id TEXT, -- ID da partida real do Riot (se vinculada)
+        created_by TEXT, -- quem criou a partida        riot_game_id TEXT, -- ID da partida real do Riot (se vinculada)
         detected_by_lcu INTEGER DEFAULT 0,
         notes TEXT, -- observações da partida
         lp_changes TEXT, -- JSON com mudanças de LP por jogador
         average_mmr_team1 INTEGER, -- MMR médio do time 1
         average_mmr_team2 INTEGER, -- MMR médio do time 2
+        participants_data TEXT, -- JSON com dados reais dos participantes (KDA, itens, etc.)
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         completed_at DATETIME
       )
@@ -766,11 +770,14 @@ export class DatabaseManager {
     if (extraData.riotGameId !== undefined) {
       updateFields.push('riot_game_id = ?');
       updateValues.push(extraData.riotGameId);
-    }
-
-    if (extraData.pickBanData !== undefined) {
+    }    if (extraData.pickBanData !== undefined) {
       updateFields.push('pick_ban_data = ?');
       updateValues.push(typeof extraData.pickBanData === 'string' ? extraData.pickBanData : JSON.stringify(extraData.pickBanData));
+    }
+
+    if (extraData.participantsData !== undefined) {
+      updateFields.push('participants_data = ?');
+      updateValues.push(JSON.stringify(extraData.participantsData));
     }
 
     if (extraData.detectedByLCU !== undefined) {
@@ -865,16 +872,19 @@ export class DatabaseManager {
       let team1Players = [];
       let team2Players = [];
       let lpChanges: any = {};
+      let participantsData: any[] = [];
       
       try {
         team1Players = JSON.parse(match.team1_players || '[]');
         team2Players = JSON.parse(match.team2_players || '[]');
         lpChanges = match.lp_changes ? JSON.parse(match.lp_changes) : {};
+        participantsData = match.participants_data ? JSON.parse(match.participants_data) : [];
       } catch (e) {
         console.warn('⚠️ Erro ao fazer parse dos dados da partida', match.id, ':', e);
         team1Players = [];
         team2Players = [];
         lpChanges = {};
+        participantsData = [];
       }
       
       // Determinar em qual time o jogador está (melhor verificação)
@@ -927,13 +937,12 @@ export class DatabaseManager {
         playerMMRChange,
         isInTeam1,
         isInTeam2
-      });
-
-      return {
+      });      return {
         ...match,
         team1_players: team1Players,
         team2_players: team2Players,
         pick_ban_data: match.pick_ban_data ? JSON.parse(match.pick_ban_data) : null,
+        participants_data: participantsData,
         lp_changes: lpChanges,
         player_team: playerTeam,
         player_won: playerWon,

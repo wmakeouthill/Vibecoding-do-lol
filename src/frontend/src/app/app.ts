@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject, takeUntil } from 'rxjs';
-import { HttpErrorResponse } from '@angular/common/http'; // Import HttpErrorResponse
+import { HttpErrorResponse } from '@angular/common/http';
 
 import { DashboardComponent } from './components/dashboard/dashboard';
 import { QueueComponent } from './components/queue/queue';
@@ -14,11 +14,12 @@ import { GameInProgressComponent } from './components/game-in-progress/game-in-p
 import { WebsocketService } from './services/websocket';
 import { ApiService } from './services/api';
 import { QueueStateService } from './services/queue-state';
-import { Player, QueueStatus, LCUStatus, MatchFound, QueuePreferences, RefreshPlayerResponse } from './interfaces'; // Adicionar RefreshPlayerResponse
+import { Player, QueueStatus, LCUStatus, MatchFound, QueuePreferences, RefreshPlayerResponse } from './interfaces';
 import type { Notification } from './interfaces';
 
 @Component({
-  selector: 'app-root',  imports: [
+  selector: 'app-root',
+  imports: [
     CommonModule,
     FormsModule,
     DashboardComponent,
@@ -34,6 +35,7 @@ import type { Notification } from './interfaces';
 })
 export class App implements OnInit, OnDestroy {
   protected title = 'LoL Matchmaking';
+
   // Estado da aplicação
   currentView: 'dashboard' | 'queue' | 'history' | 'settings' | 'p2p' = 'dashboard';
   isElectron = false;
@@ -51,12 +53,14 @@ export class App implements OnInit, OnDestroy {
     isActive: true
   };
   lcuStatus: LCUStatus = { isConnected: false };
+
   // Modal de partida encontrada
   matchFound: MatchFound | null = null;
 
   // Dados da partida encontrada (novo sistema)
   matchFoundData: MatchFoundData | null = null;
   showMatchFound = false;
+
   // Estado do draft
   inDraftPhase = false;
   draftData: any = null;
@@ -71,18 +75,20 @@ export class App implements OnInit, OnDestroy {
   // Propriedades do Pick & Ban
   draftTimer = 30;
   selectedChampion: any = null;
-  champions: any[] = []; // Lista de campeões disponíveis
+  champions: any[] = [];
 
   // Notificações
   notifications: Notification[] = [];
+
   // Formulário de configurações
   settingsForm = {
     summonerName: '',
     region: 'br1',
-    riotApiKey: '' // Initialize with an empty string or load from a secure place
+    riotApiKey: ''
   };
 
   private destroy$ = new Subject<void>();
+
   constructor(
     private websocketService: WebsocketService,
     private apiService: ApiService,
@@ -91,56 +97,47 @@ export class App implements OnInit, OnDestroy {
     this.isElectron = !!(window as any).electronAPI;
   }
 
-  ngOnInit(): void {    this.isElectron = !!(window as any).electronAPI;
+  ngOnInit(): void {
+    this.isElectron = !!(window as any).electronAPI;
 
-    // Try to load API key from local storage or a secure configuration
+    // Try to load API key from local storage
     const storedApiKey = localStorage.getItem('riotApiKey');
     if (storedApiKey) {
       this.settingsForm.riotApiKey = storedApiKey;
-      // Send stored API key to backend for configuration
       this.apiService.setRiotApiKey(storedApiKey).subscribe({
         next: () => {
           console.log('API Key configurada automaticamente no backend');
-          // this.apiService.setApiKey(storedApiKey); // Não é mais necessário chamar setApiKey aqui, pois o backend gerencia a chave.
         },
-        error: (error: HttpErrorResponse) => { // Adicionar tipagem explícita para o erro
+        error: (error: HttpErrorResponse) => {
           console.warn('Falha ao configurar API Key automaticamente:', error.message);
-          // Remove invalid key from storage
           localStorage.removeItem('riotApiKey');
           this.settingsForm.riotApiKey = '';
         }
       });
     }
 
-    // Connect to WebSocket for real-time updates
+    // Connect to WebSocket
     this.websocketService.connect();
     this.websocketService.onMessage().pipe(
       takeUntil(this.destroy$)
-    ).subscribe(message => this.handleWebSocketMessage(message));    // Check connection status
+    ).subscribe(message => this.handleWebSocketMessage(message));
+
+    // Check connection status
     this.websocketService.onConnectionChange().pipe(
       takeUntil(this.destroy$)
     ).subscribe((connected: boolean) => {
       this.isConnected = connected;
       if (connected) {
         this.tryAutoLoadCurrentPlayer();
-        // Solicitar status da fila quando conectar
         this.websocketService.requestQueueStatus();
       }
     });
 
-    // Load player data from local storage initially
+    // Load initial data
     this.loadPlayerData();
-
-    // Try to recover any ongoing game state
     this.recoverGameState();
-
-    // Try to fetch real player data from LCU first
     this.tryLoadRealPlayerData();
-
-    // Start checking LCU status regularly
     this.startLCUStatusCheck();
-
-    // Carregar status da fila a cada 10s
     this.startQueueStatusCheck();
   }
 
@@ -148,6 +145,7 @@ export class App implements OnInit, OnDestroy {
     this.destroy$.next();
     this.destroy$.complete();
   }
+
   setCurrentView(view: 'dashboard' | 'queue' | 'history' | 'settings' | 'p2p'): void {
     this.currentView = view;
     console.log('View changed to:', view);
@@ -165,14 +163,10 @@ export class App implements OnInit, OnDestroy {
     console.log('🎯 Iniciando fase de Pick & Ban...');
     this.draftPhase = 'pickban';
   }
-  // Handle Pick & Ban completion
-  onPickBanComplete(result: any) {
+
+  onPickBanComplete(result: any): void {
     console.log('🎯 Pick & Ban completed:', result);
-
-    // Transition to game phase instead of exiting draft
     this.startGamePhase(result);
-
-    // Show completion notification
     this.addNotification('success', 'Pick & Ban Completo', 'A partida está iniciando!');
   }
 
@@ -185,15 +179,12 @@ export class App implements OnInit, OnDestroy {
     this.addNotification('info', 'Draft Cancelado', 'O draft foi cancelado.');
   }
 
-  // Start game phase after draft completion
   startGamePhase(pickBanResult: any): void {
     console.log('🎮 Iniciando fase de jogo:', pickBanResult);
 
-    // Exit draft phase
     this.inDraftPhase = false;
     this.draftPhase = 'preview';
 
-    // Prepare game data
     this.gameData = {
       sessionId: pickBanResult.sessionId || 'game_' + Date.now(),
       gameId: 'custom_' + Date.now(),
@@ -204,34 +195,25 @@ export class App implements OnInit, OnDestroy {
       isCustomGame: true
     };
 
-    // Add champion data to players from pick/ban results
     this.updatePlayersWithChampions(pickBanResult);
-
-    // Enter game phase
     this.inGamePhase = true;
-
-    // Persist game state for recovery
     this.persistGameState();
 
     console.log('✅ Dados do jogo preparados:', this.gameData);
   }
 
-  // Update players with their selected champions
   private updatePlayersWithChampions(pickBanResult: any): void {
     if (!this.gameData || !pickBanResult.picks) return;
 
-    // Map picks to teams
     const bluePicks = pickBanResult.blueTeamPicks || pickBanResult.picks.filter((p: any) => p.team === 'blue');
     const redPicks = pickBanResult.redTeamPicks || pickBanResult.picks.filter((p: any) => p.team === 'red');
 
-    // Update team1 (blue) players with champions
     this.gameData.team1.forEach((player: any, index: number) => {
       if (bluePicks[index] && bluePicks[index].champion) {
         player.champion = bluePicks[index].champion;
       }
     });
 
-    // Update team2 (red) players with champions
     this.gameData.team2.forEach((player: any, index: number) => {
       if (redPicks[index] && redPicks[index].champion) {
         player.champion = redPicks[index].champion;
@@ -239,48 +221,83 @@ export class App implements OnInit, OnDestroy {
     });
   }
 
-  // Handle game completion
   onGameComplete(gameResult: any): void {
     console.log('🏁 Jogo completado:', gameResult);
-
-    // Save game result
     this.gameResult = gameResult;
-
-    // Save to database
     this.saveCustomMatch(gameResult);
-
-    // Exit game phase
     this.exitGame();
 
-    // Show completion notification
     const winnerText = gameResult.winner === 'blue' ? 'Time Azul' : 'Time Vermelho';
     const detectionText = gameResult.detectedByLCU ? ' (detectado automaticamente)' : ' (declarado manualmente)';
 
-    this.addNotification('success', 'Partida Finalizada',
-      `${winnerText} venceu!${detectionText}`);
+    this.addNotification('success', 'Partida Finalizada', `${winnerText} venceu!${detectionText}`);
   }
 
-  // Handle game cancellation
   onGameCancel(): void {
     console.log('❌ Jogo cancelado');
     this.exitGame();
     this.addNotification('info', 'Partida Cancelada', 'A partida foi cancelada.');
   }
-  // Exit game phase
+
   exitGame(): void {
     this.inGamePhase = false;
     this.gameData = null;
     this.currentView = 'dashboard';
-
-    // Clear persisted game state
     this.clearGameState();
-  }  // Save custom match to database
+  }
+
   private async saveCustomMatch(gameResult: any): Promise<void> {
-    try {      // Para TODAS as partidas (simuladas ou não), criar uma nova entrada na tabela custom_matches
+    try {
       console.log('💾 Salvando partida customizada no banco de dados');
       console.log('🔍 Game Result:', gameResult);
       console.log('🔍 Game Data:', this.gameData);
 
+      if (gameResult.originalMatchData && gameResult.detectedByLCU) {
+        console.log('🎯 Salvando com dados reais do LCU detectados');
+        await this.saveCustomMatchWithRealData(gameResult);
+      } else {
+        console.log('📝 Salvando partida customizada padrão');
+        await this.saveCustomMatchStandard(gameResult);
+      }
+    } catch (error) {
+      console.error('❌ Erro ao salvar partida customizada:', error);
+      this.addNotification('error', 'Erro', 'Erro ao salvar a partida no banco de dados.');
+    }
+  }
+
+  private async saveCustomMatchWithRealData(gameResult: any): Promise<void> {
+    try {
+      const lcuMatchData = gameResult.originalMatchData;
+      const playerIdentifier = this.currentPlayer?.id?.toString() || this.currentPlayer?.summonerName || '1';
+
+      console.log('🎮 Criando partida com dados reais do LCU:', lcuMatchData.gameId);
+
+      const response = await this.apiService.createLCUBasedMatch({
+        lcuMatchData: lcuMatchData,
+        playerIdentifier: playerIdentifier
+      }).toPromise();
+
+      if (response && response.success) {
+        console.log('✅ Partida com dados reais salva com sucesso');
+        console.log('🆔 Partida criada com ID:', response.matchId);
+        console.log('🔍 Dados reais incluídos:', response.hasRealData);
+
+        this.addNotification('success', 'Partida Real Salva',
+          'A partida foi salva com todos os dados reais (KDA, itens, etc.)!');
+      } else {
+        console.warn('⚠️ Falha ao salvar partida com dados reais');
+        this.addNotification('warning', 'Erro ao Salvar', 'Não foi possível salvar a partida com dados reais.');
+      }
+    } catch (error) {
+      console.error('❌ Erro ao salvar partida com dados reais:', error);
+      // Fallback para salvamento padrão
+      await this.saveCustomMatchStandard(gameResult);
+    }
+  }
+
+  // Save custom match (standard method)
+  private async saveCustomMatchStandard(gameResult: any): Promise<void> {
+    try {
       // Criar dados no formato correto para a tabela custom_matches
       const matchData = {
         title: this.gameData?.originalMatchId
@@ -307,7 +324,7 @@ export class App implements OnInit, OnDestroy {
         status: 'completed'
       };
 
-      console.log('� Dados de criação enviados:', matchData);
+      console.log('📝 Dados de criação enviados:', matchData);
 
       const response = await this.apiService.saveCustomMatch(matchData).toPromise();
 
@@ -325,7 +342,7 @@ export class App implements OnInit, OnDestroy {
         this.addNotification('warning', 'Erro ao Salvar', 'Não foi possível salvar a partida no histórico.');
       }
     } catch (error) {
-      console.error('❌ Erro ao salvar partida customizada:', error);
+      console.error('❌ Erro ao salvar partida customizada padrão:', error);
       this.addNotification('error', 'Erro', 'Erro ao salvar a partida no banco de dados.');
     }
   }

@@ -337,29 +337,62 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
     this.onGameComplete.emit(result);
   }
 
-  // Manual winner declaration
-  declareWinner(winner: 'blue' | 'red') {
-    this.selectedWinner = winner;
-  }
+  // Novo método para completar jogo com dados reais do LCU
+  private autoCompleteGameWithRealData(winner: 'blue' | 'red', detectedByLCU: boolean, lcuMatchData: any) {
+    if (!this.gameData) return;
 
-  confirmWinner() {
-    if (!this.selectedWinner || !this.gameData) return;    const result: GameResult = {
+    const result: GameResult = {
       sessionId: this.gameData.sessionId,
       gameId: this.generateGameId(),
-      winner: this.selectedWinner,
+      winner: winner,
       duration: this.gameDuration,
       endTime: new Date(),
       team1: this.gameData.team1,
       team2: this.gameData.team2,
       pickBanData: this.gameData.pickBanData,
-      detectedByLCU: false,
+      detectedByLCU: detectedByLCU,
       isCustomGame: true,
-      originalMatchId: this.gameData.originalMatchId,
-      originalMatchData: this.gameData.originalMatchData,
-      riotId: this.gameData.riotId
-    };    // console.log('✅ Partida concluída manualmente:', result);
+      originalMatchId: this.gameData.originalMatchId || lcuMatchData.gameId,
+      originalMatchData: lcuMatchData, // Incluir dados completos da partida do LCU
+      riotId: this.gameData.riotId || (lcuMatchData.platformId ? `${lcuMatchData.platformId}_${lcuMatchData.gameId}` : `BR1_${lcuMatchData.gameId}`)
+    };
+
+    console.log('✅ Partida concluída com dados reais do LCU:', result);
     this.onGameComplete.emit(result);
-  }  // Cancel game
+  }
+
+  // Manual winner declaration
+  declareWinner(winner: 'blue' | 'red') {
+    this.selectedWinner = winner;
+  }
+  confirmWinner() {
+    if (!this.selectedWinner || !this.gameData) return;
+
+    // Se temos dados da partida detectada do LCU, incluir eles
+    if (this.detectedLCUMatch) {
+      console.log('✅ Confirmando vencedor com dados reais do LCU');
+      this.autoCompleteGameWithRealData(this.selectedWinner, true, this.detectedLCUMatch);
+    } else {
+      console.log('✅ Confirmando vencedor sem dados do LCU (manual)');
+      const result: GameResult = {
+        sessionId: this.gameData.sessionId,
+        gameId: this.generateGameId(),
+        winner: this.selectedWinner,
+        duration: this.gameDuration,
+        endTime: new Date(),
+        team1: this.gameData.team1,
+        team2: this.gameData.team2,
+        pickBanData: this.gameData.pickBanData,
+        detectedByLCU: false,
+        isCustomGame: true,
+        originalMatchId: this.gameData.originalMatchId,
+        originalMatchData: this.gameData.originalMatchData,
+        riotId: this.gameData.riotId
+      };
+
+      this.onGameComplete.emit(result);
+    }
+  }// Cancel game
   cancelGame() {
     // console.log('❌ Partida cancelada');
     this.onGameCancel.emit();
@@ -601,8 +634,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
     }
 
     return (matches / Math.max(list1.length, list2.length)) * 50; // Max 50 points per team
-  }
-  // Modal actions
+  }  // Modal actions
   confirmDetectedMatch(): void {
     if (!this.detectedLCUMatch || !this.matchComparisonResult) return;
 
@@ -621,7 +653,16 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
       console.log('🏆 Vencedor confirmado via LCU:', winner);
       this.selectedWinner = winner;
       this.showMatchConfirmation = false;
-      this.autoCompleteGame(winner, true);
+
+      // Atualizar gameData com informações da partida real ANTES de completar
+      if (this.gameData) {
+        this.gameData.originalMatchId = lcuMatch.gameId;
+        this.gameData.riotId = lcuMatch.platformId ? `${lcuMatch.platformId}_${lcuMatch.gameId}` : `BR1_${lcuMatch.gameId}`;
+        // Incluir dados completos da partida do LCU
+        this.gameData.originalMatchData = lcuMatch;
+      }
+
+      this.autoCompleteGameWithRealData(winner, true, lcuMatch);
     } else {
       // No winner detected, but user confirmed this is the right match
       console.log('✅ Partida confirmada pelo usuário, mas sem vencedor detectado');
@@ -631,6 +672,8 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
       if (this.gameData && lcuMatch.gameId) {
         this.gameData.originalMatchId = lcuMatch.gameId;
         this.gameData.riotId = lcuMatch.platformId ? `${lcuMatch.platformId}_${lcuMatch.gameId}` : `BR1_${lcuMatch.gameId}`;
+        // Incluir dados completos da partida do LCU
+        this.gameData.originalMatchData = lcuMatch;
       }
 
       // Show manual declaration interface since no winner was auto-detected

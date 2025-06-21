@@ -592,25 +592,9 @@ export class ApiService {
       );
   }
 
-  // Método para buscar partidas customizadas do jogador
-  getCustomMatches(playerId: string, offset: number = 0, limit: number = 10): Observable<any> {
-    return this.http.get(`${this.baseUrl}/matches/custom/${playerId}?offset=${offset}&limit=${limit}`)
-      .pipe(
-        catchError(this.handleError)
-      );
-  }
-
-  // Método para buscar a última partida customizada do jogador para teste
-  getLastCustomMatch(playerId: string): Observable<any> {
-    return this.http.get(`${this.baseUrl}/matches/custom/${playerId}?offset=0&limit=1`)
-      .pipe(
-        catchError(this.handleError)
-      );
-  }
-
-  // Método para criar uma partida customizada de exemplo (apenas para testes)
-  createSampleMatch(playerId: string): Observable<any> {
-    return this.http.post(`${this.baseUrl}/test/create-sample-match/${playerId}`, {})
+  // Método para criar partida customizada com dados reais do LCU
+  createLCUBasedMatch(data: { lcuMatchData: any, playerIdentifier: string }): Observable<any> {
+    return this.http.post(`${this.baseUrl}/test/create-lcu-based-match`, data)
       .pipe(
         catchError(this.handleError)
       );
@@ -723,6 +707,30 @@ export class ApiService {
   // Método para limpar partidas de teste do banco de dados
   cleanupTestMatches(): Observable<any> {
     return this.http.delete(`${this.baseUrl}/matches/cleanup-test-matches`)
+      .pipe(
+        catchError(this.handleError)
+      );
+  }
+
+  // Método para buscar partidas customizadas de um jogador
+  getCustomMatches(playerIdentifier: string, offset: number = 0, limit: number = 10): Observable<any> {
+    return this.http.get(`${this.baseUrl}/matches/custom/${playerIdentifier}?offset=${offset}&limit=${limit}`)
+      .pipe(
+        catchError(this.handleError)
+      );
+  }
+
+  // Método para criar partida de exemplo (para testes)
+  createSampleMatch(playerIdentifier: string): Observable<any> {
+    return this.http.post(`${this.baseUrl}/test/create-sample-match`, { playerIdentifier })
+      .pipe(
+        catchError(this.handleError)
+      );
+  }
+
+  // Método para buscar a última partida customizada de um jogador
+  getLastCustomMatch(playerIdentifier: string): Observable<any> {
+    return this.http.get(`${this.baseUrl}/matches/custom/${playerIdentifier}?offset=0&limit=1`)
       .pipe(
         catchError(this.handleError)
       );

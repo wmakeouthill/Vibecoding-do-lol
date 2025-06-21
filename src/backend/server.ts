@@ -801,9 +801,9 @@ app.post('/api/test/create-lcu-based-match', (req: Request, res: Response) => {
     const team1Players: string[] = [];
     const team2Players: string[] = [];
     const team1Picks: any[] = [];
-    const team2Picks: any[] = [];
-
-    // Combinar dados de participants (champion info) com participantIdentities (player info)
+    const team2Picks: any[] = [];    // Combinar dados de participants (champion info) com participantIdentities (player info)
+    const participantsData: any[] = []; // Array para salvar dados completos dos participantes
+    
     participants.forEach((participant: any, index: number) => {
       // Buscar dados do jogador correspondente em participantIdentities
       const participantIdentity = participantIdentities.find(
@@ -834,6 +834,46 @@ app.post('/api/test/create-lcu-based-match', (req: Request, res: Response) => {
       const championId = participant.championId || participant.champion || 0;
       const championName = participant.championName || `Champion${championId}`;
       const lane = participant.lane || participant.teamPosition || 'UNKNOWN';
+
+      // Extrair dados completos do participante (KDA, itens, etc.)
+      const participantData = {
+        participantId: participant.participantId,
+        teamId: participant.teamId,
+        championId: championId,
+        championName: championName,
+        summonerName: playerName,
+        lane: lane,
+        kills: participant.kills || 0,
+        deaths: participant.deaths || 0,
+        assists: participant.assists || 0,
+        champLevel: participant.champLevel || 1,
+        goldEarned: participant.goldEarned || 0,
+        totalMinionsKilled: participant.totalMinionsKilled || 0,
+        neutralMinionsKilled: participant.neutralMinionsKilled || 0,
+        totalDamageDealt: participant.totalDamageDealt || 0,
+        totalDamageDealtToChampions: participant.totalDamageDealtToChampions || 0,
+        totalDamageTaken: participant.totalDamageTaken || 0,
+        wardsPlaced: participant.wardsPlaced || 0,
+        wardsKilled: participant.wardsKilled || 0,
+        visionScore: participant.visionScore || 0,
+        firstBloodKill: participant.firstBloodKill || false,
+        doubleKills: participant.doubleKills || 0,
+        tripleKills: participant.tripleKills || 0,
+        quadraKills: participant.quadraKills || 0,
+        pentaKills: participant.pentaKills || 0,
+        item0: participant.item0 || 0,
+        item1: participant.item1 || 0,
+        item2: participant.item2 || 0,
+        item3: participant.item3 || 0,
+        item4: participant.item4 || 0,
+        item5: participant.item5 || 0,
+        item6: participant.item6 || 0,
+        summoner1Id: participant.summoner1Id || 0,
+        summoner2Id: participant.summoner2Id || 0,
+        win: participant.win || false
+      };
+      
+      participantsData.push(participantData);
 
       if (participant.teamId === 100) {
         team1Players.push(playerName); // Usar nome real para melhor identificação
@@ -907,14 +947,13 @@ app.post('/api/test/create-lcu-based-match', (req: Request, res: Response) => {
         const team1Won = lcuMatchData.teams[0]?.win === true;
         const team2Won = lcuMatchData.teams[1]?.win === true;
         winner = team1Won ? 1 : (team2Won ? 2 : null);
-      }
-
-      if (winner) {
+      }      if (winner) {
         const duration = Math.floor((lcuMatchData.gameDuration || 0) / 60); // Converter para minutos
         
         await dbManager.completeCustomMatch(matchId, winner, {
           duration: duration,
           pickBanData: pickBanData,
+          participantsData: participantsData, // Incluir dados reais dos participantes
           detectedByLCU: true,
           riotGameId: lcuMatchData.gameId?.toString(),
           notes: `Partida real detectada via LCU - ${lcuMatchData.endOfGameResult}`

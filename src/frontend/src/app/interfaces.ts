@@ -122,13 +122,13 @@ export interface Match {
   teams?: any[]; // Dados dos times
   gameVersion?: string;
   mapId?: number;
-
   // Campos específicos para partidas customizadas
   player_lp_change?: number; // LP ganho/perdido pelo jogador
   player_mmr_change?: number; // MMR ganho/perdido pelo jogador
   player_team?: number; // Em qual time o jogador estava (1 ou 2)
   player_won?: boolean; // Se o jogador ganhou a partida
   lp_changes?: any; // Objeto com LP changes de todos os jogadores
+  participants_data?: any[]; // Dados reais dos participantes (KDA, itens, etc.)
 
   playerStats?: {
     champion: string;
