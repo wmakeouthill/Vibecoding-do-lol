@@ -938,11 +938,12 @@ export class DatabaseManager {
   async getPlayerCustomMatches(playerIdentifier: string, limit: number = 20): Promise<any[]> {
     if (!this.db) throw new Error('Banco de dados não inicializado');
 
-    console.log('🔍 Buscando partidas customizadas para:', playerIdentifier);    // Buscar tanto por ID numérico quanto por nome - incluir partidas com dados reais
+    console.log('🔍 Buscando partidas customizadas para:', playerIdentifier);    // Buscar tanto por ID numérico quanto por nome - apenas partidas completed com dados reais
     const matches = await this.db.all(`
       SELECT * FROM custom_matches 
       WHERE (team1_players LIKE '%' || ? || '%' OR team2_players LIKE '%' || ? || '%')
       AND participants_data IS NOT NULL
+      AND status = 'completed'
       ORDER BY created_at DESC 
       LIMIT ?
     `, [playerIdentifier, playerIdentifier, limit]);

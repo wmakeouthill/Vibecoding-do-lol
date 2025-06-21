@@ -463,6 +463,11 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           const currentName = this.player?.summonerName?.toLowerCase() || '';
           return pName === currentName || pName.includes(currentName) || currentName.includes(pName);
         });
+
+        // Se temos dados reais, usar o campeão real
+        if (playerRealData && playerRealData.championId) {
+          playerChampion = ChampionService.getChampionNameById(playerRealData.championId) || playerChampion;
+        }
       }
 
       // Função para obter dados reais de um participante por nome
@@ -505,25 +510,31 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
             let championName = 'Unknown';
             let playerName = 'Unknown Player';
 
-            try {
-              if (pickBanData && pickBanData.team1Picks && pickBanData.team1Picks[index]) {
-                championName = pickBanData.team1Picks[index].champion || 'Unknown';
-                // Tentar usar o nome real do jogador dos dados de pick/ban
-                if (pickBanData.team1Picks[index].player) {
-                  playerName = pickBanData.team1Picks[index].player.toString();
+            // Obter dados reais para este jogador primeiro (prioridade)
+            const realData = getRealDataForPlayer(playerId.toString(), 100);
+              if (realData) {
+              // Se temos dados reais, usar eles como fonte principal
+              championName = ChampionService.getChampionNameById(realData.championId) || 'Unknown';
+              playerName = realData.summonerName || 'Unknown Player';
+            } else {
+              // Fallback para dados de pick/ban se não temos dados reais
+              try {
+                if (pickBanData && pickBanData.team1Picks && pickBanData.team1Picks[index]) {
+                  championName = pickBanData.team1Picks[index].champion || 'Unknown';
+                  if (pickBanData.team1Picks[index].player) {
+                    playerName = pickBanData.team1Picks[index].player.toString();
+                  }
                 }
+              } catch (e) {
+                // Silently handle error
               }
-            } catch (e) {
-              // Silently handle error
+
+              // Se é o jogador atual, usar seus dados reais
+              if (currentPlayerTeam === 1 && currentPlayerIndex === index && this.player?.summonerName) {
+                playerName = this.player.summonerName;
+              }
             }
 
-            // Se é o jogador atual, usar seus dados reais
-            if (currentPlayerTeam === 1 && currentPlayerIndex === index && this.player?.summonerName) {
-              playerName = this.player.summonerName;
-            }
-
-            // Obter dados reais para este jogador
-            const realData = getRealDataForPlayer(playerName, 100);
             const teamItems = realData ? [
               realData.item0 || 0,
               realData.item1 || 0,
@@ -534,10 +545,10 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
             ] : this.generateRandomItems();
 
             return {
-              name: playerId.toString(),
+              name: playerName, // Usar o nome real ao invés do playerId
               champion: championName,
               championName: championName, // Para compatibilidade com o template
-              summonerName: playerName, // Nome real do jogador            puuid: currentPlayerTeam === 1 && currentPlayerIndex === index ? this.player?.puuid || `custom_player_${playerId}_${index}` : `custom_player_${playerId}_${index}`,
+              summonerName: playerName, // Nome real do jogadorpuuid: currentPlayerTeam === 1 && currentPlayerIndex === index ? this.player?.puuid || `custom_player_${playerId}_${index}` : `custom_player_${playerId}_${index}`,
               teamId: 100,
               kills: realData?.kills ?? Math.floor(Math.random() * 10) + 2,
               deaths: realData?.deaths ?? Math.floor(Math.random() * 8) + 1,
@@ -556,11 +567,18 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
               item4: teamItems[4],
               item5: teamItems[5]
             };
-          }),
-          team2: team2Players.map((playerId: any, index: number) => {
-            let championName = 'Unknown';
-            let playerName = 'Unknown Player';
+          }),        team2: team2Players.map((playerId: any, index: number) => {
+          let championName = 'Unknown';
+          let playerName = 'Unknown Player';
 
+          // Obter dados reais para este jogador primeiro (prioridade)
+          const realData = getRealDataForPlayer(playerId.toString(), 200);
+          if (realData) {
+            // Se temos dados reais, usar eles como fonte principal
+            championName = ChampionService.getChampionNameById(realData.championId) || 'Unknown';
+            playerName = realData.summonerName || 'Unknown Player';
+          } else {
+            // Fallback para dados de pick/ban se não temos dados reais
             try {
               if (pickBanData && pickBanData.team2Picks && pickBanData.team2Picks[index]) {
                 championName = pickBanData.team2Picks[index].champion || 'Unknown';
@@ -577,9 +595,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
             if (currentPlayerTeam === 2 && currentPlayerIndex === index && this.player?.summonerName) {
               playerName = this.player.summonerName;
             }
-
-            // Obter dados reais para este jogador
-            const realData = getRealDataForPlayer(playerName, 200);
+          }
             const teamItems = realData ? [
               realData.item0 || 0,
               realData.item1 || 0,
@@ -587,10 +603,8 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
               realData.item3 || 0,
               realData.item4 || 0,
               realData.item5 || 0
-            ] : this.generateRandomItems();
-
-            return {
-              name: playerId.toString(),
+            ] : this.generateRandomItems();            return {
+              name: playerName, // Usar o nome real ao invés do playerId
               champion: championName,
               championName: championName, // Para compatibilidade com o template
               summonerName: playerName, // Nome real do jogador
