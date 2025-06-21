@@ -17,6 +17,14 @@ export interface Player {
   win_streak: number;
   created_at?: string;
   updated_at?: string;
+
+  // Campos específicos para partidas customizadas
+  custom_mmr?: number;
+  custom_peak_mmr?: number;
+  custom_games_played?: number;
+  custom_wins?: number;
+  custom_losses?: number;
+  custom_win_streak?: number;
 }
 
 export interface Match {
@@ -63,10 +71,76 @@ export class DatabaseManager {
         driver: sqlite3.Database
       });
       await this.createTables();
+      await this.migrateDatabase(); // Adicionar migração
       console.log(`📁 Banco de dados inicializado em: ${this.dbPath}`);
     } catch (error) {
       console.error('Erro ao inicializar banco de dados:', error);
       throw error;
+    }
+  }
+
+  // Método para migrar banco existente
+  private async migrateDatabase(): Promise<void> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+    
+    try {
+      // Verificar se as novas colunas existem na tabela players
+      const playerColumns = await this.db.all("PRAGMA table_info(players)");
+      const columnNames = playerColumns.map(col => col.name);
+      
+      // Adicionar colunas de MMR customizado se não existirem
+      if (!columnNames.includes('custom_mmr')) {
+        await this.db.exec('ALTER TABLE players ADD COLUMN custom_mmr INTEGER DEFAULT 1000');
+        console.log('✅ Coluna custom_mmr adicionada');
+      }
+      
+      if (!columnNames.includes('custom_peak_mmr')) {
+        await this.db.exec('ALTER TABLE players ADD COLUMN custom_peak_mmr INTEGER DEFAULT 1000');
+        console.log('✅ Coluna custom_peak_mmr adicionada');
+      }
+      
+      if (!columnNames.includes('custom_games_played')) {
+        await this.db.exec('ALTER TABLE players ADD COLUMN custom_games_played INTEGER DEFAULT 0');
+        console.log('✅ Coluna custom_games_played adicionada');
+      }
+      
+      if (!columnNames.includes('custom_wins')) {
+        await this.db.exec('ALTER TABLE players ADD COLUMN custom_wins INTEGER DEFAULT 0');
+        console.log('✅ Coluna custom_wins adicionada');
+      }
+      
+      if (!columnNames.includes('custom_losses')) {
+        await this.db.exec('ALTER TABLE players ADD COLUMN custom_losses INTEGER DEFAULT 0');
+        console.log('✅ Coluna custom_losses adicionada');
+      }
+      
+      if (!columnNames.includes('custom_win_streak')) {
+        await this.db.exec('ALTER TABLE players ADD COLUMN custom_win_streak INTEGER DEFAULT 0');
+        console.log('✅ Coluna custom_win_streak adicionada');
+      }
+      
+      // Verificar e migrar tabela custom_matches
+      const customMatchColumns = await this.db.all("PRAGMA table_info(custom_matches)");
+      const customMatchColumnNames = customMatchColumns.map(col => col.name);
+      
+      if (!customMatchColumnNames.includes('lp_changes')) {
+        await this.db.exec('ALTER TABLE custom_matches ADD COLUMN lp_changes TEXT');
+        console.log('✅ Coluna lp_changes adicionada');
+      }
+      
+      if (!customMatchColumnNames.includes('average_mmr_team1')) {
+        await this.db.exec('ALTER TABLE custom_matches ADD COLUMN average_mmr_team1 INTEGER');
+        console.log('✅ Coluna average_mmr_team1 adicionada');
+      }
+      
+      if (!customMatchColumnNames.includes('average_mmr_team2')) {
+        await this.db.exec('ALTER TABLE custom_matches ADD COLUMN average_mmr_team2 INTEGER');
+        console.log('✅ Coluna average_mmr_team2 adicionada');
+      }
+      
+    } catch (error) {
+      console.error('Erro durante migração do banco:', error);
+      // Não lançar erro para não quebrar a inicialização
     }
   }
 
@@ -88,7 +162,15 @@ export class DatabaseManager {
         losses INTEGER DEFAULT 0,
         win_streak INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+        -- Campos específicos para partidas customizadas
+        custom_mmr INTEGER DEFAULT 1000,
+        custom_peak_mmr INTEGER DEFAULT 1000,
+        custom_games_played INTEGER DEFAULT 0,
+        custom_wins INTEGER DEFAULT 0,
+        custom_losses INTEGER DEFAULT 0,
+        custom_win_streak INTEGER DEFAULT 0
       )
     `);
 
@@ -114,9 +196,7 @@ export class DatabaseManager {
         detected_by_lcu INTEGER DEFAULT 0,
         linked_results TEXT
       )
-    `);
-
-    // Tabela de partidas personalizadas do aplicativo
+    `);    // Tabela de partidas personalizadas do aplicativo
     await this.db.exec(`
       CREATE TABLE IF NOT EXISTS custom_matches (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -136,6 +216,9 @@ export class DatabaseManager {
         riot_game_id TEXT, -- ID da partida real do Riot (se vinculada)
         detected_by_lcu INTEGER DEFAULT 0,
         notes TEXT, -- observações da partida
+        lp_changes TEXT, -- JSON com mudanças de LP por jogador
+        average_mmr_team1 INTEGER, -- MMR médio do time 1
+        average_mmr_team2 INTEGER, -- MMR médio do time 2
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         completed_at DATETIME
       )
@@ -584,12 +667,95 @@ export class DatabaseManager {
     
     console.log(`📊 Status da partida personalizada ${matchId} atualizado para: ${status}`);
   }
-
   async completeCustomMatch(matchId: number, winnerTeam: number, extraData: any = {}): Promise<void> {
     if (!this.db) throw new Error('Banco de dados não inicializado');
 
-    const updateFields = ['winner_team = ?', 'status = ?', 'completed_at = CURRENT_TIMESTAMP'];
-    const updateValues = [winnerTeam, 'completed'];
+    // Primeiro, buscar a partida para obter os jogadores
+    const match = await this.getCustomMatchById(matchId);
+    if (!match) {
+      throw new Error(`Partida com ID ${matchId} não encontrada`);
+    }
+
+    // Calcular LP changes para todos os jogadores
+    const lpChanges: any = {};
+    let averageMMRTeam1 = 0;
+    let averageMMRTeam2 = 0;
+
+    // Buscar MMR dos jogadores de ambos os times
+    const team1Players = match.team1_players || [];
+    const team2Players = match.team2_players || [];
+
+    // Calcular MMR médio dos times
+    const team1MMRs: number[] = [];
+    const team2MMRs: number[] = [];
+
+    for (const playerName of team1Players) {
+      const player = await this.db.get(
+        'SELECT * FROM players WHERE summoner_name = ? OR id = ?',
+        [playerName, parseInt(playerName) || 0]
+      );
+      const mmr = player?.custom_mmr || 1000;
+      team1MMRs.push(mmr);
+    }
+
+    for (const playerName of team2Players) {
+      const player = await this.db.get(
+        'SELECT * FROM players WHERE summoner_name = ? OR id = ?',
+        [playerName, parseInt(playerName) || 0]
+      );
+      const mmr = player?.custom_mmr || 1000;
+      team2MMRs.push(mmr);
+    }
+
+    averageMMRTeam1 = team1MMRs.length > 0 ? Math.round(team1MMRs.reduce((a, b) => a + b, 0) / team1MMRs.length) : 1000;
+    averageMMRTeam2 = team2MMRs.length > 0 ? Math.round(team2MMRs.reduce((a, b) => a + b, 0) / team2MMRs.length) : 1000;
+
+    // Calcular LP e MMR changes para cada jogador
+    // Time 1
+    for (let i = 0; i < team1Players.length; i++) {
+      const playerName = team1Players[i];
+      const playerMMR = team1MMRs[i];
+      const isWin = winnerTeam === 1;
+      
+      const lpChange = this.calculateLPChange(playerMMR, averageMMRTeam2, isWin);
+      const mmrChange = this.calculateMMRChange(playerMMR, averageMMRTeam2, isWin);
+      
+      lpChanges[playerName] = { lp: lpChange, mmr: mmrChange };
+      
+      // Atualizar stats do jogador
+      await this.updatePlayerCustomStats(playerName, isWin, lpChange, mmrChange);
+    }
+
+    // Time 2
+    for (let i = 0; i < team2Players.length; i++) {
+      const playerName = team2Players[i];
+      const playerMMR = team2MMRs[i];
+      const isWin = winnerTeam === 2;
+      
+      const lpChange = this.calculateLPChange(playerMMR, averageMMRTeam1, isWin);
+      const mmrChange = this.calculateMMRChange(playerMMR, averageMMRTeam1, isWin);
+      
+      lpChanges[playerName] = { lp: lpChange, mmr: mmrChange };
+      
+      // Atualizar stats do jogador
+      await this.updatePlayerCustomStats(playerName, isWin, lpChange, mmrChange);
+    }
+
+    const updateFields = [
+      'winner_team = ?', 
+      'status = ?', 
+      'completed_at = CURRENT_TIMESTAMP',
+      'lp_changes = ?',
+      'average_mmr_team1 = ?',
+      'average_mmr_team2 = ?'
+    ];
+    const updateValues = [
+      winnerTeam, 
+      'completed', 
+      JSON.stringify(lpChanges),
+      averageMMRTeam1,
+      averageMMRTeam2
+    ];
 
     // Adicionar campos opcionais
     if (extraData.duration !== undefined) {
@@ -625,11 +791,13 @@ export class DatabaseManager {
     if (extraData.notes !== undefined) {
       updateFields.push('notes = ?');
       updateValues.push(extraData.notes);
-    }    updateValues.push(matchId); // WHERE condition
+    }
+
+    updateValues.push(matchId); // WHERE condition
 
     const query = `UPDATE custom_matches SET ${updateFields.join(', ')} WHERE id = ?`;
     
-    console.log('📊 Atualizando partida customizada:', { matchId, winnerTeam, extraData });
+    console.log('📊 Atualizando partida customizada com LP changes:', { matchId, winnerTeam, lpChanges });
     console.log('🔧 Query SQL:', query);
     console.log('🔧 Valores:', updateValues);
     
@@ -693,19 +861,20 @@ export class DatabaseManager {
       LIMIT ?
     `, [playerIdentifier, playerIdentifier, limit]);
 
-    console.log('📊 Partidas encontradas no banco:', matches.length);
-
-    return matches.map(match => {
+    console.log('📊 Partidas encontradas no banco:', matches.length);    return matches.map(match => {
       let team1Players = [];
       let team2Players = [];
+      let lpChanges: any = {};
       
       try {
         team1Players = JSON.parse(match.team1_players || '[]');
         team2Players = JSON.parse(match.team2_players || '[]');
+        lpChanges = match.lp_changes ? JSON.parse(match.lp_changes) : {};
       } catch (e) {
-        console.warn('⚠️ Erro ao fazer parse dos times da partida', match.id, ':', e);
+        console.warn('⚠️ Erro ao fazer parse dos dados da partida', match.id, ':', e);
         team1Players = [];
         team2Players = [];
+        lpChanges = {};
       }
       
       // Determinar em qual time o jogador está (melhor verificação)
@@ -724,6 +893,27 @@ export class DatabaseManager {
       const playerTeam = isInTeam1 ? 1 : (isInTeam2 ? 2 : null);
       const playerWon = playerTeam === match.winner_team;
 
+      // Encontrar LP change específico do jogador
+      let playerLPChange = 0;
+      let playerMMRChange = 0;
+      
+      // Buscar pelo nome exato primeiro
+      if (lpChanges[playerIdentifier]) {
+        playerLPChange = lpChanges[playerIdentifier].lp || 0;
+        playerMMRChange = lpChanges[playerIdentifier].mmr || 0;
+      } else {
+        // Buscar por nome similar
+        for (const [playerName, changes] of Object.entries(lpChanges)) {
+          const nameStr = playerName.toString().toLowerCase();
+          const identifierStr = playerIdentifier.toString().toLowerCase();
+          if (nameStr === identifierStr || nameStr.includes(identifierStr) || identifierStr.includes(nameStr)) {
+            playerLPChange = (changes as any).lp || 0;
+            playerMMRChange = (changes as any).mmr || 0;
+            break;
+          }
+        }
+      }
+
       console.log('🎯 Partida processada:', {
         id: match.id,
         title: match.title,
@@ -733,6 +923,8 @@ export class DatabaseManager {
         playerTeam,
         winnerTeam: match.winner_team,
         playerWon,
+        playerLPChange,
+        playerMMRChange,
         isInTeam1,
         isInTeam2
       });
@@ -742,8 +934,11 @@ export class DatabaseManager {
         team1_players: team1Players,
         team2_players: team2Players,
         pick_ban_data: match.pick_ban_data ? JSON.parse(match.pick_ban_data) : null,
+        lp_changes: lpChanges,
         player_team: playerTeam,
-        player_won: playerWon
+        player_won: playerWon,
+        player_lp_change: playerLPChange,
+        player_mmr_change: playerMMRChange
       };
     });
   }
@@ -802,5 +997,142 @@ export class DatabaseManager {
     
     console.log(`✅ [DatabaseManager.cleanupTestMatches] ${deletedCount} partidas de teste removidas`);
     return deletedCount;
+  }
+
+  // Função para calcular LP baseado no MMR
+  calculateLPChange(playerMMR: number, opponentMMR: number, isWin: boolean): number {
+    const mmrDifference = opponentMMR - playerMMR;
+    const kFactor = 32; // Fator K do sistema Elo
+    
+    // Base LP
+    let baseLP = isWin ? 18 : -15;
+    
+    // Ajuste baseado na diferença de MMR
+    const mmrFactor = mmrDifference / 100; // Para cada 100 de diferença de MMR
+    const lpAdjustment = mmrFactor * 8; // Máximo +/- 8 LP por 100 MMR de diferença
+    
+    // Aplicar ajuste
+    if (isWin) {
+      baseLP += lpAdjustment;
+      // Jogadores com MMR baixo ganham mais LP
+      if (playerMMR < 1200) {
+        baseLP += Math.floor((1200 - playerMMR) / 50); // +1 LP para cada 50 MMR abaixo de 1200
+      }
+      // Jogadores com MMR alto ganham menos LP
+      if (playerMMR > 1800) {
+        baseLP -= Math.floor((playerMMR - 1800) / 100); // -1 LP para cada 100 MMR acima de 1800
+      }
+    } else {
+      baseLP -= lpAdjustment;
+      // Jogadores com MMR baixo perdem menos LP
+      if (playerMMR < 1200) {
+        baseLP += Math.floor((1200 - playerMMR) / 100); // Perder menos LP se MMR baixo
+      }
+      // Jogadores com MMR alto perdem mais LP
+      if (playerMMR > 1800) {
+        baseLP -= Math.floor((playerMMR - 1800) / 80); // Perder mais LP se MMR alto
+      }
+    }
+    
+    // Garantir limites razoáveis
+    const minLP = isWin ? 8 : -25;
+    const maxLP = isWin ? 35 : -8;
+    
+    return Math.max(minLP, Math.min(maxLP, Math.round(baseLP)));
+  }
+
+  // Função para calcular MMR baseado no resultado
+  calculateMMRChange(playerMMR: number, opponentMMR: number, isWin: boolean): number {
+    const kFactor = 32;
+    const expectedScore = 1 / (1 + Math.pow(10, (opponentMMR - playerMMR) / 400));
+    const actualScore = isWin ? 1 : 0;
+    
+    return Math.round(kFactor * (actualScore - expectedScore));
+  }
+
+  // Atualizar MMR e estatísticas do jogador para partidas customizadas
+  async updatePlayerCustomStats(playerIdentifier: string, isWin: boolean, lpChange: number, mmrChange: number): Promise<void> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+
+    try {
+      // Primeiro, buscar o jogador atual
+      const player = await this.db.get(
+        'SELECT * FROM players WHERE summoner_name = ? OR id = ?',
+        [playerIdentifier, parseInt(playerIdentifier) || 0]
+      );
+
+      if (!player) {
+        console.log(`⚠️ Player ${playerIdentifier} não encontrado, criando...`);
+        // Criar jogador com stats iniciais se não existir
+        await this.db.run(`
+          INSERT INTO players (summoner_name, region, custom_mmr, custom_peak_mmr, custom_games_played, custom_wins, custom_losses, custom_win_streak)
+          VALUES (?, 'br1', 1000, 1000, 0, 0, 0, 0)
+        `, [playerIdentifier]);
+        
+        // Buscar o jogador recém-criado
+        const newPlayer = await this.db.get('SELECT * FROM players WHERE summoner_name = ?', [playerIdentifier]);
+        if (newPlayer) {
+          await this.updatePlayerCustomStats(playerIdentifier, isWin, lpChange, mmrChange);
+        }
+        return;
+      }
+
+      // Calcular novos valores
+      const newMMR = (player.custom_mmr || 1000) + mmrChange;
+      const newGamesPlayed = (player.custom_games_played || 0) + 1;
+      const newWins = (player.custom_wins || 0) + (isWin ? 1 : 0);
+      const newLosses = (player.custom_losses || 0) + (isWin ? 0 : 1);
+      const newPeakMMR = Math.max(player.custom_peak_mmr || 1000, newMMR);
+      
+      // Calcular win streak
+      let newWinStreak = player.custom_win_streak || 0;
+      if (isWin) {
+        newWinStreak = newWinStreak >= 0 ? newWinStreak + 1 : 1;
+      } else {
+        newWinStreak = newWinStreak <= 0 ? newWinStreak - 1 : -1;
+      }
+
+      // Atualizar no banco
+      await this.db.run(`
+        UPDATE players SET
+          custom_mmr = ?,
+          custom_peak_mmr = ?,
+          custom_games_played = ?,
+          custom_wins = ?,
+          custom_losses = ?,
+          custom_win_streak = ?,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `, [newMMR, newPeakMMR, newGamesPlayed, newWins, newLosses, newWinStreak, player.id]);
+
+      console.log(`📊 Stats atualizadas para ${playerIdentifier}: MMR ${player.custom_mmr || 1000} → ${newMMR}, LP: ${lpChange > 0 ? '+' : ''}${lpChange}`);
+    } catch (error) {
+      console.error('Erro ao atualizar stats do jogador:', error);
+    }
+  }
+
+  // Método para buscar estatísticas customizadas de um jogador
+  async getPlayerCustomStats(playerIdentifier: string): Promise<any | null> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+    
+    const player = await this.db.get(
+      'SELECT * FROM players WHERE summoner_name = ? OR id = ?',
+      [playerIdentifier, parseInt(playerIdentifier) || 0]
+    );
+    
+    if (!player) return null;
+    
+    return {
+      id: player.id,
+      summoner_name: player.summoner_name,
+      custom_mmr: player.custom_mmr || 1000,
+      custom_peak_mmr: player.custom_peak_mmr || 1000,
+      custom_games_played: player.custom_games_played || 0,
+      custom_wins: player.custom_wins || 0,
+      custom_losses: player.custom_losses || 0,
+      custom_win_streak: player.custom_win_streak || 0,
+      custom_winrate: player.custom_games_played > 0 ? 
+        Math.round((player.custom_wins / player.custom_games_played) * 100) : 0
+    };
   }
 }

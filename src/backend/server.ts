@@ -1034,6 +1034,73 @@ app.delete('/api/matches/cleanup-test-matches', (async (req: Request, res: Respo
   }
 }) as RequestHandler);
 
+// Endpoint para recalcular LP de partidas customizadas existentes
+app.post('/api/admin/recalculate-custom-lp', (async (req: Request, res: Response) => {
+  try {
+    console.log('🔧 [ADMIN] Recalculando LP das partidas customizadas...');
+    
+    // Buscar todas as partidas customizadas completadas
+    const matches = await dbManager.getCustomMatches(1000); // Pegar muitas partidas
+    console.log(`📊 [ADMIN] Encontradas ${matches.length} partidas para recalcular`);
+    
+    let updatedMatches = 0;
+    
+    for (const match of matches) {
+      if (match.status === 'completed' && match.winner_team) {
+        console.log(`🔄 [ADMIN] Recalculando partida ${match.id}...`);
+        
+        // Usar o método completeCustomMatch para recalcular LP
+        try {
+          await dbManager.completeCustomMatch(match.id, match.winner_team, {
+            duration: match.duration,
+            riotGameId: match.riot_game_id,
+            pickBanData: match.pick_ban_data,
+            detectedByLCU: match.detected_by_lcu,
+            scoreTeam1: match.score_team1,
+            scoreTeam2: match.score_team2,
+            notes: match.notes
+          });
+          updatedMatches++;
+          console.log(`✅ [ADMIN] Partida ${match.id} recalculada com sucesso`);
+        } catch (error) {
+          console.error(`❌ [ADMIN] Erro ao recalcular partida ${match.id}:`, error);
+        }
+      }
+    }
+    
+    res.json({
+      success: true,
+      message: `LP recalculado para ${updatedMatches} partidas`,
+      totalMatches: matches.length,
+      updatedMatches
+    });
+  } catch (error: any) {
+    console.error('💥 [ADMIN] Erro ao recalcular LP:', error);
+    res.status(500).json({ error: error.message });
+  }
+}) as RequestHandler);
+
+// Endpoint para consultar MMR de um jogador específico
+app.get('/api/player/:identifier/custom-stats', (async (req: Request, res: Response) => {
+  try {
+    const playerIdentifier = req.params.identifier;
+    
+    const player = await dbManager.getPlayerCustomStats(playerIdentifier);
+    
+    if (!player) {
+      return res.status(404).json({ error: 'Jogador não encontrado' });
+    }
+    
+    res.json({
+      success: true,
+      player
+    });
+  } catch (error: any) {
+    console.error('💥 Erro ao buscar stats customizadas:', error);
+    res.status(500).json({ error: error.message });
+  }
+}) as RequestHandler);
+
 // Middleware de erro
 app.use((error: any, req: Request, res: Response, next: NextFunction) => {
   console.error('Erro não tratado:', error);

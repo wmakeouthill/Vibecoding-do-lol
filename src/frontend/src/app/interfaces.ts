@@ -110,15 +110,27 @@ export interface Match {
   averageMMR2?: number;
   isVictory?: boolean;
   mmrChange?: number;
-  gameMode?: string;  // Propriedades adicionais para exibição no dashboard
+  gameMode?: string;
+
+  // Propriedades adicionais para exibição no dashboard
   champion?: string;
   playerName?: string;
   kda?: string;
+
   // Dados expandidos da Riot API
   participants?: any[]; // Todos os 10 jogadores
   teams?: any[]; // Dados dos times
   gameVersion?: string;
-  mapId?: number;playerStats?: {
+  mapId?: number;
+
+  // Campos específicos para partidas customizadas
+  player_lp_change?: number; // LP ganho/perdido pelo jogador
+  player_mmr_change?: number; // MMR ganho/perdido pelo jogador
+  player_team?: number; // Em qual time o jogador estava (1 ou 2)
+  player_won?: boolean; // Se o jogador ganhou a partida
+  lp_changes?: any; // Objeto com LP changes de todos os jogadores
+
+  playerStats?: {
     champion: string;
     kills: number;
     deaths: number;

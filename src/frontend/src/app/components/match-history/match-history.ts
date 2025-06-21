@@ -636,13 +636,22 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           items: simulatedItems,
           goldEarned: Math.floor(Math.random() * 10000) + 15000,
           totalDamageDealt: Math.floor(Math.random() * 50000) + 80000,
-          totalDamageDealtToChampions: Math.floor(Math.random() * 25000) + 20000,
-          totalDamageTaken: Math.floor(Math.random() * 20000) + 15000,
+          totalDamageDealtToChampions: Math.floor(Math.random() * 25000) + 20000,          totalDamageTaken: Math.floor(Math.random() * 20000) + 15000,
           totalMinionsKilled: Math.floor(Math.random() * 180) + 120,
           neutralMinionsKilled: Math.floor(Math.random() * 60) + 20,
           wardsPlaced: Math.floor(Math.random() * 15) + 8,
           wardsKilled: Math.floor(Math.random() * 10) + 3,
-          visionScore: Math.floor(Math.random() * 50) + 25}      };
+          visionScore: Math.floor(Math.random() * 50) + 25,
+          lpChange: match.player_lp_change || 0 // Usar LP change real das partidas customizadas
+        },
+
+        // Campos específicos para partidas customizadas
+        player_lp_change: match.player_lp_change || 0,
+        player_mmr_change: match.player_mmr_change || 0,
+        player_team: match.player_team || null,
+        player_won: match.player_won || false,
+        lp_changes: match.lp_changes || {}
+      };
 
       console.log(`✅ [DEBUG] Partida ${index + 1} mapeada:`, {
         id: mappedMatch.id,
@@ -871,8 +880,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     });
 
     return stats;
-  }
-  getCustomStats() {
+  }  getCustomStats() {
     console.log('📊 [DEBUG] getCustomStats chamado, customMatches.length:', this.customMatches.length);
 
     const stats = {
@@ -889,7 +897,8 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         stats.totalDeaths += match.playerStats.deaths;
         stats.totalAssists += match.playerStats.assists;
         if (match.playerStats.isWin) stats.totalWins++;
-        stats.totalMMRGained += match.playerStats.mmrChange;
+        // Para partidas customizadas, usar lpChange em vez de mmrChange
+        stats.totalMMRGained += match.playerStats.lpChange || match.player_lp_change || 0;
       }
     });
 

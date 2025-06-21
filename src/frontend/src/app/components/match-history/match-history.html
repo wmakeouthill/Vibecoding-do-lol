@@ -151,16 +151,14 @@
                 <div *ngIf="!item || item === 0" class="empty-item"></div>
               </div>
             </div>
-          </div>
-
-          <!-- LP Change -->
-          <div class="lp-change">
+          </div>          <!-- LP Change (só para partidas customizadas) -->
+          <div class="lp-change" *ngIf="isCustomTab()">
             <span class="lp-value"
-                  [class.positive]="(match.playerStats?.lpChange || 0) > 0"
-                  [class.negative]="(match.playerStats?.lpChange || 0) < 0">
-              {{ (match.playerStats?.lpChange || 0) > 0 ? '+' : '' }}{{ match.playerStats?.lpChange || 0 }} LP
+                  [class.positive]="(match.player_lp_change || match.playerStats?.lpChange || 0) > 0"
+                  [class.negative]="(match.player_lp_change || match.playerStats?.lpChange || 0) < 0">
+              {{ (match.player_lp_change || match.playerStats?.lpChange || 0) > 0 ? '+' : '' }}{{ match.player_lp_change || match.playerStats?.lpChange || 0 }} LP
             </span>
-          </div>          <!-- Match Time -->
+          </div><!-- Match Time -->
           <div class="match-time">
             {{ match.createdAt ? getTimeAgo(match.createdAt) : 'Data indisponível' }}
           </div>
