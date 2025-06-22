@@ -38,27 +38,41 @@ export class ApiService {
   private errorSuppressionCache = new Map<string, number>();
   private readonly ERROR_SUPPRESSION_DURATION = 30000; // 30 seconds
 
-  constructor(private http: HttpClient) {}
-
-  private getBaseUrl(): string {
-    // Em desenvolvimento, usar localhost
+  constructor(private http: HttpClient) {}  private getBaseUrl(): string {
+    // Detectar se está no Electron (tanto dev quanto produção)
     if (this.isElectron()) {
-      return 'http://localhost:3000/api'; // Alterado para porta 3000
+      // Tanto em desenvolvimento quanto em produção instalada,
+      // o backend sempre roda em localhost:3000
+      return 'http://localhost:3000/api';
     }
 
-    // Em produção web, usar URL relativa
+    // Em produção web (não Electron), usar URL relativa
     const host = window.location.hostname;
     if (host === 'localhost' || host === '127.0.0.1') {
-      return 'http://localhost:3000/api'; // Alterado para porta 3000
+      return 'http://localhost:3000/api';
     }
 
-    // URL da nuvem quando em produção
+    // URL da nuvem quando em produção web
     return `/api`;
   }
-
   private isElectron(): boolean {
-    return !!(window as any).electronAPI;
-  }  private handleError = (error: HttpErrorResponse) => {
+    // Verificar se está no Electron através de múltiplas formas
+    const hasElectronAPI = !!(window as any).electronAPI;
+    const hasRequire = !!(window as any).require;
+    const hasProcess = !!(window as any).process?.type;
+    const userAgentElectron = navigator.userAgent.toLowerCase().includes('electron');
+
+    // Log para debug
+    console.log('Electron detection:', {
+      hasElectronAPI,
+      hasRequire,
+      hasProcess,
+      userAgentElectron,
+      userAgent: navigator.userAgent
+    });
+
+    return hasElectronAPI || hasRequire || hasProcess || userAgentElectron;
+  }private handleError = (error: HttpErrorResponse) => {
     let errorMessage = 'Erro desconhecido';
     const currentTime = Date.now();
 

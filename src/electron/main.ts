@@ -15,68 +15,81 @@ if (isDev) {
 
 async function checkAndInstallBackendDependencies(): Promise<boolean> {
   return new Promise((resolve) => {
-    const backendPath = isDev 
+    const appPath = isDev 
       ? path.join(__dirname, '../../backend')
-      : path.join(__dirname, '../../../release/win-unpacked/backend');
+      : path.join(path.dirname(process.execPath), 'backend');
     
-    const nodeModulesPath = path.join(backendPath, 'node_modules');
-    const packageJsonPath = path.join(backendPath, 'package.json');
+    const nodeModulesPath = path.join(appPath, 'node_modules');
+    const packageJsonPath = path.join(appPath, 'package.json');
     
-    // Verificar se package.json existe
-    if (!fs.existsSync(packageJsonPath)) {
-      console.log('package.json do backend não encontrado, continuando...');
-      resolve(true);
-      return;
-    }
+    console.log('Backend path:', appPath);
+    console.log('Package.json path:', packageJsonPath);
+    console.log('Node modules path:', nodeModulesPath);
     
-    // Verificar se node_modules existe
-    if (fs.existsSync(nodeModulesPath)) {
-      console.log('Dependências do backend já instaladas');
-      resolve(true);
-      return;
-    }
-    
-    console.log('Instalando dependências do backend...');
-    const installCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-    const installProcess = spawn(installCommand, ['install', '--omit=dev'], {
-      cwd: backendPath,
-      stdio: 'pipe'
-    });
-    
-    installProcess.stdout.on('data', (data: any) => {
-      console.log(`NPM Install: ${data}`);
-    });
-    
-    installProcess.stderr.on('data', (data: any) => {
-      console.error(`NPM Install Error: ${data}`);
-    });
-    
-    installProcess.on('close', (code: number) => {
-      if (code === 0) {
-        console.log('Dependências do backend instaladas com sucesso');
+    if (isDev) {
+      // Em desenvolvimento, verificar se package.json existe
+      if (!fs.existsSync(packageJsonPath)) {
+        console.log('package.json do backend não encontrado, continuando...');
         resolve(true);
-      } else {
-        console.error('Erro ao instalar dependências do backend');
-        resolve(false);
+        return;
       }
-    });
+      
+      // Em desenvolvimento, verificar se node_modules existe
+      if (fs.existsSync(nodeModulesPath)) {
+        console.log('Dependências do backend já instaladas');
+        resolve(true);
+        return;
+      }
+      
+      console.log('Instalando dependências do backend...');
+      const installCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+      const installProcess = spawn(installCommand, ['install', '--omit=dev'], {
+        cwd: appPath,
+        stdio: 'pipe'
+      });
+      
+      installProcess.stdout.on('data', (data: any) => {
+        console.log(`NPM Install: ${data}`);
+      });
+      
+      installProcess.stderr.on('data', (data: any) => {
+        console.error(`NPM Install Error: ${data}`);
+      });
+      
+      installProcess.on('close', (code: number) => {
+        if (code === 0) {
+          console.log('Dependências do backend instaladas com sucesso');
+          resolve(true);
+        } else {
+          console.error('Erro ao instalar dependências do backend');
+          resolve(false);
+        }
+      });
+    } else {
+      // Em produção, as dependências já devem estar incluídas no build
+      console.log('Em produção: dependências do backend incluídas no build');
+      resolve(true);
+    }
   });
 }
 
 function getProductionPaths() {
-  // Detecta se está rodando instalado (em C:\Program Files) ou portátil
-  const isInstalled = process.execPath.includes('Program Files');
-  if (isInstalled) {
-    return {
-      frontend: path.join('C:/Program Files/LoL Matchmaking/frontend/dist/lol-matchmaking/browser/index.html'),
-      backend: path.join('C:/Program Files/LoL Matchmaking/backend/server.js')
-    };
-  } else {
-    return {
-      frontend: path.join(__dirname, '../../../release/win-unpacked/frontend/dist/lol-matchmaking/browser/index.html'),
-      backend: path.join(__dirname, '../../../release/win-unpacked/backend/server.js')
-    };
-  }
+  // O executável principal está na pasta base
+  // Backend e frontend estão ao lado do executável
+  const appPath = path.dirname(process.execPath);
+  
+  const backendPath = path.join(appPath, 'backend', 'server.js');
+  const frontendPath = path.join(appPath, 'frontend', 'dist', 'lol-matchmaking', 'browser', 'index.html');
+  
+  console.log('Production paths:');
+  console.log('- App path:', appPath);
+  console.log('- Backend:', backendPath);
+  console.log('- Frontend:', frontendPath);
+  
+  return {
+    frontend: frontendPath,
+    backend: backendPath
+  };
 }
 
 function createWindow(): void {
@@ -197,6 +210,10 @@ function createMenu(): void {
 
 async function startBackendServer(): Promise<void> {
   if (!isDev) {
+    console.log('Iniciando servidor backend em produção...');
+    console.log('Process execPath:', process.execPath);
+    console.log('__dirname:', __dirname);
+    
     // Verificar e instalar dependências se necessário
     const depsInstalled = await checkAndInstallBackendDependencies();
     if (!depsInstalled) {
@@ -206,8 +223,30 @@ async function startBackendServer(): Promise<void> {
     
     // Em produção, iniciar o servidor backend buildado
     const prodPaths = getProductionPaths();
+    console.log('Tentando iniciar backend em:', prodPaths.backend);
+    
+    // Verificar se o arquivo existe
+    if (!fs.existsSync(prodPaths.backend)) {
+      console.error('Arquivo backend não encontrado:', prodPaths.backend);
+      return;
+    }
+    
+    // Definir NODE_PATH para que o Node encontre as dependências na pasta correta
+    const backendDir = path.dirname(prodPaths.backend);
+    const nodeModulesPath = path.join(backendDir, 'node_modules');
+    
+    const env = {
+      ...process.env,
+      NODE_PATH: nodeModulesPath
+    };
+    
+    console.log('NODE_PATH:', nodeModulesPath);
+    console.log('Node modules exists:', fs.existsSync(nodeModulesPath));
+    
     backendProcess = spawn('node', [prodPaths.backend], {
-      stdio: 'pipe'
+      stdio: 'pipe',
+      env: env,
+      cwd: backendDir
     });
 
     backendProcess.stdout.on('data', (data: any) => {
@@ -217,6 +256,16 @@ async function startBackendServer(): Promise<void> {
     backendProcess.stderr.on('data', (data: any) => {
       console.error(`Backend Error: ${data}`);
     });
+
+    backendProcess.on('close', (code: any) => {
+      console.log(`Backend process closed with code ${code}`);
+    });
+
+    backendProcess.on('error', (error: any) => {
+      console.error('Erro ao iniciar backend:', error);
+    });
+  } else {
+    console.log('Modo desenvolvimento: backend será iniciado separadamente');
   }
 }
 

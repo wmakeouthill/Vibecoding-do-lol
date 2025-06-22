@@ -54,25 +54,42 @@ export class LCUService {
   setMatchHistoryService(service: any): void {
     this.matchHistoryService = service;
   }
-
   async initialize(): Promise<void> {
-    try {
-      await this.findLeagueClient();
-      await this.connectToLCU();
-      console.log('✅ Conectado ao League Client Update (LCU)');
-    } catch (error) {
-      console.log('⚠️ Cliente do League of Legends não encontrado');
-      throw error;
+    const maxRetries = 3;
+    let retryCount = 0;
+    
+    while (retryCount < maxRetries) {
+      try {
+        console.log(`🚀 Tentativa ${retryCount + 1}/${maxRetries} de conectar ao LCU...`);
+        await this.findLeagueClient();
+        await this.connectToLCU();
+        console.log('✅ Conectado ao League Client Update (LCU)');
+        return;
+      } catch (error) {
+        retryCount++;
+        console.log(`❌ Tentativa ${retryCount} falhou:`, error);
+        
+        if (retryCount < maxRetries) {
+          console.log(`⏳ Aguardando 2 segundos antes da próxima tentativa...`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        } else {
+          console.log('⚠️ Cliente do League of Legends não encontrado após todas as tentativas');
+          throw error;
+        }
+      }
     }
   }
-
   private async findLeagueClient(): Promise<void> {
     try {
-      // Método 1: Procurar pelo arquivo lockfile (Windows)
+      console.log('🔍 Procurando cliente do League of Legends...');
+      
+      // Método 1: Procurar pelo arquivo lockfile (Windows) - MAIS CONFIÁVEL
       const lockfilePath = this.findLockfile();
       
       if (lockfilePath && fs.existsSync(lockfilePath)) {
+        console.log('📁 Lockfile encontrado em:', lockfilePath);
         const lockfileContent = fs.readFileSync(lockfilePath, 'utf8');
+        console.log('📄 Conteúdo do lockfile:', lockfileContent);
         const parts = lockfileContent.split(':');
         
         if (parts.length >= 5) {
@@ -81,15 +98,24 @@ export class LCUService {
             password: parts[3],
             protocol: parts[4].includes('https') ? 'https' : 'http'
           };
+          console.log('✅ Conexão LCU configurada via lockfile:', {
+            port: this.connectionInfo.port,
+            protocol: this.connectionInfo.protocol
+          });
           return;
         }
+      } else {
+        console.log('❌ Lockfile não encontrado, tentando método alternativo...');
       }
 
       // Método 2: Procurar processo do League Client via WMIC (Windows)
+      console.log('🔍 Procurando processo via WMIC...');
       const { stdout } = await execAsync(
         'wmic PROCESS WHERE name="LeagueClientUx.exe" GET commandline /value'
       );
 
+      console.log('📤 Saída do WMIC:', stdout);
+      
       const lines = stdout.split('\n');
       for (const line of lines) {
         if (line.includes('--app-port=') && line.includes('--remoting-auth-token=')) {
@@ -102,6 +128,10 @@ export class LCUService {
               password: tokenMatch[1],
               protocol: 'https'
             };
+            console.log('✅ Conexão LCU configurada via WMIC:', {
+              port: this.connectionInfo.port,
+              protocol: this.connectionInfo.protocol
+            });
             return;
           }
         }
@@ -109,32 +139,53 @@ export class LCUService {
 
       throw new Error('Cliente do League of Legends não encontrado');
     } catch (error) {
+      console.error('❌ Erro ao procurar cliente do LoL:', error);
       throw new Error('Erro ao procurar cliente do League of Legends');
     }
   }
-
   private findLockfile(): string | null {
     const possiblePaths = [
+      // Caminhos mais comuns primeiro
       path.join(process.env.LOCALAPPDATA || '', 'Riot Games/League of Legends/lockfile'),
       path.join(process.env.PROGRAMDATA || '', 'Riot Games/League of Legends/lockfile'),
+      
+      // Caminhos alternativos
       'C:/Riot Games/League of Legends/lockfile',
       'C:/Program Files/Riot Games/League of Legends/lockfile',
-      'C:/Program Files (x86)/Riot Games/League of Legends/lockfile'
+      'C:/Program Files (x86)/Riot Games/League of Legends/lockfile',
+      
+      // Mais caminhos possíveis
+      path.join(process.env.USERPROFILE || '', 'AppData/Local/Riot Games/League of Legends/lockfile'),
+      path.join(process.env.APPDATA || '', '../Local/Riot Games/League of Legends/lockfile'),
     ];
 
+    console.log('🔍 Procurando lockfile nos seguintes caminhos:');
     for (const lockfilePath of possiblePaths) {
-      if (fs.existsSync(lockfilePath)) {
-        return lockfilePath;
+      console.log(`  - ${lockfilePath}`);
+      
+      try {
+        if (fs.existsSync(lockfilePath)) {
+          console.log(`✅ Lockfile encontrado em: ${lockfilePath}`);
+          return lockfilePath;
+        }
+      } catch (error) {
+        console.log(`❌ Erro ao verificar: ${lockfilePath}`, error);
       }
     }
 
+    console.log('❌ Lockfile não encontrado em nenhum caminho');
     return null;
   }
-
   private async connectToLCU(): Promise<void> {
     if (!this.connectionInfo) {
       throw new Error('Informações de conexão não encontradas');
     }
+
+    console.log('🔗 Conectando ao LCU...', {
+      protocol: this.connectionInfo.protocol,
+      port: this.connectionInfo.port,
+      baseURL: `${this.connectionInfo.protocol}://127.0.0.1:${this.connectionInfo.port}`
+    });
 
     this.client = axios.create({
       baseURL: `${this.connectionInfo.protocol}://127.0.0.1:${this.connectionInfo.port}`,
@@ -145,26 +196,44 @@ export class LCUService {
       httpsAgent: new https.Agent({
         rejectUnauthorized: false
       }),
-      timeout: 10000,
+      timeout: 15000, // Aumentei o timeout
       headers: {
         'Content-Type': 'application/json'
       }
     });
 
-    // Testar conexão
-    await this.getCurrentSummoner();
-    this.isConnected = true;
+    try {
+      // Testar conexão
+      console.log('🧪 Testando conexão com LCU...');
+      await this.getCurrentSummoner();
+      this.isConnected = true;
+      console.log('✅ Conexão LCU estabelecida com sucesso!');
+    } catch (error) {
+      console.error('❌ Erro ao testar conexão LCU:', error);
+      throw error;
+    }
   }
-
   async getCurrentSummoner(): Promise<CurrentSummoner> {
     if (!this.client) {
       throw new Error('Cliente LCU não conectado');
     }
 
     try {
+      console.log('👤 Buscando summoner atual do LCU...');
       const response = await this.client.get('/lol-summoner/v1/current-summoner');
+      console.log('✅ Summoner encontrado:', {
+        displayName: response.data.displayName,
+        summonerLevel: response.data.summonerLevel,
+        puuid: response.data.puuid ? 'presente' : 'ausente'
+      });
       return response.data;
     } catch (error: any) {
+      console.error('❌ Erro ao buscar summoner atual:', {
+        status: error.response?.status,
+        message: error.message,
+        url: error.config?.url
+      });
+      
       if (error.response?.status === 404) {
         throw new Error('Nenhum invocador logado no cliente');
       }

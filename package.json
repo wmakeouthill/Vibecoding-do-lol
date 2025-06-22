@@ -7,13 +7,13 @@
   "homepage": "./",
   "author": "VibeCode",
   "license": "MIT",
-  "private": true,  "scripts": {
-    "build": "npm run install:backend-deps && npm run build:backend && npm run build:frontend && npm run build:electron",
+  "private": true,  "scripts": {    "build": "npm run install:backend-deps && npm run build:backend && npm run build:frontend && npm run build:electron",
     "build:backend": "tsc -p src/backend/tsconfig.json",
     "build:frontend": "cd src/frontend && ng build --configuration production",
     "build:electron": "tsc -p src/electron/tsconfig.json",
-    "install:backend-deps": "cd src/backend && npm install --omit=dev",
-    "copy:backend-deps": "node -e \"const fs=require('fs'); const path=require('path'); if(fs.existsSync('src/backend/node_modules')){fs.cpSync('src/backend/node_modules','dist/backend/node_modules',{recursive:true})}\"",
+    "install:backend-deps": "cd src/backend && npm install --production",
+    "copy:backend-deps": "node -e \"const fs=require('fs'); const path=require('path'); if(fs.existsSync('src/backend/node_modules')){console.log('🔄 Copiando dependências do backend...'); fs.cpSync('src/backend/node_modules','dist/backend/node_modules',{recursive:true}); console.log('✅ Dependências copiadas para dist/backend/node_modules');} else {console.warn('⚠️  src/backend/node_modules não encontrado. Execute: npm run install:backend-deps');}\"",
+    "verify:backend-deps": "node -e \"const fs=require('fs'); const backendDeps='src/backend/node_modules'; const distDeps='dist/backend/node_modules'; console.log('🔍 Verificando dependências...'); console.log('Backend deps exist:', fs.existsSync(backendDeps)); console.log('Dist deps exist:', fs.existsSync(distDeps)); if(!fs.existsSync(backendDeps)){console.error('❌ Execute: npm run install:backend-deps');} if(!fs.existsSync(distDeps)){console.error('❌ Execute: npm run copy:backend-deps');}\"",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:electron:wait\"",
     "dev:fast": "concurrently \"npm run dev:frontend\" \"npm run dev:electron:wait\"",
     "dev:backend": "nodemon --exec ts-node src/backend/server.ts",
@@ -51,11 +51,16 @@
       "dist/**/*",
       "node_modules/**/*",
       "package.json"
-    ],
-    "extraFiles": [
+    ],    "extraFiles": [
       {
         "from": "dist/backend",
-        "to": "backend"
+        "to": "backend",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "dist/backend/node_modules",
+        "to": "backend/node_modules",
+        "filter": ["**/*"]
       },
       {
         "from": "dist/frontend/dist/lol-matchmaking/browser",

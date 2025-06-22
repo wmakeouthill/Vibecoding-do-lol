@@ -38,7 +38,27 @@ app.use(helmet({
 }));
 
 app.use(cors({
-  origin: isDev ? 'http://localhost:4200' : false,
+  origin: function (origin, callback) {
+    // Em desenvolvimento, permitir localhost:4200
+    if (isDev) {
+      const allowedOrigins = ['http://localhost:4200', 'http://localhost:3000'];
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    } else {
+      // Em produção (Electron), permitir qualquer origem local ou file://
+      if (!origin || 
+          origin.startsWith('file://') || 
+          origin.startsWith('http://localhost') || 
+          origin.startsWith('http://127.0.0.1')) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    }
+  },
   credentials: true
 }));
 
