@@ -34,12 +34,9 @@
           <div class="player-col">            <div class="player-info">              <img [src]="getProfileIconUrl(player.profileIconId)"
                    alt="Profile Icon"
                    class="profile-icon"
-                   (error)="onProfileIconError($event, player.profileIconId)">
-              <div class="player-details">
+                   (error)="onProfileIconError($event, player.profileIconId)">              <div class="player-details">
                 <span class="summoner-name">{{ player.summoner_name }}</span>
-                <span class="player-id" *ngIf="player.riot_id_game_name && player.riot_id_tagline">
-                  {{ player.riot_id_game_name }}#{{ player.riot_id_tagline }}
-                </span>
+                <span class="player-games">{{ player.games_played }} partidas</span>
               </div>
             </div>
           </div><!-- Campeão Favorito -->
