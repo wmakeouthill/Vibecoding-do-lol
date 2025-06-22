@@ -403,9 +403,23 @@ export class P2PStatusComponent implements OnInit, OnDestroy {
     this.setupSubscriptions();
     this.updateStatus();
   }
-
   ngOnDestroy(): void {
     this.subscriptions.forEach(sub => sub.unsubscribe());
+
+    // Limpar peers locais do localStorage quando o componente for destruído
+    this.cleanupLocalPeers();
+  }
+
+  private cleanupLocalPeers(): void {
+    try {
+      const localPeers = JSON.parse(localStorage.getItem('p2p_local_peers') || '{}');
+      if (localPeers[this.localPeerId]) {
+        delete localPeers[this.localPeerId];
+        localStorage.setItem('p2p_local_peers', JSON.stringify(localPeers));
+      }
+    } catch (error) {
+      console.error('Erro ao limpar peers locais:', error);
+    }
   }
   private setupSubscriptions(): void {
     // Estado global da fila (centralizada + P2P)

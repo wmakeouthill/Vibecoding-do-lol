@@ -93,17 +93,82 @@ export class P2PManager {
 
   private async startPeerDiscovery(): Promise<void> {
     this.simulatePeerDiscovery();
-  }
-  private simulatePeerDiscovery(): void {
+  }  private simulatePeerDiscovery(): void {
     // Em uma implementação real, isso descobriria peers via:
     // 1. UDP multicast na rede local
     // 2. Servidor de sinalização WebSocket
     // 3. WebRTC signaling server
 
-    // Para demonstração, simular alguns peers mas sem conexões ativas
+    // Para demonstração local, usar localStorage para simular descoberta de peers
+    this.setupLocalPeerDiscovery();
+  }
 
-    // Não criar peers falsos, apenas aguardar conexões reais
-    // O sistema funcionará quando múltiplas instâncias do app estiverem rodando
+  private setupLocalPeerDiscovery(): void {
+    // Registrar este peer no localStorage
+    this.registerLocalPeer();
+
+    // Verificar por outros peers a cada 5 segundos
+    setInterval(() => {
+      this.checkForLocalPeers();
+    }, 5000);
+
+    // Verificar imediatamente
+    setTimeout(() => this.checkForLocalPeers(), 1000);
+  }
+
+  private registerLocalPeer(): void {
+    const localPeers = this.getLocalPeers();
+    const peerInfo = {
+      id: this.localPeerId,
+      timestamp: Date.now(),
+      port: Math.floor(Math.random() * 1000) + 3000 // Simular porta diferente
+    };
+
+    localPeers[this.localPeerId] = peerInfo;
+    localStorage.setItem('p2p_local_peers', JSON.stringify(localPeers));
+  }
+
+  private checkForLocalPeers(): void {
+    const localPeers = this.getLocalPeers();
+    const currentTime = Date.now();
+
+    Object.keys(localPeers).forEach(peerId => {
+      const peerInfo = localPeers[peerId];
+
+      // Remover peers antigos (mais de 30 segundos)
+      if (currentTime - peerInfo.timestamp > 30000) {
+        delete localPeers[peerId];
+        return;
+      }
+
+      // Se não é o peer local e não está conectado
+      if (peerId !== this.localPeerId && !this.connections.has(peerId)) {
+        console.log(`🔍 Peer local descoberto: ${peerId}`);
+        this.simulateConnectionToPeer(peerId);
+      }
+    });
+
+    // Atualizar localStorage removendo peers antigos
+    localStorage.setItem('p2p_local_peers', JSON.stringify(localPeers));
+  }
+
+  private getLocalPeers(): any {
+    try {
+      return JSON.parse(localStorage.getItem('p2p_local_peers') || '{}');
+    } catch {
+      return {};
+    }
+  }
+
+  private simulateConnectionToPeer(peerId: string): void {
+    console.log(`🔗 Simulando conexão com peer: ${peerId}`);
+
+    // Simular conexão após delay aleatório
+    setTimeout(() => {
+      this.peerConnectedSubject.next(peerId);
+      this.updateConnectedPeersList();
+      console.log(`✅ Conectado ao peer: ${peerId}`);
+    }, 1000 + Math.random() * 2000);
   }
 
   private handlePeerDiscovered(peerInfo: PeerInfo): void {

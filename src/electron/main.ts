@@ -7,18 +7,26 @@ let backendProcess: any;
 
 const isDev = process.env.NODE_ENV === 'development';
 
+// Permitir múltiplas instâncias para teste P2P
+if (isDev) {
+  app.requestSingleInstanceLock = () => false; // Permitir múltiplas instâncias em dev
+}
+
 function createWindow(): void {
   // Criar a janela principal do aplicativo
   mainWindow = new BrowserWindow({
     height: 800,
     width: 1200,
     minHeight: 600,
-    minWidth: 800,
-    webPreferences: {
+    minWidth: 800,    webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
-      webSecurity: false, // Para desenvolvimento
+      // Configurações necessárias para WebRTC P2P
+      experimentalFeatures: true,
+      allowRunningInsecureContent: true,
+      // Permitir acesso a APIs de rede para P2P
+      webSecurity: isDev ? false : true, // Mais seguro em produção
     },
     icon: path.join(__dirname, '../../assets/icon.ico'), // Adicionar ícone depois
     titleBarStyle: 'default',
