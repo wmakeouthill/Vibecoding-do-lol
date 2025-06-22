@@ -55,7 +55,7 @@ export class ApiService {
     // URL da nuvem quando em produção web
     return `/api`;
   }
-  private isElectron(): boolean {
+  public isElectron(): boolean {
     // Verificar se está no Electron através de múltiplas formas
     const hasElectronAPI = !!(window as any).electronAPI;
     const hasRequire = !!(window as any).require;
@@ -153,10 +153,14 @@ export class ApiService {
         catchError(this.handleError)
       );
   }
-
   // Add this method
   getPlayerByPuuid(puuid: string, region: string): Observable<Player> {
-    // Adjust the endpoint as per your backend API structure for fetching by PUUID
+    // Se está no Electron, usar apenas dados do LCU (não precisa de Riot API)
+    if (this.isElectron()) {
+      return this.getLCUOnlyPlayerData();
+    }
+
+    // Em modo web, usar endpoint da Riot API
     return this.http.get<Player>(`${this.baseUrl}/player/puuid/${puuid}?region=${region}`)
       .pipe(
         catchError(this.handleError)
@@ -171,7 +175,34 @@ export class ApiService {
   }  // Novo método para buscar dados detalhados do jogador atual
   // Endpoint para obter dados completos do jogador logado no LCU
   getCurrentPlayerDetails(): Observable<any> {
-    // First get LCU data to extract Riot ID
+    // Se está no Electron, usar apenas LCU (não tentar Riot API)
+    if (this.isElectron()) {
+      return this.getCurrentSummonerFromLCU().pipe(
+        map((lcuData: any) => {
+          if (!lcuData) {
+            throw new Error('Dados do LCU não disponíveis');
+          }
+
+          return {
+            success: true,
+            data: {
+              lcu: lcuData,
+              riotAccount: {
+                gameName: lcuData.gameName || lcuData.displayName,
+                tagLine: lcuData.tagLine,
+                puuid: lcuData.puuid
+              },
+              riotApi: null, // Não usar Riot API no Electron
+              partialData: true // Indicar que são dados apenas do LCU
+            }
+          };
+        }),
+        retry(1),
+        catchError(this.handleError)
+      );
+    }
+
+    // Em modo web, tentar LCU + Riot API (modo original)
     return this.getCurrentSummonerFromLCU().pipe(
       switchMap((lcuData: any) => {
         if (lcuData && lcuData.gameName && lcuData.tagLine) {

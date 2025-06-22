@@ -10,7 +10,7 @@ const isDev = process.env.NODE_ENV === 'development';
 
 // Permitir múltiplas instâncias para teste P2P
 if (isDev) {
-  app.requestSingleInstanceLock = () => false; // Permitir múltiplas instâncias em dev
+  app.requestSingleInstanceLock = () => true; // Permitir múltiplas instâncias em dev
 }
 
 async function checkAndInstallBackendDependencies(): Promise<boolean> {
@@ -80,6 +80,8 @@ function getProductionPaths() {
   
   const backendPath = path.join(appPath, 'backend', 'server.js');
   const frontendPath = path.join(appPath, 'frontend', 'dist', 'lol-matchmaking', 'browser', 'index.html');
+  const nodeModulesPath = path.join(appPath, 'backend', 'node_modules');
+
   
   console.log('Production paths:');
   console.log('- App path:', appPath);
@@ -88,7 +90,9 @@ function getProductionPaths() {
   
   return {
     frontend: frontendPath,
-    backend: backendPath
+    backend: backendPath,
+    nodeModules: nodeModulesPath
+
   };
 }
 
@@ -152,52 +156,17 @@ function createWindow(): void {
 function createMenu(): void {
   const template: any[] = [
     {
-      label: 'Arquivo',
+      label: 'Desenvolvedor',
       submenu: [
         {
-          label: 'Configurações',
-          accelerator: 'CmdOrCtrl+,',
+          label: 'Abrir/Fechar DevTools',
+          accelerator: 'F12',
           click: () => {
-            // Abrir tela de configurações
-            mainWindow.webContents.send('open-settings');
-          }
-        },
-        { type: 'separator' },
-        {
-          label: 'Sair',
-          accelerator: process.platform === 'darwin' ? 'Cmd+Q' : 'Ctrl+Q',
-          click: () => {
-            app.quit();
-          }
-        }
-      ]
-    },
-    {
-      label: 'Fila',
-      submenu: [
-        {
-          label: 'Entrar na Fila',
-          accelerator: 'CmdOrCtrl+J',
-          click: () => {
-            mainWindow.webContents.send('join-queue');
-          }
-        },
-        {
-          label: 'Sair da Fila',
-          accelerator: 'CmdOrCtrl+L',
-          click: () => {
-            mainWindow.webContents.send('leave-queue');
-          }
-        }
-      ]
-    },
-    {
-      label: 'Ajuda',
-      submenu: [
-        {
-          label: 'Sobre',
-          click: () => {
-            mainWindow.webContents.send('show-about');
+            if (mainWindow.webContents.isDevToolsOpened()) {
+              mainWindow.webContents.closeDevTools();
+            } else {
+              mainWindow.webContents.openDevTools();
+            }
           }
         }
       ]

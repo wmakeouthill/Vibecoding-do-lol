@@ -65,8 +65,14 @@ app.use(cors({
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 100, // máximo 100 requests por IP
-  message: 'Muitas requisições de este IP, tente novamente em 15 minutos.'
+  max: isDev ? 1000 : 500, // Mais requests em dev, mais para LCU em produção
+  message: 'Muitas requisições de este IP, tente novamente em 15 minutos.',
+  skip: (req) => {
+    // Pular rate limiting para requests do LCU (localhost)
+    const isLocalhost = req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1';
+    const isLCUEndpoint = req.url.startsWith('/api/lcu/');
+    return isLocalhost && isLCUEndpoint;
+  }
 });
 
 app.use(limiter);

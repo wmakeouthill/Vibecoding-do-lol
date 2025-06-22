@@ -1610,17 +1610,34 @@ export class App implements OnInit, OnDestroy {
     if (!this.currentPlayer) {
       this.addNotification('warning', 'Nenhum Jogador', 'Nenhum dado de jogador para atualizar.');
       return;
-    }
-
-    // Verificar se temos gameName e tagLine para formar o Riot ID
+    }    // Verificar se temos gameName e tagLine para formar o Riot ID
     if (!this.currentPlayer.summonerName || !this.currentPlayer.tagLine || !this.currentPlayer.region) {
       this.addNotification('error', 'Dados Incompletos', 'Nome de invocador, tag ou região não encontrados para atualização via Riot ID.');
-      // Tentar fallback para PUUID se disponível, ou informar o usuário
-      if (this.currentPlayer.puuid && this.currentPlayer.region) {
-        this.addNotification('info', 'Tentativa Alternativa', 'Tentando atualizar via PUUID...');
-        this.refreshPlayerByPuuidFallback(); // Chama um método de fallback
+
+      // Log detalhado para debug
+      console.log('🔍 Debug - Detecção do ambiente:', {
+        isElectron: this.apiService.isElectron(),
+        userAgent: navigator.userAgent,
+        hasElectronAPI: !!(window as any).electronAPI,
+        hasRequire: !!(window as any).require,
+        hasProcess: !!(window as any).process?.type,
+        currentPlayer: this.currentPlayer
+      });
+
+      // SEMPRE usar LCU quando possível (tanto Electron quanto web com LCU disponível)
+      if (this.lcuStatus.isConnected) {
+        this.addNotification('info', 'Modo LCU', 'Usando apenas dados do LCU (sem necessidade de Riot API).');
+        this.refreshPlayerFromLCUOnly();
       } else {
-        this.addNotification('error', 'Falha na Atualização', 'Não foi possível atualizar os dados do jogador.');
+        // Só tentar Riot API se realmente não temos LCU E não estamos no Electron
+        if (this.apiService.isElectron()) {
+          this.addNotification('error', 'LCU Necessário', 'No Electron, é necessário estar conectado ao LCU. Abra o League of Legends.');
+        } else if (this.currentPlayer.puuid && this.currentPlayer.region) {
+          this.addNotification('info', 'Tentativa Alternativa', 'Tentando atualizar via PUUID...');
+          this.refreshPlayerByPuuidFallback(); // Só em modo web sem LCU
+        } else {
+          this.addNotification('error', 'Falha na Atualização', 'Não foi possível atualizar os dados do jogador.');
+        }
       }
       return;
     }
@@ -1661,7 +1678,6 @@ export class App implements OnInit, OnDestroy {
       this.addNotification('error', 'Erro', error.message || 'Erro ao salvar configurações');
     }
   }
-
   // Fallback para atualizar via PUUID caso Riot ID não esteja completo
   private async refreshPlayerByPuuidFallback(): Promise<void> {
     if (!this.currentPlayer || !this.currentPlayer.puuid || !this.currentPlayer.region) {
@@ -1669,6 +1685,14 @@ export class App implements OnInit, OnDestroy {
       console.warn('Tentativa de fallback para PUUID sem dados suficientes.');
       return;
     }
+
+    // Se está no Electron ou LCU disponível, usar apenas LCU
+    if (this.apiService.isElectron() || this.lcuStatus.isConnected) {
+      console.log('🎮 Fallback PUUID redirecionado para LCU (Electron ou LCU disponível)');
+      this.refreshPlayerFromLCUOnly();
+      return;
+    }
+
     try {
       this.apiService.getPlayerByPuuid(this.currentPlayer.puuid, this.currentPlayer.region).subscribe({
         next: (updatedPlayer: Player) => {
@@ -1689,6 +1713,27 @@ export class App implements OnInit, OnDestroy {
     } catch (error: any) {
       console.error('Unexpected error in refreshPlayerByPuuidFallback:', error);
       this.addNotification('error', 'Erro Inesperado (PUUID)', error.message || 'Ocorreu um erro inesperado ao tentar via PUUID.');
+    }
+  }
+
+  // Método para atualizar dados usando apenas LCU (sem Riot API)
+  private async refreshPlayerFromLCUOnly(): Promise<void> {
+    try {
+      this.apiService.getPlayerFromLCU().subscribe({
+        next: (lcuPlayer: Player) => {
+          this.currentPlayer = lcuPlayer;
+          localStorage.setItem('currentPlayer', JSON.stringify(this.currentPlayer));
+          this.addNotification('success', 'Dados Atualizados (LCU)', 'Informações do jogador atualizadas usando apenas dados do LCU.');
+          console.log('Player data refreshed from LCU only:', this.currentPlayer);
+        },
+        error: (error) => {
+          console.error('Error refreshing player data from LCU only:', error);
+          this.addNotification('error', 'Erro LCU', error.message || 'Falha ao atualizar dados do jogador via LCU.');
+        }
+      });
+    } catch (error: any) {
+      console.error('Unexpected error in refreshPlayerFromLCUOnly:', error);
+      this.addNotification('error', 'Erro Inesperado (LCU)', error.message || 'Ocorreu um erro inesperado ao tentar via LCU.');
     }
   }
 
