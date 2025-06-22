@@ -101,118 +101,182 @@
       <!-- Leaderboard -->
       <div *ngSwitchCase="'leaderboard'" class="view-container">
         <app-leaderboard></app-leaderboard>
-      </div>
-
-      <!-- Settings -->
+      </div>      <!-- Settings -->
       <div *ngSwitchCase="'settings'" class="view-container">
-        <h2>⚙️ Configurações</h2>
+        <div style="max-width: 800px; margin: 0 auto; padding: 20px;">
+          <h2 style="text-align: center; color: #c9aa71; margin-bottom: 2rem; font-size: 2rem; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">
+            ⚙️ Configurações
+          </h2>
 
-        <div class="auto-detect-section">
-          <h3>🤖 Detecção Automática</h3>
-          <p>O aplicativo pode detectar automaticamente suas informações do League of Legends:</p>
+          <!-- Settings Grid -->
+          <div style="display: grid; gap: 2rem; grid-template-columns: 1fr;">
 
-          <button
-            type="button"
-            (click)="refreshLCUConnection()"
-            class="btn-primary"
-            [disabled]="!isConnected">
-            🔄 Detectar do LoL Cliente
-          </button>
-
-          <div class="lcu-status" *ngIf="lcuStatus.isConnected">
-            <p>✅ Cliente do LoL conectado</p>
-            <p *ngIf="currentPlayer">
-              Jogador detectado: <strong>{{ currentPlayer.summonerName }}</strong>
-            </p>
-          </div>
-        </div>
-
-        <div class="manual-config-section" *ngIf="!currentPlayer">
-          <h3>📝 Configuração Manual</h3>
-          <p>Se a detecção automática não funcionar, configure manualmente:</p>
-
-          <form class="settings-form">
-            <div class="form-group">
-              <label for="summonerName">Nome do Invocador:</label>
-              <input
-                id="summonerName"
-                type="text"
-                [(ngModel)]="settingsForm.summonerName"
-                placeholder="Seu nome no LoL"
-                name="summonerName">
-            </div>
-
-            <div class="form-group">
-              <label for="region">Região:</label>
-              <select id="region" [(ngModel)]="settingsForm.region" name="region">
-                <option value="br1">Brasil</option>
-                <option value="na1">América do Norte</option>
-                <option value="euw1">Europa Oeste</option>
-                <option value="eun1">Europa Nordeste</option>
-              </select>
-            </div>
-
-            <button type="button" (click)="savePlayerSettings()" class="btn-primary">
-              💾 Salvar Configurações
-            </button>
-          </form>
-        </div>
-
-        <div class="current-config" *ngIf="currentPlayer">
-          <h3>👤 Configuração Atual</h3>
-          <div class="player-summary">            <img [src]="'https://ddragon.leagueoflegends.com/cdn/15.12.1/img/profileicon/' + (currentPlayer.profileIconId || 29) + '.png'"
-                 alt="Profile Icon"
-                 class="profile-icon-small"
-                 (error)="onProfileIconError($event)">
-            <div class="player-info">
-              <h4>{{ currentPlayer.summonerName }}{{ currentPlayer.tagLine ? '#' + currentPlayer.tagLine : '' }}</h4>
-              <p>Nível {{ currentPlayer.summonerLevel || 'N/A' }} • Região: {{ currentPlayer.region }}</p>
-              <p>MMR: {{ currentPlayer.currentMMR }}</p>
-              <p *ngIf="currentPlayer.rank" class="ranked-info">
-                Ranqueada: {{ currentPlayer.rank.tier }} {{ currentPlayer.rank.rank }}
-                ({{ currentPlayer.rank.lp }} LP)
+            <!-- Auto Detection Card -->
+            <div style="background: linear-gradient(135deg, #1e2328 0%, #0f1419 100%); border: 2px solid #463714; border-radius: 12px; padding: 1.5rem; box-shadow: 0 8px 32px rgba(0,0,0,0.4);">
+              <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;">
+                <span style="font-size: 1.5rem;">🤖</span>
+                <h3 style="color: #c9aa71; margin: 0; font-size: 1.25rem;">Detecção Automática</h3>
+              </div>
+              <p style="color: #cdbe91; margin-bottom: 1.5rem; line-height: 1.5;">
+                O aplicativo pode detectar automaticamente suas informações do League of Legends
               </p>
+
+              <button
+                type="button"
+                (click)="refreshLCUConnection()"
+                [disabled]="!isConnected"
+                style="background: linear-gradient(135deg, #c89b3c 0%, #f0e6d2 100%); color: #0f1419; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(200, 155, 60, 0.3); display: flex; align-items: center; gap: 0.5rem; font-size: 1rem;"
+                [style.opacity]="!isConnected ? '0.5' : '1'"
+                [style.cursor]="!isConnected ? 'not-allowed' : 'pointer'">
+                🔄 Detectar do LoL Cliente
+              </button>
+
+              <div *ngIf="lcuStatus.isConnected" style="margin-top: 1rem; padding: 1rem; background: rgba(0, 150, 136, 0.1); border: 1px solid rgba(0, 150, 136, 0.3); border-radius: 8px;">
+                <p style="color: #4caf50; margin: 0 0 0.5rem 0; font-weight: bold;">✅ Cliente do LoL conectado</p>
+                <p *ngIf="currentPlayer" style="color: #cdbe91; margin: 0;">
+                  Jogador detectado: <strong style="color: #c9aa71;">{{ currentPlayer.summonerName }}</strong>
+                </p>
+              </div>
             </div>
+
+            <!-- Manual Configuration Card -->
+            <div *ngIf="!currentPlayer" style="background: linear-gradient(135deg, #1e2328 0%, #0f1419 100%); border: 2px solid #463714; border-radius: 12px; padding: 1.5rem; box-shadow: 0 8px 32px rgba(0,0,0,0.4);">
+              <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;">
+                <span style="font-size: 1.5rem;">📝</span>
+                <h3 style="color: #c9aa71; margin: 0; font-size: 1.25rem;">Configuração Manual</h3>
+              </div>
+              <p style="color: #cdbe91; margin-bottom: 1.5rem; line-height: 1.5;">
+                Se a detecção automática não funcionar, configure manualmente
+              </p>
+
+              <form style="display: flex; flex-direction: column; gap: 1rem;">
+                <div>
+                  <label for="summonerName" style="display: block; color: #c9aa71; font-weight: bold; margin-bottom: 0.5rem;">
+                    Nome do Invocador:
+                  </label>
+                  <input
+                    id="summonerName"
+                    type="text"
+                    [(ngModel)]="settingsForm.summonerName"
+                    placeholder="Seu nome no LoL"
+                    name="summonerName"
+                    style="width: 100%; padding: 12px; border: 2px solid #463714; border-radius: 8px; background: rgba(15, 20, 25, 0.8); color: #cdbe91; font-size: 1rem; transition: border-color 0.3s ease;"
+                    onfocus="this.style.borderColor='#c9aa71'"
+                    onblur="this.style.borderColor='#463714'">
+                </div>
+
+                <div>
+                  <label for="region" style="display: block; color: #c9aa71; font-weight: bold; margin-bottom: 0.5rem;">
+                    Região:
+                  </label>
+                  <select
+                    id="region"
+                    [(ngModel)]="settingsForm.region"
+                    name="region"
+                    style="width: 100%; padding: 12px; border: 2px solid #463714; border-radius: 8px; background: rgba(15, 20, 25, 0.8); color: #cdbe91; font-size: 1rem; cursor: pointer; transition: border-color 0.3s ease;"
+                    onfocus="this.style.borderColor='#c9aa71'"
+                    onblur="this.style.borderColor='#463714'">
+                    <option value="br1">Brasil</option>
+                    <option value="na1">América do Norte</option>
+                    <option value="euw1">Europa Oeste</option>
+                    <option value="eun1">Europa Nordeste</option>
+                  </select>
+                </div>
+
+                <button
+                  type="button"
+                  (click)="savePlayerSettings()"
+                  style="background: linear-gradient(135deg, #c89b3c 0%, #f0e6d2 100%); color: #0f1419; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(200, 155, 60, 0.3); display: flex; align-items: center; justify-content: center; gap: 0.5rem; font-size: 1rem; margin-top: 0.5rem;">
+                  💾 Salvar Configurações
+                </button>
+              </form>
+            </div>
+
+            <!-- Current Configuration Card -->
+            <div *ngIf="currentPlayer" style="background: linear-gradient(135deg, #1e2328 0%, #0f1419 100%); border: 2px solid #463714; border-radius: 12px; padding: 1.5rem; box-shadow: 0 8px 32px rgba(0,0,0,0.4);">
+              <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;">
+                <span style="font-size: 1.5rem;">👤</span>
+                <h3 style="color: #c9aa71; margin: 0; font-size: 1.25rem;">Configuração Atual</h3>
+              </div>
+
+              <div style="display: flex; align-items: center; gap: 1rem; padding: 1rem; background: rgba(200, 155, 60, 0.1); border: 1px solid rgba(200, 155, 60, 0.3); border-radius: 8px; margin-bottom: 1.5rem;">
+                <img
+                  [src]="'https://ddragon.leagueoflegends.com/cdn/15.12.1/img/profileicon/' + (currentPlayer.profileIconId || 29) + '.png'"
+                  alt="Profile Icon"
+                  (error)="onProfileIconError($event)"
+                  style="width: 60px; height: 60px; border-radius: 50%; border: 2px solid #c9aa71; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">
+                <div style="flex: 1;">
+                  <h4 style="color: #f0e6d2; margin: 0 0 0.5rem 0; font-size: 1.1rem;">
+                    {{ currentPlayer.summonerName }}{{ currentPlayer.tagLine ? '#' + currentPlayer.tagLine : '' }}
+                  </h4>
+                  <p style="color: #cdbe91; margin: 0 0 0.25rem 0; font-size: 0.9rem;">
+                    Nível {{ currentPlayer.summonerLevel || 'N/A' }} • Região: {{ currentPlayer.region }}
+                  </p>
+                  <p style="color: #c9aa71; margin: 0 0 0.25rem 0; font-weight: bold;">
+                    MMR: {{ currentPlayer.currentMMR }}
+                  </p>
+                  <p *ngIf="currentPlayer.rank" style="color: #cdbe91; margin: 0; font-size: 0.9rem;">
+                    Ranqueada: {{ currentPlayer.rank.tier }} {{ currentPlayer.rank.rank }} ({{ currentPlayer.rank.lp }} LP)
+                  </p>
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                <button
+                  type="button"
+                  (click)="refreshPlayerData()"
+                  style="background: linear-gradient(135deg, #c89b3c 0%, #f0e6d2 100%); color: #0f1419; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(200, 155, 60, 0.3); display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; flex: 1; justify-content: center;">
+                  🔄 Atualizar Dados
+                </button>
+                <button
+                  type="button"
+                  (click)="clearPlayerData()"
+                  style="background: linear-gradient(135deg, #3c3c41 0%, #5bc0de 20%); color: #f0e6d2; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(60, 60, 65, 0.3); display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; flex: 1; justify-content: center;">
+                  🗑️ Limpar Dados
+                </button>
+              </div>
+            </div>
+
+            <!-- Riot API Configuration Card -->
+            <div style="background: linear-gradient(135deg, #1e2328 0%, #0f1419 100%); border: 2px solid #463714; border-radius: 12px; padding: 1.5rem; box-shadow: 0 8px 32px rgba(0,0,0,0.4);">
+              <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;">
+                <span style="font-size: 1.5rem;">🔑</span>
+                <h3 style="color: #c9aa71; margin: 0; font-size: 1.25rem;">Configuração da Riot API</h3>
+              </div>
+              <p style="color: #cdbe91; margin-bottom: 1.5rem; line-height: 1.5;">
+                Para acessar dados completos do Riot Games, configure sua API key
+              </p>
+
+              <div style="margin-bottom: 1rem;">
+                <label for="riotApiKey" style="display: block; color: #c9aa71; font-weight: bold; margin-bottom: 0.5rem;">
+                  Riot API Key:
+                </label>
+                <input
+                  type="password"
+                  id="riotApiKey"
+                  [(ngModel)]="settingsForm.riotApiKey"
+                  name="riotApiKey"
+                  placeholder="RGAPI-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  style="width: 100%; padding: 12px; border: 2px solid #463714; border-radius: 8px; background: rgba(15, 20, 25, 0.8); color: #cdbe91; font-size: 1rem; margin-bottom: 0.5rem; transition: border-color 0.3s ease;"
+                  onfocus="this.style.borderColor='#c9aa71'"
+                  onblur="this.style.borderColor='#463714'">
+                <small style="color: #a09b8c; font-size: 0.8rem;">
+                  Obtenha sua API key em:
+                  <a href="https://developer.riotgames.com" target="_blank" style="color: #c9aa71; text-decoration: none;">
+                    developer.riotgames.com
+                  </a>
+                </small>
+              </div>
+
+              <button
+                type="button"
+                (click)="updateRiotApiKey()"
+                style="background: linear-gradient(135deg, #c89b3c 0%, #f0e6d2 100%); color: #0f1419; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(200, 155, 60, 0.3); display: flex; align-items: center; gap: 0.5rem; font-size: 1rem;">
+                🔑 Configurar API Key
+              </button>
+            </div>
+
           </div>
-
-          <div class="action-buttons">
-            <button type="button" (click)="refreshPlayerData()" class="btn-primary">
-              🔄 Atualizar Dados
-            </button>
-            <button type="button" (click)="clearPlayerData()" class="btn-secondary">
-              🗑️ Limpar Dados
-            </button>
-          </div>
-        </div>
-
-        <!-- Riot API Key Configuration -->
-        <div class="riot-api-config">
-          <h3>🔑 Configuração da Riot API</h3>
-          <p>Para acessar dados completos do Riot Games, configure sua API key:</p>
-
-          <div class="form-group">
-            <label for="riotApiKey">Riot API Key:</label>
-            <input type="password"
-                   id="riotApiKey"
-                   [(ngModel)]="settingsForm.riotApiKey"
-                   name="riotApiKey"
-                   placeholder="RGAPI-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
-            <small>Obtenha sua API key em: <a href="https://developer.riotgames.com" target="_blank">developer.riotgames.com</a></small>
-          </div>
-
-          <button type="button" (click)="updateRiotApiKey()" class="btn-primary">
-            🔑 Configurar API Key
-          </button>
-        </div>
-
-        <!-- Test Section -->
-        <div class="test-section">
-          <h3>🧪 Testes de Desenvolvimento</h3>
-          <p>Ferramentas para testar funcionalidades em desenvolvimento:</p>
-
-          <button type="button" (click)="testDraftPhase()" class="btn-secondary">
-            🎯 Testar Pick & Ban
-          </button>
         </div>
       </div>
 
