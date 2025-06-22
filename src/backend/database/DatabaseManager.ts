@@ -1032,6 +1032,25 @@ export class DatabaseManager {
     });
   }
 
+  async getPlayerCustomMatchesCount(playerIdentifier: string): Promise<number> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+
+    console.log('🔢 Contando partidas customizadas para:', playerIdentifier);
+
+    // Contar apenas partidas completed com dados reais
+    const result = await this.db.get(`
+      SELECT COUNT(*) as count FROM custom_matches 
+      WHERE (team1_players LIKE '%' || ? || '%' OR team2_players LIKE '%' || ? || '%')
+      AND participants_data IS NOT NULL
+      AND status = 'completed'
+    `, [playerIdentifier, playerIdentifier]);
+
+    const count = result?.count || 0;
+    console.log('📊 Total de partidas customizadas encontradas:', count);
+    
+    return count;
+  }
+
   async deleteCustomMatch(matchId: number): Promise<void> {
     if (!this.db) throw new Error('Banco de dados não inicializado');
     

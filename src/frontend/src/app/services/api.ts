@@ -710,17 +710,9 @@ export class ApiService {
       );
   }
 
-  // Método para criar partida de exemplo (para testes)
-  createSampleMatch(playerIdentifier: string): Observable<any> {
-    return this.http.post(`${this.baseUrl}/test/create-sample-match`, { playerIdentifier })
-      .pipe(
-        catchError(this.handleError)
-      );
-  }
-
-  // Método para buscar a última partida customizada de um jogador
-  getLastCustomMatch(playerIdentifier: string): Observable<any> {
-    return this.http.get(`${this.baseUrl}/matches/custom/${playerIdentifier}?offset=0&limit=1`)
+  // Método para contar partidas customizadas de um jogador
+  getCustomMatchesCount(playerIdentifier: string): Observable<any> {
+    return this.http.get(`${this.baseUrl}/matches/custom/${playerIdentifier}/count`)
       .pipe(
         catchError(this.handleError)
       );

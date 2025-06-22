@@ -48,7 +48,17 @@
             <span class="stat-icon">🎮</span>
             <span class="stat-value">{{ getTotalGames() }}</span>
             <span class="stat-label">Jogos</span>
-          </div>          <div class="stat-pill" *ngIf="player.summonerLevel">
+          </div>
+
+          <!-- Nova seção para partidas customizadas -->
+          <div class="stat-pill custom-matches">
+            <span class="stat-icon">🏟️</span>
+            <span class="stat-value" *ngIf="!isLoadingCustomCount">{{ customMatchesCount }}</span>
+            <span class="stat-value loading" *ngIf="isLoadingCustomCount">...</span>
+            <span class="stat-label">Partidas Customizadas</span>
+          </div>
+
+          <div class="stat-pill" *ngIf="player.summonerLevel">
             <span class="stat-icon">⭐</span>
             <span class="stat-value">{{ player.summonerLevel }}</span>
             <span class="stat-label">Nível</span>

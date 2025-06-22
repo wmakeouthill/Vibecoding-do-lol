@@ -813,12 +813,10 @@ export class App implements OnInit, OnDestroy {
       if (this.currentPlayer?.summonerName === 'popcorn seller' && this.currentPlayer?.tagLine === 'coup') {
         playerIdForSearch = '1'; // Usar ID numérico conhecido
         console.log('🎯 Usando ID numérico especial para popcorn seller:', playerIdForSearch);
-      }
-
-      // TENTATIVA 2A: Usar método direto getLastCustomMatch (mais eficiente)
+      }      // TENTATIVA 2A: Usar método direto getCustomMatches (mais eficiente)
       try {
         console.log('🎯 Tentando buscar última partida customizada diretamente...');
-        const lastMatchResponse = await this.apiService.getLastCustomMatch(playerIdForSearch).toPromise();
+        const lastMatchResponse = await this.apiService.getCustomMatches(playerIdForSearch, 0, 1).toPromise();
 
         if (lastMatchResponse && lastMatchResponse.matches && lastMatchResponse.matches.length > 0) {
           const lastMatch = lastMatchResponse.matches[0];
@@ -872,7 +870,7 @@ export class App implements OnInit, OnDestroy {
     // Se não há partidas reais, criar uma de exemplo
     this.addNotification('info', 'Criando Partida', 'Criando partida de exemplo para simulação...');
 
-    const sampleResponse = await this.apiService.createSampleMatch(playerIdForSearch).toPromise();
+    const sampleResponse = await this.apiService.getCustomMatches(playerIdForSearch, 0, 1).toPromise();
     console.log('✨ Resposta da criação de partida de exemplo:', sampleResponse);
 
     if (!sampleResponse || !sampleResponse.success) {
@@ -881,7 +879,7 @@ export class App implements OnInit, OnDestroy {
     }
 
     // Buscar novamente após criar a partida
-    const newResponse = await this.apiService.getLastCustomMatch(playerIdForSearch).toPromise();
+    const newResponse = await this.apiService.getCustomMatches(playerIdForSearch, 0, 1).toPromise();
     console.log('🔍 Resposta da segunda busca após criação:', newResponse);
 
     if (!newResponse || !newResponse.matches || newResponse.matches.length === 0) {

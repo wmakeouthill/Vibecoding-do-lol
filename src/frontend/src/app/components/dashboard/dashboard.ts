@@ -32,6 +32,10 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
   isLoadingMatches: boolean = false;
   matchHistoryError: string | null = null;
 
+  // Contagem de partidas customizadas
+  customMatchesCount: number = 0;
+  isLoadingCustomCount: boolean = false;
+
   constructor(private apiService: ApiService, private cdr: ChangeDetectorRef) {}
   // Detectar mudanças no player
   ngOnChanges(): void {
@@ -44,6 +48,7 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
         rankedData: this.player.rankedData
       });
       this.loadRecentMatches();
+      this.loadCustomMatchesCount();
       this.leaderboardPosition = this.getLeaderboardPosition();
     }
   }
@@ -188,10 +193,9 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
   getHighestMMR(): number {
     return this.player?.currentMMR ? this.player.currentMMR + 50 : 1200; // Mock highest MMR
   }
-
   // Método para buscar dados reais de partidas
   loadRecentMatches(): void {
-    if (!this.player?.puuid) {
+    if (!this.player) {
       this.generateMockData();
       return;
     }
@@ -199,9 +203,9 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
     this.isLoadingMatches = true;
     this.matchHistoryError = null;
 
-    // Tentar buscar do LCU primeiro (mais confiável para dados detalhados)
-    this.loadFromLCU();
-  }  private loadFromLCU(): void {
+    // Priorizar partidas customizadas do banco de dados primeiro
+    this.loadCustomMatchesFromDatabase();
+  }private loadFromLCU(): void {
     console.log('🎮 Loading match history from LCU (primary source)...');
 
     // First try to load custom matches from database
@@ -581,6 +585,7 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
 
   ngOnInit(): void {
     this.loadRecentMatches();
+    this.loadCustomMatchesCount();
     this.leaderboardPosition = this.getLeaderboardPosition();
   }
 
@@ -594,6 +599,41 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
     console.log('🔄 Atualizando todos os dados do dashboard');
     this.loadRecentMatches();
     this.loadCustomMatchesFromDatabase();
+    this.loadCustomMatchesCount();
+  }
+
+  // Método para carregar contagem de partidas customizadas
+  public loadCustomMatchesCount(): void {
+    if (!this.player) {
+      this.customMatchesCount = 0;
+      return;
+    }
+
+    this.isLoadingCustomCount = true;
+    const playerIdentifier = this.player.summonerName || this.player.id.toString();
+
+    console.log('🔢 Carregando contagem de partidas customizadas para:', playerIdentifier);
+
+    const countSub = this.apiService.getCustomMatchesCount(playerIdentifier)
+      .subscribe({
+        next: (response) => {
+          if (response && response.success && typeof response.count === 'number') {
+            this.customMatchesCount = response.count;
+            console.log('✅ Contagem de partidas customizadas carregada:', this.customMatchesCount);
+          } else {
+            this.customMatchesCount = 0;
+            console.log('📝 Nenhuma partida customizada encontrada');
+          }
+          this.isLoadingCustomCount = false;
+        },
+        error: (error) => {
+          console.warn('⚠️ Erro ao carregar contagem de partidas customizadas:', error);
+          this.customMatchesCount = 0;
+          this.isLoadingCustomCount = false;
+        }
+      });
+
+    this.subscriptions.push(countSub);
   }
 
   // Event handlers
@@ -654,7 +694,6 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
       button.style.transform = '';
     }, 150);
   }
-
   public loadCustomMatchesFromDatabase(): void {
     if (!this.player) return;
 
@@ -668,36 +707,42 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
           if (response && response.success && response.matches && response.matches.length > 0) {
             console.log('✅ Custom matches loaded from database:', response.matches.length);
 
-            // Convert custom matches to dashboard format and add to recent matches
+            // Convert custom matches to dashboard format
             const customMatchesForDashboard = this.convertCustomMatchesToDashboard(response.matches);
 
-            // Merge with existing matches if any, avoiding duplicates
-            this.recentMatches = [...customMatchesForDashboard, ...this.recentMatches]
-              .slice(0, 3); // Keep only the 3 most recent
+            // Use ONLY custom matches for recent activity - prioritize database data
+            this.recentMatches = customMatchesForDashboard.slice(0, 3);
 
-            console.log('🎯 Total recent matches (including custom):', this.recentMatches.length);
+            console.log('🎯 Recent matches from database:', this.recentMatches.length);
+            this.isLoadingMatches = false;
+            this.matchHistoryError = null;
           } else {
-            console.log('📝 No custom matches found in database');
+            console.log('📝 No custom matches found in database, falling back to LCU data');
+            // Only fallback to LCU if no custom matches exist
+            this.loadFromLCU();
           }
         },
         error: (error) => {
           console.warn('⚠️ Failed to load custom matches from database:', error);
+          // Fallback to LCU on error
+          this.loadFromLCU();
         }
       });
 
     this.subscriptions.push(customMatchesSub);
   }
-
   private convertCustomMatchesToDashboard(customMatches: any[]): any[] {
     return customMatches.map((match: any) => {
       // Parse JSON fields safely
       let team1Players = [];
       let team2Players = [];
       let pickBanData = null;
+      let participantsData = [];
 
       try {
         team1Players = typeof match.team1_players === 'string' ? JSON.parse(match.team1_players) : (match.team1_players || []);
         team2Players = typeof match.team2_players === 'string' ? JSON.parse(match.team2_players) : (match.team2_players || []);
+        participantsData = typeof match.participants_data === 'string' ? JSON.parse(match.participants_data) : (match.participants_data || []);
 
         if (match.pick_ban_data) {
           pickBanData = typeof match.pick_ban_data === 'string' ? JSON.parse(match.pick_ban_data) : match.pick_ban_data;
@@ -706,41 +751,74 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
         console.warn('⚠️ Error parsing custom match data:', e);
       }
 
-      // Determine player's champion from pick/ban data
+      // Determine player's champion and KDA from participants data
       let playerChampion = 'Unknown';
-      try {
-        if (pickBanData && pickBanData.team1Picks) {
-          const playerTeam = match.player_team || (match.player_won && match.winner_team === 1 ? 1 : 2);
-          const picks = playerTeam === 1 ? pickBanData.team1Picks : pickBanData.team2Picks;
+      let playerKDA = '0/0/0';
+      let playerStats = null;
 
-          if (picks && picks.length > 0) {
-            const currentPlayerName = this.player?.summonerName?.toLowerCase();
-            let playerPick = picks.find((pick: any) =>
-              pick.player && pick.player.toString().toLowerCase().includes(currentPlayerName || '')
-            );
+      // Try to find player in participants data first (more accurate)
+      if (participantsData && participantsData.length > 0) {
+        const currentPlayerName = this.player?.summonerName?.toLowerCase();
+        playerStats = participantsData.find((participant: any) => {
+          const participantName = participant.riotIdGameName || participant.gameName || participant.summonerName || '';
+          return participantName.toLowerCase() === currentPlayerName;
+        });        if (playerStats) {
+          // Use championId if available, otherwise fallback to championName
+          const championId = playerStats.championId;
+          playerChampion = championId ?
+            ChampionService.getChampionNameById(championId) :
+            (playerStats.championName || playerStats.champion || 'Unknown');
+          playerKDA = `${playerStats.kills || 0}/${playerStats.deaths || 0}/${playerStats.assists || 0}`;
+        }
+      }
 
-            if (!playerPick && picks.length > 0) {
-              playerPick = picks[0]; // Fallback to first pick
-            }
+      // Fallback: Determine player's champion from pick/ban data
+      if (playerChampion === 'Unknown' && pickBanData) {
+        try {
+          if (pickBanData && pickBanData.team1Picks) {
+            const playerTeam = match.player_team || (match.player_won && match.winner_team === 1 ? 1 : 2);
+            const picks = playerTeam === 1 ? pickBanData.team1Picks : pickBanData.team2Picks;
 
-            if (playerPick && playerPick.champion) {
-              playerChampion = playerPick.champion;
+            if (picks && picks.length > 0) {
+              const currentPlayerName = this.player?.summonerName?.toLowerCase();
+              let playerPick = picks.find((pick: any) =>
+                pick.player && pick.player.toString().toLowerCase().includes(currentPlayerName || '')
+              );
+
+              if (!playerPick && picks.length > 0) {
+                playerPick = picks[0]; // Fallback to first pick
+              }              if (playerPick && playerPick.champion) {
+                // Try to get championId first, then fallback to champion name
+                if (playerPick.championId) {
+                  playerChampion = ChampionService.getChampionNameById(playerPick.championId);
+                } else {
+                  playerChampion = playerPick.champion;
+                  // If it's a number string, try to convert and map it
+                  const championIdNum = parseInt(playerChampion);
+                  if (!isNaN(championIdNum)) {
+                    playerChampion = ChampionService.getChampionNameById(championIdNum);
+                  }
+                }
+              }
             }
           }
+        } catch (e) {
+          console.warn('⚠️ Error extracting player champion:', e);
         }
-      } catch (e) {
-        console.warn('⚠️ Error extracting player champion:', e);
       }
+
+      // Use the MMR change from database if available, otherwise calculate a default
+      const mmrChange = match.player_mmr_change || match.player_lp_change || (match.player_won ? 15 : -10);
 
       return {
         id: match.id || match.match_id,
         timestamp: new Date(match.created_at).getTime(),
         isVictory: match.player_won || false,
         duration: (match.duration || 25) * 60, // Convert minutes to seconds
-        mmrChange: match.player_won ? 15 : -10, // Mock MMR change for custom matches
-        gameMode: 'CUSTOM',
+        mmrChange: mmrChange, // Use actual MMR change from database
+        gameMode: 'Personalizada',
         champion: playerChampion,
-        kda: '0/0/0', // Custom matches don't store detailed stats yet
+        kda: playerKDA,
         isCustomMatch: true // Flag to identify custom matches
       };
     });

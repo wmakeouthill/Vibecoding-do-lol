@@ -1056,6 +1056,43 @@ app.get('/api/matches/custom/:playerId', (req: Request, res: Response) => {
   })();
 });
 
+// Endpoint para contar partidas customizadas de um jogador
+app.get('/api/matches/custom/:playerId/count', (req: Request, res: Response) => {
+  (async () => {
+    try {
+      const playerIdParam = req.params.playerId;
+
+      console.log('🔢 [GET /api/matches/custom/count] playerIdParam:', playerIdParam);
+
+      // Usar o playerIdParam diretamente (pode ser ID numérico ou nome)
+      let playerIdentifier = playerIdParam;
+
+      // Se é numérico, converter para string para usar com o novo método
+      const numericId = parseInt(playerIdParam);
+      if (!isNaN(numericId)) {
+        playerIdentifier = numericId.toString();
+        console.log('✅ [GET /api/matches/custom/count] ID numérico detectado:', playerIdentifier);
+      } else {
+        // Se não é numérico, usar como nome/identificador
+        console.log('🔄 [GET /api/matches/custom/count] Usando como identificador:', playerIdentifier);
+      }
+
+      console.log('🎯 [GET /api/matches/custom/count] Contando partidas personalizadas para:', playerIdentifier);
+      const count = await dbManager.getPlayerCustomMatchesCount(playerIdentifier);
+      console.log('📊 [GET /api/matches/custom/count] Total de partidas personalizadas:', count);
+      
+      res.json({
+        success: true,
+        count,
+        playerIdentifier
+      });
+    } catch (error: any) {
+      console.error('💥 [GET /api/matches/custom/count] Erro:', error);
+      res.status(500).json({ error: error.message });
+    }
+  })();
+});
+
 // Endpoint para criar partida personalizada baseada em dados do LCU
 app.post('/api/test/create-lcu-based-match', (req: Request, res: Response) => {
   (async () => {
