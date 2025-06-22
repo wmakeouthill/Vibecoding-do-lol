@@ -30,6 +30,36 @@
     align-items: center;
     gap: 15px;
 
+    .loading-progress {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      min-width: 200px;
+
+      .progress-text {
+        font-size: 12px;
+        color: #c89b3c;
+        font-weight: 500;
+        text-align: center;
+      }
+
+      .progress-bar {
+        width: 100%;
+        height: 4px;
+        background: rgba(200, 155, 60, 0.2);
+        border-radius: 2px;
+        overflow: hidden;
+
+        .progress-fill {
+          height: 100%;
+          background: linear-gradient(90deg, #c89b3c, #f0e6d2);
+          border-radius: 2px;
+          transition: width 0.3s ease;
+          animation: shimmer 1.5s infinite;
+        }
+      }
+    }
+
     .last-updated {
       font-size: 14px;
       color: #a09b8c;
@@ -436,9 +466,27 @@
   }
 }
 
+// Animações
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+// Animação para barra de progresso
+@keyframes shimmer {
+  0% {
+    background: linear-gradient(90deg, #c89b3c, #f0e6d2);
+  }
+  50% {
+    background: linear-gradient(90deg, #f0e6d2, #c89b3c);
+  }
+  100% {
+    background: linear-gradient(90deg, #c89b3c, #f0e6d2);
+  }
 }
 
 // Responsividade

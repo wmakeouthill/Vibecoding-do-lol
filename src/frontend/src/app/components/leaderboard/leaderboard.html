@@ -1,11 +1,19 @@
-<div class="leaderboard-container">
-  <div class="leaderboard-header">
+<div class="leaderboard-container">  <div class="leaderboard-header">
     <h2>🏆 Leaderboard - Partidas Customizadas</h2>
-    <div class="header-actions">      <div class="last-updated">
+    <div class="header-actions">
+      <!-- Indicador de progresso -->
+      <div class="loading-progress" *ngIf="isAnyLoading()">
+        <div class="progress-text">{{ getLoadingStatus() }}</div>
+        <div class="progress-bar" *ngIf="getLoadingProgress() > 0">
+          <div class="progress-fill" [style.width.%]="getLoadingProgress()"></div>
+        </div>
+      </div>
+
+      <div class="last-updated">
         <span>Última atualização: {{ formatUpdateTime(lastUpdated) }}</span>
       </div>
-      <button class="refresh-btn" (click)="refresh()" [disabled]="isLoading">
-        <i class="icon-refresh" [class.spinning]="isLoading"></i>
+      <button class="refresh-btn" (click)="refresh()" [disabled]="isAnyLoading()">
+        <i class="icon-refresh" [class.spinning]="isAnyLoading()"></i>
         Atualizar
       </button>
     </div>

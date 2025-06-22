@@ -46,6 +46,12 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
   private profileIconCache: Map<string, number> = new Map();
   private playerTotalMMRCache: Map<string, number> = new Map(); // Cache para MMR total
 
+  // Estados de carregamento detalhados
+  isLoadingProfileIcons = false;
+  isLoadingMMR = false;
+  profileIconsProgress = { current: 0, total: 0 };
+  mmrProgress = { current: 0, total: 0 };
+
   constructor(private http: HttpClient, private championService: ChampionService) {}
 
   ngOnInit() {
@@ -74,13 +80,15 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
           rank: index + 1,
           // Remover o fallback estático - vamos buscar dinamicamente
           profileIconId: undefined
-        }));
-
-        // Buscar profileIconId para cada jogador que tem Riot ID
+        }));        // Buscar profileIconId para cada jogador que tem Riot ID
+        this.isLoadingProfileIcons = true;
         await this.loadProfileIcons();
+        this.isLoadingProfileIcons = false;
 
         // Buscar MMR total real para todos os jogadores
+        this.isLoadingMMR = true;
         await this.loadRealTotalMMR();
+        this.isLoadingMMR = false;
 
         this.lastUpdated = new Date();
       } else {
@@ -92,62 +100,140 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
     } finally {
       this.isLoading = false;
     }
-  }
-  private async loadProfileIcons(): Promise<void> {
-    const promises = this.leaderboardData.map(async (player) => {
-      if (player.riot_id_game_name && player.riot_id_tagline) {
+  }  private async loadProfileIcons(): Promise<void> {    console.log('🔍 Carregando profile icons sequencialmente...');
+
+    // Filtrar jogadores que precisam buscar ícone
+    const playersToFetch = this.leaderboardData.filter(player => {
+      if (!player.riot_id_game_name || !player.riot_id_tagline) return false;
+
+      const riotId = `${player.riot_id_game_name}#${player.riot_id_tagline}`;
+
+      // Verificar cache primeiro
+      if (this.profileIconCache.has(riotId)) {
+        player.profileIconId = this.profileIconCache.get(riotId);
+        return false;
+      }
+
+      return true;
+    });
+
+    this.profileIconsProgress = { current: 0, total: playersToFetch.length };
+    console.log(`📊 Precisando buscar ícones para ${playersToFetch.length} jogadores (5 por vez, 250ms delay)`);    // Processar 5 por vez com delay entre lotes para controlar a carga no LCU
+    const batchSize = 5; // 5 requisições por lote
+    const delayBetweenBatches = 250; // 250ms entre lotes
+
+    for (let i = 0; i < playersToFetch.length; i += batchSize) {
+      const batch = playersToFetch.slice(i, i + batchSize);
+
+      const batchPromises = batch.map(async (player) => {
         const riotId = `${player.riot_id_game_name}#${player.riot_id_tagline}`;
 
-        // Verificar cache primeiro
-        if (this.profileIconCache.has(riotId)) {
-          player.profileIconId = this.profileIconCache.get(riotId);
-          return;
-        }
-
         try {
-          const profileIconId = await this.fetchProfileIcon(riotId);
+          const profileIconId = await this.fetchProfileIconWithRetry(riotId);
           if (profileIconId) {
             player.profileIconId = profileIconId;
             this.profileIconCache.set(riotId, profileIconId);
+            console.log(`✅ Profile icon carregado para ${riotId}: ${profileIconId}`);
           }
         } catch (error) {
-          console.warn(`Erro ao buscar ícone para ${riotId}:`, error);
+          console.warn(`⚠️ Falha final ao buscar ícone para ${riotId}:`, error);
           // Manter undefined para usar fallback
+        } finally {
+          this.profileIconsProgress.current++;
         }
+      });      await Promise.all(batchPromises);      // Delay entre lotes (exceto no último lote)
+      if (i + batchSize < playersToFetch.length) {
+        await this.delay(delayBetweenBatches);
       }
-    });
+    }
 
-    await Promise.all(promises);
+    console.log('✅ Profile icons carregados com sucesso');
   }
 
-  private async loadRealTotalMMR(): Promise<void> {
+  private async fetchProfileIconWithRetry(riotId: string, maxRetries = 2): Promise<number | null> {
+    let lastError: any;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const profileIconId = await this.fetchProfileIcon(riotId);
+        if (profileIconId) {
+          return profileIconId;
+        }
+
+        // Se retornou null (404 ou outros erros controlados), não tentar novamente
+        return null;
+      } catch (error: any) {
+        lastError = error;
+
+        // Se for 404 (jogador não encontrado), não tentar novamente
+        if (error.status === 404) {
+          return null;
+        }
+
+        // Para outros erros, tentar novamente após um delay
+        if (attempt < maxRetries) {
+          const retryDelay = 200 * attempt; // Delay progressivo: 200ms, 400ms...
+          console.log(`🔄 Tentativa ${attempt} falhou para ${riotId}, tentando novamente em ${retryDelay}ms...`);
+          await this.delay(retryDelay);
+        }
+      }
+    }
+
+    // Se chegou aqui, todas as tentativas falharam
+    throw lastError;
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }  private async loadRealTotalMMR(): Promise<void> {
     console.log('🔍 Carregando MMR total real para todos os jogadores...');
 
-    const promises = this.leaderboardData.map(async (player) => {
+    // Filtrar jogadores que precisam calcular MMR
+    const playersToFetch = this.leaderboardData.filter(player => {
       const playerIdentifier = player.summoner_name;
 
       // Verificar cache primeiro
       if (this.playerTotalMMRCache.has(playerIdentifier)) {
         player.calculated_mmr = this.playerTotalMMRCache.get(playerIdentifier)!;
-        return;
+        return false;
       }
 
-      try {
-        const customMatches = await this.fetchPlayerCustomMatches(playerIdentifier);
-        const totalMMR = this.calculateTotalMMRFromMatches(customMatches);
+      return true;
+    });    this.mmrProgress = { current: 0, total: playersToFetch.length };
+    console.log(`📊 Precisando calcular MMR para ${playersToFetch.length} jogadores (consultas locais, sem delay)`);// Processar em lotes maiores - são consultas no banco local, mais rápidas
+    const batchSize = 10; // Máximo 10 requisições simultâneas
+    const delayBetweenBatches = 0; // Sem delay - consultas locais
 
-        // Atualizar player e cache
-        player.calculated_mmr = totalMMR;
-        this.playerTotalMMRCache.set(playerIdentifier, totalMMR);
+    for (let i = 0; i < playersToFetch.length; i += batchSize) {
+      const batch = playersToFetch.slice(i, i + batchSize);
 
-        console.log(`✅ MMR total para ${playerIdentifier}: ${totalMMR}`);
-      } catch (error) {
-        console.warn(`⚠️ Erro ao calcular MMR total para ${playerIdentifier}:`, error);
-        // Manter o calculated_mmr atual como fallback
-      }
-    });
+      const batchPromises = batch.map(async (player) => {
+        const playerIdentifier = player.summoner_name;
 
-    await Promise.all(promises);
+        try {
+          const customMatches = await this.fetchPlayerCustomMatches(playerIdentifier);
+          const totalMMR = this.calculateTotalMMRFromMatches(customMatches);
+
+          // Atualizar player e cache
+          player.calculated_mmr = totalMMR;
+          this.playerTotalMMRCache.set(playerIdentifier, totalMMR);
+
+          console.log(`✅ MMR total para ${playerIdentifier}: ${totalMMR}`);
+        } catch (error) {
+          console.warn(`⚠️ Erro ao calcular MMR total para ${playerIdentifier}:`, error);
+          // Manter o calculated_mmr atual como fallback
+        } finally {
+          this.mmrProgress.current++;
+        }
+      });      await Promise.all(batchPromises);
+
+      // Sem delay para consultas no banco local - são rápidas
+      // if (i + batchSize < playersToFetch.length) {
+      //   await this.delay(delayBetweenBatches);
+      // }
+    }
+
+    console.log('✅ MMR total calculado para todos os jogadores');
   }
   private async fetchPlayerCustomMatches(playerIdentifier: string): Promise<any[]> {
     try {
@@ -408,5 +494,32 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
     if (nextIndex < fallbackUrls.length) {
       target.src = fallbackUrls[nextIndex];
     }
+  }
+
+  getLoadingStatus(): string {
+    if (this.isLoading) return 'Carregando leaderboard...';
+    if (this.isLoadingProfileIcons) {
+      const { current, total } = this.profileIconsProgress;
+      return `Carregando ícones (${current}/${total})...`;
+    }
+    if (this.isLoadingMMR) {
+      const { current, total } = this.mmrProgress;
+      return `Calculando MMR (${current}/${total})...`;
+    }
+    return '';
+  }
+
+  getLoadingProgress(): number {
+    if (this.isLoadingProfileIcons && this.profileIconsProgress.total > 0) {
+      return (this.profileIconsProgress.current / this.profileIconsProgress.total) * 100;
+    }
+    if (this.isLoadingMMR && this.mmrProgress.total > 0) {
+      return (this.mmrProgress.current / this.mmrProgress.total) * 100;
+    }
+    return 0;
+  }
+
+  isAnyLoading(): boolean {
+    return this.isLoading || this.isLoadingProfileIcons || this.isLoadingMMR;
   }
 }
