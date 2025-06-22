@@ -1,5 +1,6 @@
 import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, OnChanges, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
 import { Player, QueueStatus, Match } from '../../interfaces';
 import { ApiService } from '../../services/api';
 import { ChampionService } from '../../services/champion.service';
@@ -36,8 +37,7 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
   customMatchesCount: number = 0;
   isLoadingCustomCount: boolean = false;
 
-  constructor(private apiService: ApiService, private cdr: ChangeDetectorRef) {}
-  // Detectar mudanças no player
+  constructor(private apiService: ApiService, private cdr: ChangeDetectorRef, private http: HttpClient) {}  // Detectar mudanças no player
   ngOnChanges(): void {
     if (this.player) {
       console.log('🎮 [DASHBOARD] Player data received:', {
@@ -49,7 +49,7 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
       });
       this.loadRecentMatches();
       this.loadCustomMatchesCount();
-      this.leaderboardPosition = this.getLeaderboardPosition();
+      this.loadLeaderboardPosition();
     }
   }
 
@@ -427,20 +427,74 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
     return this.recentMatches.filter(match =>
       match.timestamp && match.timestamp >= todayTimestamp && match.isVictory
     ).length;
-  }
-
-  getLeaderboardPosition(): number {
-    // Calcular posição baseada no MMR do jogador se disponível
-    if (this.player?.currentMMR) {
-      // Simulação: quanto maior o MMR, melhor a posição
-      const mmr = this.player.currentMMR;
-      if (mmr >= 2500) return Math.floor(Math.random() * 10) + 1; // Top 10
-      if (mmr >= 2000) return Math.floor(Math.random() * 50) + 1; // Top 50
-      if (mmr >= 1500) return Math.floor(Math.random() * 100) + 1; // Top 100
-      return Math.floor(Math.random() * 500) + 100; // Abaixo de top 100
+  }  loadLeaderboardPosition(): void {
+    if (!this.player?.summonerName) {
+      this.leaderboardPosition = 0;
+      return;
     }
 
-    return Math.floor(Math.random() * 100) + 1; // Fallback
+    // Buscar posição real do leaderboard usando o mesmo endpoint do leaderboard
+    const leaderboardSub = this.http.get<any>('http://localhost:3000/api/stats/participants-leaderboard?limit=50').subscribe({
+      next: (response: any) => {
+        if (response && response.success && response.data) {
+          // Procurar o jogador atual no leaderboard
+          const playerIndex = response.data.findIndex((p: any) =>
+            p.summoner_name?.toLowerCase() === this.player?.summonerName?.toLowerCase() ||
+            p.riot_id_game_name?.toLowerCase() === this.player?.gameName?.toLowerCase()
+          );
+
+          if (playerIndex !== -1) {
+            this.leaderboardPosition = playerIndex + 1;
+            console.log(`🏆 Posição encontrada no leaderboard: #${this.leaderboardPosition}`);
+          } else {
+            // Se não encontrar no top 50, buscar na lista completa
+            this.searchFullLeaderboard();
+          }
+        } else {
+          this.leaderboardPosition = 0;
+        }
+        this.cdr.detectChanges();
+      },
+      error: (error: any) => {
+        console.warn('⚠️ Erro ao buscar posição no leaderboard:', error);
+        this.leaderboardPosition = 0;
+        this.cdr.detectChanges();
+      }
+    });
+
+    this.subscriptions.push(leaderboardSub);
+  }
+
+  private searchFullLeaderboard(): void {
+    // Buscar com limite maior para encontrar jogadores fora do top 50
+    const fullLeaderboardSub = this.http.get<any>('http://localhost:3000/api/stats/participants-leaderboard?limit=200').subscribe({
+      next: (response: any) => {
+        if (response && response.success && response.data) {
+          const playerIndex = response.data.findIndex((p: any) =>
+            p.summoner_name?.toLowerCase() === this.player?.summonerName?.toLowerCase() ||
+            p.riot_id_game_name?.toLowerCase() === this.player?.gameName?.toLowerCase()
+          );
+
+          if (playerIndex !== -1) {
+            this.leaderboardPosition = playerIndex + 1;
+            console.log(`🏆 Posição encontrada no leaderboard completo: #${this.leaderboardPosition}`);
+          } else {
+            this.leaderboardPosition = 0; // Não ranqueado
+            console.log('📊 Jogador não encontrado no leaderboard');
+          }
+        } else {
+          this.leaderboardPosition = 0;
+        }
+        this.cdr.detectChanges();
+      },
+      error: (error: any) => {
+        console.warn('⚠️ Erro ao buscar leaderboard completo:', error);
+        this.leaderboardPosition = 0;
+        this.cdr.detectChanges();
+      }
+    });
+
+    this.subscriptions.push(fullLeaderboardSub);
   }
 
   getCurrentTip() {
@@ -582,11 +636,10 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
     // Remover o erro se houver dados mockados
     this.matchHistoryError = null;
   }
-
   ngOnInit(): void {
     this.loadRecentMatches();
     this.loadCustomMatchesCount();
-    this.leaderboardPosition = this.getLeaderboardPosition();
+    this.loadLeaderboardPosition();
   }
 
   ngOnDestroy(): void {
