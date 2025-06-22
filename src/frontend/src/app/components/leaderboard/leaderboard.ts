@@ -44,6 +44,7 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
   lastUpdated: Date = new Date();
   private refreshSubscription?: Subscription;
   private profileIconCache: Map<string, number> = new Map();
+  private playerTotalMMRCache: Map<string, number> = new Map(); // Cache para MMR total
 
   constructor(private http: HttpClient, private championService: ChampionService) {}
 
@@ -77,6 +78,9 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
 
         // Buscar profileIconId para cada jogador que tem Riot ID
         await this.loadProfileIcons();
+
+        // Buscar MMR total real para todos os jogadores
+        await this.loadRealTotalMMR();
 
         this.lastUpdated = new Date();
       } else {
@@ -115,6 +119,79 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
 
     await Promise.all(promises);
   }
+
+  private async loadRealTotalMMR(): Promise<void> {
+    console.log('🔍 Carregando MMR total real para todos os jogadores...');
+
+    const promises = this.leaderboardData.map(async (player) => {
+      const playerIdentifier = player.summoner_name;
+
+      // Verificar cache primeiro
+      if (this.playerTotalMMRCache.has(playerIdentifier)) {
+        player.calculated_mmr = this.playerTotalMMRCache.get(playerIdentifier)!;
+        return;
+      }
+
+      try {
+        const customMatches = await this.fetchPlayerCustomMatches(playerIdentifier);
+        const totalMMR = this.calculateTotalMMRFromMatches(customMatches);
+
+        // Atualizar player e cache
+        player.calculated_mmr = totalMMR;
+        this.playerTotalMMRCache.set(playerIdentifier, totalMMR);
+
+        console.log(`✅ MMR total para ${playerIdentifier}: ${totalMMR}`);
+      } catch (error) {
+        console.warn(`⚠️ Erro ao calcular MMR total para ${playerIdentifier}:`, error);
+        // Manter o calculated_mmr atual como fallback
+      }
+    });
+
+    await Promise.all(promises);
+  }
+  private async fetchPlayerCustomMatches(playerIdentifier: string): Promise<any[]> {
+    try {
+      // Usar o mesmo endpoint que o match-history usa
+      const response = await this.http.get<any>(`http://localhost:3000/api/matches/custom/${encodeURIComponent(playerIdentifier)}?limit=100`).toPromise();
+
+      if (response && response.success) {
+        return response.matches || [];
+      }
+
+      return [];
+    } catch (error) {
+      console.warn(`Erro ao buscar partidas customizadas para ${playerIdentifier}:`, error);
+      return [];
+    }
+  }
+
+  private calculateTotalMMRFromMatches(matches: any[]): number {
+    // Usar a mesma lógica EXATA do match-history component
+    let totalMMRGained = 0;
+
+    matches.forEach(match => {
+      // Priorizar player_mmr_change que já vem calculado corretamente do backend
+      if (match.player_mmr_change !== undefined && match.player_mmr_change !== null) {
+        totalMMRGained += match.player_mmr_change;
+        console.log(`📊 Partida ${match.id}: MMR change = ${match.player_mmr_change} (acumulado: ${totalMMRGained})`);
+      } else if (match.player_lp_change !== undefined && match.player_lp_change !== null) {
+        // Fallback para LP change se MMR change não estiver disponível
+        totalMMRGained += match.player_lp_change;
+        console.log(`📊 Partida ${match.id}: LP change (fallback) = ${match.player_lp_change} (acumulado: ${totalMMRGained})`);
+      } else {
+        console.log(`⚠️ Partida ${match.id}: Sem dados de MMR/LP change`);
+      }
+    });
+
+    // MMR total = MMR inicial (0) + total de MMR ganho/perdido
+    const baseMMR = 0;
+    const finalMMR = baseMMR + totalMMRGained;
+
+    console.log(`🎯 MMR total calculado para ${matches[0]?.player_identifier || 'jogador'}: ${baseMMR} (base) + ${totalMMRGained} (ganho) = ${finalMMR}`);
+
+    return finalMMR;
+  }
+
   private async fetchProfileIcon(riotId: string): Promise<number | null> {
     try {
       // Primeiro tentar o endpoint específico para profile icon
