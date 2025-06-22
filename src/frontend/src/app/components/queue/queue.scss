@@ -60,23 +60,23 @@
           transform: scale(1.05);
           transition: transform 0.3s ease;
         }
-      }
-
-      .player-level {
+      }      .player-level {
         position: absolute;
         bottom: -5px;
         right: -5px;
         background: var(--primary-gold);
         color: var(--bg-primary);
         border-radius: 50%;
-        width: 24px;
-        height: 24px;
+        width: 36px;
+        height: 28px;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 0.8rem;
+        font-size: 0.85rem;
         font-weight: bold;
         border: 2px solid var(--bg-secondary);
+        min-width: 30px;
+        box-sizing: border-box;
       }
     }
 
