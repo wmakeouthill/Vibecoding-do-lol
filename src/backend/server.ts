@@ -428,22 +428,99 @@ app.post('/api/player/refresh-by-riot-id', (async (req: Request, res: Response) 
     if (!riotId || !region) {
       return res.status(400).json({ error: 'Riot ID e região são obrigatórios para atualização.' });
     }
-     if (!riotId.includes('#')) {
+    if (!riotId.includes('#')) {
       return res.status(400).json({ error: 'Formato de Riot ID inválido. Use gameName#tagLine.' });
     }
 
-    const playerData = await playerService.getPlayerBySummonerNameWithDetails(riotId, region);
-    res.json({ success: true, data: playerData, message: 'Dados do jogador atualizados com sucesso.' });
+    const [gameName, tagLine] = riotId.split('#');
+
+    // Primeiro, tentar obter dados do LCU se estiver conectado
+    let combinedData: any = null;
+    let dataSource = 'none';
+    
+    if (lcuService.isClientConnected()) {
+      try {
+        const lcuSummoner = await lcuService.getCurrentSummoner();
+        
+        if (lcuSummoner && 
+            (lcuSummoner as any).gameName === gameName && 
+            (lcuSummoner as any).tagLine === tagLine) {
+          
+          // É o jogador atual do LCU, usar esses dados como base
+          combinedData = {
+            lcu: lcuSummoner,
+            riotAccount: { 
+              gameName: (lcuSummoner as any).gameName,
+              tagLine: (lcuSummoner as any).tagLine,
+              puuid: lcuSummoner.puuid
+            },
+            riotApi: null,
+            lcuRankedStats: null,
+            partialData: false
+          };
+
+          // Tentar obter stats ranqueadas do LCU
+          try {
+            const lcuRankedStats = await lcuService.getRankedStats();
+            if (lcuRankedStats) {
+              combinedData.lcuRankedStats = lcuRankedStats;
+            }
+          } catch (lcuRankError) {
+            console.log('[REFRESH] LCU ranked stats indisponíveis');
+          }
+
+          dataSource = 'lcu';
+          console.log('[REFRESH] Dados obtidos do LCU para o jogador atual');
+        }
+      } catch (lcuError) {
+        console.log('[REFRESH] Erro ao obter dados do LCU:', lcuError);
+      }
+    }    // Se não conseguiu dados do LCU ou não é o jogador atual, tentar Riot API
+    if (!combinedData) {
+      if (globalRiotAPI && globalRiotAPI.isApiKeyConfigured && globalRiotAPI.isApiKeyConfigured()) {
+        try {
+          const playerData = await playerService.getPlayerBySummonerNameWithDetails(riotId, region);
+          combinedData = playerData;
+          dataSource = 'riot-api';
+          console.log('[REFRESH] Dados obtidos da Riot API');
+        } catch (riotError: any) {
+          console.log('[REFRESH] Erro na Riot API:', riotError.message);
+          
+          // Se falhou na Riot API, retornar erro específico
+          if (riotError.message.includes('não encontrado')) {
+            return res.status(404).json({ error: riotError.message });
+          } else if (riotError.message.includes('Chave da Riot API')) {
+            return res.status(503).json({ error: `Erro na API da Riot: ${riotError.message}` });
+          } else {
+            return res.status(500).json({ error: 'Erro ao acessar dados da Riot API.' });
+          }
+        }
+      } else {
+        return res.status(503).json({ 
+          error: 'Não foi possível atualizar dados: LCU não está conectado ao jogador solicitado e Riot API não está configurada.' 
+        });
+      }
+    }
+
+    // Se chegou até aqui, tem dados para retornar
+    if (combinedData) {
+      const message = dataSource === 'lcu' 
+        ? 'Dados atualizados via LCU (cliente do LoL)' 
+        : 'Dados atualizados via Riot API';
+        
+      res.json({ 
+        success: true, 
+        data: combinedData, 
+        message,
+        source: dataSource
+      });
+    } else {
+      res.status(500).json({ error: 'Não foi possível obter dados do jogador.' });
+    }
 
   } catch (error: any) {
     console.error(`Erro ao atualizar dados do jogador por Riot ID (${req.body.riotId}):`, error.message);
-    if (error.message.includes('não encontrado')) {
-      res.status(404).json({ error: error.message });
-    } else if (error.message.includes('Chave da Riot API')) {
-      res.status(503).json({ error: `Erro na API da Riot: ${error.message}` });
-    } else {
-      res.status(500).json({ error: 'Erro interno ao atualizar dados do jogador.' });
-    }
+    res.status(500).json({ error: 'Erro interno ao atualizar dados do jogador.' });
   }
 }) as RequestHandler);
 

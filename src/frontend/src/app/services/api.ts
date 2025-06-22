@@ -58,7 +58,7 @@ export class ApiService {
 
   private isElectron(): boolean {
     return !!(window as any).electronAPI;
-  }  private handleError(error: HttpErrorResponse) {
+  }  private handleError = (error: HttpErrorResponse) => {
     let errorMessage = 'Erro desconhecido';
     const currentTime = Date.now();
 
