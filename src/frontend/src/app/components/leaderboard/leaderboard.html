@@ -31,12 +31,10 @@
               <span class="rank-icon">{{ getRankIcon(player.rank) }}</span>
             </div>
           </div>          <!-- Jogador -->
-          <div class="player-col">
-            <div class="player-info">
-              <img [src]="getProfileIconUrl(player.profileIconId || 1)"
+          <div class="player-col">            <div class="player-info">              <img [src]="getProfileIconUrl(player.profileIconId)"
                    alt="Profile Icon"
                    class="profile-icon"
-                   (error)="onImageError($event, getProfileIconUrl(1))">
+                   (error)="onProfileIconError($event, player.profileIconId)">
               <div class="player-details">
                 <span class="summoner-name">{{ player.summoner_name }}</span>
                 <span class="player-id" *ngIf="player.riot_id_game_name && player.riot_id_tagline">

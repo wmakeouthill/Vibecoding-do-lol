@@ -250,6 +250,173 @@ app.get('/api/stats/participants-leaderboard', (async (req: Request, res: Respon
   }
 }) as RequestHandler);
 
+// Endpoint para buscar dados do summoner por Riot ID usando LCU
+app.get('/api/summoner/:riotId', (async (req: Request, res: Response) => {
+  try {
+    const { riotId } = req.params;
+    
+    if (!riotId || !riotId.includes('#')) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Riot ID inválido. Use formato: gameName#tagLine' 
+      });
+    }
+
+    const [gameName, tagLine] = riotId.split('#');
+    
+    // Verificar se o LCU está conectado
+    if (!lcuService.isClientConnected()) {
+      return res.status(503).json({ 
+        success: false, 
+        error: 'Cliente do LoL não conectado' 
+      });
+    }
+
+    // Buscar dados do summoner usando o LCU
+    const currentSummoner = await lcuService.getCurrentSummoner();
+    
+    if (!currentSummoner) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Não foi possível obter dados do summoner do LCU' 
+      });
+    }
+
+    // Verificar se é o summoner que estamos procurando
+    const currentGameName = (currentSummoner as any).gameName;
+    const currentTagLine = (currentSummoner as any).tagLine;
+    
+    // Se não é o summoner atual conectado, retornar erro
+    if (currentGameName !== gameName || currentTagLine !== tagLine) {
+      return res.status(404).json({ 
+        success: false, 
+        error: `Summoner ${riotId} não é o jogador atualmente conectado no cliente` 
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        gameName: currentGameName,
+        tagLine: currentTagLine,
+        profileIconId: currentSummoner.profileIconId,
+        summonerLevel: currentSummoner.summonerLevel,
+        puuid: currentSummoner.puuid,
+        summonerId: currentSummoner.summonerId,
+        displayName: currentSummoner.displayName
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Erro ao buscar dados do summoner via LCU:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Erro interno do servidor' 
+    });
+  }
+}) as RequestHandler);
+
+
+// Endpoint para buscar profile icon de qualquer jogador através do histórico LCU
+app.get('/api/summoner/profile-icon/:riotId', (async (req: Request, res: Response) => {
+  try {
+    const { riotId } = req.params;
+    
+    if (!riotId || !riotId.includes('#')) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Riot ID inválido. Use formato: gameName#tagLine' 
+      });
+    }
+
+    const [gameName, tagLine] = riotId.split('#');
+    
+    // Verificar se o LCU está conectado
+    if (!lcuService.isClientConnected()) {
+      return res.status(503).json({ 
+        success: false, 
+        error: 'Cliente do LoL não conectado' 
+      });
+    }
+
+    // Primeiro, verificar se é o summoner atual
+    const currentSummoner = await lcuService.getCurrentSummoner();
+    
+    if (currentSummoner) {
+      const currentGameName = (currentSummoner as any).gameName;
+      const currentTagLine = (currentSummoner as any).tagLine;
+      
+      if (currentGameName === gameName && currentTagLine === tagLine) {
+        return res.json({
+          success: true,
+          data: {
+            gameName: currentGameName,
+            tagLine: currentTagLine,
+            profileIconId: currentSummoner.profileIconId,
+            source: 'current_summoner'
+          }
+        });
+      }
+    }
+
+    // Se não é o summoner atual, buscar no histórico de partidas
+    try {
+      const matchHistory = await lcuService.getMatchHistory(0, 50); // Buscar últimas 50 partidas
+      
+      for (const match of matchHistory) {
+        // Verificar se esta partida tem dados de participantes
+        if (match.participantIdentities) {
+          for (const participant of match.participantIdentities) {
+            const player = participant.player;
+            if (player && player.gameName === gameName && player.tagLine === tagLine) {
+              // Encontrou o jogador no histórico! Buscar dados detalhados da partida
+              const detailedMatch = await lcuService.getMatchDetails(match.gameId);
+              
+              if (detailedMatch && detailedMatch.participantIdentities) {
+                const detailedParticipant = detailedMatch.participantIdentities.find(
+                  (p: any) => p.player.gameName === gameName && p.player.tagLine === tagLine
+                );
+                
+                if (detailedParticipant && detailedParticipant.player.profileIcon !== undefined) {
+                  return res.json({
+                    success: true,
+                    data: {
+                      gameName: gameName,
+                      tagLine: tagLine,
+                      profileIconId: detailedParticipant.player.profileIcon,
+                      source: 'match_history'
+                    }
+                  });
+                }
+              }
+            }
+          }
+        }
+      }
+      
+      // Se chegou até aqui, não encontrou o jogador no histórico
+      return res.status(404).json({ 
+        success: false, 
+        error: `Jogador ${riotId} não encontrado no histórico de partidas do LCU` 
+      });
+      
+    } catch (historyError) {
+      console.error('❌ Erro ao buscar histórico LCU:', historyError);
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Erro ao acessar histórico de partidas do LCU' 
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ Erro ao buscar profile icon via LCU:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Erro interno do servidor' 
+    });
+  }
+}) as RequestHandler);
+
 
 // Endpoint to refresh player data using Riot ID (gameName#tagLine)
 // The frontend will call this when "Atualizar Dados" is clicked.
@@ -1018,7 +1185,7 @@ app.post('/api/test/create-lcu-based-match', (req: Request, res: Response) => {
       pickBanData: pickBanData
     });
   } catch (error: any) {
-    console.error('💥 [CREATE-LCU-MATCH] Erro:', error);
+    console.error('💥 [CREATE-LCU-MATCH] Erro ao criar partida personalizada:', error);
     res.status(500).json({ error: error.message });
   }
 })();

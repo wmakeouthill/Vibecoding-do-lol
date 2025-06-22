@@ -43,6 +43,7 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
   error: string | null = null;
   lastUpdated: Date = new Date();
   private refreshSubscription?: Subscription;
+  private profileIconCache: Map<string, number> = new Map();
 
   constructor(private http: HttpClient, private championService: ChampionService) {}
 
@@ -65,15 +66,18 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
     }
     this.error = null;
 
-    try {      const response = await this.http.get<any>('http://localhost:3000/api/stats/participants-leaderboard?limit=50').toPromise();
-
-      if (response.success) {
+    try {      const response = await this.http.get<any>('http://localhost:3000/api/stats/participants-leaderboard?limit=50').toPromise();      if (response.success) {
         // Processar dados e adicionar rank
         this.leaderboardData = response.data.map((player: any, index: number) => ({
           ...player,
-          rank: index + 1,          // Garantir que profileIconId existe e tem um valor padrão (dados antigos podem não ter esse campo)
-          profileIconId: player.profileIconId || player.profile_icon_id || 1
+          rank: index + 1,
+          // Remover o fallback estático - vamos buscar dinamicamente
+          profileIconId: undefined
         }));
+
+        // Buscar profileIconId para cada jogador que tem Riot ID
+        await this.loadProfileIcons();
+
         this.lastUpdated = new Date();
       } else {
         this.error = 'Erro ao carregar leaderboard';
@@ -85,10 +89,61 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
       this.isLoading = false;
     }
   }
+  private async loadProfileIcons(): Promise<void> {
+    const promises = this.leaderboardData.map(async (player) => {
+      if (player.riot_id_game_name && player.riot_id_tagline) {
+        const riotId = `${player.riot_id_game_name}#${player.riot_id_tagline}`;
 
-  getProfileIconUrl(profileIconId: number): string {
-    return `https://ddragon.leagueoflegends.com/cdn/15.12.1/img/profileicon/${profileIconId}.png`;
-  }  getChampionIconUrl(championName: string): string {
+        // Verificar cache primeiro
+        if (this.profileIconCache.has(riotId)) {
+          player.profileIconId = this.profileIconCache.get(riotId);
+          return;
+        }
+
+        try {
+          const profileIconId = await this.fetchProfileIcon(riotId);
+          if (profileIconId) {
+            player.profileIconId = profileIconId;
+            this.profileIconCache.set(riotId, profileIconId);
+          }
+        } catch (error) {
+          console.warn(`Erro ao buscar ícone para ${riotId}:`, error);
+          // Manter undefined para usar fallback
+        }
+      }
+    });
+
+    await Promise.all(promises);
+  }
+  private async fetchProfileIcon(riotId: string): Promise<number | null> {
+    try {
+      // Primeiro tentar o endpoint específico para profile icon
+      const response = await this.http.get<any>(`http://localhost:3000/api/summoner/profile-icon/${encodeURIComponent(riotId)}`).toPromise();
+
+      if (response.success && response.data.profileIconId !== undefined) {
+        console.log(`✅ Profile icon encontrado para ${riotId}:`, response.data.profileIconId, `(fonte: ${response.data.source})`);
+        return response.data.profileIconId;
+      }
+
+      return null;
+    } catch (error: any) {
+      // Se der erro 404, significa que o jogador não foi encontrado no LCU
+      if (error.status === 404) {
+        console.log(`ℹ️ Jogador ${riotId} não encontrado no LCU (não jogou recentemente)`);
+      } else if (error.status === 503) {
+        console.log(`⚠️ Cliente do LoL não conectado para buscar ${riotId}`);
+      } else {
+        console.warn(`Erro ao buscar profile icon para ${riotId}:`, error);
+      }
+      return null;
+    }
+  }
+
+  getProfileIconUrl(profileIconId?: number): string {
+    // Usar Community Dragon como primeira opção (mesma estratégia do dashboard)
+    const iconId = profileIconId || 29; // Fallback para ícone padrão
+    return `https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/${iconId}.jpg`;
+  }getChampionIconUrl(championName: string): string {
     if (!championName) return 'assets/images/champion-placeholder.svg';
 
     // Se o nome parece ser um ID numérico (ex: "Champion79"), usar o ChampionService
@@ -248,6 +303,33 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
     const target = event.target as HTMLImageElement;
     if (target) {
       target.src = fallbackUrl;
+    }
+  }
+  onProfileIconError(event: Event, profileIconId?: number): void {
+    const target = event.target as HTMLImageElement;
+    if (!target) return;
+
+    const iconId = profileIconId || 29;
+    const fallbackUrls = [
+      `https://ddragon.leagueoflegends.com/cdn/15.12.1/img/profileicon/${iconId}.png`,
+      `https://ddragon.leagueoflegends.com/cdn/14.24.1/img/profileicon/${iconId}.png`,
+      `https://ddragon.leagueoflegends.com/cdn/14.23.1/img/profileicon/${iconId}.png`,
+      `https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/29.jpg` // Ícone padrão final
+    ];
+
+    // Pegar a próxima URL da lista de fallbacks
+    const currentSrc = target.src;
+    let nextIndex = 0;
+
+    for (let i = 0; i < fallbackUrls.length; i++) {
+      if (fallbackUrls[i] === currentSrc) {
+        nextIndex = i + 1;
+        break;
+      }
+    }
+
+    if (nextIndex < fallbackUrls.length) {
+      target.src = fallbackUrls[nextIndex];
     }
   }
 }
