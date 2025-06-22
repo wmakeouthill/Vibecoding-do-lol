@@ -26,11 +26,15 @@
       [class.active]="currentView === 'p2p'"
       (click)="setCurrentView('p2p')">
       🔗 Rede P2P
-    </button>
-    <button
+    </button>    <button
       [class.active]="currentView === 'history'"
       (click)="setCurrentView('history')">
       📊 Histórico
+    </button>
+    <button
+      [class.active]="currentView === 'leaderboard'"
+      (click)="setCurrentView('leaderboard')">
+      🏆 Leaderboard
     </button>
     <button
       [class.active]="currentView === 'settings'"
@@ -92,6 +96,11 @@
       </div><!-- History -->
       <div *ngSwitchCase="'history'" class="view-container">
         <app-match-history [player]="currentPlayer"></app-match-history>
+      </div>
+
+      <!-- Leaderboard -->
+      <div *ngSwitchCase="'leaderboard'" class="view-container">
+        <app-leaderboard></app-leaderboard>
       </div>
 
       <!-- Settings -->

@@ -7,6 +7,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { DashboardComponent } from './components/dashboard/dashboard';
 import { QueueComponent } from './components/queue/queue';
 import { MatchHistoryComponent } from './components/match-history/match-history';
+import { LeaderboardComponent } from './components/leaderboard/leaderboard';
 import { P2PStatusComponent } from './components/p2p-status/p2p-status';
 import { MatchFoundComponent, MatchFoundData } from './components/match-found/match-found';
 import { CustomPickBanComponent } from './components/custom-pick-ban/custom-pick-ban';
@@ -18,13 +19,13 @@ import { Player, QueueStatus, LCUStatus, MatchFound, QueuePreferences, RefreshPl
 import type { Notification } from './interfaces';
 
 @Component({
-  selector: 'app-root',
-  imports: [
+  selector: 'app-root',  imports: [
     CommonModule,
     FormsModule,
     DashboardComponent,
     QueueComponent,
     MatchHistoryComponent,
+    LeaderboardComponent,
     P2PStatusComponent,
     MatchFoundComponent,
     CustomPickBanComponent,
@@ -35,9 +36,8 @@ import type { Notification } from './interfaces';
 })
 export class App implements OnInit, OnDestroy {
   protected title = 'LoL Matchmaking';
-
   // Estado da aplicação
-  currentView: 'dashboard' | 'queue' | 'history' | 'settings' | 'p2p' = 'dashboard';
+  currentView: 'dashboard' | 'queue' | 'history' | 'leaderboard' | 'settings' | 'p2p' = 'dashboard';
   isElectron = false;
   isConnected = false;
   isInQueue = false;
@@ -146,7 +146,7 @@ export class App implements OnInit, OnDestroy {
     this.destroy$.complete();
   }
 
-  setCurrentView(view: 'dashboard' | 'queue' | 'history' | 'settings' | 'p2p'): void {
+  setCurrentView(view: 'dashboard' | 'queue' | 'history' | 'leaderboard' | 'settings' | 'p2p'): void {
     this.currentView = view;
     console.log('View changed to:', view);
   }

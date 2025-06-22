@@ -1088,140 +1088,181 @@ export class DatabaseManager {
     return deletedCount;
   }
 
-  // Função para calcular LP baseado no MMR
-  calculateLPChange(playerMMR: number, opponentMMR: number, isWin: boolean): number {
-    const mmrDifference = opponentMMR - playerMMR;
-    const kFactor = 32; // Fator K do sistema Elo
-    
-    // Base LP
-    let baseLP = isWin ? 18 : -15;
-    
-    // Ajuste baseado na diferença de MMR
-    const mmrFactor = mmrDifference / 100; // Para cada 100 de diferença de MMR
-    const lpAdjustment = mmrFactor * 8; // Máximo +/- 8 LP por 100 MMR de diferença
-    
-    // Aplicar ajuste
-    if (isWin) {
-      baseLP += lpAdjustment;
-      // Jogadores com MMR baixo ganham mais LP
-      if (playerMMR < 1200) {
-        baseLP += Math.floor((1200 - playerMMR) / 50); // +1 LP para cada 50 MMR abaixo de 1200
-      }
-      // Jogadores com MMR alto ganham menos LP
-      if (playerMMR > 1800) {
-        baseLP -= Math.floor((playerMMR - 1800) / 100); // -1 LP para cada 100 MMR acima de 1800
-      }
-    } else {
-      baseLP -= lpAdjustment;
-      // Jogadores com MMR baixo perdem menos LP
-      if (playerMMR < 1200) {
-        baseLP += Math.floor((1200 - playerMMR) / 100); // Perder menos LP se MMR baixo
-      }
-      // Jogadores com MMR alto perdem mais LP
-      if (playerMMR > 1800) {
-        baseLP -= Math.floor((playerMMR - 1800) / 80); // Perder mais LP se MMR alto
-      }
+  /**
+   * Busca estatísticas agregadas de todos os participantes das partidas customizadas
+   * diretamente do campo participants_data
+   */  async getParticipantsLeaderboard(limit: number = 100): Promise<any[]> {
+    const query = `
+      WITH participant_stats AS (
+        SELECT 
+          json_extract(participant.value, '$.summonerName') as summoner_name,
+          json_extract(participant.value, '$.riotIdGameName') as riot_id_game_name,
+          json_extract(participant.value, '$.riotIdTagline') as riot_id_tagline,
+          json_extract(participant.value, '$.profileIconId') as profile_icon_id,
+          json_extract(participant.value, '$.championName') as champion_name,
+          json_extract(participant.value, '$.championId') as champion_id,
+          CAST(json_extract(participant.value, '$.kills') AS INTEGER) as kills,
+          CAST(json_extract(participant.value, '$.deaths') AS INTEGER) as deaths,
+          CAST(json_extract(participant.value, '$.assists') AS INTEGER) as assists,
+          CAST(json_extract(participant.value, '$.goldEarned') AS INTEGER) as gold_earned,
+          CAST(json_extract(participant.value, '$.totalDamageDealtToChampions') AS INTEGER) as damage_dealt,
+          CAST(json_extract(participant.value, '$.totalMinionsKilled') AS INTEGER) as cs,          CAST(json_extract(participant.value, '$.visionScore') AS INTEGER) as vision_score,
+          CAST(json_extract(participant.value, '$.win') AS INTEGER) as win,
+          cm.duration
+        FROM custom_matches cm,
+             json_each(cm.participants_data) as participant
+        WHERE cm.status = 'completed'
+          AND cm.participants_data IS NOT NULL
+          AND json_extract(participant.value, '$.summonerName') IS NOT NULL
+      ),      aggregated_stats AS (
+        SELECT 
+          summoner_name,
+          riot_id_game_name,
+          riot_id_tagline,          -- Pegar o primeiro profile_icon_id não nulo encontrado
+          (SELECT profile_icon_id FROM participant_stats ps2 
+           WHERE ps2.summoner_name = ps.summoner_name 
+           AND ps2.profile_icon_id IS NOT NULL 
+           LIMIT 1) as profile_icon_id,
+          COUNT(*) as games_played,
+          SUM(win) as wins,
+          ROUND(AVG(CAST(kills AS REAL)), 1) as avg_kills,
+          ROUND(AVG(CAST(deaths AS REAL)), 1) as avg_deaths,
+          ROUND(AVG(CAST(assists AS REAL)), 1) as avg_assists,
+          ROUND(AVG(CAST(gold_earned AS REAL)), 0) as avg_gold,
+          ROUND(AVG(CAST(damage_dealt AS REAL)), 0) as avg_damage,
+          ROUND(AVG(CAST(cs AS REAL)), 1) as avg_cs,
+          ROUND(AVG(CAST(vision_score AS REAL)), 1) as avg_vision,
+          MAX(kills) as max_kills,
+          MAX(damage_dealt) as max_damage,
+          -- Campeão mais jogado
+          (SELECT 
+            json_object(
+              'name', champion_name,
+              'id', champion_id,
+              'games', count
+            )
+            FROM (
+              SELECT 
+                ps2.champion_name,
+                ps2.champion_id,
+                COUNT(*) as count
+              FROM participant_stats ps2
+              WHERE ps2.summoner_name = ps.summoner_name
+              GROUP BY ps2.champion_name, ps2.champion_id
+              ORDER BY count DESC
+              LIMIT 1
+            )
+          ) as favorite_champion
+        FROM participant_stats ps
+        GROUP BY summoner_name, riot_id_game_name, riot_id_tagline
+        HAVING games_played >= 1
+      )
+      SELECT 
+        *,
+        ROUND((CAST(wins AS REAL) / CAST(games_played AS REAL)) * 100, 1) as win_rate,
+        CASE
+          WHEN avg_deaths > 0 THEN ROUND((avg_kills + avg_assists) / avg_deaths, 2)
+          ELSE ROUND(avg_kills + avg_assists, 2)
+        END as kda_ratio,
+        -- Calcular MMR baseado em performance
+        ROUND(
+          1000 + 
+          (wins * 25) - 
+          ((games_played - wins) * 15) +
+          (avg_kills * 5) + 
+          (avg_assists * 3) - 
+          (avg_deaths * 8) +
+          (CASE WHEN avg_deaths > 0 THEN ((avg_kills + avg_assists) / avg_deaths) * 10 ELSE 0 END),
+          0
+        ) as calculated_mmr
+      FROM aggregated_stats
+      ORDER BY calculated_mmr DESC, win_rate DESC, games_played DESC
+      LIMIT ?
+    `;    if (!this.db) {
+      throw new Error('Database não está conectado');
     }
+
+    const results = await this.db.all(query, [limit]);
     
-    // Garantir limites razoáveis
-    const minLP = isWin ? 8 : -25;
-    const maxLP = isWin ? 35 : -8;
-    
-    return Math.max(minLP, Math.min(maxLP, Math.round(baseLP)));
+    // Processar o favorite_champion JSON
+    return results.map(row => ({
+      ...row,
+      favorite_champion: row.favorite_champion ? JSON.parse(row.favorite_champion) : null
+    }));
   }
 
-  // Função para calcular MMR baseado no resultado
-  calculateMMRChange(playerMMR: number, opponentMMR: number, isWin: boolean): number {
-    const kFactor = 32;
-    const expectedScore = 1 / (1 + Math.pow(10, (opponentMMR - playerMMR) / 400));
-    const actualScore = isWin ? 1 : 0;
+  /**
+   * Calcula mudança de LP baseada no MMR do jogador vs MMR médio do time oponente
+   */
+  private calculateLPChange(playerMMR: number, opposingTeamMMR: number, isWin: boolean): number {
+    const mmrDifference = opposingTeamMMR - playerMMR;
+    const baseLPChange = 20; // LP base para vitória/derrota
     
-    return Math.round(kFactor * (actualScore - expectedScore));
+    // Fator de dificuldade baseado na diferença de MMR
+    const difficultyFactor = mmrDifference / 100; // cada 100 MMR de diferença = 10% de modificação
+    
+    if (isWin) {
+      // Vitória: ganha mais LP se venceu time mais forte
+      const lpGain = Math.round(baseLPChange + (difficultyFactor * 5));
+      return Math.min(Math.max(lpGain, 10), 35); // Entre 10 e 35 LP
+    } else {
+      // Derrota: perde menos LP se perdeu para time mais forte
+      const lpLoss = Math.round(-baseLPChange + (difficultyFactor * 3));
+      return Math.min(Math.max(lpLoss, -35), -5); // Entre -35 e -5 LP
+    }
   }
 
-  // Atualizar MMR e estatísticas do jogador para partidas customizadas
-  async updatePlayerCustomStats(playerIdentifier: string, isWin: boolean, lpChange: number, mmrChange: number): Promise<void> {
-    if (!this.db) throw new Error('Banco de dados não inicializado');
+  /**
+   * Calcula mudança de MMR baseada na diferença de força dos times
+   */
+  private calculateMMRChange(playerMMR: number, opposingTeamMMR: number, isWin: boolean): number {
+    const mmrDifference = opposingTeamMMR - playerMMR;
+    const baseMMRChange = 15; // MMR base para vitória/derrota
+    
+    // Fator de dificuldade baseado na diferença de MMR
+    const difficultyFactor = mmrDifference / 100;
+    
+    if (isWin) {
+      // Vitória: ganha mais MMR se venceu time mais forte
+      const mmrGain = Math.round(baseMMRChange + (difficultyFactor * 8));
+      return Math.min(Math.max(mmrGain, 5), 30); // Entre 5 e 30 MMR
+    } else {
+      // Derrota: perde menos MMR se perdeu para time mais forte
+      const mmrLoss = Math.round(-baseMMRChange + (difficultyFactor * 5));
+      return Math.min(Math.max(mmrLoss, -30), -3); // Entre -30 e -3 MMR
+    }
+  }
 
-    try {
-      // Primeiro, buscar o jogador atual
-      const player = await this.db.get(
-        'SELECT * FROM players WHERE summoner_name = ? OR id = ?',
-        [playerIdentifier, parseInt(playerIdentifier) || 0]
-      );
+  /**
+   * Atualiza estatísticas customizadas do jogador (MMR, LP, vitórias, etc.)
+   */
+  private async updatePlayerCustomStats(playerName: string, isWin: boolean, lpChange: number, mmrChange: number): Promise<void> {
+    if (!this.db) {
+      throw new Error('Database não está conectado');
+    }
 
-      if (!player) {
-        console.log(`⚠️ Player ${playerIdentifier} não encontrado, criando...`);
-        // Criar jogador com stats iniciais se não existir
-        await this.db.run(`
-          INSERT INTO players (summoner_name, region, custom_mmr, custom_peak_mmr, custom_games_played, custom_wins, custom_losses, custom_win_streak)
-          VALUES (?, 'br1', 1000, 1000, 0, 0, 0, 0)
-        `, [playerIdentifier]);
-        
-        // Buscar o jogador recém-criado
-        const newPlayer = await this.db.get('SELECT * FROM players WHERE summoner_name = ?', [playerIdentifier]);
-        if (newPlayer) {
-          await this.updatePlayerCustomStats(playerIdentifier, isWin, lpChange, mmrChange);
-        }
-        return;
-      }
-
-      // Calcular novos valores
+    // Verificar se jogador existe
+    let player = await this.db.get('SELECT * FROM players WHERE summoner_name = ?', [playerName]);
+    
+    if (!player) {
+      // Criar jogador se não existir
+      await this.db.run(`
+        INSERT INTO players (summoner_name, custom_mmr, custom_lp, custom_games_played, custom_wins, custom_losses)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `, [playerName, 1000 + mmrChange, 0 + lpChange, 1, isWin ? 1 : 0, isWin ? 0 : 1]);
+    } else {
+      // Atualizar jogador existente
       const newMMR = (player.custom_mmr || 1000) + mmrChange;
+      const newLP = (player.custom_lp || 0) + lpChange;
       const newGamesPlayed = (player.custom_games_played || 0) + 1;
       const newWins = (player.custom_wins || 0) + (isWin ? 1 : 0);
       const newLosses = (player.custom_losses || 0) + (isWin ? 0 : 1);
-      const newPeakMMR = Math.max(player.custom_peak_mmr || 1000, newMMR);
-      
-      // Calcular win streak
-      let newWinStreak = player.custom_win_streak || 0;
-      if (isWin) {
-        newWinStreak = newWinStreak >= 0 ? newWinStreak + 1 : 1;
-      } else {
-        newWinStreak = newWinStreak <= 0 ? newWinStreak - 1 : -1;
-      }
 
-      // Atualizar no banco
       await this.db.run(`
-        UPDATE players SET
-          custom_mmr = ?,
-          custom_peak_mmr = ?,
-          custom_games_played = ?,
-          custom_wins = ?,
-          custom_losses = ?,
-          custom_win_streak = ?,
-          updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `, [newMMR, newPeakMMR, newGamesPlayed, newWins, newLosses, newWinStreak, player.id]);
-
-      console.log(`📊 Stats atualizadas para ${playerIdentifier}: MMR ${player.custom_mmr || 1000} → ${newMMR}, LP: ${lpChange > 0 ? '+' : ''}${lpChange}`);
-    } catch (error) {
-      console.error('Erro ao atualizar stats do jogador:', error);
+        UPDATE players 
+        SET custom_mmr = ?, custom_lp = ?, custom_games_played = ?, custom_wins = ?, custom_losses = ?
+        WHERE summoner_name = ?
+      `, [newMMR, newLP, newGamesPlayed, newWins, newLosses, playerName]);
     }
-  }
-
-  // Método para buscar estatísticas customizadas de um jogador
-  async getPlayerCustomStats(playerIdentifier: string): Promise<any | null> {
-    if (!this.db) throw new Error('Banco de dados não inicializado');
-    
-    const player = await this.db.get(
-      'SELECT * FROM players WHERE summoner_name = ? OR id = ?',
-      [playerIdentifier, parseInt(playerIdentifier) || 0]
-    );
-    
-    if (!player) return null;
-    
-    return {
-      id: player.id,
-      summoner_name: player.summoner_name,
-      custom_mmr: player.custom_mmr || 1000,
-      custom_peak_mmr: player.custom_peak_mmr || 1000,
-      custom_games_played: player.custom_games_played || 0,
-      custom_wins: player.custom_wins || 0,
-      custom_losses: player.custom_losses || 0,
-      custom_win_streak: player.custom_win_streak || 0,
-      custom_winrate: player.custom_games_played > 0 ? 
-        Math.round((player.custom_wins / player.custom_games_played) * 100) : 0
-    };
   }
 }

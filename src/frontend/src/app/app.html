@@ -54,6 +54,13 @@
     </button>
 
     <button class="nav-btn"
+            [class.active]="currentView === 'leaderboard'"
+            (click)="setCurrentView('leaderboard')">
+      <i class="icon-leaderboard"></i>
+      Leaderboard
+    </button>
+
+    <button class="nav-btn"
             [class.active]="currentView === 'settings'"
             (click)="setCurrentView('settings')">
       <i class="icon-settings"></i>
@@ -83,6 +90,10 @@
       <app-match-history *ngIf="currentView === 'history'"
                          [player]="currentPlayer">
       </app-match-history>
+
+      <!-- Leaderboard -->
+      <app-leaderboard *ngIf="currentView === 'leaderboard'">
+      </app-leaderboard>
 
       <!-- Settings -->
       <div *ngIf="currentView === 'settings'" class="settings-view">

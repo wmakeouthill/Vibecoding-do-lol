@@ -226,6 +226,30 @@ app.get('/api/player/:playerId/stats', (async (req: Request, res: Response) => {
   }
 }) as RequestHandler);
 
+// Endpoint para buscar leaderboard
+app.get('/api/stats/leaderboard', (async (req: Request, res: Response) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 100;
+    const leaderboard = await playerService.getLeaderboard(limit);
+    res.json({ success: true, data: leaderboard });
+  } catch (error: any) {
+    console.error('❌ Erro ao buscar leaderboard:', error);
+    res.status(500).json({ error: error.message });
+  }
+}) as RequestHandler);
+
+// Novo endpoint para buscar leaderboard baseado nos participantes das partidas customizadas
+app.get('/api/stats/participants-leaderboard', (async (req: Request, res: Response) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 100;
+    const leaderboard = await dbManager.getParticipantsLeaderboard(limit);
+    res.json({ success: true, data: leaderboard });
+  } catch (error: any) {
+    console.error('❌ Erro ao buscar leaderboard de participantes:', error);
+    res.status(500).json({ error: error.message });
+  }
+}) as RequestHandler);
+
 
 // Endpoint to refresh player data using Riot ID (gameName#tagLine)
 // The frontend will call this when "Atualizar Dados" is clicked.

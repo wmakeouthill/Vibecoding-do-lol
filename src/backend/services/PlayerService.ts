@@ -388,11 +388,43 @@ export class PlayerService {
     // Implementar busca de jogadores por nome
     // Por enquanto, retorna lista vazia
     return [];
-  }
+  }  async getLeaderboard(limit: number = 100): Promise<any[]> {
+    try {
+      const result = await this.dbManager.getParticipantsLeaderboard(limit);
+        return result.map((player: any, index: number) => {
+        let favoriteChampion = null;
+          // Processar dados do campeão favorito
+        if (player.favorite_champion && typeof player.favorite_champion === 'object') {
+          favoriteChampion = {
+            name: player.favorite_champion.name,
+            id: player.favorite_champion.id,
+            games: player.favorite_champion.games
+          };
+        }
 
-  async getLeaderboard(limit: number = 100): Promise<any[]> {
-    // Implementar leaderboard - buscar no banco os jogadores com maior MMR
-    // Por enquanto, retorna lista vazia
-    return [];
+        return {
+          rank: index + 1,
+          id: player.id,
+          summonerName: player.summoner_name,
+          profileIconId: player.profile_icon_id || 1,
+          mmr: player.calculated_mmr || 1000,
+          gamesPlayed: player.games_played || 0,
+          wins: player.wins || 0,
+          losses: (player.games_played || 0) - (player.wins || 0),
+          winRate: player.win_rate || 0,
+          favoriteChampion,
+          averageKDA: {
+            kills: Math.round((player.avg_kills || 0) * 10) / 10,
+            deaths: Math.round((player.avg_deaths || 0) * 10) / 10,
+            assists: Math.round((player.avg_assists || 0) * 10) / 10,
+            ratio: player.kda_ratio || 0
+          },
+          averageGold: Math.round(player.avg_gold || 0),
+          joinedAt: player.created_at
+        };
+      });    } catch (error) {
+      console.error('❌ Erro ao buscar leaderboard:', error);
+      return [];
+    }
   }
 }
