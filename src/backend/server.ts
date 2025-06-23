@@ -928,10 +928,11 @@ app.get('/api/lcu/current-match-details', (async (req: Request, res: Response) =
 }) as RequestHandler);
 
 // Endpoint para buscar partida do LCU pelo Game ID e salvar automaticamente
-app.post('/api/lcu/fetch-and-save-match/:gameId', (async (req: Request, res: Response) => {
-  try {
-    const gameId = parseInt(req.params.gameId);
-    const { playerIdentifier } = req.body;
+app.post('/api/lcu/fetch-and-save-match/:gameId', (req: Request, res: Response) => {
+  (async () => {
+    try {
+      const gameId = parseInt(req.params.gameId);
+      const { playerIdentifier } = req.body;
 
     if (!gameId || isNaN(gameId)) {
       return res.status(400).json({ error: 'Game ID inválido' });
@@ -1148,13 +1149,12 @@ app.post('/api/lcu/fetch-and-save-match/:gameId', (async (req: Request, res: Res
       hasRealData: true,
       pickBanData: pickBanData,
       participantsCount: participantsData.length
-    });
-
-  } catch (error: any) {
+    });  } catch (error: any) {
     console.error('💥 [FETCH-SAVE-MATCH] Erro ao buscar e salvar partida:', error);
     res.status(500).json({ error: error.message });
   }
-}) as RequestHandler);
+  })();
+});
 
 // Custom matches routes
 app.post('/api/matches/custom', (async (req: Request, res: Response) => {
@@ -1364,6 +1364,44 @@ app.get('/api/matches/custom/:playerId/count', (req: Request, res: Response) => 
     } catch (error: any) {
       console.error('💥 [GET /api/matches/custom/count] Erro:', error);
       res.status(500).json({ error: error.message });
+    }
+  })();
+});
+
+// Rota para limpeza de partidas de teste
+app.delete('/api/matches/cleanup-test-matches', (req: Request, res: Response) => {
+  (async () => {
+    try {
+      console.log('🧹 [DELETE /api/matches/cleanup-test-matches] Iniciando limpeza COMPLETA da tabela custom_matches');
+      
+      // Contar total antes da limpeza
+      const totalBefore = await dbManager.getCustomMatchesCount();
+      
+      // Executar limpeza
+      const deletedCount = await dbManager.cleanupTestMatches();
+      
+      // Contar total depois da limpeza
+      const totalAfter = await dbManager.getCustomMatchesCount();
+      const remainingMatches = totalAfter;
+      
+      console.log('✅ [DELETE /api/matches/cleanup-test-matches] Limpeza concluída:', {
+        deletedCount,
+        remainingMatches,
+        totalBefore
+      });
+        res.json({
+        success: true,
+        deletedCount,
+        remainingMatches,
+        message: `${deletedCount} partidas removidas. Tabela custom_matches limpa! Restaram ${remainingMatches} partidas.`
+      });
+      
+    } catch (error: any) {
+      console.error('💥 [DELETE /api/matches/cleanup-test-matches] Erro:', error);
+      res.status(500).json({ 
+        success: false,
+        error: error.message 
+      });
     }
   })();
 });

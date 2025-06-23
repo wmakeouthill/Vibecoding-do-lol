@@ -49,7 +49,7 @@ export interface Match {
 }
 
 export class DatabaseManager {
-  private db: Database | null = null;
+  public db: Database | null = null;
   private dbPath: string;  constructor() {
     // Detectar se estamos em desenvolvimento ou produção
     const isDev = process.env.NODE_ENV === 'development';
@@ -1099,30 +1099,26 @@ export class DatabaseManager {
       lcuDetectedMatches: stats.lcu_detected_matches || 0,
       averageDuration: Math.round(stats.average_duration || 0)
     };
-  }
-
-  async cleanupTestMatches(): Promise<number> {
+  }  async cleanupTestMatches(): Promise<number> {
     if (!this.db) throw new Error('Banco de dados não inicializado');
     
-    console.log('🧹 [DatabaseManager.cleanupTestMatches] Iniciando limpeza de partidas de teste...');
-      // Critérios para identificar partidas de teste:
-    // 1. Partidas com session_id contendo "test_" (excluindo "simulate_real_" que são válidas)
-    // 2. Partidas com player_identifier contendo "Player" genérico
-    // 3. Partidas criadas há mais de 24h sem winner_team E sem riot_game_id (não vinculadas)
+    console.log('🧹 [DatabaseManager.cleanupTestMatches] Iniciando limpeza COMPLETA da tabela custom_matches...');
     
-    const deleteQuery = `
-      DELETE FROM custom_matches 
-      WHERE 
-        (session_id LIKE '%test_%' AND session_id NOT LIKE '%simulate_real_%') OR
-        player_identifier LIKE '%Player%' OR
-        (winner_team IS NULL AND riot_game_id IS NULL AND created_at < datetime('now', '-1 day'))
-    `;
+    // Limpar TODA a tabela custom_matches
+    const deleteQuery = `DELETE FROM custom_matches`;
     
     const result = await this.db.run(deleteQuery);
     const deletedCount = result.changes || 0;
     
-    console.log(`✅ [DatabaseManager.cleanupTestMatches] ${deletedCount} partidas de teste removidas`);
+    console.log(`✅ [DatabaseManager.cleanupTestMatches] ${deletedCount} partidas removidas (tabela limpa)`);
     return deletedCount;
+  }
+
+  async getCustomMatchesCount(): Promise<number> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+    
+    const result = await this.db.get('SELECT COUNT(*) as count FROM custom_matches');
+    return result?.count || 0;
   }
 
   /**
