@@ -118,11 +118,11 @@ export class P2PManager {
 
         this.setupSignalingEvents();
         resolve();
-      });
-
-      this.signalingSocket.on('connect_error', (error) => {
+      });      this.signalingSocket.on('connect_error', (error) => {
         console.error('❌ Erro ao conectar ao servidor de sinalização:', error);
-        reject(error);
+        console.error('🔍 Verifique se o servidor está rodando na porta 8080');
+        console.error('💡 Execute: npm run test:p2p ou inicie manualmente o servidor');
+        reject(new Error('Servidor de sinalização não disponível. Execute: npm run p2p:signaling'));
       });
 
       this.signalingSocket.on('disconnect', () => {
@@ -282,61 +282,26 @@ export class P2PManager {
     setTimeout(() => this.checkForLocalPeers(), 1000);
   }
   */
+  // ========== MÉTODOS LEGADOS REMOVIDOS ==========
+  // Todos os métodos localStorage foram removidos
+  // O sistema agora usa APENAS servidor de sinalização WebSocket
 
-  private registerLocalPeer(): void {
-    const localPeers = this.getLocalPeers();
-    const peerInfo = {
-      id: this.localPeerId,
-      timestamp: Date.now(),
-      port: Math.floor(Math.random() * 1000) + 3000 // Simular porta diferente
-    };
+  /*
+  MÉTODOS REMOVIDOS:
+  - registerLocalPeer()
+  - checkForLocalPeers()
+  - getLocalPeers()
+  - simulateConnectionToPeer()
+  - setupLocalPeerDiscovery()
+  - simulatePeerDiscovery()
+  - startPeerDiscovery()
 
-    localPeers[this.localPeerId] = peerInfo;
-    localStorage.setItem('p2p_local_peers', JSON.stringify(localPeers));
-  }
-
-  private checkForLocalPeers(): void {
-    const localPeers = this.getLocalPeers();
-    const currentTime = Date.now();
-
-    Object.keys(localPeers).forEach(peerId => {
-      const peerInfo = localPeers[peerId];
-
-      // Remover peers antigos (mais de 30 segundos)
-      if (currentTime - peerInfo.timestamp > 30000) {
-        delete localPeers[peerId];
-        return;
-      }
-
-      // Se não é o peer local e não está conectado
-      if (peerId !== this.localPeerId && !this.connections.has(peerId)) {
-        console.log(`🔍 Peer local descoberto: ${peerId}`);
-        this.simulateConnectionToPeer(peerId);
-      }
-    });
-
-    // Atualizar localStorage removendo peers antigos
-    localStorage.setItem('p2p_local_peers', JSON.stringify(localPeers));
-  }
-
-  private getLocalPeers(): any {
-    try {
-      return JSON.parse(localStorage.getItem('p2p_local_peers') || '{}');
-    } catch {
-      return {};
-    }
-  }
-
-  private simulateConnectionToPeer(peerId: string): void {
-    console.log(`🔗 Simulando conexão com peer: ${peerId}`);
-
-    // Simular conexão após delay aleatório
-    setTimeout(() => {
-      this.peerConnectedSubject.next(peerId);
-      this.updateConnectedPeersList();
-      console.log(`✅ Conectado ao peer: ${peerId}`);
-    }, 1000 + Math.random() * 2000);
-  }
+  Estes métodos foram substituídos por:
+  - connectToSignalingServer()
+  - setupSignalingEvents()
+  - initiateConnection()
+  - handleSignalingMessage()
+  */
 
   private handlePeerDiscovered(peerInfo: PeerInfo): void {
     if (peerInfo.id === this.localPeerId) return;
