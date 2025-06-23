@@ -15,6 +15,8 @@ import { GameInProgressComponent } from './components/game-in-progress/game-in-p
 import { WebsocketService } from './services/websocket';
 import { ApiService } from './services/api';
 import { QueueStateService } from './services/queue-state';
+import { P2PManager } from './services/p2p-manager';
+import { DistributedQueueService } from './services/distributed-queue';
 import { Player, QueueStatus, LCUStatus, MatchFound, QueuePreferences, RefreshPlayerResponse } from './interfaces';
 import type { Notification } from './interfaces';
 
@@ -41,6 +43,7 @@ export class App implements OnInit, OnDestroy {
   isElectron = false;
   isConnected = false;
   isInQueue = false;
+  currentQueueType: 'centralized' | 'p2p' | null = null;
 
   // Dados do jogador
   currentPlayer: Player | null = null;
@@ -88,11 +91,12 @@ export class App implements OnInit, OnDestroy {
   };
 
   private destroy$ = new Subject<void>();
-
   constructor(
     private websocketService: WebsocketService,
     private apiService: ApiService,
-    private queueStateService: QueueStateService
+    private queueStateService: QueueStateService,
+    private p2pManager: P2PManager,
+    private distributedQueue: DistributedQueueService
   ) {
     this.isElectron = !!(window as any).electronAPI;
   }
@@ -662,12 +666,12 @@ export class App implements OnInit, OnDestroy {
   }
 
   private loadPlayerData(): void {
-    const savedPlayer = localStorage.getItem('currentPlayer');
-    if (savedPlayer) {
+    const savedPlayer = localStorage.getItem('currentPlayer');    if (savedPlayer) {
       try {
         this.currentPlayer = JSON.parse(savedPlayer);
       } catch (error) {
-        console.log('Erro ao carregar dados do jogador do localStorage');      }
+        console.log('Erro ao carregar dados do jogador do localStorage');
+      }
     }
   }
 
@@ -685,25 +689,115 @@ export class App implements OnInit, OnDestroy {
     }
 
     try {
+      console.log('🎯 Tentando entrar na fila...');
+
+      // 🎯 PRIORIDADE: Tentar usar P2P primeiro
+      console.log('� Inicializando P2P para uso prioritário...');
+
+      try {
+        // Sempre tentar inicializar P2P primeiro se não estiver inicializado
+        if (!this.p2pManager['isInitialized']) {
+          console.log('� Inicializando P2P Manager...');
+          await this.p2pManager.initialize({
+            summonerName: this.currentPlayer.summonerName,
+            region: this.currentPlayer.region || 'BR1',
+            mmr: this.currentPlayer.currentMMR || this.currentPlayer.mmr || 1000
+          });
+        }
+
+        // Aguardar um pouco para que o servidor de sinalização se conecte
+        console.log('⏳ Aguardando conexão do servidor de sinalização...');
+        let attempts = 0;
+        const maxAttempts = 10; // 5 segundos máximo
+
+        while (attempts < maxAttempts && !this.isP2PConnected()) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          attempts++;
+          console.log(`🔄 Tentativa ${attempts}/${maxAttempts} - Aguardando P2P...`);
+        }
+
+        // Se P2P está conectado, usar fila P2P
+        if (this.isP2PConnected()) {
+          console.log('✅ P2P conectado! Usando fila P2P (prioridade)');
+
+          this.distributedQueue.joinQueue({
+            primaryLane: preferences?.primaryLane || 'any',
+            secondaryLane: preferences?.secondaryLane || 'any',
+            autoAccept: preferences?.autoAccept || false
+          });
+
+          this.isInQueue = true;
+          this.currentQueueType = 'p2p';
+          this.addNotification('success', 'Fila P2P', `Entrou na fila P2P como ${preferences?.primaryLane || 'qualquer lane'}`);
+          return;
+        } else {
+          console.log('⚠️ P2P não conectou a tempo, usando fila centralizada');
+        }
+      } catch (p2pError) {
+        console.error('❌ Erro ao inicializar P2P:', p2pError);
+        console.log('🌐 Fallback para fila centralizada');
+      }
+
+      // 🌐 FALLBACK: Usar fila centralizada se P2P não disponível
+      console.log('🌐 Usando fila centralizada como fallback');
       await this.websocketService.joinQueue(this.currentPlayer, preferences);
       this.isInQueue = true;
+      this.currentQueueType = 'centralized';
       // Atualizar estado compartilhado
       this.queueStateService.updateCentralizedQueue({
         isInQueue: true
       });
-      this.addNotification('success', 'Fila', `Entrou na fila como ${preferences?.primaryLane || 'qualquer lane'}`);
+      this.addNotification('success', 'Fila Central', `Entrou na fila centralizada como ${preferences?.primaryLane || 'qualquer lane'}`);
     } catch (error) {
+      console.error('Erro ao entrar na fila:', error);
       this.addNotification('error', 'Erro', 'Não foi possível entrar na fila');
     }
-  }  async leaveQueue(): Promise<void> {
+  }  // Verificar se P2P está conectado (método mais simples)
+  private isP2PConnected(): boolean {
+    return !!(this.p2pManager &&
+              this.p2pManager['signalingSocket'] &&
+              this.p2pManager['signalingSocket'].connected);
+  }
+
+  // Verificar se P2P está disponível e conectado
+  private isP2PAvailableAndConnected(): boolean {
+    // Verificar se o P2P manager existe
+    if (!this.p2pManager) {
+      console.log('❌ P2P Manager não disponível');
+      return false;
+    }
+
+    // Verificar se o servidor de sinalização está conectado através do Socket.IO
+    if (!this.p2pManager['signalingSocket'] || !this.p2pManager['signalingSocket'].connected) {
+      console.log('❌ Servidor de sinalização P2P não conectado');
+      return false;
+    }
+
+    console.log('✅ P2P disponível e servidor de sinalização conectado');
+    return true;
+  }
+  async leaveQueue(): Promise<void> {
     try {
-      await this.websocketService.leaveQueue();
+      console.log(`🚪 Saindo da fila ${this.currentQueueType}...`);
+
+      if (this.currentQueueType === 'p2p') {
+        // Sair da fila P2P
+        console.log('🔗 Saindo da fila P2P');
+        this.distributedQueue.leaveQueue();
+        this.addNotification('info', 'Fila P2P', 'Você saiu da fila P2P');
+      } else {
+        // Sair da fila centralizada
+        console.log('🌐 Saindo da fila centralizada');
+        await this.websocketService.leaveQueue();
+        // Atualizar estado compartilhado
+        this.queueStateService.updateCentralizedQueue({
+          isInQueue: false
+        });
+        this.addNotification('info', 'Fila Central', 'Você saiu da fila centralizada');
+      }
+
       this.isInQueue = false;
-      // Atualizar estado compartilhado
-      this.queueStateService.updateCentralizedQueue({
-        isInQueue: false
-      });
-      this.addNotification('info', 'Fila', 'Você saiu da fila');
+      this.currentQueueType = null;
     } catch (error) {
       console.error('Erro ao sair da fila:', error);
       this.addNotification('error', 'Erro', 'Erro ao sair da fila');
