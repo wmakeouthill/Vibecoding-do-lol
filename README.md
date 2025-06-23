@@ -1,6 +1,5 @@
 # League of Legends Matchmaking System
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Node.js](https://img.shields.io/badge/node.js-20+-green.svg)
 ![Angular](https://img.shields.io/badge/angular-18+-red.svg)
 ![Electron](https://img.shields.io/badge/electron-latest-blue.svg)
