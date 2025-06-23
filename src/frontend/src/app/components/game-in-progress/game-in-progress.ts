@@ -850,7 +850,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
       let history: any = null;
       for (const identifier of playerIdentifiers) {
         console.log(`🔍 Tentando buscar com identificador: ${identifier}`);
-        history = await this.apiService.getCustomMatches(identifier, 0, 10).toPromise();
+        history = await this.apiService.getCustomMatches(identifier, 0, 30).toPromise();
 
         if (history && history.success && history.matches && history.matches.length > 0) {
           console.log(`✅ Encontrado histórico com identificador: ${identifier}`);

@@ -22,7 +22,7 @@
     "copy:backend-deps": "node -e \"const fs=require('fs'); const path=require('path'); console.log('🔄 Copiando dependências do backend...'); if(!fs.existsSync('dist/backend')){fs.mkdirSync('dist/backend',{recursive:true});} if(fs.existsSync('src/backend/node_modules')){fs.cp('src/backend/node_modules','dist/backend/node_modules',{recursive:true},(err)=>{if(err){console.error('❌ Erro ao copiar:',err);}else{console.log('✅ Dependências do backend copiadas');}});} else {console.error('❌ src/backend/node_modules não encontrado!');}\"",
     "copy:frontend-build": "node -e \"const fs=require('fs'); console.log('🔄 Copiando build do frontend...'); if(!fs.existsSync('dist/frontend')){fs.mkdirSync('dist/frontend',{recursive:true});} if(fs.existsSync('src/frontend/dist/lol-matchmaking/browser')){fs.cp('src/frontend/dist/lol-matchmaking/browser','dist/frontend/dist/lol-matchmaking/browser',{recursive:true},(err)=>{if(err){console.error('❌ Erro ao copiar:',err);}else{console.log('✅ Build do frontend copiado');}});} else {console.error('❌ src/frontend/dist/lol-matchmaking/browser não encontrado!');}\"",
     "copy:database": "node -e \"const fs=require('fs'); console.log('🔄 Copiando banco de dados...'); const sourcePath='src/backend/database/database.sqlite'; if(fs.existsSync(sourcePath)){if(!fs.existsSync('dist/backend/database')){fs.mkdirSync('dist/backend/database',{recursive:true});} fs.copyFileSync(sourcePath,'dist/backend/database/database.sqlite'); console.log('✅ Banco de dados copiado de src/backend/database/');} else {console.log('⚠️ src/backend/database/database.sqlite não encontrado, será criado automaticamente');}\"",
-    "verify:build": "node -e \"const fs=require('fs'); console.log('🔍 Verificando build...'); const checks=[{path:'dist/backend/server.js',name:'Backend JS'},{path:'dist/backend/node_modules',name:'Backend deps'},{path:'dist/frontend/dist/lol-matchmaking/browser',name:'Frontend build'},{path:'dist/electron/main.js',name:'Electron main'}]; let allOk=true; checks.forEach(check=>{const exists=fs.existsSync(check.path); console.log(`${exists?'✅':'❌'} ${check.name}: ${check.path}`); if(!exists)allOk=false;}); if(allOk){console.log('🎉 Build verificado com sucesso!');}else{console.error('❌ Alguns arquivos estão faltando no build');}\"",
+    "verify:build": "node -e \"const fs=require('fs'); console.log('🔍 Verificando build...'); const checks=[{path:'dist/backend/server.js',name:'Backend JS'},{path:'dist/backend/signaling-server-standalone.js',name:'P2P Signaling Server'},{path:'dist/backend/services/signaling-server.js',name:'P2P Service'},{path:'dist/backend/node_modules',name:'Backend deps'},{path:'dist/frontend/dist/lol-matchmaking/browser',name:'Frontend build'},{path:'dist/electron/main.js',name:'Electron main'}]; let allOk=true; checks.forEach(check=>{const exists=fs.existsSync(check.path); console.log(`${exists?'✅':'❌'} ${check.name}: ${check.path}`); if(!exists)allOk=false;}); if(allOk){console.log('🎉 Build verificado com sucesso!');}else{console.error('❌ Alguns arquivos estão faltando no build');}\"",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:electron:wait\"",
     "dev:fast": "concurrently \"npm run dev:frontend\" \"npm run dev:electron:wait\"",
     "dev:backend": "nodemon --exec ts-node src/backend/server.ts",
@@ -37,12 +37,15 @@
     "dist:mac": "npm run build && electron-builder --mac --publish=never",
     "dist:linux": "npm run build && electron-builder --linux --publish=never",
     "start": "npm run build && npm run electron",    "test": "echo \"Error: no test specified\" && exit 1",
-    "test:p2p": "concurrently \"npm run dev:frontend\" \"npm run test:p2p:instances\"",
-    "test:p2p:instances": "wait-on http://localhost:4200 --timeout 15000 && concurrently \"npm run dev:electron\" \"npm run dev:electron\" \"npm run dev:electron\"",
-    "release:win": "npm run build && npm run verify:build && npm run pack:win && npm run installer:win",
+    "test:p2p": "concurrently \"npm run p2p:signaling\" \"npm run dev:frontend\" \"npm run test:p2p:instances\"",
+    "test:p2p:instances": "wait-on http://localhost:4200 http://localhost:8080 --timeout 30000 && concurrently \"npm run dev:electron\" \"npm run dev:electron\" \"npm run dev:electron\"",
+    "p2p:signaling": "cd src/backend && npm run signaling",
+    "p2p:install": "cd src/backend && npm install && cd ../frontend && npm install",
+    "p2p:build": "npm run build && npm run p2p:copy-scripts",
+    "p2p:copy-scripts": "node scripts/create-p2p-scripts.js",    "release:win": "npm run p2p:build && npm run verify:build && npm run pack:win && npm run installer:win",
     "pack:win": "electron-builder --win --dir --publish=never",
     "installer:win": "electron-builder --win --publish=never",
-    "release:complete": "npm run clean && npm run release:win && echo '🎉 Release Windows completo! Executável em: release/win-unpacked/ | Instalador em: release/'"
+    "release:complete": "npm run clean && npm run p2p:install && npm run release:win && npm run p2p:copy-scripts && echo '🎉 Release Windows completo com P2P! Executável em: release/win-unpacked/ | Instalador em: release/ | Scripts P2P em: dist/'"
   },
   "keywords": [
     "league of legends",

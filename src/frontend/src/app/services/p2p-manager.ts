@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable, Subject } from 'rxjs';
+import { io, Socket } from 'socket.io-client';
 
 interface PeerInfo {
   id: string;
@@ -36,6 +37,10 @@ export class P2PManager {
   private heartbeatInterval?: any;
   private readonly HEARTBEAT_INTERVAL = 30000; // 30 segundos
 
+  // Socket.IO para servidor de sinalização
+  private signalingSocket?: Socket;
+  private readonly SIGNALING_SERVER_URL = 'http://localhost:8080';
+
   // RxJS Subjects para comunicação
   private peerConnectedSubject = new Subject<string>();
   private peerDisconnectedSubject = new Subject<string>();
@@ -60,22 +65,23 @@ export class P2PManager {
     // Gerar ID único para este peer
     this.localPeerId = this.generatePeerId();
   }
-
   async initialize(playerData: { summonerName: string; region: string; mmr: number }): Promise<void> {
     if (this.isInitialized) return;
 
     try {
+      console.log('🚀 Inicializando sistema P2P...');
 
       // Atualizar ID com dados do jogador
       this.localPeerId = this.generatePeerId(playerData.summonerName, playerData.region);
 
-      // Iniciar descoberta de peers
-      await this.startPeerDiscovery();
+      // Conectar ao servidor de sinalização
+      await this.connectToSignalingServer(playerData);
 
       // Iniciar heartbeat
       this.startHeartbeat();
 
       this.isInitialized = true;
+      console.log('✅ Sistema P2P inicializado com sucesso');
 
       this.p2pReadySubject.next();
     } catch (error) {
@@ -83,7 +89,6 @@ export class P2PManager {
       throw error;
     }
   }
-
   private generatePeerId(summonerName?: string, region?: string): string {
     const timestamp = Date.now();
     const random = Math.random().toString(36).substring(7);
@@ -91,9 +96,170 @@ export class P2PManager {
     return `${base}_${timestamp}_${random}`;
   }
 
+  private async connectToSignalingServer(playerData: { summonerName: string; region: string; mmr: number }): Promise<void> {
+    return new Promise((resolve, reject) => {
+      console.log('🔗 Conectando ao servidor de sinalização...');
+
+      this.signalingSocket = io(this.SIGNALING_SERVER_URL, {
+        transports: ['websocket', 'polling'],
+        timeout: 10000
+      });
+
+      this.signalingSocket.on('connect', () => {
+        console.log('✅ Conectado ao servidor de sinalização');
+
+        // Registrar este peer no servidor
+        this.signalingSocket!.emit('register-peer', {
+          id: this.localPeerId,
+          summonerName: playerData.summonerName,
+          region: playerData.region,
+          mmr: playerData.mmr
+        });
+
+        this.setupSignalingEvents();
+        resolve();
+      });
+
+      this.signalingSocket.on('connect_error', (error) => {
+        console.error('❌ Erro ao conectar ao servidor de sinalização:', error);
+        reject(error);
+      });
+
+      this.signalingSocket.on('disconnect', () => {
+        console.log('⚠️ Desconectado do servidor de sinalização');
+      });
+    });
+  }
+
+  private setupSignalingEvents(): void {
+    if (!this.signalingSocket) return;
+
+    // Lista de peers disponíveis
+    this.signalingSocket.on('peers-list', (peers: PeerInfo[]) => {
+      console.log(`📡 Peers disponíveis:`, peers.length);
+      peers.forEach(peer => {
+        if (!this.peers.has(peer.id)) {
+          this.peers.set(peer.id, peer);
+          console.log(`👤 Peer descoberto: ${peer.summonerName} (${peer.id})`);
+          this.initiateConnection(peer.id);
+        }
+      });
+    });
+
+    // Novo peer se juntou
+    this.signalingSocket.on('peer-joined', (peer: PeerInfo) => {
+      console.log(`🆕 Novo peer se juntou: ${peer.summonerName}`);
+      if (!this.peers.has(peer.id)) {
+        this.peers.set(peer.id, peer);
+        this.initiateConnection(peer.id);
+      }
+    });
+
+    // Peer saiu
+    this.signalingSocket.on('peer-left', (peerId: string) => {
+      console.log(`👋 Peer saiu: ${peerId}`);
+      this.handlePeerDisconnection(peerId);
+    });
+
+    // Mensagens de sinalização WebRTC
+    this.signalingSocket.on('signaling-message', (message: any) => {
+      this.handleSignalingMessage(message);
+    });
+  }
+
+  private async initiateConnection(peerId: string): Promise<void> {
+    if (this.connections.has(peerId)) return;
+
+    console.log(`🔗 Iniciando conexão WebRTC com: ${peerId}`);
+
+    const peerConnection = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
+    });
+
+    // Criar data channel
+    const dataChannel = peerConnection.createDataChannel('gameData', {
+      ordered: true
+    });
+
+    this.setupDataChannelEvents(peerId, dataChannel);
+    this.setupPeerConnectionEvents(peerId, peerConnection);
+
+    this.connections.set(peerId, peerConnection);
+    this.dataChannels.set(peerId, dataChannel);
+
+    // Criar oferta
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+
+    // Enviar oferta via servidor de sinalização
+    this.signalingSocket?.emit('signaling-message', {
+      type: 'offer',
+      data: offer,
+      targetPeer: peerId,
+      sourcePeer: this.localPeerId
+    });
+  }
+
+  private async handleSignalingMessage(message: any): Promise<void> {
+    const { type, data, sourcePeer } = message;
+
+    if (!this.connections.has(sourcePeer)) {
+      // Criar conexão para o peer que está oferecendo
+      const peerConnection = new RTCPeerConnection({
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+      });
+
+      this.setupPeerConnectionEvents(sourcePeer, peerConnection);
+      this.connections.set(sourcePeer, peerConnection);
+
+      // Configurar data channel quando recebido
+      peerConnection.ondatachannel = (event) => {
+        const channel = event.channel;
+        this.setupDataChannelEvents(sourcePeer, channel);
+        this.dataChannels.set(sourcePeer, channel);
+      };
+    }
+
+    const peerConnection = this.connections.get(sourcePeer)!;
+
+    switch (type) {
+      case 'offer':
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(data));
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+
+        this.signalingSocket?.emit('signaling-message', {
+          type: 'answer',
+          data: answer,
+          targetPeer: sourcePeer,
+          sourcePeer: this.localPeerId
+        });
+        break;
+
+      case 'answer':
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(data));
+        break;
+
+      case 'ice-candidate':
+        await peerConnection.addIceCandidate(new RTCIceCandidate(data));
+        break;
+    }
+  }
+  // ========== MÉTODOS LEGADOS (LOCALSTORAGE) - SUBSTITUÍDOS POR SERVIDOR DE SINALIZAÇÃO ==========
+  // Estes métodos foram substituídos pela implementação com servidor de sinalização WebSocket
+
+  /*
   private async startPeerDiscovery(): Promise<void> {
     this.simulatePeerDiscovery();
-  }  private simulatePeerDiscovery(): void {
+  }
+
+  private simulatePeerDiscovery(): void {
     // Em uma implementação real, isso descobriria peers via:
     // 1. UDP multicast na rede local
     // 2. Servidor de sinalização WebSocket
@@ -115,6 +281,7 @@ export class P2PManager {
     // Verificar imediatamente
     setTimeout(() => this.checkForLocalPeers(), 1000);
   }
+  */
 
   private registerLocalPeer(): void {
     const localPeers = this.getLocalPeers();
@@ -236,13 +403,30 @@ export class P2PManager {
       this.handlePeerDisconnection(peerId);
     };
   }
-
   private setupPeerConnectionEvents(peerId: string, peerConnection: RTCPeerConnection): void {
     peerConnection.onconnectionstatechange = () => {
-      if (peerConnection.connectionState === 'disconnected' ||
+      console.log(`🔄 Estado da conexão com ${peerId}: ${peerConnection.connectionState}`);
+
+      if (peerConnection.connectionState === 'connected') {
+        console.log(`✅ Conectado com sucesso ao peer: ${peerId}`);
+        this.peerConnectedSubject.next(peerId);
+        this.updateConnectedPeersList();
+      } else if (peerConnection.connectionState === 'disconnected' ||
           peerConnection.connectionState === 'failed' ||
           peerConnection.connectionState === 'closed') {
         this.handlePeerDisconnection(peerId);
+      }
+    };
+
+    // Enviar ICE candidates via servidor de sinalização
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate) {
+        this.signalingSocket?.emit('signaling-message', {
+          type: 'ice-candidate',
+          data: event.candidate,
+          targetPeer: peerId,
+          sourcePeer: this.localPeerId
+        });
       }
     };
 
