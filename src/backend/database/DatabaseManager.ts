@@ -1280,13 +1280,12 @@ export class DatabaseManager {
 
     // Verificar se jogador existe
     let player = await this.db.get('SELECT * FROM players WHERE summoner_name = ?', [playerName]);
-    
-    if (!player) {
-      // Criar jogador se não existir
+      if (!player) {
+      // Criar jogador se não existir - incluindo região padrão
       await this.db.run(`
-        INSERT INTO players (summoner_name, custom_mmr, custom_lp, custom_games_played, custom_wins, custom_losses)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `, [playerName, 1000 + mmrChange, 0 + lpChange, 1, isWin ? 1 : 0, isWin ? 0 : 1]);
+        INSERT INTO players (summoner_name, region, current_mmr, peak_mmr, games_played, wins, losses, win_streak, custom_mmr, custom_lp, custom_games_played, custom_wins, custom_losses)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [playerName, 'BR1', 1000, 1000, 0, 0, 0, 0, 1000 + mmrChange, 0 + lpChange, 1, isWin ? 1 : 0, isWin ? 0 : 1]);
     } else {
       // Atualizar jogador existente
       const newMMR = (player.custom_mmr || 1000) + mmrChange;
