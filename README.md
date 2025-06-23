@@ -927,7 +927,8 @@ curl -X GET http://localhost:3000/api/lcu/status
 - **[Implementação Riot ID](./RIOT_ID_IMPLEMENTATION.md)** - Detalhes técnicos da integração com Riot API
 - **[Arquitetura Técnica](./TECHNICAL_ARCHITECTURE.md)** - Visão completa da arquitetura do sistema
 - **[Endpoints API](./RIOT_ID_IMPLEMENTATION.md#endpoints-funcionais-do-backend)** - Documentação completa das APIs
-
+- **[Endpoints LCU](./RIOT_ID_IMPLEMENTATION.md#endpoints-funcionais-do-backend)** - Documentação completa do LCU
+- **[Endpoints Backend](./RIOT_ID_IMPLEMENTATION.md#endpoints-funcionais-do-backend)** - Documentação completa do Backend
 ## 🤝 Contribuição
 
 ### Como Contribuir
@@ -943,10 +944,6 @@ curl -X GET http://localhost:3000/api/lcu/status
 - ✅ **Commits**: Use mensagens descritivas
 - ✅ **Testes**: Adicione testes para novas funcionalidades
 - ✅ **Documentação**: Atualize documentação relevante
-
-## 📄 Licença
-
-Este projeto está licenciado sob a **MIT License** - veja o arquivo [LICENSE](LICENSE) para detalhes.
 
 ## 👥 Autores
 
