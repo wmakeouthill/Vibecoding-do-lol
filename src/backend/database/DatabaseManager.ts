@@ -135,6 +135,11 @@ export class DatabaseManager {
       if (!customMatchColumnNames.includes('lp_changes')) {
         await this.db.exec('ALTER TABLE custom_matches ADD COLUMN lp_changes TEXT');
         console.log('✅ Coluna lp_changes adicionada');
+      }      // Remover coluna custom_lp se existir (não deveria estar em custom_matches)
+      if (customMatchColumnNames.includes('custom_lp')) {
+        console.log('⚠️ Coluna custom_lp encontrada em custom_matches, deveria estar apenas em players');
+        // Note: SQLite não suporta DROP COLUMN, seria necessário recriar a tabela
+        // Por enquanto, apenas loggar o aviso
       }
       
       if (!customMatchColumnNames.includes('average_mmr_team1')) {
@@ -199,7 +204,8 @@ export class DatabaseManager {
         custom_games_played INTEGER DEFAULT 0,
         custom_wins INTEGER DEFAULT 0,
         custom_losses INTEGER DEFAULT 0,
-        custom_win_streak INTEGER DEFAULT 0
+        custom_win_streak INTEGER DEFAULT 0,
+        custom_lp INTEGER DEFAULT 0
       )
     `);
 
@@ -240,11 +246,12 @@ export class DatabaseManager {
         duration INTEGER, -- duração em minutos
         pick_ban_data TEXT, -- JSON com dados de pick/ban
         game_mode TEXT DEFAULT 'CLASSIC',
-        status TEXT DEFAULT 'pending', -- pending, in_progress, completed, cancelled
+        status TEXT DEFAULT 'completed', -- pending, in_progress, completed, cancelled
         created_by TEXT, -- quem criou a partida        riot_game_id TEXT, -- ID da partida real do Riot (se vinculada)
         detected_by_lcu INTEGER DEFAULT 0,
         notes TEXT, -- observações da partida
         lp_changes TEXT, -- JSON com mudanças de LP por jogador
+        custom_lp INTEGER DEFAULT 0, 
         average_mmr_team1 INTEGER, -- MMR médio do time 1
         average_mmr_team2 INTEGER, -- MMR médio do time 2
         participants_data TEXT, -- JSON com dados reais dos participantes (KDA, itens, etc.)
@@ -253,9 +260,9 @@ export class DatabaseManager {
       )
     `);
 
-    // Tabela de partidas do Riot API (cache/histórico)
+    // Tabela de partidas do LCU (cache/histórico)
     await this.db.exec(`
-      CREATE TABLE IF NOT EXISTS riot_matches (
+      CREATE TABLE IF NOT EXISTS lcu_matches (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         game_id TEXT UNIQUE NOT NULL,
         game_mode TEXT,
@@ -450,11 +457,11 @@ export class DatabaseManager {
     return result.lastID!;
   }
 
-  async getPlayerMatches(playerId: number, limit: number = 20, offset: number = 0): Promise<Match[]> {
+  async getPlayerMatches(playerId: number, limit: number = 30, offset: number = 0): Promise<Match[]> {
     if (!this.db) throw new Error('Banco de dados não inicializado');
     
     return await this.db.all(`
-      SELECT * FROM matches 
+      SELECT * FROM matches
       WHERE team1_players LIKE ? OR team2_players LIKE ?
       ORDER BY created_at DESC 
       LIMIT ? OFFSET ?

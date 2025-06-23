@@ -562,22 +562,24 @@ export class ApiService {
     return result;
   }
   private calculateMMRFromData(data: any, lcuRankedStats?: any): number {
-    // Try Riot API data first
+    // Try Riot LCU data first
+
+
+    if (lcuRankedStats?.queues) {
+    const lcuSoloQueue = lcuRankedStats.queues.find((q: any) => q.queueType === 'RANKED_SOLO_5x5');
+    if (lcuSoloQueue?.tier) {
+      return this.calculateMMRFromRankData({
+          tier: lcuSoloQueue.tier,
+          rank: lcuSoloQueue.division,
+          leaguePoints: lcuSoloQueue.leaguePoints
+        });
+    }
+    // Try API ranked stats as fallback
     const soloQueue = data.soloQueue || data.rankedData?.soloQueue;
     if (soloQueue?.tier) {
       return this.calculateMMRFromRankData(soloQueue);
     }
 
-    // Try LCU ranked stats as fallback
-    if (lcuRankedStats?.queues) {
-      const lcuSoloQueue = lcuRankedStats.queues.find((q: any) => q.queueType === 'RANKED_SOLO_5x5');
-      if (lcuSoloQueue?.tier) {
-        return this.calculateMMRFromRankData({
-          tier: lcuSoloQueue.tier,
-          rank: lcuSoloQueue.division,
-          leaguePoints: lcuSoloQueue.leaguePoints
-        });
-      }
     }
 
     return 1200; // Default MMR
@@ -618,7 +620,7 @@ export class ApiService {
 
   // Método para salvar partida customizada após o jogo
   saveCustomMatch(matchData: any): Observable<any> {
-    return this.http.post(`${this.baseUrl}/matches/custom`, matchData)
+    return this.http.post(`${this.baseUrl}/custom_matches`, matchData)
       .pipe(
         catchError(this.handleError)
       );
@@ -657,7 +659,7 @@ export class ApiService {
       );
   }
   // LCU Match History - ALL matches (including custom) for dashboard
-  getLCUMatchHistoryAll(startIndex: number = 0, count: number = 5, customOnly: boolean = false): Observable<any> {
+  getLCUMatchHistoryAll(startIndex: number = 0, count: number = 5, customOnly: boolean = true): Observable<any> {
     return this.http.get(`${this.baseUrl}/lcu/match-history-all?startIndex=${startIndex}&count=${count}&customOnly=${customOnly}`)
       .pipe(
         catchError(this.handleError)

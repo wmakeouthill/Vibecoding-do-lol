@@ -429,7 +429,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
 
     try {
       // Get LCU match history to compare
-      const historyResponse = await this.apiService.getLCUMatchHistoryAll(0, 10, false).toPromise();
+      const historyResponse = await this.apiService.getLCUMatchHistoryAll(0, 30, false).toPromise();
 
       if (!historyResponse || !historyResponse.success || !historyResponse.matches || historyResponse.matches.length === 0) {
         console.log('⚠️ [MANUAL] Nenhuma partida encontrada no histórico do LCU');

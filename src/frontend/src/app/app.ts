@@ -794,7 +794,7 @@ export class App implements OnInit, OnDestroy {
       console.log('Player data completo:', this.currentPlayer);
 
       // PRIMEIRA TENTATIVA: Buscar partidas customizadas REAIS do LCU
-      const lcuMatches = await this.apiService.getLCUMatchHistoryAll(0, 10, true).toPromise();
+      const lcuMatches = await this.apiService.getLCUMatchHistoryAll(0, 30, true).toPromise();
       console.log('🎮 Partidas customizadas do LCU:', lcuMatches);
 
       if (lcuMatches && lcuMatches.success && lcuMatches.matches && lcuMatches.matches.length > 0) {
