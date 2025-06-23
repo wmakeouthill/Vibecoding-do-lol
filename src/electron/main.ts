@@ -5,6 +5,7 @@ import * as fs from 'fs';
 
 let mainWindow: BrowserWindow;
 let backendProcess: any;
+let p2pSignalingProcess: any;
 
 const isDev = process.env.NODE_ENV === 'development' || 
              (!app.isPackaged && !process.env.NODE_ENV);
@@ -46,11 +47,11 @@ function getProductionPaths() {
   console.log('- Backend exists:', fs.existsSync(backendPath));
   console.log('- Frontend exists:', fs.existsSync(frontendPath));
   console.log('- Node modules exists:', fs.existsSync(nodeModulesPath));
-  
-  return {
+    return {
     frontend: frontendPath,
     backend: backendPath,
-    nodeModules: nodeModulesPath
+    nodeModules: nodeModulesPath,
+    p2pSignaling: path.join(path.dirname(backendPath), 'signaling-server-standalone.js')
   };
 }
 
@@ -60,16 +61,21 @@ function createWindow(): void {
     height: 800,
     width: 1200,
     minHeight: 600,
-    minWidth: 800,
-    webPreferences: {
+    minWidth: 800,    webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
       // Configurações necessárias para WebRTC P2P
       experimentalFeatures: true,
       allowRunningInsecureContent: true,
-      // Permitir acesso a APIs de rede para P2P
-      webSecurity: isDev ? false : true, // Mais seguro em produção
+      // Permitir acesso total para P2P funcionar corretamente
+      webSecurity: false,
+      // Permitir recursos externos
+      allowDisplayingInsecureContent: true,
+      // Desabilitar todas as proteções de segurança para P2P
+      sandbox: false,
+      // Permitir navegação para qualquer URL
+      navigateOnDragDrop: false,
     },
     icon: path.join(__dirname, '../../assets/icon.ico'), // Adicionar ícone depois
     titleBarStyle: 'default',
@@ -83,7 +89,7 @@ function createWindow(): void {
       mainWindow.loadURL('http://localhost:4200').catch((error: any) => {
         console.log(`Tentativa de conexão falhou, tentativas restantes: ${retries}`);
         if (retries > 0) {
-          setTimeout(() => tryLoadAngular(retries - 1), 2000);
+          setTimeout(() => tryLoadAngular(retries - 1), 1000);
         } else {
           console.error('Não foi possível conectar ao servidor Angular', error);
         }
@@ -113,13 +119,47 @@ function createWindow(): void {
     };
     
     // Aguardar um pouco mais para dar tempo do backend iniciar
-    setTimeout(() => tryLoadProduction(), 3000);
+    setTimeout(() => tryLoadProduction(), 1000);
+  
   }
 
-  // Mostrar quando estiver pronto
+  // Desabilitar CSP completamente para permitir P2P WebSocket
+  mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    // Remover todos os headers CSP
+    delete details.responseHeaders?.['content-security-policy'];
+    delete details.responseHeaders?.['content-security-policy-report-only'];
+    
+    callback({
+      cancel: false,
+      responseHeaders: details.responseHeaders,
+    });
+  });  // Mostrar quando estiver pronto
   mainWindow.once('ready-to-show', () => {
     console.log('Janela Electron pronta para exibição');
+    
+    // Desabilitar CSP completamente interceptando headers
+    mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+      // Remover todos os headers CSP
+      const responseHeaders = { ...details.responseHeaders };
+      delete responseHeaders['content-security-policy'];
+      delete responseHeaders['Content-Security-Policy'];
+      delete responseHeaders['content-security-policy-report-only'];
+      delete responseHeaders['Content-Security-Policy-Report-Only'];
+      
+      console.log('🛡️ CSP headers removidos para:', details.url);
+      
+      callback({
+        responseHeaders
+      });
+    });
+    
     mainWindow.show();
+    
+    // Auto-refresh após 10 segundos para garantir que tudo carregue corretamente
+    setTimeout(() => {
+      console.log('🔄 Auto-refresh após 10 segundos...');
+      mainWindow.webContents.reload();
+    }, 10000);
   });
 
   // Configurar menu da aplicação
@@ -128,6 +168,35 @@ function createWindow(): void {
 
 function createMenu(): void {
   const template: any[] = [
+    {
+      label: 'Aplicação',
+      submenu: [
+        {
+          label: 'Atualizar Página',
+          accelerator: 'F5',
+          click: () => {
+            console.log('🔄 Atualizando página...');
+            mainWindow.webContents.reload();
+          }
+        },
+        {
+          label: 'Forçar Atualização',
+          accelerator: 'Ctrl+F5',
+          click: () => {
+            console.log('🔄 Forçando atualização completa...');
+            mainWindow.webContents.reloadIgnoringCache();
+          }
+        },
+        { type: 'separator' },
+        {
+          label: 'Sair',
+          accelerator: 'Ctrl+Q',
+          click: () => {
+            app.quit();
+          }
+        }
+      ]
+    },
     {
       label: 'Desenvolvedor',
       submenu: [
@@ -148,6 +217,102 @@ function createMenu(): void {
 
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
+}
+
+async function startP2PSignalingServer(): Promise<void> {
+  console.log('🔄 Verificando se deve iniciar P2P signaling...');
+  
+  if (!isDev) {
+    console.log('🚀 Iniciando servidor de sinalização P2P em produção...');
+    
+    const prodPaths = getProductionPaths();
+    const p2pPath = prodPaths.p2pSignaling;
+    
+    console.log('📍 Tentando iniciar P2P signaling em:', p2pPath);
+    
+    // Verificar se o arquivo existe
+    if (!fs.existsSync(p2pPath)) {
+      console.error('❌ Arquivo P2P signaling não encontrado:', p2pPath);
+      console.log('📂 Conteúdo do diretório backend:');
+      const backendDir = path.dirname(p2pPath);
+      if (fs.existsSync(backendDir)) {
+        fs.readdirSync(backendDir).forEach(file => {
+          console.log(`  - ${file}`);
+        });
+      }
+      return;
+    }
+    
+    const backendDir = path.dirname(p2pPath);
+    const nodeModulesPath = prodPaths.nodeModules;
+    
+    const env = {
+      ...process.env,
+      NODE_PATH: nodeModulesPath,
+      NODE_ENV: 'production',
+      P2P_SIGNALING_PORT: '8080'
+    };
+    
+    console.log('🌐 Iniciando P2P Signaling Server na porta 8080...');
+    console.log('📁 Diretório de trabalho:', backendDir);
+    console.log('📦 NODE_PATH:', nodeModulesPath);
+    
+    p2pSignalingProcess = spawn('node', [p2pPath], {
+      stdio: 'pipe',
+      env: env,
+      cwd: backendDir
+    });
+
+    p2pSignalingProcess.stdout.on('data', (data: any) => {
+      console.log(`📡 P2P Signaling: ${data.toString().trim()}`);
+    });
+
+    p2pSignalingProcess.stderr.on('data', (data: any) => {
+      console.error(`❌ P2P Signaling Error: ${data.toString().trim()}`);
+    });
+
+    p2pSignalingProcess.on('close', (code: any) => {
+      console.log(`🔴 P2P Signaling process closed with code ${code}`);
+    });
+
+    p2pSignalingProcess.on('error', (error: any) => {
+      console.error('💥 Erro ao iniciar P2P signaling:', error);
+    });
+      // Aguardar um pouco para garantir que iniciou
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Testar se o P2P está funcionando
+    try {
+      const net = require('net');
+      const client = new net.Socket();
+      
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          client.destroy();
+          reject(new Error('Timeout'));
+        }, 3000);
+        
+        client.connect(8080, 'localhost', () => {
+          console.log('✅ P2P Signaling Server está respondendo na porta 8080!');
+          clearTimeout(timeout);
+          client.destroy();
+          resolve(true);
+        });
+        
+        client.on('error', (err: any) => {
+          console.error('❌ Erro ao testar P2P porta 8080:', err.message);
+          clearTimeout(timeout);
+          reject(err);
+        });
+      });
+    } catch (error) {
+      console.error('❌ P2P Signaling Server não está respondendo na porta 8080');
+    }
+    
+    console.log('✅ P2P Signaling Server iniciado com sucesso!');
+  } else {
+    console.log('🔧 Modo desenvolvimento: P2P signaling será iniciado separadamente');
+  }
 }
 
 async function startBackendServer(): Promise<void> {
@@ -213,12 +378,31 @@ async function startBackendServer(): Promise<void> {
 
 // Event Listeners do Electron
 app.whenReady().then(async () => {
-  console.log('Electron app ready, iniciando aplicação...');
+  console.log('🚀 Electron app ready, iniciando aplicação...');
   
   if (isDev) {
-    console.log('Modo desenvolvimento detectado');
+    console.log('🔧 Modo desenvolvimento detectado');
+  } else {
+    console.log('📦 Modo produção detectado');
   }
-    await startBackendServer();
+    // Iniciar P2P Signaling primeiro (porta 8080)
+  console.log('1️⃣ Iniciando P2P Signaling Server...');
+  await startP2PSignalingServer();
+  
+  // Aguardar mais tempo para P2P inicializar completamente
+  console.log('⏳ Aguardando P2P inicializar completamente (8 segundos)...');
+  await new Promise(resolve => setTimeout(resolve, 8000));
+  
+  // Depois iniciar backend principal (porta 3000)
+  console.log('2️⃣ Iniciando Backend Principal...');
+  await startBackendServer();
+  
+  // Aguardar backend inicializar
+  console.log('⏳ Aguardando Backend inicializar (5 segundos)...');
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  
+  // Por último, criar a janela
+  console.log('3️⃣ Criando janela Electron...');
   createWindow();
 
   app.on('activate', () => {
@@ -233,6 +417,10 @@ app.on('window-all-closed', () => {
     backendProcess.kill();
   }
   
+  if (p2pSignalingProcess) {
+    p2pSignalingProcess.kill();
+  }
+  
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -241,6 +429,10 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   if (backendProcess) {
     backendProcess.kill();
+  }
+  
+  if (p2pSignalingProcess) {
+    p2pSignalingProcess.kill();
   }
 });
 

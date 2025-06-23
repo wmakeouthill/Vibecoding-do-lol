@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { createServer, IncomingMessage } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
+import { Server as SocketIOServer } from 'socket.io';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -17,6 +18,12 @@ import { MatchHistoryService } from './services/MatchHistoryService';
 const app = express();
 const server = createServer(app);
 const wss = new WebSocketServer({ server });
+const io = new SocketIOServer(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
 
 const PORT = process.env.PORT || 3000;
 const isDev = process.env.NODE_ENV === 'development';
@@ -24,18 +31,8 @@ const isDev = process.env.NODE_ENV === 'development';
 // Global shared instances
 const globalRiotAPI = new RiotAPIService();
 
-// Middleware de segurança
-app.use(helmet({
-  crossOriginEmbedderPolicy: false,
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "https:"],
-    },
-  },
-}));
+// Middleware de segurança - DESABILITADO para permitir P2P WebSocket
+// app.use(helmet({...})); // CSP desabilitado para Electron
 
 app.use(cors({
   origin: function (origin, callback) {
@@ -138,6 +135,82 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
       ws.send(JSON.stringify({ error: 'Tipo de mensagem desconhecido' }));
   }
 }
+
+// Socket.IO para P2P Signaling (integrado no servidor principal)
+const p2pPeers = new Map();
+const socketToPeer = new Map();
+
+io.on('connection', (socket) => {
+  console.log(`🔗 Nova conexão Socket.IO P2P: ${socket.id}`);
+
+  // Registrar peer para P2P
+  socket.on('register-peer', (peerInfo) => {
+    const fullPeerInfo = {
+      ...peerInfo,
+      socketId: socket.id,
+      joinedAt: new Date()
+    };
+
+    p2pPeers.set(peerInfo.id, fullPeerInfo);
+    socketToPeer.set(socket.id, peerInfo.id);
+
+    console.log(`👤 P2P Peer registrado: ${peerInfo.id} (${peerInfo.summonerName})`);
+
+    // Notificar peer sobre outros peers disponíveis
+    const availablePeers = Array.from(p2pPeers.values()).filter(p => p.id !== peerInfo.id);
+    socket.emit('peers-list', availablePeers);
+
+    // Notificar outros peers sobre o novo peer
+    socket.broadcast.emit('peer-joined', fullPeerInfo);
+  });
+
+  // Facilitar troca de mensagens WebRTC
+  socket.on('signaling-message', (message) => {
+    if (message.targetPeer) {
+      const targetPeer = p2pPeers.get(message.targetPeer);
+      if (targetPeer) {
+        io.to(targetPeer.socketId).emit('signaling-message', message);
+      }
+    } else {
+      // Broadcast para todos os outros peers
+      socket.broadcast.emit('signaling-message', message);
+    }
+  });
+
+  // Descoberta de peers
+  socket.on('discover-peers', () => {
+    const peerId = socketToPeer.get(socket.id);
+    if (peerId) {
+      const availablePeers = Array.from(p2pPeers.values()).filter(p => p.id !== peerId);
+      socket.emit('peers-list', availablePeers);
+    }
+  });
+
+  // Heartbeat
+  socket.on('heartbeat', (data) => {
+    const peerId = socketToPeer.get(socket.id);
+    if (peerId) {
+      const peer = p2pPeers.get(peerId);
+      if (peer) {
+        peer.joinedAt = new Date();
+        p2pPeers.set(peerId, peer);
+      }
+    }
+  });
+
+  // Desconexão
+  socket.on('disconnect', () => {
+    const peerId = socketToPeer.get(socket.id);
+    if (peerId) {
+      p2pPeers.delete(peerId);
+      socketToPeer.delete(socket.id);
+      console.log(`👤 P2P Peer desconectado: ${peerId}`);
+      
+      // Notificar outros peers sobre a desconexão
+      socket.broadcast.emit('peer-left', { peerId });
+    }
+  });
+});
 
 // Configuração de arquivos estáticos em produção
 if (!isDev) {
@@ -1139,9 +1212,7 @@ app.post('/api/lcu/fetch-and-save-match/:gameId', (req: Request, res: Response) 
       }
     }
 
-    console.log('✅ [FETCH-SAVE-MATCH] Partida salva com sucesso:', matchId);
-
-    res.json({
+    console.log('✅ [FETCH-SAVE-MATCH] Partida salva com sucesso:', matchId);    res.json({
       success: true,
       message: 'Partida do LCU salva com sucesso',
       matchId: matchId,
@@ -1149,7 +1220,7 @@ app.post('/api/lcu/fetch-and-save-match/:gameId', (req: Request, res: Response) 
       hasRealData: true,
       pickBanData: pickBanData,
       participantsCount: participantsData.length
-    });  } catch (error: any) {
+    });} catch (error: any) {
     console.error('💥 [FETCH-SAVE-MATCH] Erro ao buscar e salvar partida:', error);
     res.status(500).json({ error: error.message });
   }

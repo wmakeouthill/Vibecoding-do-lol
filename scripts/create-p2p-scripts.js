@@ -7,59 +7,59 @@ if (!fs.existsSync('dist')) {
   fs.mkdirSync('dist', { recursive: true });
 }
 
-// Script BAT para iniciar P2P
+// Script BAT para iniciar (apenas por conveniência, não necessário)
 const startP2P = `@echo off
-echo 🚀 Iniciando LoL Matchmaking com P2P...
+echo 🚀 Iniciando LoL Matchmaking...
 echo.
-echo 📡 Iniciando servidor de sinalização na porta 8080...
-start "Servidor P2P" cmd /k "cd backend && node signaling-server-standalone.js"
+echo ✨ TUDO AUTOMÁTICO: P2P + Backend + Frontend integrados!
 echo.
-echo ⏳ Aguardando servidor inicializar...
-timeout /t 3 /nobreak > nul
-echo.
-echo 🎮 Iniciando aplicação principal...
+echo 🎮 Iniciando aplicação...
 start "" "LoL Matchmaking.exe"
 echo.
-echo ✅ Sistema P2P iniciado com sucesso!
+echo ✅ Aplicação iniciada com P2P automático!
 echo.
-echo 💡 DICA: Para conectar com amigos em outros computadores:
-echo    1. Compartilhe esta pasta completa
-echo    2. Eles executam start-p2p.bat
-echo    3. Vocês se conectarão automaticamente!
+echo 💡 O P2P é iniciado automaticamente quando você abre o app:
+echo    1️⃣ Servidor P2P (porta 8080) - 2 segundos
+echo    2️⃣ Backend principal (porta 3000) - 3 segundos  
+echo    3️⃣ Interface gráfica
+echo.
+echo 🌐 Status P2P visível na interface do app!
 echo.
 pause`;
 
-// Script BAT alternativo (sem P2P)
+// Script BAT alternativo (funciona igual, tudo é automático)
 const startNormal = `@echo off
-echo 🎮 Iniciando LoL Matchmaking (Modo Central)...
+echo 🎮 Iniciando LoL Matchmaking...
 echo.
-echo ⚠️  Modo sem P2P - apenas fila central
+echo ✨ Sistema P2P totalmente automático!
 echo.
 start "" "LoL Matchmaking.exe"
 echo.
-echo ✅ Aplicação iniciada!`;
+echo ✅ Aplicação iniciada!
+echo.
+echo 💡 P2P, Backend e Frontend iniciam automaticamente!`;
 
 fs.writeFileSync('dist/start-p2p.bat', startP2P);
 fs.writeFileSync('dist/start-normal.bat', startNormal);
 console.log('✅ Script start-p2p.bat criado em dist/');
 console.log('✅ Script start-normal.bat criado em dist/');
-console.log('✅ Script start-p2p.bat criado em dist/');
 
 // README para usuário
-const readme = `# LoL Matchmaking - Sistema P2P
+const readme = `# LoL Matchmaking - Sistema P2P Automático
 
-## 🚀 COMO EXECUTAR:
+## 🚀 COMO USAR:
 
-### ⭐ RECOMENDADO - Com P2P (Conecta com outros jogadores):
-1. **Execute: start-p2p.bat**
-2. Aguarde servidor P2P inicializar (3 segundos)  
-3. Use o app normalmente
-4. **BENEFÍCIO:** Conecta automaticamente com outros jogadores!
+### ⭐ SUPER SIMPLES - Apenas clique no executável:
+1. **Execute: LoL Matchmaking.exe** 
+2. **PRONTO!** Tudo funciona automaticamente:
+   - ✅ P2P inicia automaticamente (porta 8080)
+   - ✅ Backend inicia automaticamente (porta 3000)  
+   - ✅ Interface abre automaticamente
+3. **RESULTADO:** Sistema completo funcionando em 5-8 segundos!
 
-### 🏠 Alternativo - Modo Central (Local apenas):
-1. **Execute: start-normal.bat** OU **LoL Matchmaking.exe**
-2. Use apenas fila central
-3. **LIMITAÇÃO:** Não conecta com outros jogadores
+### 📱 Scripts BAT (opcionais):
+- **start-p2p.bat**: Mesma coisa, mas com mensagens no console
+- **start-normal.bat**: Mesma coisa também (tudo é automático agora!)
 
 ---
 
@@ -67,8 +67,8 @@ const readme = `# LoL Matchmaking - Sistema P2P
 
 ### Para jogar com amigos em outros computadores:
 1. **Compartilhe esta pasta completa** com seus amigos
-2. **Todos executam:** start-p2p.bat
-3. **Resultado:** Vocês se conectarão automaticamente na rede P2P!
+2. **Todos clicam em:** LoL Matchmaking.exe
+3. **RESULTADO:** Vocês se conectarão automaticamente na rede P2P!
 4. **Na interface:** Verão "Peers Conectados: 1, 2, 3..." em vez de 0
 
 ---
@@ -80,18 +80,44 @@ const readme = `# LoL Matchmaking - Sistema P2P
 - Reinicie o computador se necessário
 
 ### "Peers não conectam":
-- Certifique-se que todos usaram start-p2p.bat
-- Aguarde até 30 segundos para conexão
+- Aguarde até 30 segundos para conexão automática
 - Verifique firewall/antivírus
+- Certifique-que todos têm a mesma versão
 
-### "Para testar sozinho":
-- Execute start-p2p.bat em múltiplas instâncias
-- Ou use o comando: npm run test:p2p (se tiver Node.js)
+### "Para testar localmente":
+- Abra múltiplas instâncias do LoL Matchmaking.exe
+- Aguarde alguns segundos e elas se conectarão
 
 ---
 
-🎮 **Divirta-se com o matchmaking P2P!**`;
+## 🎯 SEQUÊNCIA AUTOMÁTICA DE INICIALIZAÇÃO:
+
+1. **0-2s:** P2P Signaling Server inicia (porta 8080)
+2. **2-5s:** Backend principal inicia (porta 3000)  
+3. **5-8s:** Interface gráfica carrega e conecta
+4. **8s+:** Sistema totalmente funcional!
+
+---
+
+## 🔧 DETALHES TÉCNICOS:
+
+### O que acontece automaticamente ao abrir o .exe:
+- **Electron** detecta que está em produção
+- **Inicia o P2P signaling** via spawn do Node.js
+- **Inicia o backend principal** via spawn do Node.js  
+- **Carrega a interface** Angular do backend
+- **Conecta tudo** automaticamente
+
+### Arquivos importantes:
+- **signaling-server-standalone.js**: Servidor P2P independente
+- **server.js**: Backend principal com API e arquivos estáticos
+- **browser/**: Interface Angular buildada
+- **node_modules/**: Todas as dependências empacotadas
+
+🎮 **Divirta-se! Agora é só clicar e usar!**`;
 
 fs.writeFileSync('dist/P2P-README.txt', readme);
 console.log('✅ P2P-README.txt criado em dist/');
-console.log('✅ P2P-README.txt criado em dist/');
+console.log('');
+console.log('🎉 Scripts P2P criados com sucesso!');
+console.log('💡 Agora o P2P funciona 100% automático no executável!');

@@ -36,10 +36,9 @@ export class P2PManager {
   private isInitialized = false;
   private heartbeatInterval?: any;
   private readonly HEARTBEAT_INTERVAL = 30000; // 30 segundos
-
   // Socket.IO para servidor de sinalização
   private signalingSocket?: Socket;
-  private readonly SIGNALING_SERVER_URL = 'http://localhost:8080';
+  private readonly SIGNALING_SERVER_URL = 'http://localhost:3000';
 
   // RxJS Subjects para comunicação
   private peerConnectedSubject = new Subject<string>();
@@ -96,14 +95,61 @@ export class P2PManager {
     return `${base}_${timestamp}_${random}`;
   }
 
-  private async connectToSignalingServer(playerData: { summonerName: string; region: string; mmr: number }): Promise<void> {
-    return new Promise((resolve, reject) => {
-      console.log('🔗 Conectando ao servidor de sinalização...');
+  private async connectToSignalingServer(playerData: { summonerName: string; region: string; mmr: number }): Promise<void> {    return new Promise((resolve, reject) => {      console.log('🔗 Conectando ao servidor de sinalização...');
 
+      // HACK MAIS AGRESSIVO: Desabilitar WebSocket completamente no Electron
+      const originalWebSocket = (window as any).WebSocket;
+      const originalMozWebSocket = (window as any).MozWebSocket;
+      const isElectron = navigator.userAgent.toLowerCase().includes('electron');
+
+      if (isElectron) {
+        console.log('🛡️ Desabilitando WebSocket completamente para P2P...');
+
+        // Definir WebSocket como uma função que sempre falha
+        (window as any).WebSocket = function() {
+          console.log('🚫 Tentativa de WebSocket bloqueada!');
+          throw new Error('WebSocket bloqueado para forçar polling');
+        };
+        (window as any).MozWebSocket = undefined;
+
+        // Também desabilitar em outras possíveis localizações
+        if ((window as any).global) {
+          (window as any).global.WebSocket = (window as any).WebSocket;
+        }
+      }
+
+      console.log('🔧 Criando Socket.IO com configuração de polling puro...');
       this.signalingSocket = io(this.SIGNALING_SERVER_URL, {
-        transports: ['websocket', 'polling'],
-        timeout: 10000
-      });
+        // FORÇAR APENAS POLLING PARA EVITAR CSP
+        transports: ['polling'],
+        timeout: 10000,
+        upgrade: false, // NUNCA fazer upgrade para WebSocket
+        rememberUpgrade: false,
+        autoConnect: false // Não conectar automaticamente
+      });      // Interceptar tentativas de mudança de transport
+      if (this.signalingSocket.io?.engine) {
+        console.log('🛡️ Configurando interceptação de upgrade...');
+        const engine = this.signalingSocket.io.engine as any;
+        if (engine.upgrade) {
+          engine.upgrade = () => {
+            console.log('🚫 Tentativa de upgrade bloqueada!');
+            return false;
+          };
+        }
+      }
+
+      // Conectar manualmente após configuração
+      console.log('🔗 Conectando manualmente com polling...');
+      this.signalingSocket.connect();
+
+      // Restaurar WebSocket após 2 segundos (tempo suficiente para conexão)
+      if (isElectron) {
+        setTimeout(() => {
+          console.log('🔄 Restaurando WebSocket global...');
+          (window as any).WebSocket = originalWebSocket;
+          (window as any).MozWebSocket = originalMozWebSocket;
+        }, 2000);
+      }
 
       this.signalingSocket.on('connect', () => {
         console.log('✅ Conectado ao servidor de sinalização');

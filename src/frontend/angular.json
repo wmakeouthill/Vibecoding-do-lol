@@ -35,9 +35,17 @@
             "styles": [
               "src/styles.scss"
             ]
-          },
-          "configurations": {
-            "production": {              "budgets": [
+          },          "configurations": {
+            "production": {
+              "optimization": {
+                "scripts": false,
+                "styles": {
+                  "minify": true,
+                  "inlineCritical": false
+                },
+                "fonts": true
+              },
+              "budgets": [
                 {
                   "type": "initial",
                   "maximumWarning": "2MB",
@@ -49,7 +57,10 @@
                   "maximumError": "100kB"
                 }
               ],
-              "outputHashing": "all"
+              "outputHashing": "all",
+              "namedChunks": false,
+              "extractLicenses": true,
+              "sourceMap": false
             },
             "development": {
               "optimization": false,

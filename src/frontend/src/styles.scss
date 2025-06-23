@@ -1,5 +1,6 @@
 /* Global styles for League of Legends Matchmaking App */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+/* Removido Google Fonts para evitar problemas de CSP em produção */
+/* @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap'); */
 
 // League of Legends Color Palette
 :root {

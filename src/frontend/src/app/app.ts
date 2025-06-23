@@ -692,9 +692,7 @@ export class App implements OnInit, OnDestroy {
       console.log('🎯 Tentando entrar na fila...');
 
       // 🎯 PRIORIDADE: Tentar usar P2P primeiro
-      console.log('� Inicializando P2P para uso prioritário...');
-
-      try {
+      console.log('� Inicializando P2P para uso prioritário...');      try {
         // Sempre tentar inicializar P2P primeiro se não estiver inicializado
         if (!this.p2pManager['isInitialized']) {
           console.log('� Inicializando P2P Manager...');
@@ -703,17 +701,20 @@ export class App implements OnInit, OnDestroy {
             region: this.currentPlayer.region || 'BR1',
             mmr: this.currentPlayer.currentMMR || this.currentPlayer.mmr || 1000
           });
-        }
-
-        // Aguardar um pouco para que o servidor de sinalização se conecte
+        }        // Aguardar mais tempo para que o servidor de sinalização se conecte (especialmente em produção)
         console.log('⏳ Aguardando conexão do servidor de sinalização...');
         let attempts = 0;
-        const maxAttempts = 10; // 5 segundos máximo
+        const maxAttempts = 60; // 30 segundos máximo para produção
+        const delayBetweenAttempts = 500;
 
         while (attempts < maxAttempts && !this.isP2PConnected()) {
-          await new Promise(resolve => setTimeout(resolve, 500));
+          await new Promise(resolve => setTimeout(resolve, delayBetweenAttempts));
           attempts++;
-          console.log(`🔄 Tentativa ${attempts}/${maxAttempts} - Aguardando P2P...`);
+
+          // Log a cada 2 segundos para não poluir o console
+          if (attempts % 4 === 0) {
+            console.log(`🔄 Tentativa ${attempts}/${maxAttempts} - Aguardando P2P... (${(attempts * delayBetweenAttempts) / 1000}s)`);
+          }
         }
 
         // Se P2P está conectado, usar fila P2P
@@ -731,7 +732,7 @@ export class App implements OnInit, OnDestroy {
           this.addNotification('success', 'Fila P2P', `Entrou na fila P2P como ${preferences?.primaryLane || 'qualquer lane'}`);
           return;
         } else {
-          console.log('⚠️ P2P não conectou a tempo, usando fila centralizada');
+          console.log('⚠️ P2P não conectou após 15 segundos, usando fila centralizada como backup');
         }
       } catch (p2pError) {
         console.error('❌ Erro ao inicializar P2P:', p2pError);
