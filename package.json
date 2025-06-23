@@ -57,11 +57,11 @@
       "buildResources": "build"
     },
     "files": [
-      "dist/**/*",
+      "dist/electron/**/*",
       "package.json",
       "!node_modules/**/*",
       "!src/**/*"
-    ],    "extraFiles": [
+    ],    "extraResources": [
       {
         "from": "dist/backend",
         "to": "backend",
@@ -72,16 +72,6 @@
         "to": "frontend/dist/lol-matchmaking/browser",
         "filter": ["**/*"]
       },
-      {
-        "from": "database.sqlite",
-        "to": "backend/database/database.sqlite"
-      },
-      {
-        "from": "matchmaking.db",
-        "to": "backend/database/matchmaking.db"
-      }
-    ],
-    "extraResources": [
       {
         "from": "dist/backend/node_modules",
         "to": "backend/node_modules",

@@ -6,7 +6,8 @@ import * as fs from 'fs';
 let mainWindow: BrowserWindow;
 let backendProcess: any;
 
-const isDev = process.env.NODE_ENV === 'development';
+const isDev = process.env.NODE_ENV === 'development' || 
+             (!app.isPackaged && process.execPath.includes('node_modules'));
 
 // Permitir múltiplas instâncias para teste P2P
 if (isDev) {
@@ -14,27 +15,42 @@ if (isDev) {
 }
 
 function getProductionPaths() {
-  // O executável principal está na pasta base
-  // Backend e frontend estão ao lado do executável
+  // Detectar se estamos em um executável empacotado ou em desenvolvimento
+  const isPackaged = app.isPackaged;
   const appPath = path.dirname(process.execPath);
   
-  const backendPath = path.join(appPath, 'backend', 'server.js');
-  const frontendPath = path.join(appPath, 'frontend', 'dist', 'lol-matchmaking', 'browser', 'index.html');
-  // node_modules está em resources/backend/node_modules
-  const nodeModulesPath = path.join(appPath, 'resources', 'backend', 'node_modules');
-
+  let backendPath: string;
+  let frontendPath: string;
+  let nodeModulesPath: string;
+    if (isPackaged) {
+    // Aplicação empacotada (instalador gerado)
+    // Os arquivos estão em resources/ dentro do app
+    backendPath = path.join(process.resourcesPath, 'backend', 'server.js');
+    frontendPath = path.join(process.resourcesPath, 'frontend', 'dist', 'lol-matchmaking', 'browser');
+    nodeModulesPath = path.join(process.resourcesPath, 'backend', 'node_modules');
+  } else {
+    // Desenvolvimento ou npm run electron
+    // Os arquivos estão na pasta dist/ do projeto
+    const projectRoot = path.join(appPath, '..', '..', '..');
+    backendPath = path.join(projectRoot, 'dist', 'backend', 'server.js');
+    frontendPath = path.join(projectRoot, 'dist', 'frontend', 'dist', 'lol-matchmaking', 'browser', 'index.html');
+    nodeModulesPath = path.join(projectRoot, 'dist', 'backend', 'node_modules');
+  }
   
   console.log('Production paths:');
   console.log('- App path:', appPath);
   console.log('- Backend:', backendPath);
   console.log('- Frontend:', frontendPath);
   console.log('- Node modules:', nodeModulesPath);
+  console.log('- Is packaged:', isPackaged);
+  console.log('- Backend exists:', fs.existsSync(backendPath));
+  console.log('- Frontend exists:', fs.existsSync(frontendPath));
+  console.log('- Node modules exists:', fs.existsSync(nodeModulesPath));
   
   return {
     frontend: frontendPath,
     backend: backendPath,
     nodeModules: nodeModulesPath
-
   };
 }
 
@@ -58,8 +74,7 @@ function createWindow(): void {
     icon: path.join(__dirname, '../../assets/icon.ico'), // Adicionar ícone depois
     titleBarStyle: 'default',
     show: false, // Não mostrar até estar pronto
-  });
-  // Carregar o frontend Angular
+  });  // Carregar o frontend Angular
   if (isDev) {
     // Em desenvolvimento, carregar do servidor Angular
     console.log('Carregando frontend do Angular...');
@@ -77,23 +92,28 @@ function createWindow(): void {
     
     tryLoadAngular();
     // Opcional: abrir DevTools em desenvolvimento
-    mainWindow.webContents.openDevTools();
-  } else {
+    mainWindow.webContents.openDevTools();  } else {
     // Em produção, carregar do backend que servirá os arquivos estáticos
     console.log('Carregando frontend do backend em produção...');
-    const tryLoadProduction = (retries = 10) => {
+    const tryLoadProduction = (retries = 15) => {
       mainWindow.loadURL('http://localhost:3000').catch((error: any) => {
         console.log(`Tentativa de conexão ao backend falhou, tentativas restantes: ${retries}`);
         if (retries > 0) {
           setTimeout(() => tryLoadProduction(retries - 1), 1000);
         } else {
           console.error('Não foi possível conectar ao backend', error);
+          // Como último recurso, tentar carregar arquivo diretamente
+          const prodPaths = getProductionPaths();
+          if (fs.existsSync(prodPaths.frontend)) {
+            console.log('Tentando carregar arquivo diretamente como fallback:', prodPaths.frontend);
+            mainWindow.loadFile(prodPaths.frontend);
+          }
         }
       });
     };
     
-    // Aguardar um pouco antes de tentar conectar para dar tempo do backend iniciar
-    setTimeout(() => tryLoadProduction(), 2000);
+    // Aguardar um pouco mais para dar tempo do backend iniciar
+    setTimeout(() => tryLoadProduction(), 3000);
   }
 
   // Mostrar quando estiver pronto

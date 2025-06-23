@@ -65,13 +65,19 @@ app.use(cors({
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: isDev ? 1000 : 500, // Mais requests em dev, mais para LCU em produção
+  max: isDev ? 1000 : 2000, // Mais permissivo em produção também para o frontend local
   message: 'Muitas requisições de este IP, tente novamente em 15 minutos.',
   skip: (req) => {
-    // Pular rate limiting para requests do LCU (localhost)
+    // Pular rate limiting para requests locais (frontend e LCU)
     const isLocalhost = req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1';
-    const isLCUEndpoint = req.url.startsWith('/api/lcu/');
-    return isLocalhost && isLCUEndpoint;
+    const isLocalRequest = req.get('host')?.includes('localhost') || req.get('host')?.includes('127.0.0.1');
+    
+    // Pular para requests do LCU e do frontend local
+    if (isLocalhost || isLocalRequest) {
+      return true;
+    }
+    
+    return false;
   }
 });
 
@@ -130,6 +136,49 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
       break;
     default:
       ws.send(JSON.stringify({ error: 'Tipo de mensagem desconhecido' }));
+  }
+}
+
+// Configuração de arquivos estáticos em produção
+if (!isDev) {
+  console.log('Configurando servir arquivos estáticos em produção...');
+    // Determinar o caminho para os arquivos do frontend
+  let frontendPath: string;
+  
+  // Em produção, os arquivos estão diretamente em resources/
+  frontendPath = path.join(__dirname, '..', 'frontend', 'dist', 'lol-matchmaking', 'browser');
+  
+  console.log('Caminho do frontend:', frontendPath);
+  console.log('Frontend exists:', fs.existsSync(frontendPath));
+  
+  // Verificar se o diretório existe
+  if (fs.existsSync(frontendPath)) {
+    // Servir arquivos estáticos do Angular
+    app.use(express.static(frontendPath, {
+      maxAge: '1d', // Cache por 1 dia
+      etag: true,
+      lastModified: true
+    }));
+    
+    console.log('✅ Arquivos estáticos configurados em:', frontendPath);
+  } else {
+    console.error('❌ Diretório do frontend não encontrado:', frontendPath);
+    
+    // Tentar caminhos alternativos baseados na estrutura do Electron
+    const altPaths = [
+      path.join(process.cwd(), 'frontend', 'dist', 'lol-matchmaking', 'browser'),
+      path.join(__dirname, '..', '..', 'frontend', 'dist', 'lol-matchmaking', 'browser'),
+      path.join(__dirname, 'frontend', 'dist', 'lol-matchmaking', 'browser')
+    ];
+    
+    for (const altPath of altPaths) {
+      console.log('Testando caminho alternativo:', altPath);
+      if (fs.existsSync(altPath)) {
+        app.use(express.static(altPath));
+        console.log('✅ Arquivos estáticos configurados em caminho alternativo:', altPath);
+        break;
+      }
+    }
   }
 }
 
@@ -1621,55 +1670,6 @@ app.post('/api/lcu/fetch-and-save-match/:gameId', (req: Request, res: Response) 
     }  })();
 });
 
-// Servir arquivos estáticos do frontend em produção (depois de todas as rotas da API)
-if (!isDev) {
-  console.log('Configurando servir de arquivos estáticos em produção...');
-  
-  // Caminho para os arquivos do frontend buildado
-  const frontendPath = path.join(__dirname, '../frontend/dist/lol-matchmaking/browser');
-  
-  console.log('Frontend path:', frontendPath);
-  console.log('Frontend exists:', fs.existsSync(frontendPath));
-  
-  // Middleware personalizado para servir arquivos estáticos (mais seguro)
-  app.use((req: Request, res: Response, next: NextFunction) => {
-    // Se for uma rota de API, passar adiante
-    if (req.path.startsWith('/api/')) {
-      return next();
-    }
-    
-    // Tentar servir arquivo estático
-    const filePath = path.join(frontendPath, req.path === '/' ? 'index.html' : req.path);
-    
-    // Verificar se o arquivo existe
-    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-      // Definir tipo de conteúdo baseado na extensão
-      const ext = path.extname(filePath).toLowerCase();
-      const contentTypes: { [key: string]: string } = {
-        '.html': 'text/html',
-        '.js': 'application/javascript',
-        '.css': 'text/css',
-        '.json': 'application/json',
-        '.png': 'image/png',
-        '.jpg': 'image/jpeg',
-        '.gif': 'image/gif',
-        '.ico': 'image/x-icon'
-      };
-      
-      if (contentTypes[ext]) {
-        res.setHeader('Content-Type', contentTypes[ext]);
-      }
-      
-      res.sendFile(filePath);
-    } else {
-      // Se não encontrar o arquivo, servir index.html para SPA routing
-      const indexPath = path.join(frontendPath, 'index.html');
-      console.log('Serving index.html for SPA route:', req.path);
-      res.sendFile(indexPath);
-    }
-  });
-}
-
 // Middleware de erro
 app.use((error: any, req: Request, res: Response, next: NextFunction) => {
   console.error('Erro não tratado:', error);
@@ -1677,7 +1677,34 @@ app.use((error: any, req: Request, res: Response, next: NextFunction) => {
 });
 
 // 404 Handler
-app.use((req: Request, res: Response) => {
+app.use((req: Request, res: Response) => {  // Em produção, para rotas não API, tentar servir index.html (SPA routing)
+  if (!isDev && !req.path.startsWith('/api/')) {
+    // Determinar o caminho para o index.html
+    let indexPath: string;
+    
+    // Em produção, os arquivos estão diretamente em resources/
+    indexPath = path.join(__dirname, '..', 'frontend', 'dist', 'lol-matchmaking', 'browser', 'index.html');
+    
+    // Verificar se o arquivo existe
+    if (fs.existsSync(indexPath)) {
+      return res.sendFile(indexPath);
+    } else {
+      // Tentar caminhos alternativos
+      const altPaths = [
+        path.join(process.cwd(), 'frontend', 'dist', 'lol-matchmaking', 'browser', 'index.html'),
+        path.join(__dirname, '..', '..', 'frontend', 'dist', 'lol-matchmaking', 'browser', 'index.html'),
+        path.join(__dirname, 'frontend', 'dist', 'lol-matchmaking', 'browser', 'index.html')
+      ];
+      
+      for (const altPath of altPaths) {
+        if (fs.existsSync(altPath)) {
+          return res.sendFile(altPath);
+        }
+      }
+    }
+  }
+  
+  // Fallback para 404
   res.status(404).json({ error: 'Rota não encontrada' });
 });
 

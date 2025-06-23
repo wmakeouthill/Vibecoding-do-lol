@@ -50,16 +50,32 @@ export interface Match {
 
 export class DatabaseManager {
   private db: Database | null = null;
-  private dbPath: string;
-  constructor() {
-    // Usar database.sqlite que fica na pasta src/backend/database/
-    const databaseDir = path.join(__dirname); // __dirname já aponta para src/backend/database/
+  private dbPath: string;  constructor() {
+    // Detectar se estamos em desenvolvimento ou produção
+    const isDev = process.env.NODE_ENV === 'development' || __dirname.includes('dist');
+    
+    let databaseDir: string;
+    
+    if (isDev) {
+      // Em desenvolvimento, usar pasta do projeto
+      databaseDir = path.join(__dirname);
+    } else {
+      // Em produção (aplicação empacotada), usar diretório de dados do usuário
+      const { app } = require('electron');
+      if (app) {
+        databaseDir = path.join(app.getPath('userData'), 'database');
+      } else {
+        // Fallback se não conseguir acessar o electron
+        databaseDir = path.join(__dirname);
+      }
+    }
     
     if (!fs.existsSync(databaseDir)) {
       fs.mkdirSync(databaseDir, { recursive: true });
     }
 
     this.dbPath = path.join(databaseDir, 'database.sqlite');
+    console.log(`🗃️ DatabaseManager inicializado em: ${this.dbPath}`);
   }
 
   async initialize(): Promise<void> {
