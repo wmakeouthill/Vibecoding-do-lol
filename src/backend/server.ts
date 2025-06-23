@@ -1618,9 +1618,57 @@ app.post('/api/lcu/fetch-and-save-match/:gameId', (req: Request, res: Response) 
     } catch (error: any) {
       console.error(`💥 [FETCH-SAVE-MATCH] Erro ao buscar partida ${req.params.gameId}:`, error);
       res.status(500).json({ error: error.message });
-    }
-  })();
+    }  })();
 });
+
+// Servir arquivos estáticos do frontend em produção (depois de todas as rotas da API)
+if (!isDev) {
+  console.log('Configurando servir de arquivos estáticos em produção...');
+  
+  // Caminho para os arquivos do frontend buildado
+  const frontendPath = path.join(__dirname, '../frontend/dist/lol-matchmaking/browser');
+  
+  console.log('Frontend path:', frontendPath);
+  console.log('Frontend exists:', fs.existsSync(frontendPath));
+  
+  // Middleware personalizado para servir arquivos estáticos (mais seguro)
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    // Se for uma rota de API, passar adiante
+    if (req.path.startsWith('/api/')) {
+      return next();
+    }
+    
+    // Tentar servir arquivo estático
+    const filePath = path.join(frontendPath, req.path === '/' ? 'index.html' : req.path);
+    
+    // Verificar se o arquivo existe
+    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+      // Definir tipo de conteúdo baseado na extensão
+      const ext = path.extname(filePath).toLowerCase();
+      const contentTypes: { [key: string]: string } = {
+        '.html': 'text/html',
+        '.js': 'application/javascript',
+        '.css': 'text/css',
+        '.json': 'application/json',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.gif': 'image/gif',
+        '.ico': 'image/x-icon'
+      };
+      
+      if (contentTypes[ext]) {
+        res.setHeader('Content-Type', contentTypes[ext]);
+      }
+      
+      res.sendFile(filePath);
+    } else {
+      // Se não encontrar o arquivo, servir index.html para SPA routing
+      const indexPath = path.join(frontendPath, 'index.html');
+      console.log('Serving index.html for SPA route:', req.path);
+      res.sendFile(indexPath);
+    }
+  });
+}
 
 // Middleware de erro
 app.use((error: any, req: Request, res: Response, next: NextFunction) => {
@@ -1637,10 +1685,8 @@ app.use((req: Request, res: Response) => {
 async function startServer() {
   try {
     // Inicializar serviços
-    await initializeServices();
-
-    // Iniciar servidor
-    server.listen(PORT, () => {
+    await initializeServices();    // Iniciar servidor
+    server.listen(PORT as number, '0.0.0.0', () => {
       console.log(`🚀 Servidor rodando na porta ${PORT}`);
       console.log(`🌐 WebSocket disponível em ws://localhost:${PORT}`);
       

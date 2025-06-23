@@ -7,13 +7,22 @@
   "homepage": "./",
   "author": "VibeCode",
   "license": "MIT",
-  "private": true,  "scripts": {    "build": "npm run install:backend-deps && npm run build:backend && npm run build:frontend && npm run build:electron",
+  "private": true,  "scripts": {
+    "build": "node build-complete.js",
+    "build:quick": "npm run clean && npm run install:all-deps && npm run build:all && npm run copy:all-assets",
+    "build:all": "npm run build:backend && npm run build:frontend && npm run build:electron",
     "build:backend": "tsc -p src/backend/tsconfig.json",
     "build:frontend": "cd src/frontend && ng build --configuration production",
     "build:electron": "tsc -p src/electron/tsconfig.json",
-    "install:backend-deps": "cd src/backend && npm install --production",
-    "copy:backend-deps": "node -e \"const fs=require('fs'); const path=require('path'); if(fs.existsSync('src/backend/node_modules')){console.log('🔄 Copiando dependências do backend...'); fs.cpSync('src/backend/node_modules','dist/backend/node_modules',{recursive:true}); console.log('✅ Dependências copiadas para dist/backend/node_modules');} else {console.warn('⚠️  src/backend/node_modules não encontrado. Execute: npm run install:backend-deps');}\"",
-    "verify:backend-deps": "node -e \"const fs=require('fs'); const backendDeps='src/backend/node_modules'; const distDeps='dist/backend/node_modules'; console.log('🔍 Verificando dependências...'); console.log('Backend deps exist:', fs.existsSync(backendDeps)); console.log('Dist deps exist:', fs.existsSync(distDeps)); if(!fs.existsSync(backendDeps)){console.error('❌ Execute: npm run install:backend-deps');} if(!fs.existsSync(distDeps)){console.error('❌ Execute: npm run copy:backend-deps');}\"",
+    "clean": "node -e \"const fs=require('fs'); if(fs.existsSync('dist')){fs.rmSync('dist',{recursive:true,force:true}); console.log('🧹 Pasta dist limpa');} if(fs.existsSync('release')){fs.rmSync('release',{recursive:true,force:true}); console.log('🧹 Pasta release limpa');}\"",
+    "install:all-deps": "npm run install:backend-deps && npm run install:frontend-deps",
+    "install:backend-deps": "echo '📦 Instalando dependências do backend...' && cd src/backend && npm install --omit=dev",
+    "install:frontend-deps": "echo '📦 Instalando dependências do frontend...' && cd src/frontend && npm install",
+    "copy:all-assets": "npm run copy:backend-deps && npm run copy:frontend-build && npm run copy:database",
+    "copy:backend-deps": "node -e \"const fs=require('fs'); const path=require('path'); console.log('🔄 Copiando dependências do backend...'); if(!fs.existsSync('dist/backend')){fs.mkdirSync('dist/backend',{recursive:true});} if(fs.existsSync('src/backend/node_modules')){fs.cp('src/backend/node_modules','dist/backend/node_modules',{recursive:true},(err)=>{if(err){console.error('❌ Erro ao copiar:',err);}else{console.log('✅ Dependências do backend copiadas');}});} else {console.error('❌ src/backend/node_modules não encontrado!');}\"",
+    "copy:frontend-build": "node -e \"const fs=require('fs'); console.log('🔄 Copiando build do frontend...'); if(!fs.existsSync('dist/frontend')){fs.mkdirSync('dist/frontend',{recursive:true});} if(fs.existsSync('src/frontend/dist')){fs.cp('src/frontend/dist','dist/frontend/dist',{recursive:true},(err)=>{if(err){console.error('❌ Erro ao copiar:',err);}else{console.log('✅ Build do frontend copiado');}});} else {console.error('❌ src/frontend/dist não encontrado!');}\"",
+    "copy:database": "node -e \"const fs=require('fs'); console.log('🔄 Copiando banco de dados...'); if(fs.existsSync('database.sqlite')){if(!fs.existsSync('dist/backend/database')){fs.mkdirSync('dist/backend/database',{recursive:true});} fs.copyFileSync('database.sqlite','dist/backend/database/database.sqlite'); console.log('✅ Banco de dados copiado');} else {console.log('⚠️ database.sqlite não encontrado, será criado automaticamente');}\"",
+    "verify:build": "node -e \"const fs=require('fs'); console.log('🔍 Verificando build...'); const checks=[{path:'dist/backend/server.js',name:'Backend JS'},{path:'dist/backend/node_modules',name:'Backend deps'},{path:'dist/frontend/dist/lol-matchmaking/browser',name:'Frontend build'},{path:'dist/electron/main.js',name:'Electron main'}]; let allOk=true; checks.forEach(check=>{const exists=fs.existsSync(check.path); console.log(`${exists?'✅':'❌'} ${check.name}: ${check.path}`); if(!exists)allOk=false;}); if(allOk){console.log('🎉 Build verificado com sucesso!');}else{console.error('❌ Alguns arquivos estão faltando no build');}\"",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:electron:wait\"",
     "dev:fast": "concurrently \"npm run dev:frontend\" \"npm run dev:electron:wait\"",
     "dev:backend": "nodemon --exec ts-node src/backend/server.ts",
@@ -22,8 +31,9 @@
     "dev:electron:wait": "wait-on http://localhost:4200 --timeout 15000 && npm run dev:electron",
     "electron": "electron .",
     "electron:dev": "cross-env NODE_ENV=development electron .",
-    "pack": "electron-builder --publish=never",    "dist": "npm run build && npm run copy:backend-deps && electron-builder --publish=never",
-    "dist:win": "npm run build && npm run copy:backend-deps && electron-builder --win --publish=never",
+    "pack": "npm run build && npm run verify:build && electron-builder --publish=never",
+    "dist": "npm run build && electron-builder --publish=never",
+    "dist:win": "npm run build && electron-builder --win --publish=never",
     "dist:mac": "npm run build && electron-builder --mac --publish=never",
     "dist:linux": "npm run build && electron-builder --linux --publish=never",
     "start": "npm run build && npm run electron",
@@ -39,8 +49,7 @@
     "gaming",
     "mmr",
     "queue"
-  ],
-  "build": {
+  ],  "build": {
     "appId": "com.vibecode.lol-matchmaking",
     "productName": "LoL Matchmaking",
     "directories": {
@@ -49,8 +58,9 @@
     },
     "files": [
       "dist/**/*",
-      "node_modules/**/*",
-      "package.json"
+      "package.json",
+      "!node_modules/**/*",
+      "!src/**/*"
     ],    "extraFiles": [
       {
         "from": "dist/backend",
@@ -58,18 +68,39 @@
         "filter": ["**/*"]
       },
       {
-        "from": "dist/backend/node_modules",
-        "to": "backend/node_modules",
+        "from": "dist/frontend/dist/lol-matchmaking/browser",
+        "to": "frontend/dist/lol-matchmaking/browser",
         "filter": ["**/*"]
       },
       {
-        "from": "dist/frontend/dist/lol-matchmaking/browser",
-        "to": "frontend/dist/lol-matchmaking/browser"
+        "from": "database.sqlite",
+        "to": "backend/database/database.sqlite"
+      },
+      {
+        "from": "matchmaking.db",
+        "to": "backend/database/matchmaking.db"
       }
     ],
+    "extraResources": [
+      {
+        "from": "dist/backend/node_modules",
+        "to": "backend/node_modules",
+        "filter": ["**/*"]
+      }
+    ],
+    "asarUnpack": [
+      "backend/**/*"
+    ],
+    "asar": true,
     "win": {
-      "target": "nsis",
-      "icon": "build/icon.ico"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "requestedExecutionLevel": "asInvoker"
     },
     "mac": {
       "target": "dmg",
@@ -83,7 +114,14 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "displayLanguageSelector": false,
+      "language": "1046",
+      "artifactName": "${productName} Setup ${version}.${ext}",
+      "deleteAppDataOnUninstall": false
     }
   },
   "devDependencies": {

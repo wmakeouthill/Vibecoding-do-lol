@@ -13,66 +13,6 @@ if (isDev) {
   app.requestSingleInstanceLock = () => true; // Permitir múltiplas instâncias em dev
 }
 
-async function checkAndInstallBackendDependencies(): Promise<boolean> {
-  return new Promise((resolve) => {
-    const appPath = isDev 
-      ? path.join(__dirname, '../../backend')
-      : path.join(path.dirname(process.execPath), 'backend');
-    
-    const nodeModulesPath = path.join(appPath, 'node_modules');
-    const packageJsonPath = path.join(appPath, 'package.json');
-    
-    console.log('Backend path:', appPath);
-    console.log('Package.json path:', packageJsonPath);
-    console.log('Node modules path:', nodeModulesPath);
-    
-    if (isDev) {
-      // Em desenvolvimento, verificar se package.json existe
-      if (!fs.existsSync(packageJsonPath)) {
-        console.log('package.json do backend não encontrado, continuando...');
-        resolve(true);
-        return;
-      }
-      
-      // Em desenvolvimento, verificar se node_modules existe
-      if (fs.existsSync(nodeModulesPath)) {
-        console.log('Dependências do backend já instaladas');
-        resolve(true);
-        return;
-      }
-      
-      console.log('Instalando dependências do backend...');
-      const installCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-      const installProcess = spawn(installCommand, ['install', '--omit=dev'], {
-        cwd: appPath,
-        stdio: 'pipe'
-      });
-      
-      installProcess.stdout.on('data', (data: any) => {
-        console.log(`NPM Install: ${data}`);
-      });
-      
-      installProcess.stderr.on('data', (data: any) => {
-        console.error(`NPM Install Error: ${data}`);
-      });
-      
-      installProcess.on('close', (code: number) => {
-        if (code === 0) {
-          console.log('Dependências do backend instaladas com sucesso');
-          resolve(true);
-        } else {
-          console.error('Erro ao instalar dependências do backend');
-          resolve(false);
-        }
-      });
-    } else {
-      // Em produção, as dependências já devem estar incluídas no build
-      console.log('Em produção: dependências do backend incluídas no build');
-      resolve(true);
-    }
-  });
-}
-
 function getProductionPaths() {
   // O executável principal está na pasta base
   // Backend e frontend estão ao lado do executável
@@ -80,13 +20,15 @@ function getProductionPaths() {
   
   const backendPath = path.join(appPath, 'backend', 'server.js');
   const frontendPath = path.join(appPath, 'frontend', 'dist', 'lol-matchmaking', 'browser', 'index.html');
-  const nodeModulesPath = path.join(appPath, 'backend', 'node_modules');
+  // node_modules está em resources/backend/node_modules
+  const nodeModulesPath = path.join(appPath, 'resources', 'backend', 'node_modules');
 
   
   console.log('Production paths:');
   console.log('- App path:', appPath);
   console.log('- Backend:', backendPath);
   console.log('- Frontend:', frontendPath);
+  console.log('- Node modules:', nodeModulesPath);
   
   return {
     frontend: frontendPath,
@@ -117,7 +59,6 @@ function createWindow(): void {
     titleBarStyle: 'default',
     show: false, // Não mostrar até estar pronto
   });
-
   // Carregar o frontend Angular
   if (isDev) {
     // Em desenvolvimento, carregar do servidor Angular
@@ -138,9 +79,21 @@ function createWindow(): void {
     // Opcional: abrir DevTools em desenvolvimento
     mainWindow.webContents.openDevTools();
   } else {
-    // Em produção, carregar arquivo local do Angular buildado
-    const prodPaths = getProductionPaths();
-    mainWindow.loadFile(prodPaths.frontend);
+    // Em produção, carregar do backend que servirá os arquivos estáticos
+    console.log('Carregando frontend do backend em produção...');
+    const tryLoadProduction = (retries = 10) => {
+      mainWindow.loadURL('http://localhost:3000').catch((error: any) => {
+        console.log(`Tentativa de conexão ao backend falhou, tentativas restantes: ${retries}`);
+        if (retries > 0) {
+          setTimeout(() => tryLoadProduction(retries - 1), 1000);
+        } else {
+          console.error('Não foi possível conectar ao backend', error);
+        }
+      });
+    };
+    
+    // Aguardar um pouco antes de tentar conectar para dar tempo do backend iniciar
+    setTimeout(() => tryLoadProduction(), 2000);
   }
 
   // Mostrar quando estiver pronto
@@ -183,13 +136,6 @@ async function startBackendServer(): Promise<void> {
     console.log('Process execPath:', process.execPath);
     console.log('__dirname:', __dirname);
     
-    // Verificar e instalar dependências se necessário
-    const depsInstalled = await checkAndInstallBackendDependencies();
-    if (!depsInstalled) {
-      console.error('Não foi possível instalar as dependências do backend');
-      return;
-    }
-    
     // Em produção, iniciar o servidor backend buildado
     const prodPaths = getProductionPaths();
     console.log('Tentando iniciar backend em:', prodPaths.backend);
@@ -200,13 +146,20 @@ async function startBackendServer(): Promise<void> {
       return;
     }
     
+    // Verificar se as dependências existem
+    if (!fs.existsSync(prodPaths.nodeModules)) {
+      console.error('Dependências do backend não encontradas:', prodPaths.nodeModules);
+      return;
+    }
+    
     // Definir NODE_PATH para que o Node encontre as dependências na pasta correta
     const backendDir = path.dirname(prodPaths.backend);
-    const nodeModulesPath = path.join(backendDir, 'node_modules');
+    const nodeModulesPath = prodPaths.nodeModules;
     
     const env = {
       ...process.env,
-      NODE_PATH: nodeModulesPath
+      NODE_PATH: nodeModulesPath,
+      NODE_ENV: 'production'
     };
     
     console.log('NODE_PATH:', nodeModulesPath);
