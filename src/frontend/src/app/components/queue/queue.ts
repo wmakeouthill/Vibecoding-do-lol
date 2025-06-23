@@ -225,6 +225,21 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
            this.currentPlayer?.tagLine === 'coup';
   }
 
+  // Método para verificar se o player foi auto-preenchido em uma lane
+  isPlayerAutofilled(player: any): boolean {
+    return player?.preferences?.isAutofill || false;
+  }
+
+  // Método para obter a lane atribuída final
+  getAssignedLane(player: any): string {
+    return player?.preferences?.assignedLane || player?.preferences?.primaryLane || 'any';
+  }
+
+  // Método para exibir indicador de autofill
+  getAutofillIndicator(player: any): string {
+    return this.isPlayerAutofilled(player) ? ' (Autofill)' : '';
+  }
+
   // Método para adicionar bot na fila
   onAddBot(): void {
     if (!this.isSpecialUser()) {
@@ -250,5 +265,12 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       return;
     }
     this.cleanupTestMatches.emit();
+  }
+
+  // Método para obter texto explicativo do sistema de lanes
+  getLaneSystemExplanation(): string {
+    return 'Sistema de lanes: Jogadores com MMR mais alto têm prioridade na sua lane preferida. ' +
+           'Se sua lane não estiver disponível, você será colocado na sua segunda opção ou ' +
+           'em autofill para uma lane disponível.';
   }
 }

@@ -14,6 +14,8 @@ interface QueuedPlayer {
     primaryLane?: string;
     secondaryLane?: string;
     autoAccept?: boolean;
+    assignedLane?: string;
+    isAutofill?: boolean;
   };
 }
 
@@ -818,8 +820,14 @@ export class MatchmakingService {
       }
     }
 
+    // Atribuir lanes por MMR para cada time
+    this.assignLanesByMMR(team1);
+    this.assignLanesByMMR(team2);
+
     const averageMMR1 = team1.reduce((sum, p) => sum + p.currentMMR, 0) / team1.length;
-    const averageMMR2 = team2.reduce((sum, p) => sum + p.currentMMR, 0) / team2.length;    return {
+    const averageMMR2 = team2.reduce((sum, p) => sum + p.currentMMR, 0) / team2.length;
+
+    return {
       id: Date.now(),
       team1,
       team2,
@@ -829,5 +837,63 @@ export class MatchmakingService {
       averageMMR2,
       acceptedPlayers: new Set<number>()
     };
+  }
+
+  // Método para atribuir lanes baseado em MMR e preferências
+  private assignLanesByMMR(team: QueuedPlayer[]): void {
+    const lanes = ['top', 'jungle', 'mid', 'bot', 'support'];
+    const assignedLanes = new Set<string>();
+    const playerLaneAssignments = new Map<number, string>();
+
+    // Ordenar jogadores por MMR (maior para menor)
+    const sortedPlayers = [...team].sort((a, b) => b.currentMMR - a.currentMMR);
+
+    // Primeira passada: tentar atribuir lane primária para jogadores com MMR mais alto
+    for (const player of sortedPlayers) {
+      const primaryLane = player.preferences?.primaryLane;
+      
+      if (primaryLane && !assignedLanes.has(primaryLane)) {
+        assignedLanes.add(primaryLane);
+        playerLaneAssignments.set(player.id, primaryLane);
+      }
+    }
+
+    // Segunda passada: tentar atribuir lane secundária para quem não conseguiu a primária
+    for (const player of sortedPlayers) {
+      if (playerLaneAssignments.has(player.id)) continue; // Já tem lane
+
+      const secondaryLane = player.preferences?.secondaryLane;
+      
+      if (secondaryLane && !assignedLanes.has(secondaryLane)) {
+        assignedLanes.add(secondaryLane);
+        playerLaneAssignments.set(player.id, secondaryLane);
+      }
+    }
+
+    // Terceira passada: autofill para jogadores sem lane (MMR mais baixo vai para lanes restantes)
+    const unassignedPlayers = sortedPlayers.filter(p => !playerLaneAssignments.has(p.id));
+    const availableLanes = lanes.filter(lane => !assignedLanes.has(lane));
+
+    for (let i = 0; i < unassignedPlayers.length && i < availableLanes.length; i++) {
+      const player = unassignedPlayers[i];
+      const lane = availableLanes[i];
+      
+      assignedLanes.add(lane);
+      playerLaneAssignments.set(player.id, lane);
+    }
+
+    // Atualizar preferências dos jogadores com as lanes atribuídas
+    for (const player of team) {
+      const assignedLane = playerLaneAssignments.get(player.id);
+      if (assignedLane && player.preferences) {
+        // Marcar se foi autofill
+        const isAutofill = assignedLane !== player.preferences.primaryLane && 
+                          assignedLane !== player.preferences.secondaryLane;
+        
+        // Adicionar informação da lane final atribuída
+        (player.preferences as any).assignedLane = assignedLane;
+        (player.preferences as any).isAutofill = isAutofill;
+      }
+    }
   }
 }
