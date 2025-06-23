@@ -7,7 +7,7 @@ let mainWindow: BrowserWindow;
 let backendProcess: any;
 
 const isDev = process.env.NODE_ENV === 'development' || 
-             (!app.isPackaged && process.execPath.includes('node_modules'));
+             (!app.isPackaged && !process.env.NODE_ENV);
 
 // Permitir múltiplas instâncias para teste P2P
 if (isDev) {

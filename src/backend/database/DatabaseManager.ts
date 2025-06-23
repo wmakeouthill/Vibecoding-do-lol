@@ -52,22 +52,17 @@ export class DatabaseManager {
   private db: Database | null = null;
   private dbPath: string;  constructor() {
     // Detectar se estamos em desenvolvimento ou produção
-    const isDev = process.env.NODE_ENV === 'development' || __dirname.includes('dist');
+    const isDev = process.env.NODE_ENV === 'development';
     
     let databaseDir: string;
     
     if (isDev) {
-      // Em desenvolvimento, usar pasta do projeto
+      // Em desenvolvimento, usar pasta do projeto src/backend/database
       databaseDir = path.join(__dirname);
     } else {
-      // Em produção (aplicação empacotada), usar diretório de dados do usuário
-      const { app } = require('electron');
-      if (app) {
-        databaseDir = path.join(app.getPath('userData'), 'database');
-      } else {
-        // Fallback se não conseguir acessar o electron
-        databaseDir = path.join(__dirname);
-      }
+      // Em produção, usar o banco na pasta dist/backend/database
+      // O backend compilado está em dist/backend/, então o database fica em dist/backend/database/
+      databaseDir = path.join(__dirname);
     }
     
     if (!fs.existsSync(databaseDir)) {
