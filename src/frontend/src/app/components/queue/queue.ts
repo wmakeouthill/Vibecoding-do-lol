@@ -301,14 +301,12 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       this.handleDiscordMatchFound(event.detail);
     });
   }
-
   private checkDiscordConnection() {
     setTimeout(() => {
       this.isDiscordConnected = this.discordService.isConnected();
-      this.currentDiscordUser = this.discordService.getCurrentUserInfo();
 
       if (this.isDiscordConnected) {
-        console.log('✅ Discord conectado:', this.currentDiscordUser);
+        console.log('✅ Discord conectado');
         this.showDiscordMode = true;
       }
 
@@ -328,17 +326,18 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
 
     this.showLaneSelector = true;
   }
-
   onConfirmDiscordQueue(preferences: QueuePreferences) {
     const role = this.mapLaneToRole(preferences.primaryLane);
-    this.discordService.joinQueue(role);
+    const username = 'Player'; // TODO: Passar username via @Input
+    this.discordService.joinQueue(role, username);
     this.showLaneSelector = false;
     this.isInQueue = true;
     this.startTimer();
   }
 
   onLeaveDiscordQueue() {
-    this.discordService.leaveQueue();
+    const username = 'Player'; // TODO: Passar username via @Input
+    this.discordService.leaveQueue(username);
     this.isInQueue = false;
     this.stopTimer();
     this.queueTimer = 0;

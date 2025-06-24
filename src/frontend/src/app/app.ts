@@ -711,15 +711,15 @@ export class App implements OnInit, OnDestroy {
       return;
     }
 
-    try {
-      console.log('🎯 Tentando entrar na fila...');
+    try {      console.log('🎯 Tentando entrar na fila...');
 
-      // � PRIORIDADE: Usar Discord se disponível
+      // 🎮 PRIORIDADE: Usar Discord se disponível
       if (this.discordService.isConnected()) {
         console.log('🎮 Discord conectado! Usando fila Discord (prioridade)');
 
         const role = this.mapLaneToRole(preferences?.primaryLane || 'mid');
-        this.discordService.joinQueue(role);
+        const username = this.currentPlayer?.summonerName || this.currentPlayer?.gameName || 'Player';
+        this.discordService.joinQueue(role, username);
 
         this.isInQueue = true;
         this.currentQueueType = 'discord';
@@ -757,12 +757,11 @@ export class App implements OnInit, OnDestroy {
 
   async leaveQueue(): Promise<void> {
     try {
-      console.log(`🚪 Saindo da fila ${this.currentQueueType}...`);
-
-      if (this.currentQueueType === 'discord') {
+      console.log(`🚪 Saindo da fila ${this.currentQueueType}...`);      if (this.currentQueueType === 'discord') {
         // Sair da fila Discord
         console.log('🎮 Saindo da fila Discord');
-        this.discordService.leaveQueue();
+        const username = this.currentPlayer?.summonerName || this.currentPlayer?.gameName || 'Player';
+        this.discordService.leaveQueue(username);
         this.addNotification('info', 'Fila Discord', 'Você saiu da fila Discord');
       } else {
         // Sair da fila centralizada
