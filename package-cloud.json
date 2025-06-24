@@ -1,0 +1,23 @@
+{
+  "name": "lol-matchmaking-p2p-server",
+  "version": "1.0.0",
+  "description": "Servidor P2P para matchmaking do LoL",
+  "main": "cloud-p2p-server.js",
+  "scripts": {
+    "start": "node cloud-p2p-server.js",
+    "deploy:railway": "railway up",
+    "deploy:render": "echo 'Deploy no Render via GitHub'",
+    "test": "node -e \"console.log('Servidor P2P OK')\""
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.5",
+    "cors": "^2.8.5"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "keywords": ["p2p", "matchmaking", "lol", "gaming"],
+  "author": "LoL Matchmaking",
+  "license": "MIT"
+}

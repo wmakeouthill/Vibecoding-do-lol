@@ -8,27 +8,25 @@ import { DashboardComponent } from './components/dashboard/dashboard';
 import { QueueComponent } from './components/queue/queue';
 import { MatchHistoryComponent } from './components/match-history/match-history';
 import { LeaderboardComponent } from './components/leaderboard/leaderboard';
-import { P2PStatusComponent } from './components/p2p-status/p2p-status';
 import { MatchFoundComponent, MatchFoundData } from './components/match-found/match-found';
 import { CustomPickBanComponent } from './components/custom-pick-ban/custom-pick-ban';
 import { GameInProgressComponent } from './components/game-in-progress/game-in-progress';
 import { WebsocketService } from './services/websocket';
 import { ApiService } from './services/api';
 import { QueueStateService } from './services/queue-state';
-import { P2PManager } from './services/p2p-manager';
-import { DistributedQueueService } from './services/distributed-queue';
+import { DiscordIntegrationService } from './services/discord-integration.service';
 import { Player, QueueStatus, LCUStatus, MatchFound, QueuePreferences, RefreshPlayerResponse } from './interfaces';
 import type { Notification } from './interfaces';
 
 @Component({
-  selector: 'app-root',  imports: [
+  selector: 'app-root',
+  imports: [
     CommonModule,
     FormsModule,
     DashboardComponent,
     QueueComponent,
     MatchHistoryComponent,
     LeaderboardComponent,
-    P2PStatusComponent,
     MatchFoundComponent,
     CustomPickBanComponent,
     GameInProgressComponent
@@ -39,11 +37,11 @@ import type { Notification } from './interfaces';
 export class App implements OnInit, OnDestroy {
   protected title = 'LoL Matchmaking';
   // Estado da aplicação
-  currentView: 'dashboard' | 'queue' | 'history' | 'leaderboard' | 'settings' | 'p2p' = 'dashboard';
+  currentView: 'dashboard' | 'queue' | 'history' | 'leaderboard' | 'settings' = 'dashboard';
   isElectron = false;
   isConnected = false;
   isInQueue = false;
-  currentQueueType: 'centralized' | 'p2p' | null = null;
+  currentQueueType: 'centralized' | 'discord' | null = null;
 
   // Dados do jogador
   currentPlayer: Player | null = null;
@@ -90,13 +88,11 @@ export class App implements OnInit, OnDestroy {
     riotApiKey: ''
   };
 
-  private destroy$ = new Subject<void>();
-  constructor(
+  private destroy$ = new Subject<void>();  constructor(
     private websocketService: WebsocketService,
     private apiService: ApiService,
     private queueStateService: QueueStateService,
-    private p2pManager: P2PManager,
-    private distributedQueue: DistributedQueueService
+    private discordService: DiscordIntegrationService
   ) {
     this.isElectron = !!(window as any).electronAPI;
   }
@@ -150,7 +146,7 @@ export class App implements OnInit, OnDestroy {
     this.destroy$.complete();
   }
 
-  setCurrentView(view: 'dashboard' | 'queue' | 'history' | 'leaderboard' | 'settings' | 'p2p'): void {
+  setCurrentView(view: 'dashboard' | 'queue' | 'history' | 'leaderboard' | 'settings'): void {
     this.currentView = view;
     console.log('View changed to:', view);
   }
@@ -664,9 +660,9 @@ export class App implements OnInit, OnDestroy {
         break;
     }
   }
-
   private loadPlayerData(): void {
-    const savedPlayer = localStorage.getItem('currentPlayer');    if (savedPlayer) {
+    const savedPlayer = localStorage.getItem('currentPlayer');
+    if (savedPlayer) {
       try {
         this.currentPlayer = JSON.parse(savedPlayer);
       } catch (error) {
@@ -691,101 +687,56 @@ export class App implements OnInit, OnDestroy {
     try {
       console.log('🎯 Tentando entrar na fila...');
 
-      // 🎯 PRIORIDADE: Tentar usar P2P primeiro
-      console.log('� Inicializando P2P para uso prioritário...');      try {
-        // Sempre tentar inicializar P2P primeiro se não estiver inicializado
-        if (!this.p2pManager['isInitialized']) {
-          console.log('� Inicializando P2P Manager...');
-          await this.p2pManager.initialize({
-            summonerName: this.currentPlayer.summonerName,
-            region: this.currentPlayer.region || 'BR1',
-            mmr: this.currentPlayer.currentMMR || this.currentPlayer.mmr || 1000
-          });
-        }        // Aguardar mais tempo para que o servidor de sinalização se conecte (especialmente em produção)
-        console.log('⏳ Aguardando conexão do servidor de sinalização...');
-        let attempts = 0;
-        const maxAttempts = 60; // 30 segundos máximo para produção
-        const delayBetweenAttempts = 500;
+      // � PRIORIDADE: Usar Discord se disponível
+      if (this.discordService.isConnected()) {
+        console.log('🎮 Discord conectado! Usando fila Discord (prioridade)');
 
-        while (attempts < maxAttempts && !this.isP2PConnected()) {
-          await new Promise(resolve => setTimeout(resolve, delayBetweenAttempts));
-          attempts++;
+        const role = this.mapLaneToRole(preferences?.primaryLane || 'mid');
+        this.discordService.joinQueue(role);
 
-          // Log a cada 2 segundos para não poluir o console
-          if (attempts % 4 === 0) {
-            console.log(`🔄 Tentativa ${attempts}/${maxAttempts} - Aguardando P2P... (${(attempts * delayBetweenAttempts) / 1000}s)`);
-          }
-        }
-
-        // Se P2P está conectado, usar fila P2P
-        if (this.isP2PConnected()) {
-          console.log('✅ P2P conectado! Usando fila P2P (prioridade)');
-
-          this.distributedQueue.joinQueue({
-            primaryLane: preferences?.primaryLane || 'any',
-            secondaryLane: preferences?.secondaryLane || 'any',
-            autoAccept: preferences?.autoAccept || false
-          });
-
-          this.isInQueue = true;
-          this.currentQueueType = 'p2p';
-          this.addNotification('success', 'Fila P2P', `Entrou na fila P2P como ${preferences?.primaryLane || 'qualquer lane'}`);
-          return;
-        } else {
-          console.log('⚠️ P2P não conectou após 15 segundos, usando fila centralizada como backup');
-        }
-      } catch (p2pError) {
-        console.error('❌ Erro ao inicializar P2P:', p2pError);
-        console.log('🌐 Fallback para fila centralizada');
+        this.isInQueue = true;
+        this.currentQueueType = 'discord';
+        this.addNotification('success', 'Fila Discord', `Entrou na fila Discord como ${role}`);
+        return;
       }
 
-      // 🌐 FALLBACK: Usar fila centralizada se P2P não disponível
-      console.log('🌐 Usando fila centralizada como fallback');
+      // 🌐 FALLBACK: Usar fila centralizada se Discord não disponível
+      console.log('🌐 Discord não disponível, usando fila centralizada');
       await this.websocketService.joinQueue(this.currentPlayer, preferences);
       this.isInQueue = true;
       this.currentQueueType = 'centralized';
+
       // Atualizar estado compartilhado
       this.queueStateService.updateCentralizedQueue({
         isInQueue: true
       });
+
       this.addNotification('success', 'Fila Central', `Entrou na fila centralizada como ${preferences?.primaryLane || 'qualquer lane'}`);
     } catch (error) {
       console.error('Erro ao entrar na fila:', error);
       this.addNotification('error', 'Erro', 'Não foi possível entrar na fila');
     }
-  }  // Verificar se P2P está conectado (método mais simples)
-  private isP2PConnected(): boolean {
-    return !!(this.p2pManager &&
-              this.p2pManager['signalingSocket'] &&
-              this.p2pManager['signalingSocket'].connected);
   }
 
-  // Verificar se P2P está disponível e conectado
-  private isP2PAvailableAndConnected(): boolean {
-    // Verificar se o P2P manager existe
-    if (!this.p2pManager) {
-      console.log('❌ P2P Manager não disponível');
-      return false;
-    }
-
-    // Verificar se o servidor de sinalização está conectado através do Socket.IO
-    if (!this.p2pManager['signalingSocket'] || !this.p2pManager['signalingSocket'].connected) {
-      console.log('❌ Servidor de sinalização P2P não conectado');
-      return false;
-    }
-
-    console.log('✅ P2P disponível e servidor de sinalização conectado');
-    return true;
+  private mapLaneToRole(lane: string): string {
+    const laneMap: { [key: string]: string } = {
+      'top': 'top',
+      'jungle': 'jungle',
+      'mid': 'mid',
+      'adc': 'adc',
+      'support': 'support'
+    };    return laneMap[lane] || 'mid';
   }
+
   async leaveQueue(): Promise<void> {
     try {
       console.log(`🚪 Saindo da fila ${this.currentQueueType}...`);
 
-      if (this.currentQueueType === 'p2p') {
-        // Sair da fila P2P
-        console.log('🔗 Saindo da fila P2P');
-        this.distributedQueue.leaveQueue();
-        this.addNotification('info', 'Fila P2P', 'Você saiu da fila P2P');
+      if (this.currentQueueType === 'discord') {
+        // Sair da fila Discord
+        console.log('🎮 Saindo da fila Discord');
+        this.discordService.leaveQueue();
+        this.addNotification('info', 'Fila Discord', 'Você saiu da fila Discord');
       } else {
         // Sair da fila centralizada
         console.log('🌐 Saindo da fila centralizada');
@@ -985,7 +936,8 @@ export class App implements OnInit, OnDestroy {
 
     this.simulateMatchFromData(newResponse.matches[0]);
   }  private simulateMatchFromData(matchData: any): void {
-    console.log('🎮 Simulando partida com dados REAIS:', matchData);    // Processar dados dos teams corretamente (podem ser strings ou números)
+    console.log('🎮 Simulando partida com dados REAIS:', matchData);  // Processar dados dos teams corretamente (podem ser strings ou números)
+
     let team1Players: any[] = [];
     let team2Players: any[] = [];
 

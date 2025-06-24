@@ -6,6 +6,18 @@
       <span class="status-indicator" [style.background-color]="getQueueHealthColor()"></span>
       {{ queueStatus.isActive ? 'Sistema Online' : 'Sistema Offline' }}
     </div>
+
+    <!-- Discord Mode Toggle -->
+    <div class="discord-toggle" *ngIf="showDiscordMode">
+      <div class="discord-status" [class.connected]="isDiscordConnected">
+        <i class="fab fa-discord"></i>
+        <span *ngIf="isDiscordConnected">Discord Conectado</span>
+        <span *ngIf="!isDiscordConnected">Discord Desconectado</span>
+      </div>
+      <div class="discord-user" *ngIf="currentDiscordUser">
+        👤 {{ currentDiscordUser.username }}
+      </div>
+    </div>
   </div>
   <!-- Player Info -->
   <div class="player-info-card" *ngIf="currentPlayer">
@@ -97,6 +109,41 @@
         <span>Selecionar Lanes e Entrar na Fila</span>
       </button>
 
+      <!-- Discord Queue Mode -->
+      <div class="discord-queue-section" *ngIf="showDiscordMode && isDiscordConnected">
+        <h3>🎮 Fila Discord Automática</h3>
+        <p>Entre no canal <strong>#lol-matchmaking</strong> e a fila será automática!</p>
+
+        <div class="discord-queue-info">
+          <div class="discord-queue-stats">
+            <span class="discord-stat">
+              <i class="fab fa-discord"></i>
+              {{ discordQueue.length }}/10 Players
+            </span>
+            <span class="discord-queue-composition">
+              {{ getDiscordQueueDisplay() }}
+            </span>
+          </div>
+        </div>
+
+        <button class="queue-btn discord-join-btn"
+                [disabled]="!isDiscordConnected"
+                (click)="onJoinDiscordQueue()">
+          <i class="fab fa-discord"></i>
+          <span>Entrar na Fila Discord</span>
+        </button>
+
+        <div class="discord-benefits">
+          <h4>✨ Vantagens da Fila Discord:</h4>
+          <ul>
+            <li>🔄 <strong>Automática</strong> - Só entrar no canal</li>
+            <li>👥 <strong>Times organizados</strong> - Bot move para canais Blue/Red</li>
+            <li>⚡ <strong>Mais rápida</strong> - Sem configuração P2P</li>
+            <li>📊 <strong>Transparente</strong> - Todos veem a fila</li>
+          </ul>
+        </div>
+      </div>
+
       <!-- Funcionalidade especial para adicionar bots (apenas para popcorn seller#coup) -->
       <div class="bot-controls" *ngIf="isSpecialUser() && !isInQueue">
         <h4>🤖 Controles de Bot (Teste)</h4>
@@ -135,6 +182,32 @@
         <div class="timer-circle">
           <span class="timer-text">{{ getTimerDisplay() }}</span>
         </div>
+      </div>
+
+      <!-- Discord Queue Status -->
+      <div class="discord-queue-status" *ngIf="showDiscordMode && isDiscordConnected">
+        <h3>🎮 Aguardando Match Discord</h3>
+        <div class="discord-queue-progress">
+          <div class="progress-bar">
+            <div class="progress-fill" [style.width.%]="(discordQueue.length / 10) * 100"></div>
+          </div>
+          <span class="progress-text">{{ discordQueue.length }}/10 players</span>
+        </div>
+
+        <div class="discord-queue-list" *ngIf="discordQueue.length > 0">
+          <h4>Players na Fila:</h4>
+          <div class="player-list">
+            <div class="queue-player" *ngFor="let player of discordQueue">
+              <span class="player-name">{{ player.username }}</span>
+              <span class="player-role">{{ player.role }}</span>
+            </div>
+          </div>
+        </div>
+
+        <button class="queue-btn leave-btn" (click)="onLeaveDiscordQueue()">
+          <i class="icon-times"></i>
+          <span>Sair da Fila Discord</span>
+        </button>
       </div>
 
       <div class="queue-status-text">

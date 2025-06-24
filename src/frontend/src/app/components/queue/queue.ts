@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Player, QueueStatus, QueuePreferences } from '../../interfaces';
 import { LaneSelectorComponent } from '../lane-selector/lane-selector';
+import { DiscordIntegrationService } from '../../services/discord-integration.service';
 
 @Component({
   selector: 'app-queue',
@@ -36,10 +37,22 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     autoAccept: false
   };
 
+  // Discord Integration
+  discordQueue: any[] = [];
+  isDiscordConnected = false;
+  currentDiscordUser: any = null;
+  showDiscordMode = false;
+
+  constructor(private discordService: DiscordIntegrationService) {}
+
   ngOnInit() {
     if (this.isInQueue) {
       this.startTimer();
     }
+
+    // Setup Discord integration
+    this.setupDiscordListeners();
+    this.checkDiscordConnection();
   }
 
   ngOnDestroy() {
@@ -272,5 +285,94 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     return 'Sistema de lanes: Jogadores com MMR mais alto têm prioridade na sua lane preferida. ' +
            'Se sua lane não estiver disponível, você será colocado na sua segunda opção ou ' +
            'em autofill para uma lane disponível.';
+  }
+
+  private setupDiscordListeners() {
+    // Escutar atualizações da fila Discord
+    window.addEventListener('queueUpdate', (event: any) => {
+      this.discordQueue = event.detail.queue;
+      this.queueStatus.playersInQueue = event.detail.size;
+      console.log('🎯 Fila Discord atualizada:', this.discordQueue);
+    });
+
+    // Escutar match encontrado
+    window.addEventListener('matchFound', (event: any) => {
+      console.log('🎮 Match encontrado via Discord!', event.detail);
+      this.handleDiscordMatchFound(event.detail);
+    });
+  }
+
+  private checkDiscordConnection() {
+    setTimeout(() => {
+      this.isDiscordConnected = this.discordService.isConnected();
+      this.currentDiscordUser = this.discordService.getCurrentUserInfo();
+
+      if (this.isDiscordConnected) {
+        console.log('✅ Discord conectado:', this.currentDiscordUser);
+        this.showDiscordMode = true;
+      }
+
+      // Verificar novamente em 5 segundos se não conectou
+      if (!this.isDiscordConnected) {
+        setTimeout(() => this.checkDiscordConnection(), 5000);
+      }
+    }, 2000);
+  }
+
+  // Discord Queue Methods
+  onJoinDiscordQueue() {
+    if (!this.isDiscordConnected) {
+      alert('❌ Discord não conectado. Certifique-se de estar no canal #lol-matchmaking');
+      return;
+    }
+
+    this.showLaneSelector = true;
+  }
+
+  onConfirmDiscordQueue(preferences: QueuePreferences) {
+    const role = this.mapLaneToRole(preferences.primaryLane);
+    this.discordService.joinQueue(role);
+    this.showLaneSelector = false;
+    this.isInQueue = true;
+    this.startTimer();
+  }
+
+  onLeaveDiscordQueue() {
+    this.discordService.leaveQueue();
+    this.isInQueue = false;
+    this.stopTimer();
+    this.queueTimer = 0;
+  }
+
+  private mapLaneToRole(lane: string): string {
+    const laneMap: { [key: string]: string } = {
+      'top': 'top',
+      'jungle': 'jungle',
+      'mid': 'mid',
+      'adc': 'adc',
+      'support': 'support'
+    };
+    return laneMap[lane] || 'mid';
+  }
+
+  private handleDiscordMatchFound(matchData: any) {
+    // Emitir evento para componente pai lidar com o match
+    const matchFoundEvent = new CustomEvent('discordMatchFound', {
+      detail: matchData
+    });
+    window.dispatchEvent(matchFoundEvent);
+  }
+
+  getDiscordQueueDisplay(): string {
+    if (!this.discordQueue.length) return 'Aguardando players...';
+
+    const roleCount = this.discordQueue.reduce((acc, player) => {
+      acc[player.role] = (acc[player.role] || 0) + 1;
+      return acc;
+    }, {});
+
+    return Object.entries(roleCount)
+      .map(([role, count]) => `${role}: ${count}`)
+      .join(' | ');
   }
 }
