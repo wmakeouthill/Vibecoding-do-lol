@@ -63,9 +63,9 @@ export class DiscordIntegrationService {
     }
 
     const message = {
-      type: 'join_queue',
+      type: 'join_discord_queue',
       username,
-      role
+      role,
     };
 
     this.ws.send(JSON.stringify(message));
@@ -85,7 +85,13 @@ export class DiscordIntegrationService {
   }
 
   private updateQueueDisplay(queue: any[]) {
-    // Emitir evento para componente atualizar UI
+    if (!Array.isArray(queue)) {
+      console.error('Fila recebida é inválida:', queue);
+      window.dispatchEvent(new CustomEvent('queueUpdate', {
+        detail: { queue: [], size: 0 }
+      }));
+      return;
+    }
     window.dispatchEvent(new CustomEvent('queueUpdate', {
       detail: { queue, size: queue.length }
     }));
