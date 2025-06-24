@@ -14,6 +14,7 @@ import { PlayerService } from './services/PlayerService';
 import { RiotAPIService } from './services/RiotAPIService';
 import { LCUService } from './services/LCUService';
 import { MatchHistoryService } from './services/MatchHistoryService';
+import { DiscordService } from './services/DiscordService';
 
 const app = express();
 const server = createServer(app);
@@ -94,6 +95,7 @@ const matchmakingService = new MatchmakingService(dbManager, wss);
 const playerService = new PlayerService(globalRiotAPI, dbManager);
 const lcuService = new LCUService(globalRiotAPI);
 const matchHistoryService = new MatchHistoryService(globalRiotAPI, dbManager);
+const discordService = new DiscordService();
 
 // WebSocket para comunicação em tempo real
 wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
@@ -909,6 +911,21 @@ app.get('/api/lcu/status', async (req: Request, res: Response) => {
   }
 });
 
+// Discord Bot Status
+app.get('/api/discord/status', async (req: Request, res: Response) => {
+  try {
+    const status = {
+      isConnected: discordService.isDiscordConnected(),
+      botUsername: discordService.getBotUsername(),
+      queueSize: discordService.getQueueSize(),
+      activeMatches: discordService.getActiveMatches()
+    };
+    res.json(status);
+  } catch (error: any) {
+    res.status(503).json({ error: 'Discord Bot não está disponível' });
+  }
+});
+
 app.get('/api/lcu/current-summoner', (async (req: Request, res: Response) => {
   try {
     const summoner = await lcuService.getCurrentSummoner(); // This gets basic LCU data
@@ -1477,6 +1494,126 @@ app.delete('/api/matches/cleanup-test-matches', (req: Request, res: Response) =>
   })();
 });
 
+// === CONFIGURAÇÕES APIs ===
+
+// Configurar Discord Bot Token
+app.post('/api/config/discord-token', (async (req: Request, res: Response) => {
+  console.log('🤖 Endpoint Discord token chamado:', req.body);
+  try {
+    const { token } = req.body;
+    
+    if (!token || typeof token !== 'string' || token.trim() === '') {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Token do Discord é obrigatório' 
+      });
+    }
+
+    // Salvar no banco de dados
+    await dbManager.setSetting('discord_bot_token', token.trim());
+    
+    // Tentar inicializar o Discord Bot com o novo token
+    const discordInitialized = await discordService.initialize(token.trim());
+    
+    if (discordInitialized) {
+      // Conectar ao WebSocket se inicializou com sucesso
+      discordService.setWebSocketServer(wss);
+      
+      res.json({
+        success: true,
+        message: 'Discord Bot configurado e conectado com sucesso!',
+        connected: discordService.isDiscordConnected()
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: 'Token do Discord inválido ou erro na conexão'
+      });
+    }
+    
+  } catch (error: any) {
+    console.error('❌ Erro ao configurar Discord Bot:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+}) as RequestHandler);
+
+// Configurar Riot API Key  
+app.post('/api/config/riot-api-key', (async (req: Request, res: Response) => {
+  try {
+    const { apiKey } = req.body;
+    
+    if (!apiKey || typeof apiKey !== 'string' || apiKey.trim() === '') {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'API Key do Riot é obrigatória' 
+      });
+    }
+
+    // Validar a API key antes de salvar
+    try {
+      globalRiotAPI.setApiKey(apiKey.trim());
+      await globalRiotAPI.validateApiKey('br1'); // Usar região padrão para validação
+      
+      // Se chegou aqui, a API key é válida
+      await dbManager.setSetting('riot_api_key', apiKey.trim());
+      
+      res.json({
+        success: true,
+        message: 'Riot API Key configurada e validada com sucesso!'
+      });
+      
+    } catch (validationError: any) {
+      res.status(400).json({
+        success: false,
+        error: `API Key inválida: ${validationError.message}`
+      });
+    }
+    
+  } catch (error: any) {
+    console.error('❌ Erro ao configurar Riot API:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+}) as RequestHandler);
+
+// Obter status das configurações
+app.get('/api/config/status', (async (req: Request, res: Response) => {
+  try {
+    const riotApiKey = await dbManager.getSetting('riot_api_key');
+    const discordToken = await dbManager.getSetting('discord_bot_token');
+    
+    res.json({
+      success: true,
+      config: {
+        riotApi: {
+          configured: !!(riotApiKey && riotApiKey.trim() !== ''),
+          valid: globalRiotAPI.isApiKeyConfigured ? globalRiotAPI.isApiKeyConfigured() : false
+        },
+        discord: {
+          configured: !!(discordToken && discordToken.trim() !== ''),
+          connected: discordService.isDiscordConnected(),
+          queueSize: discordService.getQueueSize(),
+          activeMatches: discordService.getActiveMatches()
+        }
+      }
+    });
+    
+  } catch (error: any) {
+    console.error('❌ Erro ao obter status das configurações:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+}) as RequestHandler);
+
+// === FIM CONFIGURAÇÕES APIs ===
+
 // Middleware de erro
 app.use((error: any, req: Request, res: Response, next: NextFunction) => {
   console.error('Erro não tratado:', error);
@@ -1564,9 +1701,7 @@ async function initializeServices() {
 
     // Matchmaking
     await matchmakingService.initialize();
-    console.log('✅ Serviço de matchmaking inicializado');
-
-    // LCU
+    console.log('✅ Serviço de matchmaking inicializado');    // LCU
     await lcuService.initialize();
     
     // Conectar dependências aos serviços
@@ -1577,6 +1712,21 @@ async function initializeServices() {
     await lcuService.startGameMonitoring();
     
     console.log('✅ Conectado ao cliente do League of Legends');
+
+    // Discord Bot
+    const savedDiscordToken = await dbManager.getSetting('discord_bot_token');
+    if (savedDiscordToken && savedDiscordToken.trim() !== '') {
+      const discordInitialized = await discordService.initialize(savedDiscordToken);
+      if (discordInitialized) {
+        console.log('✅ Discord Bot inicializado com sucesso');
+        // Conectar ao WebSocket para comunicação com frontend
+        discordService.setWebSocketServer(wss);
+      } else {
+        console.warn('⚠️ Falha ao inicializar Discord Bot');
+      }
+    } else {
+      console.log('⚠️ Token do Discord Bot não configurado. Discord será desabilitado.');
+    }
   } catch (error) {
     console.error('Erro ao inicializar serviços:', error);
   }

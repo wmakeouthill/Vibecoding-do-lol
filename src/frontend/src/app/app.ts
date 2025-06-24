@@ -80,12 +80,18 @@ export class App implements OnInit, OnDestroy {
 
   // Notificações
   notifications: Notification[] = [];
-
   // Formulário de configurações
   settingsForm = {
     summonerName: '',
     region: 'br1',
-    riotApiKey: ''
+    riotApiKey: '',
+    discordBotToken: ''
+  };
+
+  // Status do Discord
+  discordStatus = {
+    isConnected: false,
+    botUsername: ''
   };
 
   private destroy$ = new Subject<void>();  constructor(
@@ -96,7 +102,6 @@ export class App implements OnInit, OnDestroy {
   ) {
     this.isElectron = !!(window as any).electronAPI;
   }
-
   ngOnInit(): void {
     this.isElectron = !!(window as any).electronAPI;
 
@@ -114,6 +119,26 @@ export class App implements OnInit, OnDestroy {
           this.settingsForm.riotApiKey = '';
         }
       });
+    }
+
+    // Try to load Discord Bot token from local storage
+    const storedDiscordToken = localStorage.getItem('discordBotToken');
+    if (storedDiscordToken) {
+      this.settingsForm.discordBotToken = storedDiscordToken;
+      this.apiService.setDiscordBotToken(storedDiscordToken).subscribe({
+        next: () => {
+          console.log('Discord Bot Token configurado automaticamente no backend');
+          this.checkDiscordStatus();
+        },
+        error: (error: HttpErrorResponse) => {
+          console.warn('Falha ao configurar Discord Bot Token automaticamente:', error.message);
+          localStorage.removeItem('discordBotToken');
+          this.settingsForm.discordBotToken = '';
+        }
+      });
+    } else {
+      // Verificar status do Discord mesmo sem token salvo
+      this.checkDiscordStatus();
     }
 
     // Connect to WebSocket
@@ -586,18 +611,19 @@ export class App implements OnInit, OnDestroy {
           position: message.data.position
         });
         this.addNotification('success', 'Fila', `Entrou na fila (posição ${message.data.position})`);
-        break;
-      case 'queue_update':
+        break;      case 'queue_update':
         console.log('🔄 Recebido queue_update:', message.data);
-        this.queueStatus = message.data;
-        // Atualizar estado compartilhado com dados da fila
-        this.queueStateService.updateCentralizedQueue({
-          isInQueue: this.isInQueue,
-          playersInQueue: message.data.playersInQueue,
-          averageWaitTime: message.data.averageWaitTime,
-          estimatedTime: message.data.estimatedMatchTime
-        });
-        console.log('🔄 queueStatus atualizado para:', this.queueStatus);
+        if (message.data) {
+          this.queueStatus = message.data;
+          // Atualizar estado compartilhado com dados da fila
+          this.queueStateService.updateCentralizedQueue({
+            isInQueue: this.isInQueue,
+            playersInQueue: message.data.playersInQueue,
+            averageWaitTime: message.data.averageWaitTime,
+            estimatedTime: message.data.estimatedMatchTime
+          });
+          console.log('🔄 queueStatus atualizado para:', this.queueStatus);
+        }
         break;
       case 'match_found':
         console.log('🎮 Partida encontrada!', message.data);
@@ -646,17 +672,18 @@ export class App implements OnInit, OnDestroy {
         this.addNotification('success', 'Draft Iniciado', 'Todos aceitaram! A fase de draft começou.');
         break;
       case 'queue_error':
-        this.addNotification('error', 'Erro na Fila', message.message);
-        break;
+        this.addNotification('error', 'Erro na Fila', message.message);        break;
       case 'queue_status':
-        this.queueStatus = message.data;
-        // Atualizar estado compartilhado
-        this.queueStateService.updateCentralizedQueue({
-          isInQueue: this.isInQueue,
-          playersInQueue: message.data.playersInQueue,
-          averageWaitTime: message.data.averageWaitTime,
-          estimatedTime: message.data.estimatedMatchTime
-        });
+        if (message.data) {
+          this.queueStatus = message.data;
+          // Atualizar estado compartilhado
+          this.queueStateService.updateCentralizedQueue({
+            isInQueue: this.isInQueue,
+            playersInQueue: message.data.playersInQueue,
+            averageWaitTime: message.data.averageWaitTime,
+            estimatedTime: message.data.estimatedMatchTime
+          });
+        }
         break;
     }
   }
@@ -1856,7 +1883,6 @@ export class App implements OnInit, OnDestroy {
     // Optionally, set a default icon path
     // (event.target as HTMLImageElement).src = 'path/to/default/icon.png';
   }
-
   updateRiotApiKey(): void {
     if (this.settingsForm.riotApiKey) {
       this.apiService.setRiotApiKey(this.settingsForm.riotApiKey).subscribe({
@@ -1871,6 +1897,38 @@ export class App implements OnInit, OnDestroy {
     } else {
       this.addNotification('warning', 'Chave da API Ausente', 'Por favor, insira uma chave da API da Riot.');
     }
+  }
+  updateDiscordBotToken(): void {
+    if (this.settingsForm.discordBotToken) {
+      this.apiService.setDiscordBotToken(this.settingsForm.discordBotToken).subscribe({
+        next: () => {
+          localStorage.setItem('discordBotToken', this.settingsForm.discordBotToken);
+          this.addNotification('success', 'Discord Bot Configurado', 'Token do Discord Bot foi configurado com sucesso.');
+          // Atualizar status do Discord
+          this.checkDiscordStatus();
+        },
+        error: (error: HttpErrorResponse) => {
+          this.addNotification('error', 'Erro ao Configurar Bot', `Não foi possível configurar o Discord Bot: ${error.message}`);
+        }
+      });
+    } else {
+      this.addNotification('warning', 'Token Ausente', 'Por favor, insira o token do Discord Bot.');
+    }
+  }
+
+  checkDiscordStatus(): void {
+    this.apiService.getDiscordStatus().subscribe({
+      next: (status) => {
+        this.discordStatus = status;
+      },
+      error: (error) => {
+        console.warn('Erro ao verificar status do Discord:', error);
+        this.discordStatus = {
+          isConnected: false,
+          botUsername: ''
+        };
+      }
+    });
   }
 
   // Electron window controls

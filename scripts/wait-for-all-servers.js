@@ -62,16 +62,14 @@ async function waitForTCP(port = 8080, maxAttempts = 30, delay = 1000) {
 }
 
 async function waitForAllServers() {
-  console.log(`🚀 Aguardando todos os servidores...`);
+  console.log(`🚀 Aguardando servidores essenciais...`);
   
   try {
-    // Aguardar frontend (Angular)
-    await waitForHTTP(4200);
+    // Aguardar frontend (Angular) - mais rápido
+    await waitForHTTP(4200, 20, 500); // Reduzido de 30 tentativas para 20, delay de 500ms
     
-    // Aguardar P2P signaling server
-    await waitForTCP(8080);
-    
-    console.log(`🎉 Todos os servidores estão prontos!`);
+    console.log(`🎉 Sistema pronto para uso!`);
+    console.log(`📝 Discord Bot será inicializado automaticamente pelo backend quando configurado`);
     return true;
   } catch (error) {
     console.error(`❌ Erro aguardando servidores:`, error.message);

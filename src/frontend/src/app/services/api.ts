@@ -310,11 +310,25 @@ export class ApiService {
       .pipe(
         catchError(this.handleError)
       );
+  }  // Novo método para configurar a Riot API Key
+  setRiotApiKey(apiKey: string): Observable<any> {
+    return this.http.post(`${this.baseUrl}/config/riot-api-key`, { apiKey })
+      .pipe(
+        catchError(this.handleError)
+      );
   }
 
-  // Novo método para configurar a Riot API Key
-  setRiotApiKey(apiKey: string): Observable<any> {
-    return this.http.post(`${this.baseUrl}/settings/riot-api-key`, { apiKey })
+  // Método para configurar o Discord Bot Token
+  setDiscordBotToken(token: string): Observable<any> {
+    return this.http.post(`${this.baseUrl}/config/discord-token`, { token })
+      .pipe(
+        catchError(this.handleError)
+      );
+  }
+
+  // Método para verificar status do Discord Bot
+  getDiscordStatus(): Observable<any> {
+    return this.http.get(`${this.baseUrl}/discord/status`)
       .pipe(
         catchError(this.handleError)
       );

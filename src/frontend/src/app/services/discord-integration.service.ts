@@ -34,13 +34,13 @@ export class DiscordIntegrationService {
       console.error('❌ Erro ao conectar Discord RPC:', error);
     }
   }
-
   private connectToBot() {
     try {
-      this.ws = new WebSocket('ws://localhost:8081');
+      // Conectar ao WebSocket principal do backend (onde o Discord Bot está integrado)
+      this.ws = new WebSocket('ws://localhost:3000');
 
       this.ws.onopen = () => {
-        console.log('🤖 Conectado ao bot Discord');
+        console.log('🤖 Conectado ao backend (Discord Bot integrado)');
       };
 
       this.ws.onmessage = (event) => {
@@ -49,13 +49,13 @@ export class DiscordIntegrationService {
       };
 
       this.ws.onclose = () => {
-        console.log('🤖 Desconectado do bot Discord');
+        console.log('🤖 Desconectado do backend (Discord Bot)');
         // Reconectar após 3 segundos
         setTimeout(() => this.connectToBot(), 3000);
       };
 
     } catch (error) {
-      console.error('❌ Erro ao conectar com bot:', error);
+      console.error('❌ Erro ao conectar com backend:', error);
     }
   }
 

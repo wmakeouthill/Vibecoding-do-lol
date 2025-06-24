@@ -1,5 +1,4 @@
-<div class="app-container">
-  <header class="app-header">
+<div class="app-container">  <header class="app-header">
     <h1>⚔️ LoL Matchmaking</h1>
     <div class="status-indicators">
       <span class="status" [class.connected]="isConnected" [class.disconnected]="!isConnected">
@@ -7,6 +6,8 @@
       </span>
       <span class="status" [class.connected]="lcuStatus.isConnected" [class.disconnected]="!lcuStatus.isConnected">
         🎮 {{ lcuStatus.isConnected ? 'LoL Cliente' : 'LoL Offline' }}
+      </span>      <span class="status" [class.connected]="discordStatus.isConnected" [class.disconnected]="!discordStatus.isConnected">
+        🤖 {{ discordStatus.isConnected ? 'Discord Bot' : 'Discord Off' }}
       </span>
     </div>
   </header>
@@ -19,7 +20,7 @@
     </button>    <button
       [class.active]="currentView === 'queue'"
       (click)="setCurrentView('queue')">
-      ⏱️ Fila ({{ queueStatus.playersInQueue }})
+      ⏱️ Fila ({{ (queueStatus && queueStatus.playersInQueue) || 0 }})
     </button>
     <button
       [class.active]="currentView === 'history'"
@@ -223,9 +224,7 @@
                   🗑️ Limpar Dados
                 </button>
               </div>
-            </div>
-
-            <!-- Riot API Configuration Card -->
+            </div>            <!-- Riot API Configuration Card -->
             <div style="background: linear-gradient(135deg, #1e2328 0%, #0f1419 100%); border: 2px solid #463714; border-radius: 12px; padding: 1.5rem; box-shadow: 0 8px 32px rgba(0,0,0,0.4);">
               <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;">
                 <span style="font-size: 1.5rem;">🔑</span>
@@ -262,6 +261,52 @@
                 style="background: linear-gradient(135deg, #c89b3c 0%, #f0e6d2 100%); color: #0f1419; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(200, 155, 60, 0.3); display: flex; align-items: center; gap: 0.5rem; font-size: 1rem;">
                 🔑 Configurar API Key
               </button>
+            </div>
+
+            <!-- Discord Bot Configuration Card -->
+            <div style="background: linear-gradient(135deg, #1e2328 0%, #0f1419 100%); border: 2px solid #463714; border-radius: 12px; padding: 1.5rem; box-shadow: 0 8px 32px rgba(0,0,0,0.4);">
+              <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;">
+                <span style="font-size: 1.5rem;">🤖</span>
+                <h3 style="color: #c9aa71; margin: 0; font-size: 1.25rem;">Discord Bot</h3>
+              </div>
+              <p style="color: #cdbe91; margin-bottom: 1.5rem; line-height: 1.5;">
+                Configure o bot do Discord para automação de filas e matchmaking
+              </p>
+
+              <div style="margin-bottom: 1rem;">
+                <label for="discordBotToken" style="display: block; color: #c9aa71; font-weight: bold; margin-bottom: 0.5rem;">
+                  Discord Bot Token:
+                </label>
+                <input
+                  type="password"
+                  id="discordBotToken"
+                  [(ngModel)]="settingsForm.discordBotToken"
+                  name="discordBotToken"
+                  placeholder="MTxxxxxxxxxxxxxxxxxxxxxxxxxx.xxxxxx.xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                  style="width: 100%; padding: 12px; border: 2px solid #463714; border-radius: 8px; background: rgba(15, 20, 25, 0.8); color: #cdbe91; font-size: 1rem; margin-bottom: 0.5rem; transition: border-color 0.3s ease;"
+                  onfocus="this.style.borderColor='#c9aa71'"
+                  onblur="this.style.borderColor='#463714'">
+                <small style="color: #a09b8c; font-size: 0.8rem;">
+                  Crie um bot Discord em:
+                  <a href="https://discord.com/developers/applications" target="_blank" style="color: #c9aa71; text-decoration: none;">
+                    discord.com/developers/applications
+                  </a>
+                </small>
+              </div>
+
+              <button
+                type="button"
+                (click)="updateDiscordBotToken()"
+                style="background: linear-gradient(135deg, #5865f2 0%, #7289da 100%); color: #ffffff; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(88, 101, 242, 0.3); display: flex; align-items: center; gap: 0.5rem; font-size: 1rem;">
+                🤖 Configurar Discord Bot
+              </button>
+
+              <div *ngIf="discordStatus?.isConnected" style="margin-top: 1rem; padding: 1rem; background: rgba(88, 101, 242, 0.1); border: 1px solid rgba(88, 101, 242, 0.3); border-radius: 8px;">
+                <p style="color: #5865f2; margin: 0 0 0.5rem 0; font-weight: bold;">✅ Discord Bot conectado</p>
+                <p style="color: #cdbe91; margin: 0;">
+                  Bot: <strong style="color: #c9aa71;">{{ discordStatus.botUsername || 'LoL Matchmaking Bot' }}</strong>
+                </p>
+              </div>
             </div>
 
           </div>
