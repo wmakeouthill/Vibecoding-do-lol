@@ -745,6 +745,41 @@ export class App implements OnInit, OnDestroy {
     }
   }
 
+  // Método específico para fila Discord com dados completos
+  async joinDiscordQueueWithFullData(data: {player: Player | null, preferences: QueuePreferences}): Promise<void> {
+    if (!data.player) {
+      this.addNotification('warning', 'Configuração Necessária', 'Configure seu nome de invocador primeiro');
+      this.setCurrentView('settings');
+      return;
+    }
+
+    if (!data.player.summonerName) {
+      this.addNotification('error', 'Erro', 'Nome do invocador não encontrado');
+      return;
+    }
+
+    try {
+      console.log('🎮 Entrando na fila Discord com dados completos:', data);
+
+      // Usar Discord como meio de organização, mas backend faz o balanceamento
+      // O Discord Bot vai apenas detectar jogadores e organizar em canais
+      // Todo o matchmaking (MMR, lanes, balanceamento) é feito pelo backend
+
+      // Enviar dados completos para o Discord Service (mesma lógica da fila centralizada)
+      await this.websocketService.joinDiscordQueue(data.player, data.preferences);
+
+      this.isInQueue = true;
+      this.currentQueueType = 'discord';
+
+      this.addNotification('success', 'Fila Discord',
+        `Entrou na fila Discord como ${data.preferences.primaryLane}/${data.preferences.secondaryLane}`);
+
+    } catch (error) {
+      console.error('Erro ao entrar na fila Discord:', error);
+      this.addNotification('error', 'Erro', 'Não foi possível entrar na fila Discord');
+    }
+  }
+
   private mapLaneToRole(lane: string): string {
     const laneMap: { [key: string]: string } = {
       'top': 'top',

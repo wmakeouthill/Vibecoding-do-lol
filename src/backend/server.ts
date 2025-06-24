@@ -122,7 +122,13 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
   switch (data.type) {
     case 'join_queue':
       await matchmakingService.addPlayerToQueue(ws, data.data);
-      break;    case 'leave_queue':
+      break;
+    case 'join_discord_queue':
+      console.log('🎮 Recebida mensagem join_discord_queue com dados completos:', data.data);
+      // Usar a mesma lógica da fila centralizada, mas marcar como Discord
+      await matchmakingService.addPlayerToDiscordQueue(ws, data.data);
+      break;
+    case 'leave_queue':
       console.log('🔍 Recebida mensagem leave_queue');
       matchmakingService.removePlayerFromQueue(ws);
       break;

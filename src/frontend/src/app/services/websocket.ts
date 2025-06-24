@@ -181,6 +181,17 @@ export class WebsocketService {
     });
   }
 
+  // Método específico para fila Discord (mesma lógica da fila centralizada)
+  async joinDiscordQueue(player: any, preferences?: any): Promise<void> {
+    this.send({
+      type: 'join_discord_queue',
+      data: {
+        player,
+        preferences
+      }
+    });
+  }
+
   // Observables para componentes se inscreverem
   onMessage(): Observable<WebSocketMessage> {
     return this.messageSubject.asObservable();

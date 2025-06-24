@@ -17,10 +17,10 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     averageWaitTime: 0,
     estimatedMatchTime: 0,
     isActive: true
-  };
-  @Input() currentPlayer: Player | null = null;
+  };  @Input() currentPlayer: Player | null = null;
   @Output() joinQueue = new EventEmitter<QueuePreferences>();
   @Output() leaveQueue = new EventEmitter<void>();
+  @Output() joinDiscordQueueWithFullData = new EventEmitter<{player: Player | null, preferences: QueuePreferences}>();
   // Adicionar outputs para funcionalidade de bots
   @Output() addBot = new EventEmitter<void>();
   @Output() simulateLastMatch = new EventEmitter<void>();
@@ -325,13 +325,18 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     }
 
     this.showLaneSelector = true;
-  }
-  onConfirmDiscordQueue(preferences: QueuePreferences) {
-    const role = this.mapLaneToRole(preferences.primaryLane);
-    const username = 'Player'; // TODO: Passar username via @Input
-    this.discordService.joinQueue(role, username);
+  }  onConfirmDiscordQueue(preferences: QueuePreferences) {
+    // Usar a mesma lógica do sistema centralizado, mas para Discord
+    this.queuePreferences = preferences;
     this.showLaneSelector = false;
-    this.isInQueue = true;
+
+    // Enviar dados completos do player + preferences para o Discord Bot
+    this.joinDiscordQueueWithFullData.emit({
+      player: this.currentPlayer,
+      preferences: preferences
+    });
+
+    this.queueTimer = 0;
     this.startTimer();
   }
 

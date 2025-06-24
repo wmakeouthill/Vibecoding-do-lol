@@ -102,46 +102,22 @@
             <span>Sistema ativo</span>
           </div>
         </div>
-      </div>      <button class="queue-btn join-btn"
+      </div>      <!-- Botão único Discord com estilos do botão original -->
+      <button class="queue-btn join-btn"
               [disabled]="!queueStatus.isActive || !currentPlayer"
-              (click)="onJoinQueue()">
-        <i class="icon-play"></i>
-        <span>Selecionar Lanes e Entrar na Fila</span>
+              (click)="onJoinDiscordQueue()">
+        <i class="fab fa-discord"></i>
+        <span>Entrar na Fila Discord</span>
       </button>
 
-      <!-- Discord Queue Mode -->
-      <div class="discord-queue-section" *ngIf="showDiscordMode && isDiscordConnected">
-        <h3>🎮 Fila Discord Automática</h3>
-        <p>Entre no canal <strong>#lol-matchmaking</strong> e a fila será automática!</p>
-
-        <div class="discord-queue-info">
-          <div class="discord-queue-stats">
-            <span class="discord-stat">
-              <i class="fab fa-discord"></i>
-              {{ discordQueue.length }}/10 Players
-            </span>
-            <span class="discord-queue-composition">
-              {{ getDiscordQueueDisplay() }}
-            </span>
-          </div>
-        </div>
-
-        <button class="queue-btn discord-join-btn"
-                [disabled]="!isDiscordConnected"
-                (click)="onJoinDiscordQueue()">
-          <i class="fab fa-discord"></i>
-          <span>Entrar na Fila Discord</span>
-        </button>
-
-        <div class="discord-benefits">
-          <h4>✨ Vantagens da Fila Discord:</h4>
-          <ul>
-            <li>🔄 <strong>Automática</strong> - Só entrar no canal</li>
-            <li>👥 <strong>Times organizados</strong> - Bot move para canais Blue/Red</li>
-            <li>⚡ <strong>Mais rápida</strong> - Sem configuração P2P</li>
-            <li>📊 <strong>Transparente</strong> - Todos veem a fila</li>
-          </ul>
-        </div>
+      <div class="discord-benefits">
+        <h4>✨ Vantagens da Fila Discord:</h4>
+        <ul>
+          <li>🔄 <strong>Automática</strong> - Só entrar no canal</li>
+          <li>👥 <strong>Times organizados</strong> - Bot move para canais Blue/Red</li>
+          <li>⚡ <strong>Mais rápida</strong> - Sem configuração P2P</li>
+          <li>📊 <strong>Transparente</strong> - Todos veem a fila</li>
+        </ul>
       </div>
 
       <!-- Funcionalidade especial para adicionar bots (apenas para popcorn seller#coup) -->
@@ -274,12 +250,11 @@
       <span class="activity-text">Nenhuma atividade recente</span>
     </div>
   </div>
-
   <!-- Lane Selector Modal -->
   <app-lane-selector
     [isVisible]="showLaneSelector"
     [currentPreferences]="queuePreferences"
-    (confirm)="onConfirmJoinQueue($event)"
+    (confirm)="onConfirmDiscordQueue($event)"
     (close)="onCloseLaneSelector()">
   </app-lane-selector>
 </div>

@@ -896,4 +896,29 @@ export class MatchmakingService {
       }
     }
   }
+
+  // Método específico para Discord que reutiliza toda a lógica de matchmaking
+  async addPlayerToDiscordQueue(websocket: WebSocket, requestData: any): Promise<void> {
+    try {
+      console.log('🎮 [Discord Queue] Adicionando jogador com dados completos:', requestData);
+      
+      // Reaproveitar toda a lógica existente do addPlayerToQueue
+      await this.addPlayerToQueue(websocket, requestData);
+      
+      // Marcar este player como sendo do Discord (para futuras funcionalidades)
+      const playerData = requestData.player;
+      if (playerData && playerData.summonerName) {
+        // Notificar o Discord Bot que um jogador entrou na fila
+        // O Discord Bot irá organizar os canais de voz conforme necessário
+        console.log(`🎮 [Discord] ${playerData.summonerName} entrou na fila Discord com balanceamento por MMR`);
+      }
+      
+    } catch (error: any) {
+      console.error('❌ Erro ao adicionar jogador à fila Discord:', error);
+      websocket.send(JSON.stringify({
+        type: 'error',
+        message: 'Falha ao entrar na fila Discord: ' + error.message
+      }));
+    }
+  }
 }
