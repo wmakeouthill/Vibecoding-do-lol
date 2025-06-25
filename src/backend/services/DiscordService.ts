@@ -29,7 +29,7 @@ export class DiscordService {
   private activeMatches: Map<string, DiscordMatch> = new Map();
   private isConnected = false;
   private botToken?: string;
-  private targetChannelName = 'lol-matchmaking';
+  private targetChannelName = '#lol-matchmaking';
   private databaseManager: DatabaseManager;
 
   // WebSocket para comunicação com frontend
@@ -140,12 +140,18 @@ export class DiscordService {
     if (newState.channel && newState.channel.name === this.targetChannelName) {
       console.log(`👤 ${newState.member.user.username} entrou no canal de matchmaking`);
       this.checkUserForQueue(newState.member.user);
+      
+      // Enviar lista atualizada de usuários no canal
+      this.broadcastUsersInChannel();
     }
     
     // Usuário saiu do canal
     if (oldState.channel && oldState.channel.name === this.targetChannelName) {
       console.log(`👋 ${oldState.member.user.username} saiu do canal de matchmaking`);
       this.removeFromQueue(oldState.member.user.id);
+      
+      // Enviar lista atualizada de usuários no canal
+      this.broadcastUsersInChannel();
     }
   }
 
@@ -197,6 +203,12 @@ export class DiscordService {
         break;
       case 'get_queue_status':
         this.sendQueueStatus(ws);
+        break;
+      case 'get_discord_status':
+        this.sendDiscordStatus(ws);
+        break;
+      case 'get_discord_users_online':
+        this.sendUsersInChannel(ws);
         break;
     }
   }
@@ -419,9 +431,27 @@ export class DiscordService {
   private sendQueueStatus(ws: WSClient): void {
     ws.send(JSON.stringify({
       type: 'queue_status',
-      queue: Array.from(this.queue.values()),
-      size: this.queue.size,
-      isConnected: this.isConnected
+      queueSize: this.queue.size,
+      queue: Array.from(this.queue.values())
+    }));
+  }
+
+  private sendDiscordStatus(ws: WSClient): void {
+    ws.send(JSON.stringify({
+      type: 'discord_status',
+      isConnected: this.isConnected,
+      botUsername: this.getBotUsername(),
+      queueSize: this.getQueueSize(),
+      activeMatches: this.getActiveMatches(),
+      hasUsersInChannel: this.hasUsersInMatchmakingChannel()
+    }));
+  }
+
+  private sendUsersInChannel(ws: WSClient): void {
+    const usersInChannel = this.getUsersInMatchmakingChannel();
+    ws.send(JSON.stringify({
+      type: 'discord_users_online',
+      users: usersInChannel
     }));
   }
 
@@ -753,11 +783,83 @@ export class DiscordService {
       const voiceChannel = matchmakingChannel as any;
       const membersInChannel = voiceChannel.members?.size || 0;
       console.log(`👥 Usuários no canal ${this.targetChannelName}: ${membersInChannel}`);
-      // Permitir que funcione mesmo com apenas um usuário (você mesmo)
-      return membersInChannel >= 0; // Sempre true se o canal existe
+      return membersInChannel > 0;
     }
     
     return false;
+  }
+
+  // Obter lista de usuários no canal de matchmaking
+  getUsersInMatchmakingChannel(): any[] {
+    console.log('🔍 [DEBUG] Iniciando busca de usuários no canal...');
+    
+    if (!this.isConnected || !this.client) {
+      console.log('❌ [DEBUG] Discord não conectado ou client não disponível');
+      return [];
+    }
+    
+    const guild = this.client.guilds.cache.first();
+    if (!guild) {
+      console.log('❌ [DEBUG] Guild não encontrada');
+      return [];
+    }
+
+    console.log(`🔍 [DEBUG] Procurando canal: ${this.targetChannelName}`);
+    console.log(`🔍 [DEBUG] Canais disponíveis:`, guild.channels.cache.map(c => `${c.name} (${c.type})`));
+
+    const matchmakingChannel = guild.channels.cache.find(
+      channel => channel.name === this.targetChannelName && channel.type === ChannelType.GuildVoice
+    );
+
+    if (!matchmakingChannel) {
+      console.log(`❌ [DEBUG] Canal ${this.targetChannelName} não encontrado`);
+      return [];
+    }
+
+    if (matchmakingChannel.type !== ChannelType.GuildVoice) {
+      console.log(`❌ [DEBUG] Canal encontrado mas não é de voz: ${matchmakingChannel.type}`);
+      return [];
+    }
+
+    console.log(`✅ [DEBUG] Canal encontrado: ${matchmakingChannel.name}`);
+
+    const voiceChannel = matchmakingChannel as any;
+    const members = voiceChannel.members;
+    
+    if (!members) {
+      console.log('❌ [DEBUG] Members não disponível no canal');
+      return [];
+    }
+
+    console.log(`🔍 [DEBUG] Members encontrados: ${members.size}`);
+
+    const usersInChannel = Array.from(members.values()).map((member: any) => {
+      const user = member.user;
+      return {
+        id: user.id,
+        username: user.username,
+        discriminator: user.discriminator,
+        avatar: user.avatar,
+        hasAppOpen: true, // Por enquanto, assumir que está online
+        discordId: user.id
+      };
+    });
+
+    console.log(`👥 Usuários no canal ${this.targetChannelName}:`, usersInChannel.map(u => u.username));
+    return usersInChannel;
+  }
+
+  // Enviar lista de usuários online para todos os clientes
+  broadcastUsersInChannel(): void {
+    console.log('📡 [DEBUG] Iniciando broadcast de usuários no canal...');
+    const usersInChannel = this.getUsersInMatchmakingChannel();
+    
+    console.log(`📡 [DEBUG] Broadcast enviando ${usersInChannel.length} usuários`);
+    
+    this.broadcastToClients({
+      type: 'discord_users_online',
+      users: usersInChannel
+    });
   }
 
   setWebSocketServer(wss: any): void {

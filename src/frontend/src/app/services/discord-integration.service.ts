@@ -56,7 +56,7 @@ export class DiscordIntegrationService {
   private handleBotMessage(data: any) {
     switch (data.type) {
       case 'discord_users_online':
-        console.log('👥 Usuários Discord online:', data.users);
+        console.log('👥 Usuários Discord online recebidos:', data.users);
         this.discordUsersOnline = data.users;
         this.updateDiscordUsersList(data.users);
         this.checkAutoLink();
@@ -116,6 +116,13 @@ export class DiscordIntegrationService {
     };
 
     this.ws.send(JSON.stringify(message));
+    
+    // Também solicitar lista de usuários no canal
+    const usersMessage = {
+      type: 'get_discord_users_online'
+    };
+    
+    this.ws.send(JSON.stringify(usersMessage));
   }
 
   // Verificar vinculação automática

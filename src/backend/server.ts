@@ -163,6 +163,18 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
         inChannel: discordService.isDiscordConnected() // Se Discord está conectado, permitir usar a fila
       };
       ws.send(JSON.stringify(discordStatus));
+      
+      // Enviar também a lista de usuários no canal
+      discordService.broadcastUsersInChannel();
+      break;
+    case 'get_discord_users':
+      console.log('👥 Solicitando lista de usuários Discord...');
+      // Enviar lista de usuários no canal diretamente para este cliente
+      const usersInChannel = discordService.getUsersInMatchmakingChannel();
+      ws.send(JSON.stringify({
+        type: 'discord_users_online',
+        users: usersInChannel
+      }));
       break;
     case 'ping':
       ws.send(JSON.stringify({ type: 'pong' }));

@@ -404,6 +404,18 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     // Atualizar dados do Discord
     this.discordService.requestDiscordStatus();
     
+    // Solicitar especificamente a lista de usuários no canal
+    if (this.discordService.isConnected()) {
+      const message = {
+        type: 'get_discord_users'
+      };
+      
+      // Enviar via WebSocket se disponível
+      if (this.discordService['ws'] && this.discordService['ws'].readyState === WebSocket.OPEN) {
+        this.discordService['ws'].send(JSON.stringify(message));
+      }
+    }
+    
     // Simular delay de atualização
     setTimeout(() => {
       this.isRefreshing = false;
