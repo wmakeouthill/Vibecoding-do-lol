@@ -731,31 +731,23 @@ export class DatabaseManager {
     // Time 1
     for (let i = 0; i < team1Players.length; i++) {
       const playerName = team1Players[i];
-      const playerMMR = team1MMRs[i];
-      const isWin = winnerTeam === 1;
-      
-      const lpChange = this.calculateLPChange(playerMMR, averageMMRTeam2, isWin);
-      const mmrChange = this.calculateMMRChange(playerMMR, averageMMRTeam2, isWin);
-      
-      lpChanges[playerName] = { lp: lpChange, mmr: mmrChange };
-      
-      // Atualizar stats do jogador
-      await this.updatePlayerCustomStats(playerName, isWin, lpChange, mmrChange);
+      // const playerMMR = team1MMRs[i];
+      // const isWin = winnerTeam === 1;
+      // const lpChange = this.calculateLPChange(playerMMR, averageMMRTeam2, isWin);
+      // const mmrChange = this.calculateMMRChange(playerMMR, averageMMRTeam2, isWin);
+      // lpChanges[playerName] = { lp: lpChange, mmr: mmrChange };
+      // await this.updatePlayerCustomStats(playerName, isWin, lpChange, mmrChange);
     }
 
     // Time 2
     for (let i = 0; i < team2Players.length; i++) {
       const playerName = team2Players[i];
-      const playerMMR = team2MMRs[i];
-      const isWin = winnerTeam === 2;
-      
-      const lpChange = this.calculateLPChange(playerMMR, averageMMRTeam1, isWin);
-      const mmrChange = this.calculateMMRChange(playerMMR, averageMMRTeam1, isWin);
-      
-      lpChanges[playerName] = { lp: lpChange, mmr: mmrChange };
-      
-      // Atualizar stats do jogador
-      await this.updatePlayerCustomStats(playerName, isWin, lpChange, mmrChange);
+      // const playerMMR = team2MMRs[i];
+      // const isWin = winnerTeam === 2;
+      // const lpChange = this.calculateLPChange(playerMMR, averageMMRTeam1, isWin);
+      // const mmrChange = this.calculateMMRChange(playerMMR, averageMMRTeam1, isWin);
+      // lpChanges[playerName] = { lp: lpChange, mmr: mmrChange };
+      // await this.updatePlayerCustomStats(playerName, isWin, lpChange, mmrChange);
     }
 
     const updateFields = [
@@ -1080,7 +1072,9 @@ export class DatabaseManager {
       lcuDetectedMatches: stats.lcu_detected_matches || 0,
       averageDuration: Math.round(stats.average_duration || 0)
     };
-  }  async cleanupTestMatches(): Promise<number> {
+  }
+
+  async cleanupTestMatches(): Promise<number> {
     if (!this.db) throw new Error('Banco de dados não inicializado');
     
     console.log('🧹 [DatabaseManager.cleanupTestMatches] Iniciando limpeza COMPLETA da tabela custom_matches...');
@@ -1104,11 +1098,13 @@ export class DatabaseManager {
 
   /**
    * Busca estatísticas agregadas de todos os participantes das partidas customizadas
-   * diretamente do campo participants_data
-   */  async getParticipantsLeaderboard(limit: number = 100): Promise<any[]> {
+   * com dados detalhados calculados a partir do campo participants_data
+   */
+  async getParticipantsLeaderboard(limit: number = 100): Promise<any[]> {
     if (!this.db) throw new Error('Banco de dados não inicializado');
 
-    const query = `
+    // Primeiro, buscar jogadores básicos
+    const basicQuery = `
       SELECT 
         p.summoner_name,
         p.custom_mmr,
@@ -1128,81 +1124,142 @@ export class DatabaseManager {
       LIMIT ?
     `;
 
-    return await this.db.all(query, [limit]);
+    const basicPlayers = await this.db.all(basicQuery, [limit]);
+    
+    // Agora calcular estatísticas detalhadas para cada jogador
+    const detailedPlayers = await Promise.all(
+      basicPlayers.map(async (player) => {
+        const stats = await this.calculatePlayerDetailedStats(player.summoner_name);
+        return {
+          ...player,
+          ...stats
+        };
+      })
+    );
+
+    return detailedPlayers;
   }
 
   /**
-   * Calcula mudança de LP baseada no MMR do jogador vs MMR médio do time oponente
+   * Calcula estatísticas detalhadas de um jogador baseado nos dados das partidas
    */
-  private calculateLPChange(playerMMR: number, opposingTeamMMR: number, isWin: boolean): number {
-    const mmrDifference = opposingTeamMMR - playerMMR;
-    const baseLPChange = 20; // LP base para vitória/derrota
-    
-    // Fator de dificuldade baseado na diferença de MMR
-    const difficultyFactor = mmrDifference / 100; // cada 100 MMR de diferença = 10% de modificação
-    
-    if (isWin) {
-      // Vitória: ganha mais LP se venceu time mais forte
-      const lpGain = Math.round(baseLPChange + (difficultyFactor * 5));
-      return Math.min(Math.max(lpGain, 10), 35); // Entre 10 e 35 LP
-    } else {
-      // Derrota: perde menos LP se perdeu para time mais forte
-      const lpLoss = Math.round(-baseLPChange + (difficultyFactor * 3));
-      return Math.min(Math.max(lpLoss, -35), -5); // Entre -35 e -5 LP
-    }
-  }
+  private async calculatePlayerDetailedStats(summonerName: string): Promise<any> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
 
-  /**
-   * Calcula mudança de MMR baseada na diferença de força dos times
-   */
-  private calculateMMRChange(playerMMR: number, opposingTeamMMR: number, isWin: boolean): number {
-    const mmrDifference = opposingTeamMMR - playerMMR;
-    const baseMMRChange = 15; // MMR base para vitória/derrota
-    
-    // Fator de dificuldade baseado na diferença de MMR
-    const difficultyFactor = mmrDifference / 100;
-    
-    if (isWin) {
-      // Vitória: ganha mais MMR se venceu time mais forte
-      const mmrGain = Math.round(baseMMRChange + (difficultyFactor * 8));
-      return Math.min(Math.max(mmrGain, 5), 30); // Entre 5 e 30 MMR
-    } else {
-      // Derrota: perde menos MMR se perdeu para time mais forte
-      const mmrLoss = Math.round(-baseMMRChange + (difficultyFactor * 5));
-      return Math.min(Math.max(mmrLoss, -30), -3); // Entre -30 e -3 MMR
-    }
-  }
+    // Buscar todas as partidas onde o jogador participou
+    const matchesQuery = `
+      SELECT participants_data
+      FROM custom_matches 
+      WHERE participants_data IS NOT NULL 
+      AND (team1_players LIKE ? OR team2_players LIKE ?)
+      AND status = 'completed'
+    `;
 
-  /**
-   * Atualiza estatísticas customizadas do jogador (MMR, LP, vitórias, etc.)
-   */
-  private async updatePlayerCustomStats(playerName: string, isWin: boolean, lpChange: number, mmrChange: number): Promise<void> {
-    if (!this.db) {
-      throw new Error('Database não está conectado');
+    const matches = await this.db.all(matchesQuery, [`%${summonerName}%`, `%${summonerName}%`]);
+    
+    if (matches.length === 0) {
+      return {
+        avg_kills: 0,
+        avg_deaths: 0,
+        avg_assists: 0,
+        kda_ratio: 0,
+        avg_gold: 0,
+        avg_damage: 0,
+        avg_cs: 0,
+        avg_vision: 0,
+        max_kills: 0,
+        max_damage: 0,
+        favorite_champion: null
+      };
     }
 
-    // Verificar se jogador existe
-    let player = await this.db.get('SELECT * FROM players WHERE summoner_name = ?', [playerName]);
-      if (!player) {
-      // Criar jogador se não existir - incluindo região padrão
-      await this.db.run(`
-        INSERT INTO players (summoner_name, region, current_mmr, peak_mmr, games_played, wins, losses, win_streak, custom_mmr, custom_lp, custom_games_played, custom_wins, custom_losses)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [playerName, 'BR1', 1000, 1000, 0, 0, 0, 0, 1000 + mmrChange, 0 + lpChange, 1, isWin ? 1 : 0, isWin ? 0 : 1]);
-    } else {
-      // Atualizar jogador existente
-      const newMMR = (player.custom_mmr || 1000) + mmrChange;
-      const newLP = (player.custom_lp || 0) + lpChange;
-      const newGamesPlayed = (player.custom_games_played || 0) + 1;
-      const newWins = (player.custom_wins || 0) + (isWin ? 1 : 0);
-      const newLosses = (player.custom_losses || 0) + (isWin ? 0 : 1);
+    let totalKills = 0;
+    let totalDeaths = 0;
+    let totalAssists = 0;
+    let totalGold = 0;
+    let totalDamage = 0;
+    let totalCS = 0;
+    let totalVision = 0;
+    let maxKills = 0;
+    let maxDamage = 0;
+    const championGames: { [key: string]: number } = {};
 
-      await this.db.run(`
-        UPDATE players 
-        SET custom_mmr = ?, custom_lp = ?, custom_games_played = ?, custom_wins = ?, custom_losses = ?
-        WHERE summoner_name = ?
-      `, [newMMR, newLP, newGamesPlayed, newWins, newLosses, playerName]);
+    matches.forEach((match: any) => {
+      try {
+        const participantsData = JSON.parse(match.participants_data);
+        const playerData = participantsData.find((p: any) => 
+          p.summonerName === summonerName || 
+          p.summonerName?.includes(summonerName) ||
+          (p.riotIdGameName && p.riotIdGameName === summonerName)
+        );
+
+        if (playerData) {
+          const kills = playerData.kills || 0;
+          const deaths = playerData.deaths || 0;
+          const assists = playerData.assists || 0;
+          const gold = playerData.goldEarned || 0;
+          const damage = playerData.totalDamageDealtToChampions || 0;
+          const cs = (playerData.totalMinionsKilled || 0) + (playerData.neutralMinionsKilled || 0);
+          const vision = playerData.visionScore || 0;
+          const championName = playerData.championName || 'Unknown';
+
+          totalKills += kills;
+          totalDeaths += deaths;
+          totalAssists += assists;
+          totalGold += gold;
+          totalDamage += damage;
+          totalCS += cs;
+          totalVision += vision;
+
+          if (kills > maxKills) maxKills = kills;
+          if (damage > maxDamage) maxDamage = damage;
+
+          // Contar jogos por campeão
+          championGames[championName] = (championGames[championName] || 0) + 1;
+        }
+      } catch (error) {
+        console.warn(`Erro ao processar dados da partida para ${summonerName}:`, error);
+      }
+    });
+
+    const gamesCount = matches.length;
+    const avgKills = gamesCount > 0 ? totalKills / gamesCount : 0;
+    const avgDeaths = gamesCount > 0 ? totalDeaths / gamesCount : 0;
+    const avgAssists = gamesCount > 0 ? totalAssists / gamesCount : 0;
+    const avgGold = gamesCount > 0 ? totalGold / gamesCount : 0;
+    const avgDamage = gamesCount > 0 ? totalDamage / gamesCount : 0;
+    const avgCS = gamesCount > 0 ? totalCS / gamesCount : 0;
+    const avgVision = gamesCount > 0 ? totalVision / gamesCount : 0;
+
+    // Calcular KDA ratio
+    const kdaRatio = avgDeaths > 0 ? (avgKills + avgAssists) / avgDeaths : (avgKills + avgAssists);
+
+    // Encontrar campeão favorito
+    let favoriteChampion = null;
+    if (Object.keys(championGames).length > 0) {
+      const favoriteChampionName = Object.keys(championGames).reduce((a, b) => 
+        championGames[a] > championGames[b] ? a : b
+      );
+      favoriteChampion = {
+        name: favoriteChampionName,
+        id: 0, // Será preenchido pelo frontend
+        games: championGames[favoriteChampionName]
+      };
     }
+
+    return {
+      avg_kills: Math.round(avgKills * 10) / 10,
+      avg_deaths: Math.round(avgDeaths * 10) / 10,
+      avg_assists: Math.round(avgAssists * 10) / 10,
+      kda_ratio: Math.round(kdaRatio * 10) / 10,
+      avg_gold: Math.round(avgGold),
+      avg_damage: Math.round(avgDamage),
+      avg_cs: Math.round(avgCS),
+      avg_vision: Math.round(avgVision),
+      max_kills: maxKills,
+      max_damage: maxDamage,
+      favorite_champion: favoriteChampion
+    };
   }
 
   // Métodos para vinculações Discord-LoL

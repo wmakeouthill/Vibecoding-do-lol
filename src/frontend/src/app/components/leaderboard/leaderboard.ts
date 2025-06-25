@@ -73,19 +73,28 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
     }
     this.error = null;
 
-    try {      const response = await this.http.get<any>('http://localhost:3000/api/stats/participants-leaderboard?limit=50').toPromise();      if (response.success) {
-        // Processar dados e adicionar rank
+    try {
+      const response = await this.http.get<any>('http://localhost:3000/api/stats/participants-leaderboard?limit=50').toPromise();
+      
+      if (response.success) {
+        // Processar dados e adicionar rank, adaptando campos
         this.leaderboardData = response.data.map((player: any, index: number) => ({
           ...player,
           rank: index + 1,
-          // Remover o fallback estático - vamos buscar dinamicamente
+          // Corrigir nomes dos campos para compatibilidade
+          wins: player.wins ?? player.custom_wins ?? 0,
+          games_played: player.games_played ?? player.custom_games_played ?? 0,
+          // Garantir que riot_id_game_name/tagline existam (pode ser undefined)
+          riot_id_game_name: player.riot_id_game_name ?? undefined,
+          riot_id_tagline: player.riot_id_tagline ?? undefined,
+          // Profile icon será buscado pelo summoner_name se não houver Riot ID
           profileIconId: undefined
-        }));        // Buscar profileIconId para cada jogador que tem Riot ID
+        }));
+        
         this.isLoadingProfileIcons = true;
         await this.loadProfileIcons();
         this.isLoadingProfileIcons = false;
 
-        // Buscar MMR total real para todos os jogadores
         this.isLoadingMMR = true;
         await this.loadRealTotalMMR();
         this.isLoadingMMR = false;
@@ -100,54 +109,57 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
     } finally {
       this.isLoading = false;
     }
-  }  private async loadProfileIcons(): Promise<void> {    console.log('🔍 Carregando profile icons sequencialmente...');
+  }
 
+  private async loadProfileIcons(): Promise<void> {
     // Filtrar jogadores que precisam buscar ícone
     const playersToFetch = this.leaderboardData.filter(player => {
-      if (!player.riot_id_game_name || !player.riot_id_tagline) return false;
-
+      // Se não tem Riot ID, tenta buscar pelo summoner_name
+      if (!player.riot_id_game_name || !player.riot_id_tagline) {
+        if (this.profileIconCache.has(player.summoner_name)) {
+          player.profileIconId = this.profileIconCache.get(player.summoner_name);
+          return false;
+        }
+        return true;
+      }
       const riotId = `${player.riot_id_game_name}#${player.riot_id_tagline}`;
-
-      // Verificar cache primeiro
       if (this.profileIconCache.has(riotId)) {
         player.profileIconId = this.profileIconCache.get(riotId);
         return false;
       }
-
       return true;
     });
 
     this.profileIconsProgress = { current: 0, total: playersToFetch.length };
-    console.log(`📊 Precisando buscar ícones para ${playersToFetch.length} jogadores (5 por vez, 250ms delay)`);    // Processar 5 por vez com delay entre lotes para controlar a carga no LCU
-    const batchSize = 5; // 5 requisições por lote
-    const delayBetweenBatches = 250; // 250ms entre lotes
+    const batchSize = 5;
+    const delayBetweenBatches = 250;
 
     for (let i = 0; i < playersToFetch.length; i += batchSize) {
       const batch = playersToFetch.slice(i, i + batchSize);
-
       const batchPromises = batch.map(async (player) => {
-        const riotId = `${player.riot_id_game_name}#${player.riot_id_tagline}`;
-
+        let riotId;
+        if (player.riot_id_game_name && player.riot_id_tagline) {
+          riotId = `${player.riot_id_game_name}#${player.riot_id_tagline}`;
+        } else {
+          riotId = player.summoner_name;
+        }
         try {
           const profileIconId = await this.fetchProfileIconWithRetry(riotId);
           if (profileIconId) {
             player.profileIconId = profileIconId;
             this.profileIconCache.set(riotId, profileIconId);
-            console.log(`✅ Profile icon carregado para ${riotId}: ${profileIconId}`);
           }
         } catch (error) {
-          console.warn(`⚠️ Falha final ao buscar ícone para ${riotId}:`, error);
-          // Manter undefined para usar fallback
+          // fallback
         } finally {
           this.profileIconsProgress.current++;
         }
-      });      await Promise.all(batchPromises);      // Delay entre lotes (exceto no último lote)
+      });
+      await Promise.all(batchPromises);
       if (i + batchSize < playersToFetch.length) {
         await this.delay(delayBetweenBatches);
       }
     }
-
-    console.log('✅ Profile icons carregados com sucesso');
   }
 
   private async fetchProfileIconWithRetry(riotId: string, maxRetries = 2): Promise<number | null> {
@@ -185,7 +197,9 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
 
   private delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
-  }  private async loadRealTotalMMR(): Promise<void> {
+  }
+
+  private async loadRealTotalMMR(): Promise<void> {
     console.log('🔍 Carregando MMR total real para todos os jogadores...');
 
     // Filtrar jogadores que precisam calcular MMR
@@ -199,8 +213,10 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
       }
 
       return true;
-    });    this.mmrProgress = { current: 0, total: playersToFetch.length };
-    console.log(`📊 Precisando calcular MMR para ${playersToFetch.length} jogadores (consultas locais, sem delay)`);// Processar em lotes maiores - são consultas no banco local, mais rápidas
+    });
+    this.mmrProgress = { current: 0, total: playersToFetch.length };
+    console.log(`📊 Precisando calcular MMR para ${playersToFetch.length} jogadores (consultas locais, sem delay)`);
+    // Processar em lotes maiores - são consultas no banco local, mais rápidas
     const batchSize = 10; // Máximo 10 requisições simultâneas
     const delayBetweenBatches = 0; // Sem delay - consultas locais
 
@@ -225,7 +241,8 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
         } finally {
           this.mmrProgress.current++;
         }
-      });      await Promise.all(batchPromises);
+      });
+      await Promise.all(batchPromises);
 
       // Sem delay para consultas no banco local - são rápidas
       // if (i + batchSize < playersToFetch.length) {
@@ -235,6 +252,7 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
 
     console.log('✅ MMR total calculado para todos os jogadores');
   }
+
   private async fetchPlayerCustomMatches(playerIdentifier: string): Promise<any[]> {
     try {
       // Usar o mesmo endpoint que o match-history usa
@@ -306,7 +324,9 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
     // Usar Community Dragon como primeira opção (mesma estratégia do dashboard)
     const iconId = profileIconId || 29; // Fallback para ícone padrão
     return `https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/${iconId}.jpg`;
-  }getChampionIconUrl(championName: string): string {
+  }
+
+  getChampionIconUrl(championName: string): string {
     if (!championName) return 'assets/images/champion-placeholder.svg';
 
     // Se o nome parece ser um ID numérico (ex: "Champion79"), usar o ChampionService
@@ -385,25 +405,31 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
   }
 
   formatKDANew(kills: number, deaths: number, assists: number): string {
-    return `${kills.toFixed(1)}/${deaths.toFixed(1)}/${assists.toFixed(1)}`;
+    const safeKills = kills ?? 0;
+    const safeDeaths = deaths ?? 0;
+    const safeAssists = assists ?? 0;
+    return `${safeKills.toFixed(1)}/${safeDeaths.toFixed(1)}/${safeAssists.toFixed(1)}`;
   }
 
   getKDAColor(ratio: number): string {
-    if (ratio >= 3.0) return '#10b981'; // Verde
-    if (ratio >= 2.0) return '#f59e0b'; // Amarelo
-    if (ratio >= 1.0) return '#6b7280'; // Cinza
+    const safeRatio = ratio ?? 0;
+    if (safeRatio >= 3.0) return '#10b981'; // Verde
+    if (safeRatio >= 2.0) return '#f59e0b'; // Amarelo
+    if (safeRatio >= 1.0) return '#6b7280'; // Cinza
     return '#ef4444'; // Vermelho
   }
 
   getWinRateColor(winRate: number): string {
-    if (winRate >= 65) return '#10b981'; // Verde
-    if (winRate >= 55) return '#f59e0b'; // Amarelo
-    if (winRate >= 45) return '#6b7280'; // Cinza
+    const safeWinRate = winRate ?? 0;
+    if (safeWinRate >= 65) return '#10b981'; // Verde
+    if (safeWinRate >= 55) return '#f59e0b'; // Amarelo
+    if (safeWinRate >= 45) return '#6b7280'; // Cinza
     return '#ef4444'; // Vermelho
   }
 
   getRankColor(rank: number): string {
-    switch (rank) {
+    const safeRank = rank ?? 0;
+    switch (safeRank) {
       case 1: return '#ffd700'; // Ouro
       case 2: return '#c0c0c0'; // Prata
       case 3: return '#cd7f32'; // Bronze
@@ -412,26 +438,29 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
   }
 
   getRankIcon(rank: number): string {
-    switch (rank) {
+    const safeRank = rank ?? 0;
+    switch (safeRank) {
       case 1: return '🥇';
       case 2: return '🥈';
       case 3: return '🥉';
-      default: return `#${rank}`;
+      default: return `#${safeRank}`;
     }
   }
 
   formatGold(gold: number): string {
-    if (gold >= 1000) {
-      return `${(gold / 1000).toFixed(1)}k`;
+    const safeGold = gold ?? 0;
+    if (safeGold >= 1000) {
+      return `${(safeGold / 1000).toFixed(1)}k`;
     }
-    return gold.toString();
+    return safeGold.toString();
   }
 
   formatDamage(damage: number): string {
-    if (damage >= 1000) {
-      return `${(damage / 1000).toFixed(1)}k`;
+    const safeDamage = damage ?? 0;
+    if (safeDamage >= 1000) {
+      return `${(safeDamage / 1000).toFixed(1)}k`;
     }
-    return damage.toString();
+    return safeDamage.toString();
   }
 
   formatTime(dateString: string): string {
@@ -450,6 +479,7 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
   refresh() {
     this.loadLeaderboard();
   }
+
   trackByPlayerId(index: number, player: LeaderboardPlayer): string {
     return player.summoner_name + '_' + index;
   }
@@ -468,6 +498,7 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
       target.src = fallbackUrl;
     }
   }
+
   onProfileIconError(event: Event, profileIconId?: number): void {
     const target = event.target as HTMLImageElement;
     if (!target) return;
