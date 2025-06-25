@@ -1565,6 +1565,20 @@ app.post('/api/players/update-nickname', (req: Request, res: Response) => {
   })();
 });
 
+// Endpoint para rebuild/refresh completo da tabela players
+app.post('/api/stats/refresh-rebuild-players', async (req: Request, res: Response) => {
+  try {
+    // Limpar todos os jogadores
+    await dbManager.db?.run('DELETE FROM players');
+    // Recalcular todos os agregados a partir das partidas customizadas
+    await dbManager.refreshPlayersFromCustomMatches();
+    res.json({ success: true, message: 'Tabela players limpa e reconstruída com sucesso.' });
+  } catch (error: any) {
+    console.error('Erro ao rebuildar tabela players:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // === CONFIGURAÇÕES APIs ===
 
 // Configurar Discord Bot Token

@@ -53,14 +53,13 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
   profileIconsProgress = { current: 0, total: 0 };
   mmrProgress = { current: 0, total: 0 };
 
+  retryCount = 0;
+  maxRetries = 3;
+
   constructor(private http: HttpClient, private championService: ChampionService) {}
 
   ngOnInit() {
     this.loadLeaderboard();
-    // Atualizar a cada 2 minutos
-    this.refreshSubscription = interval(1200000).subscribe(() => {
-      this.loadLeaderboard(false);
-    });
   }
 
   ngOnDestroy() {
@@ -68,38 +67,30 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
       this.refreshSubscription.unsubscribe();
     }
   }
+
   async loadLeaderboard(showLoading = true) {
     if (showLoading) {
       this.isLoading = true;
     }
     this.error = null;
-
     try {
       const response = await this.http.get<any>('http://localhost:3000/api/stats/participants-leaderboard?limit=200').toPromise();
-      
       if (response.success) {
-        // Processar dados e adicionar rank, adaptando campos
         this.leaderboardData = response.data.map((player: any, index: number) => ({
           ...player,
           rank: index + 1,
-          // Corrigir nomes dos campos para compatibilidade
           wins: player.wins ?? player.custom_wins ?? 0,
           games_played: player.games_played ?? player.custom_games_played ?? 0,
-          // Garantir que riot_id_game_name/tagline existam (pode ser undefined)
           riot_id_game_name: player.riot_id_game_name ?? undefined,
           riot_id_tagline: player.riot_id_tagline ?? undefined,
-          // Profile icon será buscado pelo summoner_name se não houver Riot ID
           profileIconId: undefined
         }));
-        
         this.isLoadingProfileIcons = true;
         await this.loadProfileIcons();
         this.isLoadingProfileIcons = false;
-
         this.isLoadingMMR = true;
         await this.loadRealTotalMMR();
         this.isLoadingMMR = false;
-
         this.lastUpdated = new Date();
       } else {
         this.error = 'Erro ao carregar leaderboard';
@@ -553,5 +544,17 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
 
   isAnyLoading(): boolean {
     return this.isLoading || this.isLoadingProfileIcons || this.isLoadingMMR;
+  }
+
+  async refreshAndRebuildPlayers() {
+    this.isLoading = true;
+    try {
+      await this.http.post('http://localhost:3000/api/stats/refresh-rebuild-players', {}).toPromise();
+      await this.loadLeaderboard();
+    } catch (error) {
+      this.error = 'Erro ao reconstruir jogadores';
+    } finally {
+      this.isLoading = false;
+    }
   }
 }

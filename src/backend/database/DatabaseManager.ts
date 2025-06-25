@@ -1349,6 +1349,27 @@ export class DatabaseManager {
    */
   async refreshPlayersFromCustomMatches(): Promise<void> {
     if (!this.db) throw new Error('Banco de dados não inicializado');
+    // Buscar todos os nomes únicos de jogadores das partidas customizadas
+    const matches = await this.db.all(`SELECT team1_players, team2_players FROM custom_matches WHERE status = 'completed'`);
+    const allNamesSet = new Set<string>();
+    for (const match of matches) {
+      try {
+        const team1 = JSON.parse(match.team1_players || '[]');
+        const team2 = JSON.parse(match.team2_players || '[]');
+        team1.forEach((name: string) => { if (name && typeof name === 'string') allNamesSet.add(name); });
+        team2.forEach((name: string) => { if (name && typeof name === 'string') allNamesSet.add(name); });
+      } catch {}
+    }
+    // Inserir jogadores que ainda não existem na tabela players
+    for (const name of allNamesSet) {
+      const exists = await this.db.get('SELECT 1 FROM players WHERE summoner_name = ?', [name]);
+      if (!exists) {
+        await this.db.run(
+          'INSERT INTO players (summoner_name, region, current_mmr, peak_mmr, games_played, wins, losses, win_streak, custom_mmr, custom_peak_mmr, custom_games_played, custom_wins, custom_losses, custom_win_streak, custom_lp) VALUES (?, ?, 1000, 1000, 0, 0, 0, 0, 1000, 1000, 0, 0, 0, 0, 0)',
+          [name, 'br1']
+        );
+      }
+    }
     // Buscar todos os jogadores registrados
     const players = await this.db.all(`SELECT DISTINCT summoner_name FROM players`);
     for (const player of players) {
