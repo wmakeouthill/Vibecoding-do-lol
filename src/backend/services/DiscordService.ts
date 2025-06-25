@@ -1,11 +1,16 @@
-import { Client, GatewayIntentBits, ChannelType, PermissionFlagsBits } from 'discord.js';
+import { Client, GatewayIntentBits, ChannelType, PermissionFlagsBits, SlashCommandBuilder } from 'discord.js';
 import { WebSocket as WSClient } from 'ws';
+import { DatabaseManager } from '../database/DatabaseManager';
 
 export interface DiscordPlayer {
   userId: string;
   username: string;
   role: string;
   timestamp: number;
+  linkedNickname?: {
+    gameName: string;
+    tagLine: string;
+  };
 }
 
 export interface DiscordMatch {
@@ -25,11 +30,13 @@ export class DiscordService {
   private isConnected = false;
   private botToken?: string;
   private targetChannelName = 'lol-matchmaking';
+  private databaseManager: DatabaseManager;
 
   // WebSocket para comunicação com frontend
   private connectedClients: Set<WSClient> = new Set();
 
-  constructor() {
+  constructor(databaseManager: DatabaseManager) {
+    this.databaseManager = databaseManager;
     this.client = new Client({
       intents: [
         GatewayIntentBits.Guilds,
@@ -56,8 +63,34 @@ export class DiscordService {
     // Comandos slash
     this.client.on('interactionCreate', async (interaction) => {
       if (!interaction.isChatInputCommand()) return;
-      // Temporariamente desabilitado até resolver permissões
-      console.log('📝 Comando slash recebido:', interaction.commandName);
+      
+      try {
+        switch (interaction.commandName) {
+          case 'vincular':
+            await this.handleVincularCommand(interaction);
+            break;
+          case 'desvincular':
+            await this.handleDesvincularCommand(interaction);
+            break;
+          case 'queue':
+            await this.handleQueueCommand(interaction);
+            break;
+          case 'clear_queue':
+            await this.handleClearQueueCommand(interaction);
+            break;
+          case 'lobby':
+            await this.handleLobbyCommand(interaction);
+            break;
+          default:
+            await interaction.reply({ content: '❌ Comando não reconhecido', ephemeral: true });
+        }
+      } catch (error) {
+        console.error('❌ Erro ao processar comando:', error);
+        await interaction.reply({ 
+          content: '❌ Erro interno ao processar comando', 
+          ephemeral: true 
+        });
+      }
     });
 
     this.client.on('error', (error) => {
@@ -154,10 +187,10 @@ export class DiscordService {
     });
   }
 
-  private handleClientMessage(ws: WSClient, message: any): void {
+  private async handleClientMessage(ws: WSClient, message: any): Promise<void> {
     switch (message.type) {
       case 'join_queue':
-        this.addToQueue(message.userId, message.username, message.role);
+        await this.addToQueue(message.userId, message.username, message.role, message.lcuData);
         break;
       case 'leave_queue':
         this.removeFromQueue(message.userId);
@@ -168,15 +201,36 @@ export class DiscordService {
     }
   }
 
-  private addToQueue(userId: string, username: string, role: string): void {
+  private async addToQueue(userId: string, username: string, role: string, lcuData?: {gameName: string, tagLine: string}): Promise<void> {
+    // Usar dados do LCU se disponíveis, senão usar username do Discord
+    let displayName = username;
+    let linkedNickname = undefined;
+
+    if (lcuData && lcuData.gameName && lcuData.tagLine) {
+      displayName = `${lcuData.gameName}#${lcuData.tagLine}`;
+      linkedNickname = {
+        gameName: lcuData.gameName,
+        tagLine: lcuData.tagLine
+      };
+      
+      // Salvar vinculação automática no banco (opcional, para histórico)
+      try {
+        await this.databaseManager.createDiscordLink(userId, username, lcuData.gameName, lcuData.tagLine);
+        console.log(`🔗 Vinculação automática criada: ${username} -> ${lcuData.gameName}#${lcuData.tagLine}`);
+      } catch (error) {
+        console.error('❌ Erro ao salvar vinculação automática:', error);
+      }
+    }
+
     this.queue.set(userId, {
       userId,
       username,
       role,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      linkedNickname
     });
 
-    console.log(`🎯 ${username} entrou na fila como ${role} (${this.queue.size}/10)`);
+    console.log(`🎯 ${displayName} entrou na fila como ${role} (${this.queue.size}/10)`);
     
     this.broadcastQueueUpdate();
     
@@ -374,12 +428,38 @@ export class DiscordService {
   private async registerSlashCommands(): Promise<void> {
     const commands = [
       {
+        name: 'vincular',
+        description: 'Vincular seu Discord ao seu nickname do LoL',
+        options: [
+          {
+            name: 'nickname',
+            description: 'Seu nickname no LoL (sem a tag)',
+            type: 3, // STRING
+            required: true
+          },
+          {
+            name: 'tag',
+            description: 'Sua tag no LoL (ex: #BR1)',
+            type: 3, // STRING
+            required: true
+          }
+        ]
+      },
+      {
+        name: 'desvincular',
+        description: 'Remover vinculação do seu Discord com LoL'
+      },
+      {
         name: 'queue',
         description: 'Ver status da fila atual'
       },
       {
         name: 'clear_queue',
         description: 'Limpar fila (apenas moderadores)'
+      },
+      {
+        name: 'lobby',
+        description: 'Ver usuários no lobby #lol-matchmaking'
       }
     ];
 
@@ -392,7 +472,253 @@ export class DiscordService {
     } catch (error) {
       console.error('❌ Erro ao registrar comandos:', error);
     }
-  }  // Métodos públicos para integração
+  }
+
+  private async handleVincularCommand(interaction: any): Promise<void> {
+    const gameName = interaction.options.getString('nickname');
+    const tagLine = interaction.options.getString('tag');
+
+    if (!gameName || !tagLine) {
+      await interaction.reply({ 
+        content: '❌ Uso: `/vincular <nickname> <#tag>`\nExemplo: `/vincular PlayerName #BR1`', 
+        ephemeral: true 
+      });
+      return;
+    }
+
+    try {
+      // Validar formato do tag (deve começar com #)
+      if (!tagLine.startsWith('#')) {
+        await interaction.reply({ 
+          content: '❌ Tag deve começar com #\nExemplo: `/vincular PlayerName #BR1`', 
+          ephemeral: true 
+        });
+        return;
+      }
+
+      const cleanTagLine = tagLine.substring(1); // Remove o #
+      const discordId = interaction.user.id;
+      const discordUsername = interaction.user.username;
+
+      // Verificar se já existe vinculação para este Discord ID
+      const existingLink = await this.databaseManager.getDiscordLink(discordId);
+      if (existingLink) {
+        await interaction.reply({ 
+          content: `❌ Você já tem uma vinculação: **${existingLink.game_name}#${existingLink.tag_line}**\nUse \`/desvincular\` primeiro para criar uma nova.`, 
+          ephemeral: true 
+        });
+        return;
+      }
+
+      // Verificar se este nickname já está vinculado a outro Discord
+      const existingNicknameLink = await this.databaseManager.getDiscordLinkByGameName(gameName, cleanTagLine);
+      if (existingNicknameLink) {
+        await interaction.reply({ 
+          content: `❌ O nickname **${gameName}#${cleanTagLine}** já está vinculado a outro usuário Discord.`, 
+          ephemeral: true 
+        });
+        return;
+      }
+
+      // Criar vinculação
+      await this.databaseManager.createDiscordLink(discordId, discordUsername, gameName, cleanTagLine);
+
+      await interaction.reply({ 
+        content: `✅ **Vinculação criada com sucesso!**\n\n🎮 **Discord:** ${discordUsername}\n🎯 **LoL:** ${gameName}#${cleanTagLine}\n\nAgora você será identificado automaticamente na fila!`, 
+        ephemeral: false 
+      });
+
+      console.log(`🔗 Vinculação criada via Discord: ${discordUsername} -> ${gameName}#${cleanTagLine}`);
+
+    } catch (error) {
+      console.error('❌ Erro ao criar vinculação:', error);
+      await interaction.reply({ 
+        content: '❌ Erro interno ao criar vinculação. Tente novamente.', 
+        ephemeral: true 
+      });
+    }
+  }
+
+  private async handleDesvincularCommand(interaction: any): Promise<void> {
+    const discordId = interaction.user.id;
+    const discordUsername = interaction.user.username;
+
+    try {
+      // Verificar se existe vinculação
+      const existingLink = await this.databaseManager.getDiscordLink(discordId);
+      if (!existingLink) {
+        await interaction.reply({ 
+          content: '❌ Você não tem nenhuma vinculação para remover.', 
+          ephemeral: true 
+        });
+        return;
+      }
+
+      // Remover vinculação
+      await this.databaseManager.deleteDiscordLink(discordId);
+
+      await interaction.reply({ 
+        content: `✅ **Vinculação removida com sucesso!**\n\n🎮 **Discord:** ${discordUsername}\n🎯 **LoL:** ${existingLink.game_name}#${existingLink.tag_line}\n\nUse \`/vincular\` para criar uma nova vinculação.`, 
+        ephemeral: false 
+      });
+
+      console.log(`🔗 Vinculação removida via Discord: ${discordUsername} -> ${existingLink.game_name}#${existingLink.tag_line}`);
+
+    } catch (error) {
+      console.error('❌ Erro ao remover vinculação:', error);
+      await interaction.reply({ 
+        content: '❌ Erro interno ao remover vinculação. Tente novamente.', 
+        ephemeral: true 
+      });
+    }
+  }
+
+  private async handleQueueCommand(interaction: any): Promise<void> {
+    const queueSize = this.queue.size;
+    const queueList = Array.from(this.queue.values()).map(player => {
+      const nickname = player.linkedNickname 
+        ? `${player.linkedNickname.gameName}#${player.linkedNickname.tagLine}`
+        : player.username;
+      return `• ${nickname} (${player.role})`;
+    }).join('\n');
+
+    const embed = {
+      color: 0x00ff00,
+      title: '🎯 Fila de Matchmaking',
+      description: queueList || 'Nenhum jogador na fila',
+      fields: [
+        {
+          name: '👥 Jogadores na Fila',
+          value: `${queueSize}/10`,
+          inline: true
+        },
+        {
+          name: '⏱️ Tempo Estimado',
+          value: queueSize >= 8 ? '~2-5 minutos' : '~5-15 minutos',
+          inline: true
+        }
+      ],
+      footer: {
+        text: 'Entre no canal #lol-matchmaking e abra o app para participar!'
+      }
+    };
+
+    await interaction.reply({ embeds: [embed], ephemeral: false });
+  }
+
+  private async handleClearQueueCommand(interaction: any): Promise<void> {
+    // Verificar se é moderador
+    const member = interaction.member;
+    if (!member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+      await interaction.reply({ 
+        content: '❌ Você não tem permissão para limpar a fila.', 
+        ephemeral: true 
+      });
+      return;
+    }
+
+    this.queue.clear();
+    this.broadcastQueueUpdate();
+
+    await interaction.reply({ 
+      content: '✅ Fila limpa com sucesso!', 
+      ephemeral: false 
+    });
+
+    console.log(`🧹 Fila limpa por ${interaction.user.username}`);
+  }
+
+  private async handleLobbyCommand(interaction: any): Promise<void> {
+    const guild = this.client.guilds.cache.first();
+    if (!guild) {
+      await interaction.reply({ 
+        content: '❌ Servidor não encontrado.', 
+        ephemeral: true 
+      });
+      return;
+    }
+
+    // Encontrar canal de matchmaking
+    const matchmakingChannel = guild.channels.cache.find(
+      channel => channel.name === this.targetChannelName && channel.type === ChannelType.GuildVoice
+    );
+
+    if (!matchmakingChannel) {
+      await interaction.reply({ 
+        content: '❌ Canal #lol-matchmaking não encontrado.', 
+        ephemeral: true 
+      });
+      return;
+    }
+
+    // Obter usuários no canal de forma segura
+    const membersInChannel: any[] = [];
+    try {
+      // @ts-ignore - Ignorar erro de tipo para acessar members
+      const members = matchmakingChannel.members;
+      if (members) {
+        // @ts-ignore - Iterar sobre os membros
+        members.forEach((member: any) => {
+          const linkedNickname = this.getLinkedNicknameForUser(member.user.id);
+          membersInChannel.push({
+            username: member.user.username,
+            linkedNickname,
+            hasAppOpen: this.queue.has(member.user.id)
+          });
+        });
+      }
+    } catch (error) {
+      console.error('❌ Erro ao obter membros do canal:', error);
+    }
+
+    const lobbyList = membersInChannel.map((user: any) => {
+      const nickname = user.linkedNickname 
+        ? `${user.linkedNickname.gameName}#${user.linkedNickname.tagLine}`
+        : user.username;
+      const status = user.hasAppOpen ? '📱 App Aberto' : '💻 Apenas Discord';
+      return `• ${nickname} - ${status}`;
+    }).join('\n');
+
+    const embed = {
+      color: 0x0099ff,
+      title: '👥 Lobby #lol-matchmaking',
+      description: lobbyList || 'Nenhum usuário no canal',
+      fields: [
+        {
+          name: '👤 Usuários no Canal',
+          value: `${membersInChannel.length}`,
+          inline: true
+        },
+        {
+          name: '📱 Com App Aberto',
+          value: `${membersInChannel.filter((u: any) => u.hasAppOpen).length}`,
+          inline: true
+        }
+      ],
+      footer: {
+        text: 'Abra o app LoL Matchmaking para entrar na fila!'
+      }
+    };
+
+    await interaction.reply({ embeds: [embed], ephemeral: false });
+  }
+
+  private async getLinkedNicknameForUser(discordId: string): Promise<{gameName: string, tagLine: string} | null> {
+    try {
+      const link = await this.databaseManager.getDiscordLink(discordId);
+      if (link) {
+        return {
+          gameName: link.game_name,
+          tagLine: link.tag_line
+        };
+      }
+    } catch (error) {
+      console.error('❌ Erro ao buscar vinculação:', error);
+    }
+    return null;
+  }
+
+  // Métodos públicos para integração
   isDiscordConnected(): boolean {
     return this.isConnected;
   }
@@ -407,6 +733,31 @@ export class DiscordService {
 
   getActiveMatches(): number {
     return this.activeMatches.size;
+  }
+
+  // Verificar se há usuários no canal de matchmaking
+  hasUsersInMatchmakingChannel(): boolean {
+    if (!this.isConnected || !this.client) return false;
+    
+    const guild = this.client.guilds.cache.first();
+    if (!guild) return false;
+
+    const matchmakingChannel = guild.channels.cache.find(
+      channel => channel.name === this.targetChannelName && channel.type === ChannelType.GuildVoice
+    );
+
+    if (!matchmakingChannel) return false;
+
+    // Verificar se há membros no canal (apenas para canais de voz)
+    if (matchmakingChannel.type === ChannelType.GuildVoice) {
+      const voiceChannel = matchmakingChannel as any;
+      const membersInChannel = voiceChannel.members?.size || 0;
+      console.log(`👥 Usuários no canal ${this.targetChannelName}: ${membersInChannel}`);
+      // Permitir que funcione mesmo com apenas um usuário (você mesmo)
+      return membersInChannel >= 0; // Sempre true se o canal existe
+    }
+    
+    return false;
   }
 
   setWebSocketServer(wss: any): void {

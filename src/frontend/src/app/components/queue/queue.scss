@@ -751,3 +751,326 @@
     }
   }
 }
+
+// Estilos para vinculação de nickname
+.link-nickname-section {
+  margin-top: 20px;
+  padding: 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 12px;
+  color: white;
+  text-align: center;
+
+  .link-info {
+    h4 {
+      margin: 0 0 10px 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    p {
+      margin: 0 0 20px 0;
+      opacity: 0.9;
+      font-size: 14px;
+    }
+
+    .link-benefits {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 20px;
+
+      .benefit-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+
+        i {
+          color: #4ade80;
+          font-size: 12px;
+        }
+      }
+    }
+  }
+
+  .link-btn {
+    background: rgba(255, 255, 255, 0.2);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 auto;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.3);
+      border-color: rgba(255, 255, 255, 0.5);
+      transform: translateY(-2px);
+    }
+
+    i {
+      font-size: 14px;
+    }
+  }
+}
+
+.linked-nickname {
+  margin-top: 20px;
+  padding: 20px;
+  background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
+  border-radius: 12px;
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  .linked-info {
+    flex: 1;
+
+    .linked-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+
+      i {
+        color: #22c55e;
+        font-size: 16px;
+      }
+
+      h4 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+      }
+    }
+
+    .linked-details {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 8px;
+
+      .discord-info,
+      .lol-info {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+
+        .label {
+          font-weight: 600;
+          opacity: 0.8;
+          min-width: 60px;
+        }
+
+        .value {
+          font-weight: 500;
+        }
+      }
+    }
+
+    .linked-status {
+      margin: 0;
+      font-size: 12px;
+      opacity: 0.9;
+      font-weight: 500;
+    }
+  }
+
+  .unlink-btn {
+    background: rgba(255, 255, 255, 0.2);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.3);
+      border-color: rgba(255, 255, 255, 0.5);
+    }
+
+    i {
+      font-size: 12px;
+    }
+  }
+}
+
+// Modal de vinculação
+.link-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+
+  .modal-content {
+    background: white;
+    padding: 30px;
+    border-radius: 12px;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+
+    h3 {
+      margin: 0 0 20px 0;
+      color: #333;
+      text-align: center;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+
+      label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 600;
+        color: #555;
+      }
+
+      input {
+        width: 100%;
+        padding: 12px;
+        border: 2px solid #e5e7eb;
+        border-radius: 8px;
+        font-size: 14px;
+        transition: border-color 0.3s ease;
+
+        &:focus {
+          outline: none;
+          border-color: #667eea;
+        }
+      }
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+
+      button {
+        padding: 10px 20px;
+        border-radius: 6px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+
+        &.cancel-btn {
+          background: #f3f4f6;
+          border: 2px solid #e5e7eb;
+          color: #6b7280;
+
+          &:hover {
+            background: #e5e7eb;
+          }
+        }
+
+        &.confirm-btn {
+          background: #667eea;
+          border: 2px solid #667eea;
+          color: white;
+
+          &:hover {
+            background: #5a67d8;
+            border-color: #5a67d8;
+          }
+        }
+      }
+    }
+  }
+}
+
+// Estilos para informações do LCU
+.lcu-info-section {
+  margin-top: 20px;
+  padding: 20px;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  border-radius: 12px;
+  color: white;
+  text-align: center;
+
+  .lcu-info {
+    h4 {
+      margin: 0 0 15px 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .lcu-details {
+      .lol-info {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        margin-bottom: 12px;
+        font-size: 16px;
+
+        .label {
+          font-weight: 600;
+          opacity: 0.9;
+        }
+
+        .value {
+          font-weight: 700;
+          font-size: 18px;
+        }
+      }
+
+      .status-info {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        font-size: 14px;
+        opacity: 0.9;
+
+        i {
+          color: #4ade80;
+          font-size: 16px;
+        }
+      }
+    }
+  }
+}
+
+.lcu-warning {
+  margin-top: 20px;
+  padding: 20px;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  border-radius: 12px;
+  color: white;
+  text-align: center;
+
+  .warning-info {
+    h4 {
+      margin: 0 0 10px 0;
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    p {
+      margin: 0;
+      font-size: 14px;
+      opacity: 0.9;
+      line-height: 1.4;
+    }
+  }
+}

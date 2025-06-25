@@ -711,19 +711,19 @@ export class App implements OnInit, OnDestroy {
       return;
     }
 
-    try {      console.log('🎯 Tentando entrar na fila...');
+    try {
+      console.log('🎯 Tentando entrar na fila...');
 
       // 🎮 PRIORIDADE: Usar Discord se disponível
       if (this.discordService.isConnected()) {
         console.log('🎮 Discord conectado! Usando fila Discord (prioridade)');
 
-        const role = this.mapLaneToRole(preferences?.primaryLane || 'mid');
-        const username = this.currentPlayer?.summonerName || this.currentPlayer?.gameName || 'Player';
-        this.discordService.joinDiscordQueue(role, username);
+        // Usar o sistema novo do Discord com dados completos
+        await this.websocketService.joinDiscordQueue(this.currentPlayer, preferences);
 
         this.isInQueue = true;
         this.currentQueueType = 'discord';
-        this.addNotification('success', 'Fila Discord', `Entrou na fila Discord como ${role}`);
+        this.addNotification('success', 'Fila Discord', `Entrou na fila Discord como ${preferences?.primaryLane || 'qualquer lane'}`);
         return;
       }
 

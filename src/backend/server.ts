@@ -95,7 +95,7 @@ const matchmakingService = new MatchmakingService(dbManager, wss);
 const playerService = new PlayerService(globalRiotAPI, dbManager);
 const lcuService = new LCUService(globalRiotAPI);
 const matchHistoryService = new MatchHistoryService(globalRiotAPI, dbManager);
-const discordService = new DiscordService();
+const discordService = new DiscordService(dbManager);
 
 // WebSocket para comunicação em tempo real
 wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
@@ -125,8 +125,23 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
       break;
     case 'join_discord_queue':
       console.log('🎮 Recebida mensagem join_discord_queue com dados completos:', data.data);
+      
+      // Extrair dados do LCU se disponíveis
+      const playerData = data.data.player;
+      const lcuData = playerData && playerData.gameName && playerData.tagLine ? {
+        gameName: playerData.gameName,
+        tagLine: playerData.tagLine
+      } : undefined;
+      
+      if (lcuData) {
+        console.log('🎯 Dados do LCU detectados:', lcuData);
+      }
+      
       // Usar a mesma lógica da fila centralizada, mas marcar como Discord
-      await matchmakingService.addPlayerToDiscordQueue(ws, data.data);
+      await matchmakingService.addPlayerToDiscordQueue(ws, {
+        ...data.data,
+        lcuData: lcuData
+      });
       break;
     case 'leave_queue':
       console.log('🔍 Recebida mensagem leave_queue');
@@ -135,6 +150,19 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
     case 'get_queue_status':
       const queueStatus = matchmakingService.getQueueStatus();
       ws.send(JSON.stringify({ type: 'queue_status', data: queueStatus }));
+      break;
+    case 'get_discord_status':
+      console.log('🎮 Solicitando status do Discord...');
+      // Enviar status do Discord para o frontend
+      const discordStatus = {
+        type: 'discord_status',
+        isConnected: discordService.isDiscordConnected(),
+        botUsername: discordService.getBotUsername(),
+        queueSize: discordService.getQueueSize(),
+        activeMatches: discordService.getActiveMatches(),
+        inChannel: discordService.isDiscordConnected() // Se Discord está conectado, permitir usar a fila
+      };
+      ws.send(JSON.stringify(discordStatus));
       break;
     case 'ping':
       ws.send(JSON.stringify({ type: 'pong' }));

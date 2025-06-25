@@ -142,25 +142,29 @@
         <span>Entrar na Fila Discord</span>
       </button>
 
-      <!-- Botão para vincular nickname -->
-      <div class="link-nickname-section" *ngIf="!hasLinkedNickname">
-        <p class="link-info">🔗 Vincule seu Discord ao seu nick do LoL para usar automaticamente na fila</p>
-        <button class="link-btn" (click)="showLinkNicknameModal()">
-          <i class="fas fa-link"></i>
-          <span>Vincular Nickname</span>
-        </button>
+      <!-- Informações automáticas do LCU -->
+      <div class="lcu-info-section" *ngIf="currentPlayer && currentPlayer.gameName && currentPlayer.tagLine">
+        <div class="lcu-info">
+          <h4>🎮 Dados do LoL Detectados</h4>
+          <div class="lcu-details">
+            <div class="lol-info">
+              <span class="label">LoL:</span>
+              <span class="value">{{ currentPlayer.gameName }}#{{ currentPlayer.tagLine }}</span>
+            </div>
+            <div class="status-info">
+              <i class="fas fa-check-circle"></i>
+              <span>Você será identificado automaticamente na fila Discord</span>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <!-- Nickname vinculado -->
-      <div class="linked-nickname" *ngIf="hasLinkedNickname && linkedNickname">
-        <div class="linked-info">
-          <i class="fas fa-check-circle"></i>
-          <span>Vinculado: {{ linkedNickname.gameName }}#{{ linkedNickname.tagLine }}</span>
+      <!-- Aviso se não há dados do LCU -->
+      <div class="lcu-warning" *ngIf="!currentPlayer?.gameName || !currentPlayer?.tagLine">
+        <div class="warning-info">
+          <h4>⚠️ Dados do LoL Não Detectados</h4>
+          <p>Certifique-se de que o League of Legends está aberto para ser identificado automaticamente na fila</p>
         </div>
-        <button class="unlink-btn" (click)="unlinkNickname()">
-          <i class="fas fa-unlink"></i>
-          <span>Desvincular</span>
-        </button>
       </div>
     </div>
 
@@ -175,7 +179,7 @@
         </div>
       </div>
 
-      <button class="queue-btn leave-btn" (click)="onLeaveQueue()">
+      <button class="queue-btn leave-btn" (click)="onLeaveDiscordQueue()">
         <i class="icon-exit"></i>
         <span>Sair da Fila</span>
       </button>
@@ -200,40 +204,12 @@
       </button>
     </div>
   </div>
-</div>
 
-<!-- Modal para vincular nickname -->
-<div class="modal-overlay" *ngIf="showLinkModal" (click)="closeLinkModal()">
-  <div class="modal-content" (click)="$event.stopPropagation()">
-    <div class="modal-header">
-      <h3>🔗 Vincular Discord ao LoL</h3>
-      <button class="close-btn" (click)="closeLinkModal()">
-        <i class="fas fa-times"></i>
-      </button>
-    </div>
-    
-    <div class="modal-body">
-      <p>Digite seu nickname do League of Legends para vincular automaticamente na fila:</p>
-      
-      <div class="form-group">
-        <label for="gameName">Nome do Jogador:</label>
-        <input type="text" id="gameName" [(ngModel)]="linkForm.gameName" 
-               placeholder="Ex: PlayerName" maxlength="16">
-      </div>
-      
-      <div class="form-group">
-        <label for="tagLine">Tag Line:</label>
-        <input type="text" id="tagLine" [(ngModel)]="linkForm.tagLine" 
-               placeholder="Ex: 1234" maxlength="5">
-      </div>
-      
-      <div class="form-actions">
-        <button class="btn-secondary" (click)="closeLinkModal()">Cancelar</button>
-        <button class="btn-primary" (click)="linkNickname()" 
-                [disabled]="!linkForm.gameName || !linkForm.tagLine">
-          Vincular
-        </button>
-      </div>
-    </div>
-  </div>
+  <!-- Lane Selector Modal -->
+  <app-lane-selector
+    [isVisible]="showLaneSelector"
+    [currentPreferences]="queuePreferences"
+    (close)="onCloseLaneSelector()"
+    (confirm)="onConfirmDiscordQueue($event)">
+  </app-lane-selector>
 </div>

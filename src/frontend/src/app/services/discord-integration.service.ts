@@ -36,6 +36,8 @@ export class DiscordIntegrationService {
       this.ws.onclose = () => {
         console.log('🤖 Desconectado do Discord Bot');
         this.isBackendConnected = false;
+        this.isInDiscordChannel = false;
+        this.currentDiscordUser = null;
         setTimeout(() => this.connectToBot(), 3000);
       };
 
@@ -94,9 +96,13 @@ export class DiscordIntegrationService {
         break;
 
       case 'discord_status':
-        this.currentDiscordUser = data.user;
-        this.isInDiscordChannel = data.inChannel;
-        console.log(`🎮 Status Discord: ${data.user?.username} - Canal: ${this.isInDiscordChannel}`);
+        console.log('🎮 Status do Discord recebido:', data);
+        this.isInDiscordChannel = data.inChannel; // Usar a informação do backend
+        this.currentDiscordUser = {
+          id: 'current_user', // Placeholder
+          username: 'Current User' // Placeholder
+        };
+        console.log(`🎮 Status Discord: ${this.currentDiscordUser?.username} - Canal: ${this.isInDiscordChannel}`);
         break;
     }
   }
@@ -199,9 +205,27 @@ export class DiscordIntegrationService {
     return this.linkedNicknames.has(discordId);
   }
 
-  // Obter nickname vinculado
   getLinkedNickname(discordId: string): {gameName: string, tagLine: string} | null {
     return this.linkedNicknames.get(discordId) || null;
+  }
+
+  // Atualizar lista de usuários Discord com vinculações
+  private updateDiscordUsersList(users: any[]) {
+    this.discordUsersOnline = users.map(user => ({
+      ...user,
+      linkedNickname: this.linkedNicknames.get(user.discordId) || null
+    }));
+  }
+
+  // Atualizar vinculações quando receber dados do backend
+  private updateLinkedNicknames(links: any[]) {
+    this.linkedNicknames.clear();
+    links.forEach(link => {
+      this.linkedNicknames.set(link.discord_id, {
+        gameName: link.game_name,
+        tagLine: link.tag_line
+      });
+    });
   }
 
   private updateUserStatus(userId: string, isOnline: boolean) {
@@ -210,12 +234,6 @@ export class DiscordIntegrationService {
       this.discordUsersOnline[userIndex].isOnline = isOnline;
       this.updateDiscordUsersList(this.discordUsersOnline);
     }
-  }
-
-  private updateDiscordUsersList(users: any[]) {
-    window.dispatchEvent(new CustomEvent('discordUsersUpdate', {
-      detail: { users }
-    }));
   }
 
   private updateQueueDisplay(queue: any[]) {

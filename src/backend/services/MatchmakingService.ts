@@ -902,15 +902,31 @@ export class MatchmakingService {
     try {
       console.log('🎮 [Discord Queue] Adicionando jogador com dados completos:', requestData);
       
+      // Extrair dados do LCU se disponíveis
+      const lcuData = requestData.lcuData;
+      const playerData = requestData.player;
+      
+      if (lcuData && lcuData.gameName && lcuData.tagLine) {
+        console.log('🎯 [Discord Queue] Dados do LCU detectados:', lcuData);
+        
+        // Atualizar summonerName com dados do LCU se necessário
+        if (playerData) {
+          playerData.summonerName = `${lcuData.gameName}#${lcuData.tagLine}`;
+          playerData.gameName = lcuData.gameName;
+          playerData.tagLine = lcuData.tagLine;
+        }
+      }
+      
       // Reaproveitar toda a lógica existente do addPlayerToQueue
       await this.addPlayerToQueue(websocket, requestData);
       
       // Marcar este player como sendo do Discord (para futuras funcionalidades)
-      const playerData = requestData.player;
       if (playerData && playerData.summonerName) {
-        // Notificar o Discord Bot que um jogador entrou na fila
-        // O Discord Bot irá organizar os canais de voz conforme necessário
         console.log(`🎮 [Discord] ${playerData.summonerName} entrou na fila Discord com balanceamento por MMR`);
+        
+        // Aqui você pode adicionar lógica específica do Discord
+        // Por exemplo, notificar o DiscordService sobre o novo jogador
+        // ou integrar com o sistema de canais de voz
       }
       
     } catch (error: any) {

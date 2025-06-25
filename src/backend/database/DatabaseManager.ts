@@ -198,18 +198,17 @@ export class DatabaseManager {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 
-        -- Campos específicos para partidas customizadas
+        -- Campos para partidas customizadas
         custom_mmr INTEGER DEFAULT 1000,
         custom_peak_mmr INTEGER DEFAULT 1000,
         custom_games_played INTEGER DEFAULT 0,
         custom_wins INTEGER DEFAULT 0,
         custom_losses INTEGER DEFAULT 0,
-        custom_win_streak INTEGER DEFAULT 0,
-        custom_lp INTEGER DEFAULT 0
+        custom_win_streak INTEGER DEFAULT 0
       )
     `);
 
-    // Tabela de partidas do sistema de matchmaking (fila interna)
+    // Tabela de partidas
     await this.db.exec(`
       CREATE TABLE IF NOT EXISTS matches (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -231,49 +230,21 @@ export class DatabaseManager {
         detected_by_lcu INTEGER DEFAULT 0,
         linked_results TEXT
       )
-    `);    // Tabela de partidas personalizadas do aplicativo
-    await this.db.exec(`
-      CREATE TABLE IF NOT EXISTS custom_matches (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        match_id TEXT UNIQUE NOT NULL,
-        title TEXT,
-        description TEXT,
-        team1_players TEXT NOT NULL, -- JSON array de player IDs ou nomes
-        team2_players TEXT NOT NULL, -- JSON array de player IDs ou nomes
-        winner_team INTEGER, -- 1 ou 2, NULL se não finalizada
-        score_team1 INTEGER DEFAULT 0,
-        score_team2 INTEGER DEFAULT 0,
-        duration INTEGER, -- duração em minutos
-        pick_ban_data TEXT, -- JSON com dados de pick/ban
-        game_mode TEXT DEFAULT 'CLASSIC',
-        status TEXT DEFAULT 'completed', -- pending, in_progress, completed, cancelled
-        created_by TEXT, -- quem criou a partida        riot_game_id TEXT, -- ID da partida real do Riot (se vinculada)
-        detected_by_lcu INTEGER DEFAULT 0,
-        notes TEXT, -- observações da partida
-        lp_changes TEXT, -- JSON com mudanças de LP por jogador
-        custom_lp INTEGER DEFAULT 0, 
-        average_mmr_team1 INTEGER, -- MMR médio do time 1
-        average_mmr_team2 INTEGER, -- MMR médio do time 2
-        participants_data TEXT, -- JSON com dados reais dos participantes (KDA, itens, etc.)
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        completed_at DATETIME
-      )
     `);
 
-    // Tabela de partidas do LCU (cache/histórico)
+    // Tabela de vinculações Discord-LoL
     await this.db.exec(`
-      CREATE TABLE IF NOT EXISTS lcu_matches (
+      CREATE TABLE IF NOT EXISTS discord_lol_links (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        game_id TEXT UNIQUE NOT NULL,
-        game_mode TEXT,
-        game_duration INTEGER,
-        game_creation DATETIME,
-        participants TEXT, -- JSON com dados dos participantes
-        player_result TEXT, -- JSON com resultado específico do jogador
-        player_puuid TEXT,
-        queue_type TEXT,
-        season_id INTEGER,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        discord_id TEXT UNIQUE NOT NULL,
+        discord_username TEXT NOT NULL,
+        game_name TEXT NOT NULL,
+        tag_line TEXT NOT NULL,
+        summoner_name TEXT NOT NULL,
+        verified INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_used DATETIME
       )
     `);
 
@@ -287,22 +258,32 @@ export class DatabaseManager {
       )
     `);
 
-    // Tabela de sessões de linking de partidas
+    // Tabela de partidas customizadas
     await this.db.exec(`
-      CREATE TABLE IF NOT EXISTS match_linking_sessions (
+      CREATE TABLE IF NOT EXISTS custom_matches (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        session_id TEXT UNIQUE NOT NULL,
-        player_id INTEGER NOT NULL,
-        summoner_name TEXT NOT NULL,
+        title TEXT,
+        description TEXT,
+        team1_players TEXT NOT NULL,
+        team2_players TEXT NOT NULL,
+        winner_team INTEGER,
         status TEXT DEFAULT 'pending',
-        match_data TEXT,
-        riot_game_id TEXT,
+        created_by TEXT NOT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         completed_at DATETIME,
-        FOREIGN KEY (player_id) REFERENCES players (id)
+        game_mode TEXT DEFAULT '5v5',
+        lp_changes TEXT,
+        average_mmr_team1 INTEGER,
+        average_mmr_team2 INTEGER,
+        participants_data TEXT,
+        riot_game_id TEXT,
+        detected_by_lcu INTEGER DEFAULT 0,
+        notes TEXT,
+        updated_at DATETIME
       )
     `);
 
+    // Inserir configurações padrão
     await this.insertDefaultSettings();
   }
 
@@ -1125,103 +1106,29 @@ export class DatabaseManager {
    * Busca estatísticas agregadas de todos os participantes das partidas customizadas
    * diretamente do campo participants_data
    */  async getParticipantsLeaderboard(limit: number = 100): Promise<any[]> {
-    const query = `
-      WITH participant_stats AS (
-        SELECT 
-          json_extract(participant.value, '$.summonerName') as summoner_name,
-          json_extract(participant.value, '$.riotIdGameName') as riot_id_game_name,
-          json_extract(participant.value, '$.riotIdTagline') as riot_id_tagline,
-          json_extract(participant.value, '$.profileIconId') as profile_icon_id,
-          json_extract(participant.value, '$.championName') as champion_name,
-          json_extract(participant.value, '$.championId') as champion_id,
-          CAST(json_extract(participant.value, '$.kills') AS INTEGER) as kills,
-          CAST(json_extract(participant.value, '$.deaths') AS INTEGER) as deaths,
-          CAST(json_extract(participant.value, '$.assists') AS INTEGER) as assists,
-          CAST(json_extract(participant.value, '$.goldEarned') AS INTEGER) as gold_earned,
-          CAST(json_extract(participant.value, '$.totalDamageDealtToChampions') AS INTEGER) as damage_dealt,
-          CAST(json_extract(participant.value, '$.totalMinionsKilled') AS INTEGER) as cs,          CAST(json_extract(participant.value, '$.visionScore') AS INTEGER) as vision_score,
-          CAST(json_extract(participant.value, '$.win') AS INTEGER) as win,
-          cm.duration
-        FROM custom_matches cm,
-             json_each(cm.participants_data) as participant
-        WHERE cm.status = 'completed'
-          AND cm.participants_data IS NOT NULL
-          AND json_extract(participant.value, '$.summonerName') IS NOT NULL
-      ),      aggregated_stats AS (
-        SELECT 
-          summoner_name,
-          riot_id_game_name,
-          riot_id_tagline,          -- Pegar o primeiro profile_icon_id não nulo encontrado
-          (SELECT profile_icon_id FROM participant_stats ps2 
-           WHERE ps2.summoner_name = ps.summoner_name 
-           AND ps2.profile_icon_id IS NOT NULL 
-           LIMIT 1) as profile_icon_id,
-          COUNT(*) as games_played,
-          SUM(win) as wins,
-          ROUND(AVG(CAST(kills AS REAL)), 1) as avg_kills,
-          ROUND(AVG(CAST(deaths AS REAL)), 1) as avg_deaths,
-          ROUND(AVG(CAST(assists AS REAL)), 1) as avg_assists,
-          ROUND(AVG(CAST(gold_earned AS REAL)), 0) as avg_gold,
-          ROUND(AVG(CAST(damage_dealt AS REAL)), 0) as avg_damage,
-          ROUND(AVG(CAST(cs AS REAL)), 1) as avg_cs,
-          ROUND(AVG(CAST(vision_score AS REAL)), 1) as avg_vision,
-          MAX(kills) as max_kills,
-          MAX(damage_dealt) as max_damage,
-          -- Campeão mais jogado
-          (SELECT 
-            json_object(
-              'name', champion_name,
-              'id', champion_id,
-              'games', count
-            )
-            FROM (
-              SELECT 
-                ps2.champion_name,
-                ps2.champion_id,
-                COUNT(*) as count
-              FROM participant_stats ps2
-              WHERE ps2.summoner_name = ps.summoner_name
-              GROUP BY ps2.champion_name, ps2.champion_id
-              ORDER BY count DESC
-              LIMIT 1
-            )
-          ) as favorite_champion
-        FROM participant_stats ps
-        GROUP BY summoner_name, riot_id_game_name, riot_id_tagline
-        HAVING games_played >= 1
-      )
-      SELECT 
-        *,
-        ROUND((CAST(wins AS REAL) / CAST(games_played AS REAL)) * 100, 1) as win_rate,
-        CASE
-          WHEN avg_deaths > 0 THEN ROUND((avg_kills + avg_assists) / avg_deaths, 2)
-          ELSE ROUND(avg_kills + avg_assists, 2)
-        END as kda_ratio,
-        -- Calcular MMR baseado em performance
-        ROUND(
-          1000 + 
-          (wins * 25) - 
-          ((games_played - wins) * 15) +
-          (avg_kills * 5) + 
-          (avg_assists * 3) - 
-          (avg_deaths * 8) +
-          (CASE WHEN avg_deaths > 0 THEN ((avg_kills + avg_assists) / avg_deaths) * 10 ELSE 0 END),
-          0
-        ) as calculated_mmr
-      FROM aggregated_stats
-      ORDER BY calculated_mmr DESC, win_rate DESC, games_played DESC
-      LIMIT ?
-    `;    if (!this.db) {
-      throw new Error('Database não está conectado');
-    }
+    if (!this.db) throw new Error('Banco de dados não inicializado');
 
-    const results = await this.db.all(query, [limit]);
-    
-    // Processar o favorite_champion JSON
-    return results.map(row => ({
-      ...row,
-      favorite_champion: row.favorite_champion ? JSON.parse(row.favorite_champion) : null
-    }));
+    const query = `
+      SELECT 
+        p.summoner_name,
+        p.custom_mmr,
+        p.custom_peak_mmr,
+        p.custom_games_played,
+        p.custom_wins,
+        p.custom_losses,
+        p.custom_win_streak,
+        CASE 
+          WHEN p.custom_games_played > 0 
+          THEN ROUND((p.custom_wins * 100.0) / p.custom_games_played, 1)
+          ELSE 0 
+        END as win_rate
+      FROM players p
+      WHERE p.custom_games_played > 0
+      ORDER BY p.custom_mmr DESC, p.custom_games_played DESC
+      LIMIT ?
+    `;
+
+    return await this.db.all(query, [limit]);
   }
 
   /**
@@ -1296,5 +1203,90 @@ export class DatabaseManager {
         WHERE summoner_name = ?
       `, [newMMR, newLP, newGamesPlayed, newWins, newLosses, playerName]);
     }
+  }
+
+  // Métodos para vinculações Discord-LoL
+  async createDiscordLink(discordId: string, discordUsername: string, gameName: string, tagLine: string): Promise<number> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+
+    // Remover # do início da tag se existir
+    const cleanTagLine = tagLine.startsWith('#') ? tagLine.substring(1) : tagLine;
+    const summonerName = `${gameName}#${cleanTagLine}`;
+    
+    const result = await this.db.run(`
+      INSERT OR REPLACE INTO discord_lol_links 
+      (discord_id, discord_username, game_name, tag_line, summoner_name, updated_at)
+      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `, [discordId, discordUsername, gameName, cleanTagLine, summonerName]);
+
+    console.log(`🔗 Vinculação criada: ${discordUsername} -> ${summonerName}`);
+    return result.lastID || 0;
+  }
+
+  async getDiscordLink(discordId: string): Promise<any | null> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+
+    return await this.db.get(`
+      SELECT * FROM discord_lol_links 
+      WHERE discord_id = ?
+    `, [discordId]);
+  }
+
+  async getDiscordLinkByGameName(gameName: string, tagLine: string): Promise<any | null> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+
+    return await this.db.get(`
+      SELECT * FROM discord_lol_links 
+      WHERE game_name = ? AND tag_line = ?
+    `, [gameName, tagLine]);
+  }
+
+  async updateDiscordLinkLastUsed(discordId: string): Promise<void> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+
+    await this.db.run(`
+      UPDATE discord_lol_links 
+      SET last_used = CURRENT_TIMESTAMP
+      WHERE discord_id = ?
+    `, [discordId]);
+  }
+
+  async deleteDiscordLink(discordId: string): Promise<void> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+
+    await this.db.run(`
+      DELETE FROM discord_lol_links 
+      WHERE discord_id = ?
+    `, [discordId]);
+
+    console.log(`🔗 Vinculação removida para Discord ID: ${discordId}`);
+  }
+
+  async getAllDiscordLinks(): Promise<any[]> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+
+    return await this.db.all(`
+      SELECT * FROM discord_lol_links 
+      ORDER BY last_used DESC, created_at DESC
+    `);
+  }
+
+  async verifyDiscordLink(discordId: string, gameName: string, tagLine: string): Promise<boolean> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+
+    const link = await this.getDiscordLink(discordId);
+    if (!link) return false;
+
+    return link.game_name === gameName && link.tag_line === tagLine;
+  }
+
+  async getDiscordLinksCount(): Promise<number> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+
+    const result = await this.db.get(`
+      SELECT COUNT(*) as count FROM discord_lol_links
+    `);
+    
+    return result?.count || 0;
   }
 }

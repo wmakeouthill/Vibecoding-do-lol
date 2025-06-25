@@ -3,10 +3,11 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Player, QueueStatus, QueuePreferences } from '../../interfaces';
 import { DiscordIntegrationService } from '../../services/discord-integration.service';
+import { LaneSelectorComponent } from '../lane-selector/lane-selector';
 
 @Component({
   selector: 'app-queue',
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, LaneSelectorComponent],
   templateUrl: './queue.html',
   styleUrl: './queue.scss'
 })
@@ -46,15 +47,6 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   discordUsersOnline: any[] = [];
   isInDiscordChannel = false;
 
-  // Nickname linking
-  hasLinkedNickname = false;
-  linkedNickname: {gameName: string, tagLine: string} | null = null;
-  showLinkModal = false;
-  linkForm = {
-    gameName: '',
-    tagLine: ''
-  };
-
   // Development tools
   showDevTools = false;
 
@@ -68,9 +60,6 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     // Setup Discord integration
     this.setupDiscordListeners();
     this.checkDiscordConnection();
-    
-    // Check for linked nickname
-    this.checkLinkedNickname();
     
     // Show dev tools for special users
     this.showDevTools = this.isSpecialUser();
@@ -245,8 +234,9 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
 
   isSpecialUser(): boolean {
     // Verificar se é usuário especial (desenvolvedor, admin, etc.)
-    const specialUsers = ['wcaco', 'admin', 'dev'];
-    return specialUsers.includes(this.currentPlayer?.gameName?.toLowerCase() || '');
+    const specialUsers = ['wcaco', 'admin', 'dev', 'popcorn seller'];
+    return specialUsers.includes(this.currentPlayer?.gameName?.toLowerCase() || '') ||
+           specialUsers.includes(this.currentPlayer?.summonerName?.toLowerCase() || '');
   }
 
   isPlayerAutofilled(player: any): boolean {
@@ -304,32 +294,74 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   onJoinDiscordQueue() {
-    if (!this.isInDiscordChannel) {
-      alert('❌ Você precisa estar no canal #lol-matchmaking no Discord!');
+    if (!this.currentPlayer) {
+      alert('❌ Precisa ter um jogador carregado para entrar na fila Discord!');
       return;
     }
 
-    if (!this.currentDiscordUser) {
-      alert('❌ Não foi possível identificar seu usuário Discord!');
+    // Verificar se tem dados do LCU
+    if (!this.currentPlayer.gameName || !this.currentPlayer.tagLine) {
+      alert('❌ Dados do LoL não detectados! Certifique-se de que o League of Legends está aberto.');
       return;
     }
+
+    // Verificar se está conectado ao Discord
+    if (!this.discordService.isConnected()) {
+      alert('❌ Não conectado ao Discord! Certifique-se de que o bot está rodando.');
+      return;
+    }
+
+    // Verificar se está no canal correto
+    if (!this.discordService.isInChannel()) {
+      alert('❌ Você precisa estar no canal #lol-matchmaking no Discord para usar a fila!');
+      return;
+    }
+
+    console.log('🎮 Entrando na fila Discord com dados do LCU:', {
+      gameName: this.currentPlayer.gameName,
+      tagLine: this.currentPlayer.tagLine,
+      summonerName: this.currentPlayer.summonerName
+    });
 
     this.showLaneSelector = true;
   }
 
   onConfirmDiscordQueue(preferences: QueuePreferences) {
-    this.queuePreferences = preferences;
+    if (!this.currentPlayer) {
+      alert('❌ Dados do jogador não encontrados!');
+      return;
+    }
+
+    // Usar dados do LCU automaticamente
+    const playerData = {
+      ...this.currentPlayer,
+      gameName: this.currentPlayer.gameName,
+      tagLine: this.currentPlayer.tagLine,
+      summonerName: this.currentPlayer.summonerName,
+      preferences: preferences
+    };
+
+    console.log('🎮 Confirmando entrada na fila Discord com dados do LCU:', playerData);
+
+    // Emitir evento com dados completos
+    this.joinDiscordQueueWithFullData.emit({
+      player: playerData,
+      preferences: preferences
+    });
+
     this.showLaneSelector = false;
-    
-    const role = this.mapLaneToRole(preferences.primaryLane);
-    const username = this.currentDiscordUser?.username || 'Unknown';
-    
-    this.discordService.joinDiscordQueue(role, username);
-    console.log(`🎯 Entrou na fila Discord como ${role}`);
+    this.queuePreferences = preferences;
+    this.isInQueue = true;
+    this.queueTimer = 0;
+    this.startTimer();
   }
 
   onLeaveDiscordQueue() {
     this.discordService.leaveDiscordQueue();
+    this.leaveQueue.emit();
+    this.stopTimer();
+    this.queueTimer = 0;
+    this.isInQueue = false;
   }
 
   private mapLaneToRole(lane: string): string {
@@ -353,63 +385,5 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     return this.discordQueue.length > 0 ? 
       `${this.discordQueue.length} jogadores na fila Discord` : 
       'Fila Discord vazia';
-  }
-
-  async checkLinkedNickname() {
-    const currentUser = this.discordService.getCurrentDiscordUser();
-    if (!currentUser) return;
-
-    const linkedNickname = this.discordService.getLinkedNickname(currentUser.id);
-    this.hasLinkedNickname = !!linkedNickname;
-    this.linkedNickname = linkedNickname;
-  }
-
-  showLinkNicknameModal() {
-    if (!this.currentPlayer) {
-      alert('❌ Precisa ter um jogador carregado para vincular!');
-      return;
-    }
-
-    this.linkForm.gameName = this.currentPlayer.gameName || '';
-    this.linkForm.tagLine = this.currentPlayer.tagLine || '';
-    this.showLinkModal = true;
-  }
-
-  closeLinkModal() {
-    this.showLinkModal = false;
-    this.linkForm = { gameName: '', tagLine: '' };
-  }
-
-  async linkNickname() {
-    if (!this.linkForm.gameName || !this.linkForm.tagLine) {
-      alert('❌ Preencha o Game Name e Tag Line!');
-      return;
-    }
-
-    const currentUser = this.discordService.getCurrentDiscordUser();
-    if (!currentUser) {
-      alert('❌ Não foi possível identificar seu usuário Discord!');
-      return;
-    }
-
-    // Tentar auto-vinculação com LCU
-    const success = await this.discordService.autoLinkWithLCU({
-      gameName: this.linkForm.gameName,
-      tagLine: this.linkForm.tagLine
-    });
-
-    if (success) {
-      this.closeLinkModal();
-      this.checkLinkedNickname();
-      alert('✅ Nickname vinculado com sucesso!');
-    } else {
-      alert('❌ Erro ao vincular nickname. Tente novamente.');
-    }
-  }
-
-  async unlinkNickname() {
-    // Implementar desvinculação se necessário
-    this.hasLinkedNickname = false;
-    this.linkedNickname = null;
   }
 } 
