@@ -114,6 +114,154 @@
     </div>
   </div>
 
+  <!-- Players Table Section -->
+  <div class="players-table-section">
+    <div class="section-header">
+      <h3>👥 Jogadores</h3>
+      <div class="table-controls">
+        <button class="refresh-btn" (click)="refreshPlayersData()" [disabled]="isRefreshing">
+          <i class="fas fa-sync-alt" [class.spinning]="isRefreshing"></i>
+          <span>Atualizar</span>
+        </button>
+        <div class="auto-refresh">
+          <label>
+            <input type="checkbox" [(ngModel)]="autoRefreshEnabled">
+            Auto-atualizar
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabs for different views -->
+    <div class="table-tabs">
+      <button class="tab-btn" 
+              [class.active]="activeTab === 'queue'"
+              (click)="setActiveTab('queue')">
+        <i class="fas fa-list"></i>
+        <span>Na Fila ({{ queueStatus.playersInQueue }})</span>
+      </button>
+      <button class="tab-btn" 
+              [class.active]="activeTab === 'lobby'"
+              (click)="setActiveTab('lobby')">
+        <i class="fab fa-discord"></i>
+        <span>Lobby Discord ({{ discordUsersOnline.length }})</span>
+      </button>
+      <button class="tab-btn" 
+              [class.active]="activeTab === 'all'"
+              (click)="setActiveTab('all')">
+        <i class="fas fa-users"></i>
+        <span>Todos</span>
+      </button>
+    </div>
+
+    <!-- Queue Players Table -->
+    <div class="players-table" *ngIf="activeTab === 'queue' || activeTab === 'all'">
+      <div class="table-header">
+        <div class="col-position">#</div>
+        <div class="col-player">Jogador</div>
+        <div class="col-lanes">Lanes</div>
+        <div class="col-mmr">MMR</div>
+        <div class="col-time">Tempo</div>
+        <div class="col-status">Status</div>
+      </div>
+      
+      <div class="table-body">
+        <div *ngFor="let player of queueStatus.playersInQueueList; trackBy: trackByPlayerId" 
+             class="table-row"
+             [class.current-player]="isCurrentPlayer(player)">
+          <div class="col-position">{{ player.queuePosition }}</div>
+          <div class="col-player">
+            <div class="player-info">
+              <span class="player-name">{{ player.summonerName }}</span>
+              <span class="player-tag" *ngIf="player.tagLine">#{{ player.tagLine }}</span>
+            </div>
+          </div>
+          <div class="col-lanes">
+            <div class="lane-preferences">
+              <span class="primary-lane">
+                {{ getLaneIcon(player.primaryLane) }} {{ getLaneName(player.primaryLane) }}
+              </span>
+              <span class="lane-separator">•</span>
+              <span class="secondary-lane">
+                {{ getLaneIcon(player.secondaryLane) }} {{ getLaneName(player.secondaryLane) }}
+              </span>
+            </div>
+          </div>
+          <div class="col-mmr">{{ player.mmr }}</div>
+          <div class="col-time">{{ getTimeInQueue(player.joinTime) }}</div>
+          <div class="col-status">
+            <span class="status-badge in-queue">Na Fila</span>
+          </div>
+        </div>
+        
+        <!-- Empty state -->
+        <div *ngIf="(queueStatus.playersInQueueList?.length || 0) === 0" class="empty-state">
+          <i class="fas fa-users"></i>
+          <p>Nenhum jogador na fila</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Discord Lobby Table -->
+    <div class="players-table" *ngIf="activeTab === 'lobby' || activeTab === 'all'">
+      <div class="table-header">
+        <div class="col-player">Jogador Discord</div>
+        <div class="col-lol">LoL Account</div>
+        <div class="col-status">Status</div>
+        <div class="col-queue">Na Fila</div>
+        <div class="col-actions">Ações</div>
+      </div>
+      
+      <div class="table-body">
+        <div *ngFor="let user of discordUsersOnline; trackBy: trackByDiscordUserId" 
+             class="table-row"
+             [class.has-lol]="user.linkedNickname">
+          <div class="col-player">
+            <div class="discord-user-info">
+              <i class="fab fa-discord"></i>
+              <span class="username">{{ user.username }}</span>
+            </div>
+          </div>
+          <div class="col-lol">
+            <div *ngIf="user.linkedNickname" class="lol-account">
+              <span class="game-name">{{ user.linkedNickname.gameName }}</span>
+              <span class="tag-line">#{{ user.linkedNickname.tagLine }}</span>
+            </div>
+            <div *ngIf="!user.linkedNickname" class="no-lol">
+              <span class="not-linked">Não vinculado</span>
+            </div>
+          </div>
+          <div class="col-status">
+            <span class="status-badge" [class.online]="user.hasAppOpen" [class.offline]="!user.hasAppOpen">
+              {{ user.hasAppOpen ? 'Online' : 'Offline' }}
+            </span>
+          </div>
+          <div class="col-queue">
+            <span class="queue-status" [class.in-queue]="isUserInQueue(user)" [class.not-in-queue]="!isUserInQueue(user)">
+              {{ isUserInQueue(user) ? 'Sim' : 'Não' }}
+            </span>
+          </div>
+          <div class="col-actions">
+            <button *ngIf="!user.linkedNickname" class="action-btn link-btn" (click)="inviteToLink(user)">
+              <i class="fas fa-link"></i>
+              <span>Vincular</span>
+            </button>
+            <button *ngIf="user.linkedNickname && !isUserInQueue(user)" class="action-btn invite-btn" (click)="inviteToQueue(user)">
+              <i class="fas fa-plus"></i>
+              <span>Convidar</span>
+            </button>
+          </div>
+        </div>
+        
+        <!-- Empty state -->
+        <div *ngIf="discordUsersOnline.length === 0" class="empty-state">
+          <i class="fab fa-discord"></i>
+          <p>Nenhum usuário no canal Discord</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Queue Action Area -->
   <div class="queue-action">
     <!-- Not in Queue State -->

@@ -1074,3 +1074,183 @@
     }
   }
 }
+
+.players-table-section {
+  margin: 2rem 0;
+  background: #23272e;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px #0002;
+  padding: 1.5rem;
+  color: #e6e6e6;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.table-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.refresh-btn {
+  background: #23272e;
+  border: 1px solid #444;
+  color: #fff;
+  border-radius: 6px;
+  padding: 0.3rem 1rem;
+  cursor: pointer;
+  transition: background 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1rem;
+}
+.refresh-btn:hover {
+  background: #2c313a;
+}
+.refresh-btn .spinning {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  100% { transform: rotate(360deg); }
+}
+
+.auto-refresh {
+  font-size: 0.95rem;
+  color: #aaa;
+}
+
+.table-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+.tab-btn {
+  background: #181c22;
+  color: #aaa;
+  border: none;
+  border-radius: 6px 6px 0 0;
+  padding: 0.5rem 1.2rem;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background 0.2s, color 0.2s;
+}
+.tab-btn.active {
+  background: #2c313a;
+  color: #fff;
+  font-weight: bold;
+}
+
+.players-table {
+  width: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #181c22;
+  margin-bottom: 1rem;
+  box-shadow: 0 1px 4px #0002;
+}
+.table-header, .table-row {
+  display: flex;
+  align-items: center;
+  padding: 0.6rem 1rem;
+}
+.table-header {
+  background: #23272e;
+  font-weight: bold;
+  color: #fff;
+  border-bottom: 1px solid #333;
+}
+.table-row {
+  border-bottom: 1px solid #23272e;
+  transition: background 0.15s;
+}
+.table-row.current-player {
+  background: #2c313a;
+  color: #fff;
+}
+.table-row.has-lol {
+  background: #23272e;
+}
+.table-row:hover {
+  background: #23272e;
+}
+.col-position, .col-player, .col-lanes, .col-mmr, .col-time, .col-status, .col-lol, .col-queue, .col-actions {
+  flex: 1 1 0;
+  min-width: 80px;
+  text-align: left;
+  padding: 0 0.5rem;
+}
+.col-position { max-width: 40px; }
+.col-mmr { max-width: 80px; }
+.col-time { max-width: 90px; }
+.col-status, .col-queue { max-width: 90px; }
+.col-actions { max-width: 120px; }
+
+.player-info, .discord-user-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.player-name, .username {
+  font-weight: 500;
+  color: #fff;
+}
+.player-tag, .tag-line {
+  color: #aaa;
+  font-size: 0.95em;
+}
+.lane-preferences, .lol-account {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.lane-separator {
+  color: #666;
+  margin: 0 0.2rem;
+}
+.status-badge {
+  display: inline-block;
+  padding: 0.2em 0.7em;
+  border-radius: 12px;
+  font-size: 0.95em;
+  background: #23272e;
+  color: #fff;
+  font-weight: 500;
+}
+.status-badge.in-queue { background: #3b82f6; color: #fff; }
+.status-badge.online { background: #22c55e; color: #fff; }
+.status-badge.offline { background: #888; color: #fff; }
+.queue-status.in-queue { color: #22c55e; font-weight: bold; }
+.queue-status.not-in-queue { color: #888; }
+.action-btn {
+  background: #23272e;
+  color: #fff;
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 0.2rem 0.8rem;
+  margin-right: 0.3rem;
+  cursor: pointer;
+  font-size: 0.95em;
+  transition: background 0.2s, color 0.2s;
+}
+.action-btn:hover {
+  background: #3b82f6;
+  color: #fff;
+}
+.empty-state {
+  text-align: center;
+  color: #888;
+  padding: 1.5rem 0;
+  font-size: 1.1em;
+}
+
+@media (max-width: 900px) {
+  .players-table-section { padding: 0.5rem; }
+  .table-header, .table-row { padding: 0.4rem 0.3rem; font-size: 0.97em; }
+  .col-position, .col-mmr, .col-time, .col-status, .col-queue, .col-actions { min-width: 50px; }
+}

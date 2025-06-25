@@ -50,6 +50,12 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   // Development tools
   showDevTools = false;
 
+  // Players table
+  activeTab: 'queue' | 'lobby' | 'all' = 'all';
+  isRefreshing = false;
+  autoRefreshEnabled = true;
+  private autoRefreshInterval?: number;
+
   constructor(private discordService: DiscordIntegrationService) {}
 
   ngOnInit() {
@@ -385,5 +391,91 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     return this.discordQueue.length > 0 ? 
       `${this.discordQueue.length} jogadores na fila Discord` : 
       'Fila Discord vazia';
+  }
+
+  // Players table methods
+  setActiveTab(tab: 'queue' | 'lobby' | 'all'): void {
+    this.activeTab = tab;
+  }
+
+  refreshPlayersData(): void {
+    this.isRefreshing = true;
+    
+    // Atualizar dados do Discord
+    this.discordService.requestDiscordStatus();
+    
+    // Simular delay de atualização
+    setTimeout(() => {
+      this.isRefreshing = false;
+    }, 1000);
+  }
+
+  trackByPlayerId(index: number, player: any): string {
+    return player.summonerName || index.toString();
+  }
+
+  trackByDiscordUserId(index: number, user: any): string {
+    return user.id || user.username || index.toString();
+  }
+
+  isCurrentPlayer(player: any): boolean {
+    return !!this.currentPlayer && player.summonerName === this.currentPlayer.summonerName;
+  }
+
+  getTimeInQueue(joinTime: Date | string): string {
+    const now = new Date();
+    const join = new Date(joinTime);
+    const diffMs = now.getTime() - join.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffSecs = Math.floor((diffMs % 60000) / 1000);
+    
+    if (diffMins > 0) {
+      return `${diffMins}m ${diffSecs}s`;
+    }
+    return `${diffSecs}s`;
+  }
+
+  isUserInQueue(user: any): boolean {
+    if (!user.linkedNickname) return false;
+    
+    const userSummonerName = `${user.linkedNickname.gameName}#${user.linkedNickname.tagLine}`;
+    const playersList = this.queueStatus.playersInQueueList;
+    
+    if (!playersList) return false;
+    
+    return playersList.some(player => 
+      player.summonerName === userSummonerName
+    );
+  }
+
+  inviteToLink(user: any): void {
+    // Implementar convite para vincular conta
+    console.log('Convidando usuário para vincular:', user.username);
+    // Aqui você pode emitir um evento ou chamar um serviço
+  }
+
+  inviteToQueue(user: any): void {
+    // Implementar convite para entrar na fila
+    console.log('Convidando usuário para fila:', user.username);
+    // Aqui você pode emitir um evento ou chamar um serviço
+  }
+
+  private startAutoRefresh(): void {
+    if (this.autoRefreshInterval) {
+      clearInterval(this.autoRefreshInterval);
+    }
+    
+    if (this.autoRefreshEnabled) {
+      this.autoRefreshInterval = window.setInterval(() => {
+        this.refreshPlayersData();
+      }, 5000); // Atualizar a cada 5 segundos
+    }
+  }
+
+  private stopAutoRefresh(): void {
+    if (this.autoRefreshInterval) {
+      clearInterval(this.autoRefreshInterval);
+      this.autoRefreshInterval = undefined;
+    }
   }
 } 
