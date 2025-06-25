@@ -293,7 +293,10 @@ export class App implements OnInit, OnDestroy {
   private async saveCustomMatchWithRealData(gameResult: any): Promise<void> {
     try {
       const lcuMatchData = gameResult.originalMatchData;
-      const playerIdentifier = this.currentPlayer?.id?.toString() || this.currentPlayer?.summonerName || '1';
+      // Corrigir: sempre usar o nome completo do invocador (Riot ID)
+      const playerIdentifier = this.currentPlayer?.summonerName && this.currentPlayer?.tagLine
+        ? `${this.currentPlayer.summonerName}#${this.currentPlayer.tagLine}`
+        : this.currentPlayer?.summonerName || '';
 
       console.log('🎮 Criando partida com dados reais do LCU:', lcuMatchData.gameId);
 

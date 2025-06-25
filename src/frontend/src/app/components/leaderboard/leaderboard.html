@@ -69,10 +69,7 @@
           </div>
 
           <!-- MMR -->
-          <div class="mmr-col">
-            <div class="mmr-value">{{ player.calculated_mmr }}</div>
-            <div class="mmr-label">MMR</div>
-          </div>
+          <div class="mmr-col" [ngStyle]="{'color': player.lp > 0 ? '#3fc380' : (player.lp < 0 ? '#e74c3c' : '#cdbe91'), 'font-weight': 'bold'}">{{ player.lp }} LP</div>
 
           <!-- Partidas -->
           <div class="games-col">

@@ -24,6 +24,7 @@ interface LeaderboardPlayer {
   max_kills: number;
   max_damage: number;
   calculated_mmr: number;
+  lp: number;
   favorite_champion: {
     name: string;
     id: number;
@@ -57,7 +58,7 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
   ngOnInit() {
     this.loadLeaderboard();
     // Atualizar a cada 2 minutos
-    this.refreshSubscription = interval(120000).subscribe(() => {
+    this.refreshSubscription = interval(1200000).subscribe(() => {
       this.loadLeaderboard(false);
     });
   }
@@ -74,7 +75,7 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
     this.error = null;
 
     try {
-      const response = await this.http.get<any>('http://localhost:3000/api/stats/participants-leaderboard?limit=50').toPromise();
+      const response = await this.http.get<any>('http://localhost:3000/api/stats/participants-leaderboard?limit=200').toPromise();
       
       if (response.success) {
         // Processar dados e adicionar rank, adaptando campos

@@ -1200,7 +1200,13 @@ app.post('/api/lcu/fetch-and-save-match/:gameId', (req: Request, res: Response) 
     });
 
     // Garantir que o player identifier está nos times
-    if (playerIdentifier && !team1Players.includes(playerIdentifier) && !team2Players.includes(playerIdentifier)) {
+    if (
+      playerIdentifier &&
+      !team1Players.includes(playerIdentifier) &&
+      !team2Players.includes(playerIdentifier) &&
+      typeof playerIdentifier === 'string' &&
+      playerIdentifier.includes('#')
+    ) {
       team1Players.push(playerIdentifier);
     }
 
@@ -1538,6 +1544,23 @@ app.delete('/api/matches/cleanup-test-matches', (req: Request, res: Response) =>
         success: false,
         error: error.message 
       });
+    }
+  })();
+});
+
+// Endpoint para atualizar nickname de um jogador
+app.post('/api/players/update-nickname', (req: Request, res: Response) => {
+  (async () => {
+    try {
+      const { oldName, newName } = req.body;
+      if (!oldName || !newName) {
+        return res.status(400).json({ error: 'oldName e newName são obrigatórios' });
+      }
+      await dbManager.updatePlayerNickname(oldName, newName);
+      res.json({ success: true, message: 'Nickname atualizado com sucesso' });
+    } catch (error: any) {
+      console.error('Erro ao atualizar nickname:', error);
+      res.status(500).json({ error: error.message });
     }
   })();
 });

@@ -1342,11 +1342,14 @@ export class DatabaseManager {
   }
 
   /**
-   * Atualiza os dados agregados dos jogadores na tabela players com base nas partidas custom_matches
+   * Atualiza todos os campos agregados dos jogadores na tabela players
+   * com base nas partidas customizadas (custom_matches).
+   * Recalcula: partidas jogadas, vitórias, derrotas, streak, LP, MMR, peak MMR.
+   * Isso garante que o leaderboard sempre reflita o estado real das partidas customizadas.
    */
   async refreshPlayersFromCustomMatches(): Promise<void> {
     if (!this.db) throw new Error('Banco de dados não inicializado');
-    // Buscar todos os jogadores que participaram de partidas customizadas
+    // Buscar todos os jogadores registrados
     const players = await this.db.all(`SELECT DISTINCT summoner_name FROM players`);
     for (const player of players) {
       const name = player.summoner_name;
@@ -1362,9 +1365,9 @@ export class DatabaseManager {
       let winStreak = 0;
       let peakMMR = 1000;
       let currentStreak = 0;
-      let lastResultWin = null;
+      let lastResultWin: boolean | null = null;
       for (const match of matches) {
-        // Descobrir se o jogador venceu
+        // Descobrir se o jogador venceu a partida
         let isWin = false;
         try {
           const team1 = JSON.parse(match.team1_players || '[]');
@@ -1373,6 +1376,7 @@ export class DatabaseManager {
             isWin = true;
           }
         } catch {}
+        // Atualizar contadores de vitórias, derrotas e streak
         if (isWin) {
           wins++;
           currentStreak = lastResultWin === true ? currentStreak + 1 : 1;
@@ -1381,7 +1385,7 @@ export class DatabaseManager {
           currentStreak = lastResultWin === false ? currentStreak - 1 : -1;
         }
         lastResultWin = isWin;
-        // LP e MMR
+        // Acumular LP e MMR ganhos/perdidos nesta partida
         let matchLP = 0;
         let matchMMR = 0;
         try {
@@ -1395,11 +1399,24 @@ export class DatabaseManager {
         mmr += matchMMR;
         if (mmr > peakMMR) peakMMR = mmr;
       }
-      // Atualizar jogador
+      // Atualizar os campos agregados do jogador na tabela players
       await this.db.run(
         `UPDATE players SET custom_games_played = ?, custom_wins = ?, custom_losses = ?, custom_lp = ?, custom_mmr = ?, custom_peak_mmr = ?, custom_win_streak = ? WHERE summoner_name = ?`,
         [matches.length, wins, losses, lp, mmr, peakMMR, currentStreak, name]
       );
     }
+  }
+
+  /**
+   * Atualiza o nickname de um jogador na tabela players
+   * @param oldName Nome antigo do jogador
+   * @param newName Novo nome do jogador
+   */
+  async updatePlayerNickname(oldName: string, newName: string): Promise<void> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+    await this.db.run(
+      'UPDATE players SET summoner_name = ? WHERE summoner_name = ?',
+      [newName, oldName]
+    );
   }
 }
