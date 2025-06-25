@@ -18,7 +18,7 @@ import { DiscordService } from './services/DiscordService';
 
 const app = express();
 const server = createServer(app);
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ server, path: '/ws' });
 const io = new SocketIOServer(server, {
   cors: {
     origin: "*",

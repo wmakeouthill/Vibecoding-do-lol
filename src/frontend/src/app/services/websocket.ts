@@ -27,17 +27,17 @@ export class WebsocketService {
   private getServerUrl(): string {
     // Em desenvolvimento, usar localhost
     if (this.isElectron() && (window as any).electronAPI) {
-      return 'ws://localhost:3000';
+      return 'ws://localhost:3000/ws';
     }
 
     // Em produção, usar URL da nuvem
     const host = window.location.hostname;
     if (host === 'localhost' || host === '127.0.0.1') {
-      return 'ws://localhost:3000';
+      return 'ws://localhost:3000/ws';
     }
 
     // URL da nuvem quando em produção
-    return `wss://${host.replace('http://', '').replace('https://', '')}`;
+    return `wss://${host.replace('http://', '').replace('https://', '')}/ws`;
   }
 
   private isElectron(): boolean {

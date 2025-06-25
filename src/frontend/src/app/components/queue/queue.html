@@ -19,16 +19,46 @@
       </div>
     </div>
   </div>
+
+  <!-- Discord Users Online Section -->
+  <div class="discord-users-section" *ngIf="isDiscordConnected && discordUsersOnline.length > 0">
+    <div class="section-header">
+      <h3>👥 Usuários Discord Online</h3>
+      <span class="user-count">{{ discordUsersOnline.length }} no canal</span>
+    </div>
+    
+    <div class="discord-users-grid">
+      <div *ngFor="let user of discordUsersOnline" class="discord-user-card" [class.has-app]="user.hasAppOpen">
+        <div class="user-avatar">
+          <i class="fab fa-discord"></i>
+          <div class="status-indicator" [class.online]="user.hasAppOpen"></div>
+        </div>
+        <div class="user-info">
+          <div class="username">{{ user.username }}</div>
+          <div class="nickname" *ngIf="user.linkedNickname">
+            {{ user.linkedNickname.gameName }}#{{ user.linkedNickname.tagLine }}
+          </div>
+          <div class="status">
+            <span *ngIf="user.hasAppOpen" class="app-open">📱 App Aberto</span>
+            <span *ngIf="!user.hasAppOpen" class="app-closed">💻 Apenas Discord</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Player Info -->
   <div class="player-info-card" *ngIf="currentPlayer">
-    <div class="player-avatar">      <img [src]="getProfileIconUrl()"
+    <div class="player-avatar">
+      <img [src]="getProfileIconUrl()"
            alt="Profile Icon"
            class="profile-icon"
            (error)="onProfileIconError($event)">
       <div class="player-level" *ngIf="currentPlayer.summonerLevel">
         {{ currentPlayer.summonerLevel }}
       </div>
-    </div>    <div class="player-details">
+    </div>
+    <div class="player-details">
       <h3>
         {{ currentPlayer.summonerName }}<span class="player-tag">{{ getPlayerTag() }}</span>
       </h3>
@@ -102,7 +132,9 @@
             <span>Sistema ativo</span>
           </div>
         </div>
-      </div>      <!-- Botão único Discord com estilos do botão original -->
+      </div>
+
+      <!-- Botão único Discord com estilos do botão original -->
       <button class="queue-btn join-btn"
               [disabled]="!queueStatus.isActive || !currentPlayer"
               (click)="onJoinDiscordQueue()">
@@ -110,151 +142,98 @@
         <span>Entrar na Fila Discord</span>
       </button>
 
-      <div class="discord-benefits">
-        <h4>✨ Vantagens da Fila Discord:</h4>
-        <ul>
-          <li>🔄 <strong>Automática</strong> - Só entrar no canal</li>
-          <li>👥 <strong>Times organizados</strong> - Bot move para canais Blue/Red</li>
-          <li>⚡ <strong>Mais rápida</strong> - Sem configuração P2P</li>
-          <li>📊 <strong>Transparente</strong> - Todos veem a fila</li>
-        </ul>
+      <!-- Botão para vincular nickname -->
+      <div class="link-nickname-section" *ngIf="!hasLinkedNickname">
+        <p class="link-info">🔗 Vincule seu Discord ao seu nick do LoL para usar automaticamente na fila</p>
+        <button class="link-btn" (click)="showLinkNicknameModal()">
+          <i class="fas fa-link"></i>
+          <span>Vincular Nickname</span>
+        </button>
       </div>
 
-      <!-- Funcionalidade especial para adicionar bots (apenas para popcorn seller#coup) -->
-      <div class="bot-controls" *ngIf="isSpecialUser() && !isInQueue">
-        <h4>🤖 Controles de Bot (Teste)</h4>
-        <p class="bot-warning">⚠️ Feature temporária para testes do sistema de matchmaking</p>
-        <button class="queue-btn bot-btn"
-                [disabled]="!queueStatus.isActive"
-                (click)="onAddBot()">
-          <i class="icon-plus"></i>
-          <span>Adicionar Bot na Fila</span>
+      <!-- Nickname vinculado -->
+      <div class="linked-nickname" *ngIf="hasLinkedNickname && linkedNickname">
+        <div class="linked-info">
+          <i class="fas fa-check-circle"></i>
+          <span>Vinculado: {{ linkedNickname.gameName }}#{{ linkedNickname.tagLine }}</span>
+        </div>
+        <button class="unlink-btn" (click)="unlinkNickname()">
+          <i class="fas fa-unlink"></i>
+          <span>Desvincular</span>
         </button>
-        <small class="bot-note">Os bots serão criados com lanes aleatórias disponíveis</small>
-
-        <!-- Botão para simular última partida customizada -->
-        <button class="queue-btn simulate-btn"
-                [disabled]="!queueStatus.isActive"
-                (click)="onSimulateLastMatch()">
-          <i class="icon-play"></i>
-          <span>🎮 Simular Última Partida</span>
-        </button>
-        <small class="simulate-note">Cria um jogo em andamento baseado na sua última partida customizada</small>
-
-        <!-- Botão para limpar partidas de teste -->
-        <button class="queue-btn cleanup-btn"
-                [disabled]="!queueStatus.isActive"
-                (click)="onCleanupTestMatches()">
-          <i class="icon-trash"></i>
-          <span>🗑️ Limpar Partidas de Teste</span>
-        </button>
-        <small class="cleanup-note">Remove todas as partidas simuladas/canceladas do banco de dados</small>
       </div>
     </div>
 
     <!-- In Queue State -->
     <div *ngIf="isInQueue" class="in-queue-section">
-      <div class="queue-timer">
-        <div class="timer-circle">
-          <span class="timer-text">{{ getTimerDisplay() }}</span>
-        </div>
-      </div>
-
-      <!-- Discord Queue Status -->
-      <div class="discord-queue-status" *ngIf="showDiscordMode && isDiscordConnected">
-        <h3>🎮 Aguardando Match Discord</h3>
-        <div class="discord-queue-progress">
-          <div class="progress-bar">
-            <div class="progress-fill" [style.width.%]="(discordQueue.length / 10) * 100"></div>
-          </div>
-          <span class="progress-text">{{ discordQueue.length }}/10 players</span>
-        </div>
-
-        <div class="discord-queue-list" *ngIf="discordQueue.length > 0">
-          <h4>Players na Fila:</h4>
-          <div class="player-list">
-            <div class="queue-player" *ngFor="let player of discordQueue">
-              <span class="player-name">{{ player.username }}</span>
-              <span class="player-role">{{ player.role }}</span>
-            </div>
-          </div>
-        </div>
-
-        <button class="queue-btn leave-btn" (click)="onLeaveDiscordQueue()">
-          <i class="icon-times"></i>
-          <span>Sair da Fila Discord</span>
-        </button>
-      </div>
-
-      <div class="queue-status-text">
-        <h3>Procurando Partida...</h3>
-        <p>Aguarde enquanto encontramos jogadores do seu nível</p>
-
-        <div class="queue-progress">
-          <div class="progress-bar">
-            <div class="progress-fill"
-                 [style.width.%]="(queueStatus.playersInQueue / 10) * 100">
-            </div>
-          </div>
-          <span class="progress-text">{{ queueStatus.playersInQueue }}/10 jogadores</span>
+      <div class="queue-status-info">
+        <h3>Na Fila Discord</h3>
+        <p>Aguardando outros jogadores...</p>
+        <div class="queue-timer">
+          <i class="icon-clock"></i>
+          <span>{{ queueTimer }}s</span>
         </div>
       </div>
 
       <button class="queue-btn leave-btn" (click)="onLeaveQueue()">
-        <i class="icon-stop"></i>
+        <i class="icon-exit"></i>
         <span>Sair da Fila</span>
       </button>
     </div>
   </div>
 
-  <!-- Queue Tips -->
-  <div class="queue-tips" *ngIf="!isInQueue">
-    <h4>Dicas para uma melhor experiência:</h4>
-    <ul>
-      <li>Certifique-se de que o League of Legends está aberto</li>
-      <li>Verifique sua conexão com a internet</li>
-      <li>Mantenha o cliente atualizado</li>
-      <li>Jogadores com MMR similar são prioritários no matchmaking</li>
-    </ul>
-  </div>
-  <!-- Recent Queue Activity -->
-  <div class="recent-activity" *ngIf="isInQueue || queueStatus.playersInQueue > 0">
-    <h4>Jogadores na Fila ({{ queueStatus.playersInQueue }}/10)</h4>
-    <div class="players-in-queue" *ngIf="queueStatus.playersInQueueList && queueStatus.playersInQueueList.length > 0">
-      <div class="player-in-queue" *ngFor="let player of queueStatus.playersInQueueList; let i = index">
-        <div class="player-position">{{ i + 1 }}</div>
-        <div class="player-info">
-          <span class="player-name">{{ player.summonerName }}<span class="player-tag" *ngIf="player.tagLine">#{{ player.tagLine }}</span></span>
-          <span class="player-lanes">
-            {{ getLaneDisplayName(player.primaryLane) }} • {{ getLaneDisplayName(player.secondaryLane) }}
-          </span>
-          <span class="player-mmr">{{ player.mmr }} MMR</span>
-        </div>
-      </div>
-      <div class="empty-slots" *ngFor="let slot of getEmptySlots(); let i = index">
-        <div class="player-position">{{ queueStatus.playersInQueue + i + 1 }}</div>
-        <div class="player-info empty">
-          <span class="waiting-text">Aguardando jogador...</span>
-        </div>
-      </div>
+  <!-- Development Tools -->
+  <div class="dev-tools" *ngIf="showDevTools">
+    <h3>🛠️ Ferramentas de Desenvolvimento</h3>
+    <div class="dev-buttons">
+      <button class="dev-btn" (click)="onAddBot()">
+        <i class="icon-bot"></i>
+        <span>Adicionar Bot</span>
+      </button>
+      <button class="dev-btn" (click)="onSimulateLastMatch()">
+        <i class="icon-simulate"></i>
+        <span>Simular Última Partida</span>
+      </button>
+      <button class="dev-btn" (click)="onCleanupTestMatches()">
+        <i class="icon-cleanup"></i>
+        <span>Limpar Partidas de Teste</span>
+      </button>
     </div>
+  </div>
+</div>
 
-    <h4>Atividade Recente da Fila</h4>
-    <div class="activity-list" *ngIf="queueStatus.recentActivities && queueStatus.recentActivities.length > 0">
-      <div class="activity-item" *ngFor="let activity of queueStatus.recentActivities.slice(0, 10)">
-        <span class="activity-time">{{ getTimeAgo(activity.timestamp) }}</span>
-        <span class="activity-text">{{ activity.message }}</span>
+<!-- Modal para vincular nickname -->
+<div class="modal-overlay" *ngIf="showLinkModal" (click)="closeLinkModal()">
+  <div class="modal-content" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>🔗 Vincular Discord ao LoL</h3>
+      <button class="close-btn" (click)="closeLinkModal()">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    
+    <div class="modal-body">
+      <p>Digite seu nickname do League of Legends para vincular automaticamente na fila:</p>
+      
+      <div class="form-group">
+        <label for="gameName">Nome do Jogador:</label>
+        <input type="text" id="gameName" [(ngModel)]="linkForm.gameName" 
+               placeholder="Ex: PlayerName" maxlength="16">
+      </div>
+      
+      <div class="form-group">
+        <label for="tagLine">Tag Line:</label>
+        <input type="text" id="tagLine" [(ngModel)]="linkForm.tagLine" 
+               placeholder="Ex: 1234" maxlength="5">
+      </div>
+      
+      <div class="form-actions">
+        <button class="btn-secondary" (click)="closeLinkModal()">Cancelar</button>
+        <button class="btn-primary" (click)="linkNickname()" 
+                [disabled]="!linkForm.gameName || !linkForm.tagLine">
+          Vincular
+        </button>
       </div>
     </div>
-    <div class="no-activity" *ngIf="!queueStatus.recentActivities || queueStatus.recentActivities.length === 0">
-      <span class="activity-text">Nenhuma atividade recente</span>
-    </div>
   </div>
-  <!-- Lane Selector Modal -->
-  <app-lane-selector
-    [isVisible]="showLaneSelector"
-    [currentPreferences]="queuePreferences"
-    (confirm)="onConfirmDiscordQueue($event)"
-    (close)="onCloseLaneSelector()">
-  </app-lane-selector>
 </div>

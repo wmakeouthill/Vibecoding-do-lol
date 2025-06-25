@@ -6,17 +6,26 @@ import { Injectable } from '@angular/core';
 export class DiscordIntegrationService {
   private ws?: WebSocket;
   private isBackendConnected = false;
+  private discordUsersOnline: any[] = [];
+  private linkedNicknames: Map<string, {gameName: string, tagLine: string}> = new Map();
+  private currentDiscordUser: any = null;
+  private isInDiscordChannel = false;
+  private queueParticipants: any[] = [];
 
   constructor() {
     this.connectToBot();
-  }  private connectToBot() {
+    this.setupDiscordPresence();
+  }
+
+  private connectToBot() {
     try {
-      // Conectar ao WebSocket principal do backend (onde o Discord Bot está integrado)
-      this.ws = new WebSocket('ws://localhost:3000');
+      // Conectar ao WebSocket do backend integrado
+      this.ws = new WebSocket('ws://localhost:3000/ws');
 
       this.ws.onopen = () => {
-        console.log('🤖 Conectado ao backend (Discord Bot integrado)');
+        console.log('🤖 Conectado ao Discord Bot');
         this.isBackendConnected = true;
+        this.requestDiscordStatus();
       };
 
       this.ws.onmessage = (event) => {
@@ -25,21 +34,45 @@ export class DiscordIntegrationService {
       };
 
       this.ws.onclose = () => {
-        console.log('🤖 Desconectado do backend (Discord Bot)');
+        console.log('🤖 Desconectado do Discord Bot');
         this.isBackendConnected = false;
-        // Reconectar após 3 segundos
         setTimeout(() => this.connectToBot(), 3000);
       };
 
     } catch (error) {
-      console.error('❌ Erro ao conectar com backend:', error);
+      console.error('❌ Erro ao conectar com Discord Bot:', error);
       this.isBackendConnected = false;
     }
   }
+
+  private setupDiscordPresence() {
+    // Simular Rich Presence - em produção seria via Discord RPC
+    // Por enquanto, vamos usar o sistema de detecção do bot
+    console.log('🎮 Configurando presença Discord...');
+  }
+
   private handleBotMessage(data: any) {
     switch (data.type) {
+      case 'discord_users_online':
+        console.log('👥 Usuários Discord online:', data.users);
+        this.discordUsersOnline = data.users;
+        this.updateDiscordUsersList(data.users);
+        this.checkAutoLink();
+        break;
+
+      case 'user_joined_channel':
+        console.log(`👤 ${data.username} entrou no canal`);
+        this.updateUserStatus(data.userId, true);
+        break;
+
+      case 'user_left_channel':
+        console.log(`👋 ${data.username} saiu do canal`);
+        this.updateUserStatus(data.userId, false);
+        break;
+
       case 'queue_update':
-        console.log(`🎯 Fila atualizada: ${data.size}/10 players`);
+        console.log('🎯 Fila atualizada:', data.queue);
+        this.queueParticipants = data.queue;
         this.updateQueueDisplay(data.queue);
         break;
 
@@ -51,68 +84,156 @@ export class DiscordIntegrationService {
       case 'user_qualified':
         console.log(`✅ ${data.username} qualificado para fila`);
         break;
+
+      case 'auto_link_success':
+        console.log(`🔗 Auto-vinculação: ${data.username} -> ${data.gameName}#${data.tagLine}`);
+        this.linkedNicknames.set(data.discordId, {
+          gameName: data.gameName,
+          tagLine: data.tagLine
+        });
+        break;
+
+      case 'discord_status':
+        this.currentDiscordUser = data.user;
+        this.isInDiscordChannel = data.inChannel;
+        console.log(`🎮 Status Discord: ${data.user?.username} - Canal: ${this.isInDiscordChannel}`);
+        break;
     }
   }
 
-  // Funções de Rich Presence removidas - agora o Discord Bot do backend gerencia isso
+  // Solicitar status atual do Discord
+  requestDiscordStatus() {
+    if (!this.ws) return;
 
-  joinQueue(role: string, username: string) {
+    const message = {
+      type: 'get_discord_status'
+    };
+
+    this.ws.send(JSON.stringify(message));
+  }
+
+  // Verificar vinculação automática
+  private checkAutoLink() {
+    // Esta função será chamada quando receber dados do LCU
+    // Compara dados do LCU com usuários Discord online
+  }
+
+  // Vincular automaticamente baseado em dados do LCU
+  async autoLinkWithLCU(lcuData: {gameName: string, tagLine: string}) {
+    if (!this.ws) return false;
+
+    const message = {
+      type: 'auto_link_lcu',
+      gameName: lcuData.gameName,
+      tagLine: lcuData.tagLine
+    };
+
+    this.ws.send(JSON.stringify(message));
+    return true;
+  }
+
+  // Entrar na fila Discord
+  joinDiscordQueue(role: string, username: string) {
     if (!this.ws) {
-      console.error('❌ Backend não conectado');
-      return;
+      console.error('❌ Discord Bot não conectado');
+      return false;
+    }
+
+    if (!this.isInDiscordChannel) {
+      console.error('❌ Não está no canal #lol-matchmaking');
+      return false;
     }
 
     const message = {
       type: 'join_discord_queue',
       username,
       role,
+      discordId: this.currentDiscordUser?.id
     };
 
     this.ws.send(JSON.stringify(message));
-    console.log(`🎯 Entrou na fila como ${role}`);
+    console.log(`🎯 Entrou na fila Discord como ${role}`);
+    return true;
   }
 
-  leaveQueue(username: string) {
+  // Sair da fila Discord
+  leaveDiscordQueue() {
     if (!this.ws) return;
 
     const message = {
-      type: 'leave_queue',
-      username
+      type: 'leave_discord_queue',
+      discordId: this.currentDiscordUser?.id
     };
 
     this.ws.send(JSON.stringify(message));
-    console.log('👋 Saiu da fila');
+    console.log('👋 Saiu da fila Discord');
+  }
+
+  // Obter usuários Discord online
+  getDiscordUsersOnline(): any[] {
+    return this.discordUsersOnline;
+  }
+
+  // Verificar se está no canal Discord
+  isInChannel(): boolean {
+    return this.isInDiscordChannel;
+  }
+
+  // Verificar se está conectado ao Discord
+  isConnected(): boolean {
+    return this.isBackendConnected && this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  // Obter usuário Discord atual
+  getCurrentDiscordUser(): any {
+    return this.currentDiscordUser;
+  }
+
+  // Obter participantes da fila
+  getQueueParticipants(): any[] {
+    return this.queueParticipants;
+  }
+
+  // Verificar se tem nickname vinculado
+  hasLinkedNickname(discordId: string): boolean {
+    return this.linkedNicknames.has(discordId);
+  }
+
+  // Obter nickname vinculado
+  getLinkedNickname(discordId: string): {gameName: string, tagLine: string} | null {
+    return this.linkedNicknames.get(discordId) || null;
+  }
+
+  private updateUserStatus(userId: string, isOnline: boolean) {
+    const userIndex = this.discordUsersOnline.findIndex(u => u.id === userId);
+    if (userIndex !== -1) {
+      this.discordUsersOnline[userIndex].isOnline = isOnline;
+      this.updateDiscordUsersList(this.discordUsersOnline);
+    }
+  }
+
+  private updateDiscordUsersList(users: any[]) {
+    window.dispatchEvent(new CustomEvent('discordUsersUpdate', {
+      detail: { users }
+    }));
   }
 
   private updateQueueDisplay(queue: any[]) {
-    if (!Array.isArray(queue)) {
-      console.error('Fila recebida é inválida:', queue);
-      window.dispatchEvent(new CustomEvent('queueUpdate', {
-        detail: { queue: [], size: 0 }
-      }));
-      return;
-    }
     window.dispatchEvent(new CustomEvent('queueUpdate', {
       detail: { queue, size: queue.length }
     }));
   }
+
   private handleMatchCreated(matchData: any) {
-    // Simplesmente emitir evento para componente mostrar match
-    // O Discord Bot do backend gerencia Rich Presence automaticamente
     window.dispatchEvent(new CustomEvent('matchFound', {
       detail: matchData
     }));
   }
 
-  getQueueStatus() {
-    if (!this.ws) return;
-
-    const message = {
-      type: 'get_queue_status'
-    };
-
-    this.ws.send(JSON.stringify(message));
-  }  isConnected(): boolean {
-    return this.isBackendConnected && this.ws?.readyState === WebSocket.OPEN;
+  // Cleanup
+  ngOnDestroy() {
+    if (this.ws) {
+      this.ws.close();
+    }
   }
 }

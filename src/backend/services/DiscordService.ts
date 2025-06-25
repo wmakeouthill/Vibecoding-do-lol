@@ -34,9 +34,7 @@ export class DiscordService {
       intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.GuildPresences,
-        GatewayIntentBits.MessageContent
+        GatewayIntentBits.GuildVoiceStates
       ]
     });
 
@@ -55,15 +53,11 @@ export class DiscordService {
       this.handleVoiceStateChange(oldState, newState);
     });
 
-    // Detectar Rich Presence (app aberto)
-    this.client.on('presenceUpdate', (oldPresence, newPresence) => {
-      this.handlePresenceUpdate(oldPresence, newPresence);
-    });
-
     // Comandos slash
     this.client.on('interactionCreate', async (interaction) => {
       if (!interaction.isChatInputCommand()) return;
-      await this.handleSlashCommand(interaction);
+      // Temporariamente desabilitado até resolver permissões
+      console.log('📝 Comando slash recebido:', interaction.commandName);
     });
 
     this.client.on('error', (error) => {
@@ -83,6 +77,21 @@ export class DiscordService {
     }
 
     try {
+      // Se já está conectado, desconectar antes de trocar o token
+      if (this.isConnected || this.client?.user) {
+        console.log('🔄 Reinicializando Discord Bot com novo token...');
+        await this.client.destroy();
+        // Criar nova instância do client
+        this.client = new Client({
+          intents: [
+            GatewayIntentBits.Guilds,
+            GatewayIntentBits.GuildMessages,
+            GatewayIntentBits.GuildVoiceStates
+          ]
+        });
+        this.setupDiscordEvents();
+        this.isConnected = false;
+      }
       this.botToken = token;
       await this.client.login(token);
       console.log('✅ Discord Bot inicializado com sucesso');
@@ -107,23 +116,6 @@ export class DiscordService {
     }
   }
 
-  private async handlePresenceUpdate(oldPresence: any, newPresence: any): Promise<void> {
-    if (!newPresence || !newPresence.activities) return;
-
-    const user = newPresence.user;
-    const hasLoLApp = newPresence.activities.some((activity: any) => 
-      activity.name === 'LoL Matchmaking' || 
-      activity.details?.includes('LoL Matchmaking')
-    );
-
-    if (hasLoLApp) {
-      console.log(`🎮 ${user.username} abriu o app LoL Matchmaking`);
-      this.checkUserForQueue(user);
-    } else {
-      this.removeFromQueue(user.id);
-    }
-  }
-
   private async checkUserForQueue(user: any): Promise<void> {
     const guild = this.client.guilds.cache.first();
     if (!guild) return;
@@ -134,12 +126,8 @@ export class DiscordService {
     const inMatchmakingChannel = member.voice.channel && 
                                member.voice.channel.name === this.targetChannelName;
     
-    const hasAppOpen = member.presence?.activities?.some((activity: any) => 
-      activity.name === 'LoL Matchmaking'
-    );
-
-    if (inMatchmakingChannel && hasAppOpen) {
-      console.log(`✅ ${user.username} qualificado para fila`);
+    if (inMatchmakingChannel) {
+      console.log(`✅ ${user.username} qualificado para fila (no canal de matchmaking)`);
       this.broadcastToClients({
         type: 'user_qualified',
         userId: user.id,
@@ -403,32 +391,6 @@ export class DiscordService {
       }
     } catch (error) {
       console.error('❌ Erro ao registrar comandos:', error);
-    }
-  }
-
-  private async handleSlashCommand(interaction: any): Promise<void> {
-    switch (interaction.commandName) {
-      case 'queue':
-        const queueList = Array.from(this.queue.values())
-          .map(player => `${player.username} (${player.role})`)
-          .join('\n') || 'Fila vazia';
-        
-        await interaction.reply({
-          content: `**🎯 Fila Atual (${this.queue.size}/10):**\n\`\`\`${queueList}\`\`\``,
-          ephemeral: true
-        });
-        break;
-        
-      case 'clear_queue':
-        if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
-          await interaction.reply({ content: '❌ Sem permissão', ephemeral: true });
-          return;
-        }
-        
-        this.queue.clear();
-        this.broadcastQueueUpdate();
-        await interaction.reply('✅ Fila limpa!');
-        break;
     }
   }  // Métodos públicos para integração
   isDiscordConnected(): boolean {

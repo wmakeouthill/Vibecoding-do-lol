@@ -719,7 +719,7 @@ export class App implements OnInit, OnDestroy {
 
         const role = this.mapLaneToRole(preferences?.primaryLane || 'mid');
         const username = this.currentPlayer?.summonerName || this.currentPlayer?.gameName || 'Player';
-        this.discordService.joinQueue(role, username);
+        this.discordService.joinDiscordQueue(role, username);
 
         this.isInQueue = true;
         this.currentQueueType = 'discord';
@@ -795,8 +795,7 @@ export class App implements OnInit, OnDestroy {
       console.log(`🚪 Saindo da fila ${this.currentQueueType}...`);      if (this.currentQueueType === 'discord') {
         // Sair da fila Discord
         console.log('🎮 Saindo da fila Discord');
-        const username = this.currentPlayer?.summonerName || this.currentPlayer?.gameName || 'Player';
-        this.discordService.leaveQueue(username);
+        this.discordService.leaveDiscordQueue();
         this.addNotification('info', 'Fila Discord', 'Você saiu da fila Discord');
       } else {
         // Sair da fila centralizada
