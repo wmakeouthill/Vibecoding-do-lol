@@ -29,7 +29,7 @@ export class DiscordService {
   private activeMatches: Map<string, DiscordMatch> = new Map();
   private isConnected = false;
   private botToken?: string;
-  private targetChannelName = '#lol-matchmaking';
+  private targetChannelName = 'lol-matchmaking';
   private databaseManager: DatabaseManager;
 
   // WebSocket para comunicação com frontend
@@ -446,7 +446,7 @@ export class DiscordService {
       botUsername: this.getBotUsername(),
       queueSize: this.getQueueSize(),
       activeMatches: this.getActiveMatches(),
-      hasUsersInChannel: this.hasUsersInMatchmakingChannel()
+      inChannel: this.hasUsersInMatchmakingChannel()
     }));
   }
 
@@ -800,25 +800,38 @@ export class DiscordService {
 
   // Verificar se há usuários no canal de matchmaking
   hasUsersInMatchmakingChannel(): boolean {
-    if (!this.isConnected || !this.client) return false;
+    console.log('🔍 [DEBUG] Verificando se há usuários no canal...');
+    
+    if (!this.isConnected || !this.client) {
+      console.log('❌ [DEBUG] Discord não conectado ou client não disponível');
+      return false;
+    }
     
     const guild = this.client.guilds.cache.first();
-    if (!guild) return false;
+    if (!guild) {
+      console.log('❌ [DEBUG] Guild não encontrada');
+      return false;
+    }
 
+    console.log(`🔍 [DEBUG] Procurando canal: ${this.targetChannelName}`);
     const matchmakingChannel = guild.channels.cache.find(
       channel => channel.name === this.targetChannelName && channel.type === ChannelType.GuildVoice
     );
 
-    if (!matchmakingChannel) return false;
+    if (!matchmakingChannel) {
+      console.log(`❌ [DEBUG] Canal ${this.targetChannelName} não encontrado`);
+      return false;
+    }
 
     // Verificar se há membros no canal (apenas para canais de voz)
     if (matchmakingChannel.type === ChannelType.GuildVoice) {
       const voiceChannel = matchmakingChannel as any;
       const membersInChannel = voiceChannel.members?.size || 0;
-      console.log(`👥 Usuários no canal ${this.targetChannelName}: ${membersInChannel}`);
+      console.log(`👥 [DEBUG] Usuários no canal ${this.targetChannelName}: ${membersInChannel}`);
       return membersInChannel > 0;
     }
     
+    console.log('❌ [DEBUG] Canal encontrado mas não é de voz');
     return false;
   }
 

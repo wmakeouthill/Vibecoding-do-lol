@@ -317,19 +317,35 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       return;
     }
 
-    // Verificar se está no canal correto
-    if (!this.discordService.isInChannel()) {
-      alert('❌ Você precisa estar no canal #lol-matchmaking no Discord para usar a fila!');
-      return;
-    }
+    // Forçar atualização do status do Discord
+    this.discordService.requestDiscordStatus();
+    
+    // Aguardar um pouco para receber a resposta
+    setTimeout(() => {
+      this.checkDiscordConnection();
+      
+      // Debug: Verificar status do canal
+      console.log('🔍 [DEBUG] Status do Discord:', {
+        isConnected: this.discordService.isConnected(),
+        isInChannel: this.discordService.isInChannel(),
+        currentUser: this.discordService.getCurrentDiscordUser(),
+        usersOnline: this.discordService.getDiscordUsersOnline().length
+      });
 
-    console.log('🎮 Entrando na fila Discord com dados do LCU:', {
-      gameName: this.currentPlayer.gameName,
-      tagLine: this.currentPlayer.tagLine,
-      summonerName: this.currentPlayer.summonerName
-    });
+      // Verificar se está no canal correto
+      if (!this.discordService.isInChannel()) {
+        alert('❌ Você precisa estar no canal #lol-matchmaking no Discord para usar a fila!');
+        return;
+      }
 
-    this.showLaneSelector = true;
+      console.log('🎮 Entrando na fila Discord com dados do LCU:', {
+        gameName: this.currentPlayer?.gameName,
+        tagLine: this.currentPlayer?.tagLine,
+        summonerName: this.currentPlayer?.summonerName
+      });
+
+      this.showLaneSelector = true;
+    }, 500);
   }
 
   onConfirmDiscordQueue(preferences: QueuePreferences) {
