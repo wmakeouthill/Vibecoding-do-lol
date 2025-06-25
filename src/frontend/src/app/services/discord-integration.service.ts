@@ -62,6 +62,12 @@ export class DiscordIntegrationService {
         this.checkAutoLink();
         break;
 
+      case 'discord_links_update':
+        console.log('🔗 Vinculações Discord atualizadas:', data.links);
+        this.updateLinkedNicknames(data.links);
+        this.updateDiscordUsersList(this.discordUsersOnline);
+        break;
+
       case 'user_joined_channel':
         console.log(`👤 ${data.username} entrou no canal`);
         this.updateUserStatus(data.userId, true);
@@ -123,6 +129,13 @@ export class DiscordIntegrationService {
     };
     
     this.ws.send(JSON.stringify(usersMessage));
+
+    // Solicitar vinculações Discord
+    const linksMessage = {
+      type: 'get_discord_links'
+    };
+    
+    this.ws.send(JSON.stringify(linksMessage));
   }
 
   // Verificar vinculação automática

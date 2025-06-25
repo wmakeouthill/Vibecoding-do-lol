@@ -210,6 +210,9 @@ export class DiscordService {
       case 'get_discord_users_online':
         this.sendUsersInChannel(ws);
         break;
+      case 'get_discord_links':
+        await this.sendDiscordLinks(ws);
+        break;
     }
   }
 
@@ -455,6 +458,30 @@ export class DiscordService {
     }));
   }
 
+  private async sendDiscordLinks(ws: WSClient): Promise<void> {
+    try {
+      const links = await this.databaseManager.getAllDiscordLinks();
+      ws.send(JSON.stringify({
+        type: 'discord_links_update',
+        links: links
+      }));
+    } catch (error) {
+      console.error('❌ Erro ao enviar vinculações:', error);
+    }
+  }
+
+  private async broadcastDiscordLinks(): Promise<void> {
+    try {
+      const links = await this.databaseManager.getAllDiscordLinks();
+      this.broadcastToClients({
+        type: 'discord_links_update',
+        links: links
+      });
+    } catch (error) {
+      console.error('❌ Erro ao broadcast vinculações:', error);
+    }
+  }
+
   private async registerSlashCommands(): Promise<void> {
     const commands = [
       {
@@ -560,6 +587,9 @@ export class DiscordService {
 
       console.log(`🔗 Vinculação criada via Discord: ${discordUsername} -> ${gameName}#${cleanTagLine}`);
 
+      // Broadcast das vinculações para todos os clientes
+      await this.broadcastDiscordLinks();
+
     } catch (error) {
       console.error('❌ Erro ao criar vinculação:', error);
       await interaction.reply({ 
@@ -593,6 +623,9 @@ export class DiscordService {
       });
 
       console.log(`🔗 Vinculação removida via Discord: ${discordUsername} -> ${existingLink.game_name}#${existingLink.tag_line}`);
+
+      // Broadcast das vinculações para todos os clientes
+      await this.broadcastDiscordLinks();
 
     } catch (error) {
       console.error('❌ Erro ao remover vinculação:', error);
