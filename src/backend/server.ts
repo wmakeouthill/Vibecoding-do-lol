@@ -438,6 +438,8 @@ app.get('/api/stats/leaderboard', (async (req: Request, res: Response) => {
 app.get('/api/stats/participants-leaderboard', (async (req: Request, res: Response) => {
   try {
     const limit = parseInt(req.query.limit as string) || 100;
+    // Atualizar dados dos jogadores antes de retornar o leaderboard
+    await dbManager.refreshPlayersFromCustomMatches();
     const leaderboard = await dbManager.getParticipantsLeaderboard(limit);
     res.json({ success: true, data: leaderboard });
   } catch (error: any) {

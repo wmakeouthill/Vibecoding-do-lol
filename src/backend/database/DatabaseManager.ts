@@ -1340,4 +1340,66 @@ export class DatabaseManager {
     
     return result?.count || 0;
   }
+
+  /**
+   * Atualiza os dados agregados dos jogadores na tabela players com base nas partidas custom_matches
+   */
+  async refreshPlayersFromCustomMatches(): Promise<void> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+    // Buscar todos os jogadores que participaram de partidas customizadas
+    const players = await this.db.all(`SELECT DISTINCT summoner_name FROM players`);
+    for (const player of players) {
+      const name = player.summoner_name;
+      // Buscar todas as partidas customizadas completadas do jogador
+      const matches = await this.db.all(
+        `SELECT * FROM custom_matches WHERE status = 'completed' AND (team1_players LIKE ? OR team2_players LIKE ?)`,
+        [`%${name}%`, `%${name}%`]
+      );
+      let wins = 0;
+      let losses = 0;
+      let lp = 0;
+      let mmr = 1000;
+      let winStreak = 0;
+      let peakMMR = 1000;
+      let currentStreak = 0;
+      let lastResultWin = null;
+      for (const match of matches) {
+        // Descobrir se o jogador venceu
+        let isWin = false;
+        try {
+          const team1 = JSON.parse(match.team1_players || '[]');
+          const team2 = JSON.parse(match.team2_players || '[]');
+          if ((team1.includes(name) && match.winner_team === 1) || (team2.includes(name) && match.winner_team === 2)) {
+            isWin = true;
+          }
+        } catch {}
+        if (isWin) {
+          wins++;
+          currentStreak = lastResultWin === true ? currentStreak + 1 : 1;
+        } else {
+          losses++;
+          currentStreak = lastResultWin === false ? currentStreak - 1 : -1;
+        }
+        lastResultWin = isWin;
+        // LP e MMR
+        let matchLP = 0;
+        let matchMMR = 0;
+        try {
+          const lpChanges = match.lp_changes ? JSON.parse(match.lp_changes) : {};
+          if (lpChanges[name]) {
+            matchLP = lpChanges[name].lp || 0;
+            matchMMR = lpChanges[name].mmr || 0;
+          }
+        } catch {}
+        lp += matchLP;
+        mmr += matchMMR;
+        if (mmr > peakMMR) peakMMR = mmr;
+      }
+      // Atualizar jogador
+      await this.db.run(
+        `UPDATE players SET custom_games_played = ?, custom_wins = ?, custom_losses = ?, custom_lp = ?, custom_mmr = ?, custom_peak_mmr = ?, custom_win_streak = ? WHERE summoner_name = ?`,
+        [matches.length, wins, losses, lp, mmr, peakMMR, currentStreak, name]
+      );
+    }
+  }
 }
