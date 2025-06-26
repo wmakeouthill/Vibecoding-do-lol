@@ -839,6 +839,172 @@ app.get('/api/queue/status', (req: Request, res: Response) => {
   res.json(queueStatus);
 });
 
+// Endpoint para entrar na fila via HTTP
+app.post('/api/queue/join', (async (req: Request, res: Response) => {
+  try {
+    const { player, preferences } = req.body;
+    
+    if (!player) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Dados do jogador são obrigatórios' 
+      });
+    }
+
+    // Criar um WebSocket mock para o jogador que entra via HTTP
+    const mockWebSocket = {
+      send: (data: string) => {
+        // Log da resposta para debug
+        console.log('📤 Resposta para jogador HTTP:', JSON.parse(data));
+      },
+      readyState: 1 // WebSocket.OPEN
+    } as any;
+
+    // Usar o método existente do MatchmakingService
+    await matchmakingService.addPlayerToQueue(mockWebSocket, { player, preferences });
+    
+    res.json({ 
+      success: true, 
+      message: 'Jogador adicionado à fila com sucesso',
+      queueStatus: matchmakingService.getQueueStatus()
+    });
+  } catch (error: any) {
+    console.error('Erro ao adicionar jogador à fila:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+}) as RequestHandler);
+
+// Endpoint para sair da fila via HTTP
+app.post('/api/queue/leave', (async (req: Request, res: Response) => {
+  try {
+    const { playerId, summonerName } = req.body;
+    
+    if (!playerId && !summonerName) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'playerId ou summonerName é obrigatório' 
+      });
+    }
+
+    // Usar o método público do MatchmakingService
+    const removed = matchmakingService.removePlayerFromQueueById(playerId, summonerName);
+    
+    if (removed) {
+      res.json({ 
+        success: true, 
+        message: 'Jogador removido da fila com sucesso',
+        queueStatus: matchmakingService.getQueueStatus()
+      });
+    } else {
+      res.status(404).json({ 
+        success: false, 
+        error: 'Jogador não encontrado na fila' 
+      });
+    }
+  } catch (error: any) {
+    console.error('Erro ao remover jogador da fila:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+}) as RequestHandler);
+
+// Endpoints legacy para compatibilidade
+app.post('/api/queue/join-legacy', (async (req: Request, res: Response) => {
+  try {
+    const { playerId, mmr, role } = req.body;
+    
+    if (!playerId || !mmr || !role) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'playerId, mmr e role são obrigatórios' 
+      });
+    }
+
+    // Buscar jogador no banco
+    const player = await dbManager.getPlayer(playerId);
+    if (!player) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Jogador não encontrado' 
+      });
+    }
+
+    // Criar WebSocket mock
+    const mockWebSocket = {
+      send: (data: string) => {
+        console.log('📤 Resposta para jogador legacy:', JSON.parse(data));
+      },
+      readyState: 1
+    } as any;
+
+    // Adicionar à fila com preferências legacy
+    await matchmakingService.addPlayerToQueue(mockWebSocket, {
+      player: {
+        summonerName: player.summoner_name,
+        summonerId: player.summoner_id,
+        puuid: player.puuid,
+        region: player.region
+      },
+      preferences: {
+        primaryLane: role,
+        secondaryLane: role
+      }
+    });
+    
+    res.json({ 
+      success: true, 
+      message: 'Jogador adicionado à fila legacy com sucesso',
+      queueStatus: matchmakingService.getQueueStatus()
+    });
+  } catch (error: any) {
+    console.error('Erro ao adicionar jogador à fila legacy:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+}) as RequestHandler);
+
+app.post('/api/queue/leave-legacy', (async (req: Request, res: Response) => {
+  try {
+    const { playerId } = req.body;
+    
+    if (!playerId) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'playerId é obrigatório' 
+      });
+    }
+
+    // Usar o método público do MatchmakingService
+    const removed = matchmakingService.removePlayerFromQueueById(playerId);
+    
+    if (removed) {
+      res.json({ 
+        success: true, 
+        message: 'Jogador removido da fila legacy com sucesso',
+        queueStatus: matchmakingService.getQueueStatus()
+      });
+    } else {
+      res.status(404).json({ 
+        success: false, 
+        error: 'Jogador não encontrado na fila' 
+      });
+    }
+  } catch (error: any) {
+    console.error('Erro ao remover jogador da fila legacy:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+}) as RequestHandler);
+
 // Rota temporária para adicionar bot na fila (apenas para testes)
 app.post('/api/queue/add-bot', async (req: Request, res: Response) => {
   try {

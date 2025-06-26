@@ -699,8 +699,12 @@ export class ApiService {
       );
   }
 
-  leaveQueue(playerId: number): Observable<any> {
-    return this.http.post(`${this.baseUrl}/queue/leave`, { playerId })
+  leaveQueue(playerId?: number, summonerName?: string): Observable<any> {
+    const body: any = {};
+    if (playerId) body.playerId = playerId;
+    if (summonerName) body.summonerName = summonerName;
+    
+    return this.http.post(`${this.baseUrl}/queue/leave`, body)
       .pipe(
         retry(1),
         catchError(this.handleError)

@@ -582,17 +582,42 @@ export class App implements OnInit, OnDestroy {
       this.isInQueue = true;
       this.currentQueueType = 'centralized';
       
-      // Usar o DiscordService para entrar na fila Discord
-      const role = preferences?.primaryLane || 'fill';
-      const success = this.discordService.joinDiscordQueue(role, this.currentPlayer.summonerName || 'Unknown', {
-        gameName: this.currentPlayer.gameName || '',
-        tagLine: this.currentPlayer.tagLine || ''
-      });
+      // PRIMEIRO: Entrar na fila centralizada via API HTTP
+      const playerData = {
+        summonerName: this.currentPlayer.summonerName,
+        summonerId: this.currentPlayer.summonerId,
+        puuid: this.currentPlayer.puuid,
+        region: this.currentPlayer.region || 'br1',
+        gameName: this.currentPlayer.gameName,
+        tagLine: this.currentPlayer.tagLine
+      };
+
+      console.log('📡 Enviando dados para API HTTP:', playerData);
       
-      if (success) {
-        this.addNotification('success', 'Na Fila', 'Você entrou na fila Discord!');
+      const response = await this.apiService.joinQueue(playerData, preferences).toPromise();
+      console.log('✅ Resposta da API HTTP:', response);
+      
+      if (response && response.success) {
+        this.addNotification('success', 'Na Fila', 'Você entrou na fila centralizada!');
+        
+        // Atualizar status da fila
+        this.queueStatus = response.queueStatus || this.queueStatus;
+        
+        // SEGUNDO: Se Discord estiver disponível, entrar também na fila Discord
+        if (this.discordService.isConnected() && this.discordService.isInChannel()) {
+          const role = preferences?.primaryLane || 'fill';
+          const discordSuccess = this.discordService.joinDiscordQueue(role, this.currentPlayer.summonerName || 'Unknown', {
+            gameName: this.currentPlayer.gameName || '',
+            tagLine: this.currentPlayer.tagLine || ''
+          });
+          
+          if (discordSuccess) {
+            this.addNotification('info', 'Discord', 'Também conectado à fila Discord!');
+            this.currentQueueType = 'discord';
+          }
+        }
       } else {
-        this.addNotification('error', 'Erro', 'Falha ao entrar na fila Discord');
+        this.addNotification('error', 'Erro', 'Falha ao entrar na fila centralizada');
         this.isInQueue = false;
       }
     } catch (error) {
@@ -636,11 +661,35 @@ export class App implements OnInit, OnDestroy {
   async leaveQueue(): Promise<void> {
     try {
       console.log('👋 Saindo da fila');
+      
+      // PRIMEIRO: Sair da fila centralizada via API HTTP
+      if (this.currentPlayer?.id) {
+        console.log('📡 Enviando saída para API HTTP...');
+        const response = await this.apiService.leaveQueue(this.currentPlayer.id).toPromise();
+        console.log('✅ Resposta da saída da API:', response);
+        
+        if (response && response.success) {
+          // Atualizar status da fila
+          this.queueStatus = response.queueStatus || this.queueStatus;
+        }
+      } else if (this.currentPlayer?.summonerName) {
+        // Fallback: usar summonerName se não tiver ID
+        console.log('📡 Enviando saída por summonerName...');
+        const response = await this.apiService.leaveQueue(undefined, this.currentPlayer.summonerName).toPromise();
+        console.log('✅ Resposta da saída da API:', response);
+        
+        if (response && response.success) {
+          this.queueStatus = response.queueStatus || this.queueStatus;
+        }
+      }
+      
+      // SEGUNDO: Sair da fila Discord se estiver conectado
+      if (this.discordService.isConnected()) {
+        this.discordService.leaveDiscordQueue();
+      }
+      
       this.isInQueue = false;
       this.currentQueueType = null;
-      
-      // Usar o DiscordService para sair da fila
-      this.discordService.leaveDiscordQueue();
       
       this.addNotification('info', 'Saiu da Fila', 'Você saiu da fila');
     } catch (error) {
@@ -1734,10 +1783,12 @@ export class App implements OnInit, OnDestroy {
     
     // Verificar status inicial
     this.checkBackendConnection();
+    this.updateQueueStatus();
     
     // Verificar a cada 10 segundos
     setInterval(() => {
       this.checkBackendConnection();
+      this.updateQueueStatus();
     }, 10000);
   }
   
@@ -1753,6 +1804,19 @@ export class App implements OnInit, OnDestroy {
       }
     });
   }
+
+  private updateQueueStatus(): void {
+    this.apiService.getQueueStatus().subscribe({
+      next: (status) => {
+        this.queueStatus = status;
+        console.log('📊 Status da fila atualizado:', status.playersInQueue, 'jogadores');
+      },
+      error: (error) => {
+        console.warn('❌ Erro ao atualizar status da fila:', error.message);
+      }
+    });
+  }
+
   private createMockPlayer(): void {
     // Criar dados básicos quando não há dados reais disponíveis
     this.currentPlayer = {

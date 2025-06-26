@@ -745,7 +745,7 @@ export class MatchmakingService {
   }
 
   // Método para fazer broadcast das atualizações da fila
-  private broadcastQueueUpdate(): void {
+  public broadcastQueueUpdate(): void {
     if (!this.wss) return;
 
     const queueStatus = this.getQueueStatus();
@@ -936,5 +936,46 @@ export class MatchmakingService {
         message: 'Falha ao entrar na fila Discord: ' + error.message
       }));
     }
+  }
+
+  // Método para obter a fila diretamente (para uso dos endpoints HTTP)
+  public getQueue(): QueuedPlayer[] {
+    return this.queue;
+  }
+
+  // Método para remover jogador da fila por ID ou nome (para uso dos endpoints HTTP)
+  public removePlayerFromQueueById(playerId?: number, summonerName?: string): boolean {
+    let playerIndex = -1;
+    
+    if (playerId) {
+      playerIndex = this.queue.findIndex(p => p.id === playerId);
+    } else if (summonerName) {
+      playerIndex = this.queue.findIndex(p => p.summonerName === summonerName);
+    }
+
+    if (playerIndex !== -1) {
+      const player = this.queue[playerIndex];
+      this.queue.splice(playerIndex, 1);
+      
+      // Atualizar posições na fila
+      this.queue.forEach((p, index) => {
+        p.queuePosition = index + 1;
+      });
+
+      // Adicionar atividade de saída
+      this.addActivity(
+        'player_left',
+        `${player.summonerName} saiu da fila`,
+        player.summonerName
+      );
+
+      // Broadcast atualização da fila
+      this.broadcastQueueUpdate();
+      
+      console.log(`➖ ${player.summonerName} saiu da fila via HTTP`);
+      return true;
+    }
+    
+    return false;
   }
 }
