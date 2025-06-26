@@ -1,4 +1,6 @@
 import { Injectable } from '@angular/core';
+import { BehaviorSubject, Observable } from 'rxjs';
+import { WEBSOCKET_URL } from '../app.config';
 
 @Injectable({
   providedIn: 'root'
@@ -12,156 +14,159 @@ export class DiscordIntegrationService {
   private isInDiscordChannel = false;
   private queueParticipants: any[] = [];
 
+  // Observables para componentes
+  private usersSubject = new BehaviorSubject<any[]>([]);
+  private connectionSubject = new BehaviorSubject<boolean>(false);
+
+  // Contador de instâncias para debug
+  private static instanceCount = 0;
+  private instanceId: number;
+
   constructor() {
-    this.connectToBot();
-    this.setupDiscordPresence();
+    DiscordIntegrationService.instanceCount++;
+    this.instanceId = DiscordIntegrationService.instanceCount;
+    console.log(`🔧 [DiscordService] Instância #${this.instanceId} criada (Total: ${DiscordIntegrationService.instanceCount})`);
+    
+    this.connectToWebSocket();
   }
 
-  private connectToBot() {
+  private connectToWebSocket() {
+    // Verificar se já existe uma conexão ativa
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      console.log(`⚠️ [DiscordService #${this.instanceId}] WebSocket já está conectado, não criando nova conexão`);
+      return;
+    }
+
+    // Fechar conexão anterior se existir
+    if (this.ws) {
+      console.log(`🔌 [DiscordService #${this.instanceId}] Fechando conexão anterior...`);
+      this.ws.close();
+      this.ws = undefined;
+    }
+
     try {
-      // Conectar ao WebSocket do backend integrado
-      this.ws = new WebSocket('ws://localhost:3000/ws');
+      // Usar endereço customizável
+      const wsUrl = WEBSOCKET_URL;
+      console.log(`[DEBUG] [DiscordService #${this.instanceId}] Conectando WebSocket em: ${wsUrl}`);
+      this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
-        console.log('🤖 Conectado ao Discord Bot');
+        console.log(`🔗 [DiscordService #${this.instanceId}] WebSocket conectado com sucesso`);
         this.isBackendConnected = true;
+        this.connectionSubject.next(true);
+        
+        // Solicitar status inicial imediatamente
+        console.log(`🔍 [DiscordService #${this.instanceId}] Solicitando status inicial do Discord...`);
         this.requestDiscordStatus();
       };
 
       this.ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        this.handleBotMessage(data);
+        try {
+          const data = JSON.parse(event.data);
+          console.log(`📥 [DiscordService #${this.instanceId}] Mensagem recebida:`, data.type);
+          this.handleBotMessage(data);
+        } catch (error) {
+          console.error(`❌ [DiscordService #${this.instanceId}] Erro ao processar mensagem:`, error);
+        }
       };
 
       this.ws.onclose = () => {
-        console.log('🤖 Desconectado do Discord Bot');
+        console.log(`🔌 [DiscordService #${this.instanceId}] WebSocket desconectado`);
         this.isBackendConnected = false;
+        this.connectionSubject.next(false);
         this.isInDiscordChannel = false;
         this.currentDiscordUser = null;
-        setTimeout(() => this.connectToBot(), 3000);
+        
+        // Reconectar automaticamente após 3 segundos
+        setTimeout(() => {
+          console.log(`🔄 [DiscordService #${this.instanceId}] Tentando reconectar...`);
+          this.connectToWebSocket();
+        }, 3000);
+      };
+
+      this.ws.onerror = (error) => {
+        console.error(`❌ [DiscordService #${this.instanceId}] Erro na conexão WebSocket:`, error);
       };
 
     } catch (error) {
-      console.error('❌ Erro ao conectar com Discord Bot:', error);
+      console.error(`❌ [DiscordService #${this.instanceId}] Erro ao conectar WebSocket:`, error);
       this.isBackendConnected = false;
+      this.connectionSubject.next(false);
     }
   }
 
-  private setupDiscordPresence() {
-    // Simular Rich Presence - em produção seria via Discord RPC
-    // Por enquanto, vamos usar o sistema de detecção do bot
-    console.log('🎮 Configurando presença Discord...');
-  }
-
   private handleBotMessage(data: any) {
+    console.log(`🔍 [DiscordService #${this.instanceId}] Processando mensagem:`, data.type, data);
+    
     switch (data.type) {
       case 'discord_users_online':
-        console.log('👥 Usuários Discord online recebidos:', data.users);
+        console.log(`👥 [DiscordService #${this.instanceId}] Usuários Discord online recebidos:`, data.users?.length || 0, 'usuários');
         this.discordUsersOnline = data.users;
-        this.updateDiscordUsersList(data.users);
-        this.checkAutoLink();
+        this.usersSubject.next(data.users);
         break;
 
       case 'discord_links_update':
-        console.log('🔗 Vinculações Discord atualizadas:', data.links);
+        console.log(`🔗 [DiscordService #${this.instanceId}] Vinculações Discord atualizadas:`, data.links?.length || 0, 'links');
         this.updateLinkedNicknames(data.links);
-        this.updateDiscordUsersList(this.discordUsersOnline);
-        break;
-
-      case 'user_joined_channel':
-        console.log(`👤 ${data.username} entrou no canal`);
-        this.updateUserStatus(data.userId, true);
-        break;
-
-      case 'user_left_channel':
-        console.log(`👋 ${data.username} saiu do canal`);
-        this.updateUserStatus(data.userId, false);
-        break;
-
-      case 'queue_update':
-        console.log('🎯 Fila atualizada:', data.queue);
-        this.queueParticipants = data.queue;
-        this.updateQueueDisplay(data.queue);
-        break;
-
-      case 'match_created':
-        console.log('🎮 Match criado!', data);
-        this.handleMatchCreated(data);
-        break;
-
-      case 'user_qualified':
-        console.log(`✅ ${data.username} qualificado para fila`);
-        break;
-
-      case 'auto_link_success':
-        console.log(`🔗 Auto-vinculação: ${data.username} -> ${data.gameName}#${data.tagLine}`);
-        this.linkedNicknames.set(data.discordId, {
-          gameName: data.gameName,
-          tagLine: data.tagLine
-        });
         break;
 
       case 'discord_status':
-        console.log('🎮 Status do Discord recebido:', data);
-        this.isInDiscordChannel = data.inChannel; // Usar a informação do backend
+        console.log(`🎮 [DiscordService #${this.instanceId}] Status do Discord recebido:`, data);
+        console.log(`🎮 [DiscordService #${this.instanceId}] isConnected:`, data.isConnected);
+        console.log(`🎮 [DiscordService #${this.instanceId}] inChannel:`, data.inChannel);
+        
+        this.isInDiscordChannel = data.inChannel;
         this.currentDiscordUser = {
-          id: 'current_user', // Placeholder
-          username: 'Current User' // Placeholder
+          id: 'current_user',
+          username: 'Current User'
         };
-        console.log(`🎮 Status Discord: ${this.currentDiscordUser?.username} - Canal: ${this.isInDiscordChannel}`);
+        
+        // Atualizar status de conexão baseado na resposta do backend
+        if (data.isConnected !== undefined) {
+          console.log(`🎮 [DiscordService #${this.instanceId}] Atualizando status de conexão para:`, data.isConnected);
+          this.isBackendConnected = data.isConnected;
+          this.connectionSubject.next(data.isConnected);
+        }
+        break;
+
+      case 'queue_update':
+        console.log(`🎯 [DiscordService #${this.instanceId}] Fila atualizada:`, data.queue?.length || 0, 'jogadores');
+        this.queueParticipants = data.queue;
+        break;
+
+      case 'match_created':
+        console.log(`🎮 [DiscordService #${this.instanceId}] Match criado!`, data);
         break;
     }
   }
 
   // Solicitar status atual do Discord
   requestDiscordStatus() {
-    if (!this.ws) return;
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.warn(`⚠️ [DiscordService #${this.instanceId}] WebSocket não está conectado, não é possível solicitar status`);
+      return;
+    }
 
-    const message = {
-      type: 'get_discord_status'
-    };
+    console.log(`🔍 [DiscordService #${this.instanceId}] Solicitando status do Discord...`);
 
-    this.ws.send(JSON.stringify(message));
-    
-    // Também solicitar lista de usuários no canal
-    const usersMessage = {
-      type: 'get_discord_users_online'
-    };
-    
-    this.ws.send(JSON.stringify(usersMessage));
+    // Enviar todas as solicitações
+    const messages = [
+      { type: 'get_discord_status' },
+      { type: 'get_discord_users_online' },
+      { type: 'get_discord_links' },
+      { type: 'get_queue_status' }
+    ];
 
-    // Solicitar vinculações Discord
-    const linksMessage = {
-      type: 'get_discord_links'
-    };
-    
-    this.ws.send(JSON.stringify(linksMessage));
-  }
-
-  // Verificar vinculação automática
-  private checkAutoLink() {
-    // Esta função será chamada quando receber dados do LCU
-    // Compara dados do LCU com usuários Discord online
-  }
-
-  // Vincular automaticamente baseado em dados do LCU
-  async autoLinkWithLCU(lcuData: {gameName: string, tagLine: string}) {
-    if (!this.ws) return false;
-
-    const message = {
-      type: 'auto_link_lcu',
-      gameName: lcuData.gameName,
-      tagLine: lcuData.tagLine
-    };
-
-    this.ws.send(JSON.stringify(message));
-    return true;
+    messages.forEach(msg => {
+      console.log(`📤 [DiscordService #${this.instanceId}] Enviando:`, msg.type);
+      this.ws!.send(JSON.stringify(msg));
+    });
   }
 
   // Entrar na fila Discord
-  joinDiscordQueue(role: string, username: string) {
-    if (!this.ws) {
-      console.error('❌ Discord Bot não conectado');
+  joinDiscordQueue(role: string, username: string, lcuData?: {gameName: string, tagLine: string}) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.error('❌ WebSocket não conectado');
       return false;
     }
 
@@ -172,69 +177,105 @@ export class DiscordIntegrationService {
 
     const message = {
       type: 'join_discord_queue',
-      username,
-      role,
-      discordId: this.currentDiscordUser?.id
+      data: {
+        player: {
+          gameName: lcuData?.gameName,
+          tagLine: lcuData?.tagLine,
+          summonerName: username
+        },
+        preferences: {
+          primaryLane: role,
+          secondaryLane: role
+        }
+      }
     };
 
+    console.log('🎯 Enviando entrada na fila Discord:', message);
     this.ws.send(JSON.stringify(message));
-    console.log(`🎯 Entrou na fila Discord como ${role}`);
     return true;
   }
 
   // Sair da fila Discord
   leaveDiscordQueue() {
-    if (!this.ws) return;
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.warn('⚠️ WebSocket não está conectado');
+      return;
+    }
 
-    const message = {
-      type: 'leave_discord_queue',
-      discordId: this.currentDiscordUser?.id
-    };
-
+    const message = { type: 'leave_queue' };
     this.ws.send(JSON.stringify(message));
-    console.log('👋 Saiu da fila Discord');
+    console.log('👋 Saindo da fila Discord');
   }
 
-  // Obter usuários Discord online
-  getDiscordUsersOnline(): any[] {
-    return this.discordUsersOnline;
+  // Métodos públicos
+  isConnected(): boolean {
+    const wsOpen = this.ws?.readyState === WebSocket.OPEN;
+    const backendConnected = this.isBackendConnected;
+    const finalStatus = backendConnected && wsOpen;
+    
+    console.log(`🔍 [DiscordService #${this.instanceId}] Status de conexão:`, {
+      wsOpen,
+      backendConnected,
+      finalStatus,
+      wsReadyState: this.ws?.readyState
+    });
+    
+    return finalStatus;
   }
 
-  // Verificar se está no canal Discord
   isInChannel(): boolean {
     return this.isInDiscordChannel;
   }
 
-  // Verificar se está conectado ao Discord
-  isConnected(): boolean {
-    return this.isBackendConnected && this.ws?.readyState === WebSocket.OPEN;
-  }
-
-  // Obter usuário Discord atual
   getCurrentDiscordUser(): any {
     return this.currentDiscordUser;
   }
 
-  // Obter participantes da fila
+  getDiscordUsersOnline(): any[] {
+    return this.discordUsersOnline;
+  }
+
   getQueueParticipants(): any[] {
     return this.queueParticipants;
   }
 
-  // Verificar se tem nickname vinculado
-  hasLinkedNickname(discordId: string): boolean {
-    return this.linkedNicknames.has(discordId);
+  // Observables
+  onUsersUpdate(): Observable<any[]> {
+    return this.usersSubject.asObservable();
   }
 
-  getLinkedNickname(discordId: string): {gameName: string, tagLine: string} | null {
-    return this.linkedNicknames.get(discordId) || null;
+  onConnectionChange(): Observable<boolean> {
+    return this.connectionSubject.asObservable();
   }
 
-  // Atualizar lista de usuários Discord com vinculações
-  private updateDiscordUsersList(users: any[]) {
-    this.discordUsersOnline = users.map(user => ({
-      ...user,
-      linkedNickname: this.linkedNicknames.get(user.discordId) || null
-    }));
+  // Método para forçar reconexão e atualização
+  forceReconnect(): void {
+    console.log(`🔄 [DiscordService #${this.instanceId}] Forçando reconexão...`);
+    
+    // Fechar conexão atual se existir
+    if (this.ws) {
+      this.ws.close();
+      this.ws = undefined;
+    }
+    
+    // Resetar status
+    this.isBackendConnected = false;
+    this.connectionSubject.next(false);
+    
+    // Reconectar imediatamente
+    setTimeout(() => {
+      this.connectToWebSocket();
+    }, 100);
+  }
+
+  // Cleanup
+  ngOnDestroy() {
+    console.log(`🗑️ [DiscordService #${this.instanceId}] Destruindo instância...`);
+    if (this.ws) {
+      console.log(`🔌 [DiscordService #${this.instanceId}] Fechando WebSocket...`);
+      this.ws.close();
+      this.ws = undefined;
+    }
   }
 
   // Atualizar vinculações quando receber dados do backend
@@ -246,32 +287,5 @@ export class DiscordIntegrationService {
         tagLine: link.tag_line
       });
     });
-  }
-
-  private updateUserStatus(userId: string, isOnline: boolean) {
-    const userIndex = this.discordUsersOnline.findIndex(u => u.id === userId);
-    if (userIndex !== -1) {
-      this.discordUsersOnline[userIndex].isOnline = isOnline;
-      this.updateDiscordUsersList(this.discordUsersOnline);
-    }
-  }
-
-  private updateQueueDisplay(queue: any[]) {
-    window.dispatchEvent(new CustomEvent('queueUpdate', {
-      detail: { queue, size: queue.length }
-    }));
-  }
-
-  private handleMatchCreated(matchData: any) {
-    window.dispatchEvent(new CustomEvent('matchFound', {
-      detail: matchData
-    }));
-  }
-
-  // Cleanup
-  ngOnDestroy() {
-    if (this.ws) {
-      this.ws.close();
-    }
   }
 }

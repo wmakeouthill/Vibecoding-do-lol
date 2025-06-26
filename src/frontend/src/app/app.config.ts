@@ -12,3 +12,8 @@ export const appConfig: ApplicationConfig = {
     provideHttpClient()
   ]
 };
+
+// Configuração customizável do endereço do WebSocket do backend
+export const WEBSOCKET_URL =
+  (window as any).WEBSOCKET_URL ||
+  'ws://localhost:3000/ws';

@@ -35,6 +35,40 @@
         animation: pulse 2s infinite;
       }
     }
+    
+    // Discord toggle section
+    .discord-toggle {
+      margin-top: var(--spacing-md);
+      padding: var(--spacing-md);
+      background: var(--bg-tertiary);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-color);
+      
+      .discord-status {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--spacing-sm);
+        font-size: var(--font-size-sm);
+        font-weight: 600;
+        color: var(--text-secondary);
+        transition: color 0.3s ease;
+        
+        &.connected {
+          color: var(--success);
+        }
+        
+        i {
+          font-size: var(--font-size-md);
+        }
+      }
+      
+      .discord-user {
+        margin-top: var(--spacing-sm);
+        font-size: var(--font-size-sm);
+        color: var(--text-secondary);
+      }
+    }
   }
   // Player info card
   .player-info-card {
@@ -628,6 +662,110 @@
       margin-top: var(--spacing-sm);
       color: #ccc;
       font-size: var(--font-size-xs);
+    }
+  }
+
+  // Discord Users Section
+  .discord-users-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-lg);
+    
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: var(--spacing-md);
+      
+      h3 {
+        color: var(--primary-gold);
+        font-size: var(--font-size-lg);
+        margin: 0;
+      }
+      
+      .user-count {
+        background: var(--bg-tertiary);
+        color: var(--text-secondary);
+        padding: 4px 12px;
+        border-radius: var(--radius-sm);
+        font-size: var(--font-size-sm);
+        font-weight: 600;
+      }
+    }
+    
+    .discord-users-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: var(--spacing-md);
+      
+      .discord-user-card {
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-md);
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-md);
+        transition: all 0.3s ease;
+        
+        &.has-app {
+          border-color: var(--success);
+          background: rgba(0, 255, 136, 0.1);
+        }
+        
+        .user-avatar {
+          position: relative;
+          
+          i {
+            font-size: 2rem;
+            color: var(--primary-blue);
+          }
+          
+          .status-indicator {
+            position: absolute;
+            bottom: -2px;
+            right: -2px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--text-secondary);
+            border: 2px solid var(--bg-tertiary);
+            
+            &.online {
+              background: var(--success);
+            }
+          }
+        }
+        
+        .user-info {
+          flex: 1;
+          
+          .username {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+          }
+          
+          .nickname {
+            font-size: var(--font-size-sm);
+            color: var(--primary-gold);
+            margin-bottom: 4px;
+          }
+          
+          .status {
+            font-size: var(--font-size-sm);
+            
+            .app-open {
+              color: var(--success);
+            }
+            
+            .app-closed {
+              color: var(--text-secondary);
+            }
+          }
+        }
+      }
     }
   }
 }

@@ -333,6 +333,15 @@ export class ApiService {
         catchError(this.handleError)
       );
   }
+
+  // Método para buscar configurações do banco de dados
+  getConfigSettings(): Observable<any> {
+    return this.http.get(`${this.baseUrl}/config/settings`)
+      .pipe(
+        catchError(this.handleError)
+      );
+  }
+
   // Método para atualizar dados do jogador usando Riot ID (gameName#tagLine)
   refreshPlayerByRiotId(riotId: string, region: string): Observable<RefreshPlayerResponse> {
     return this.http.post<RefreshPlayerResponse>(`${this.baseUrl}/player/refresh-by-riot-id`, {

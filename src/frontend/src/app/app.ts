@@ -11,7 +11,6 @@ import { LeaderboardComponent } from './components/leaderboard/leaderboard';
 import { MatchFoundComponent, MatchFoundData } from './components/match-found/match-found';
 import { CustomPickBanComponent } from './components/custom-pick-ban/custom-pick-ban';
 import { GameInProgressComponent } from './components/game-in-progress/game-in-progress';
-import { WebsocketService } from './services/websocket';
 import { ApiService } from './services/api';
 import { QueueStateService } from './services/queue-state';
 import { DiscordIntegrationService } from './services/discord-integration.service';
@@ -95,7 +94,6 @@ export class App implements OnInit, OnDestroy {
   };
 
   private destroy$ = new Subject<void>();  constructor(
-    private websocketService: WebsocketService,
     private apiService: ApiService,
     private queueStateService: QueueStateService,
     private discordService: DiscordIntegrationService
@@ -105,58 +103,8 @@ export class App implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.isElectron = !!(window as any).electronAPI;
 
-    // Try to load API key from local storage
-    const storedApiKey = localStorage.getItem('riotApiKey');
-    if (storedApiKey) {
-      this.settingsForm.riotApiKey = storedApiKey;
-      this.apiService.setRiotApiKey(storedApiKey).subscribe({
-        next: () => {
-          console.log('API Key configurada automaticamente no backend');
-        },
-        error: (error: HttpErrorResponse) => {
-          console.warn('Falha ao configurar API Key automaticamente:', error.message);
-          localStorage.removeItem('riotApiKey');
-          this.settingsForm.riotApiKey = '';
-        }
-      });
-    }
-
-    // Try to load Discord Bot token from local storage
-    const storedDiscordToken = localStorage.getItem('discordBotToken');
-    if (storedDiscordToken) {
-      this.settingsForm.discordBotToken = storedDiscordToken;
-      this.apiService.setDiscordBotToken(storedDiscordToken).subscribe({
-        next: () => {
-          console.log('Discord Bot Token configurado automaticamente no backend');
-          this.checkDiscordStatus();
-        },
-        error: (error: HttpErrorResponse) => {
-          console.warn('Falha ao configurar Discord Bot Token automaticamente:', error.message);
-          localStorage.removeItem('discordBotToken');
-          this.settingsForm.discordBotToken = '';
-        }
-      });
-    } else {
-      // Verificar status do Discord mesmo sem token salvo
-      this.checkDiscordStatus();
-    }
-
-    // Connect to WebSocket
-    this.websocketService.connect();
-    this.websocketService.onMessage().pipe(
-      takeUntil(this.destroy$)
-    ).subscribe(message => this.handleWebSocketMessage(message));
-
-    // Check connection status
-    this.websocketService.onConnectionChange().pipe(
-      takeUntil(this.destroy$)
-    ).subscribe((connected: boolean) => {
-      this.isConnected = connected;
-      if (connected) {
-        this.tryAutoLoadCurrentPlayer();
-        this.websocketService.requestQueueStatus();
-      }
-    });
+    // Carregar configurações do banco de dados primeiro
+    this.loadConfigFromDatabase();
 
     // Load initial data
     this.loadPlayerData();
@@ -164,6 +112,9 @@ export class App implements OnInit, OnDestroy {
     this.tryLoadRealPlayerData();
     this.startLCUStatusCheck();
     this.startQueueStatusCheck();
+    
+    // Configurar listener do status do Discord
+    this.setupDiscordStatusListener();
   }
 
   ngOnDestroy(): void {
@@ -605,91 +556,9 @@ export class App implements OnInit, OnDestroy {
   }
 
   private handleWebSocketMessage(message: any): void {
-    switch (message.type) {
-      case 'queue_joined':
-        this.isInQueue = true;
-        // Atualizar estado compartilhado
-        this.queueStateService.updateCentralizedQueue({
-          isInQueue: true,
-          position: message.data.position
-        });
-        this.addNotification('success', 'Fila', `Entrou na fila (posição ${message.data.position})`);
-        break;      case 'queue_update':
-        console.log('🔄 Recebido queue_update:', message.data);
-        if (message.data) {
-          this.queueStatus = message.data;
-          // Atualizar estado compartilhado com dados da fila
-          this.queueStateService.updateCentralizedQueue({
-            isInQueue: this.isInQueue,
-            playersInQueue: message.data.playersInQueue,
-            averageWaitTime: message.data.averageWaitTime,
-            estimatedTime: message.data.estimatedMatchTime
-          });
-          console.log('🔄 queueStatus atualizado para:', this.queueStatus);
-        }
-        break;
-      case 'match_found':
-        console.log('🎮 Partida encontrada!', message.data);
-        this.matchFoundData = message.data;
-        this.showMatchFound = true;
-        this.addNotification('success', 'Partida Encontrada', 'Uma partida foi encontrada! Aceite para continuar.');
-        break;
-      case 'match_timeout':
-        console.log('⏰ Timeout da partida:', message.data);
-        this.showMatchFound = false;
-        this.matchFoundData = null;
-        this.addNotification('warning', 'Timeout', 'A partida foi cancelada por timeout. Alguns jogadores não aceitaram.');
-        break;
-      case 'match_cancelled':
-        console.log('❌ Partida cancelada:', message.data);
-        this.showMatchFound = false;
-        this.matchFoundData = null;
-        this.addNotification('info', 'Partida Cancelada', 'A partida foi cancelada.');
-        break;      case 'draft_phase':
-        console.log('🎯 Fase de draft iniciada!', message.data);
-        console.log('🔍 Debug: matchFoundData antes:', this.matchFoundData);
-        console.log('🔍 Debug: inDraftPhase antes:', this.inDraftPhase);
-
-        // Esconder modal de aceitação
-        this.showMatchFound = false;
-        this.matchFoundData = null;
-        // Sair da fila
-        this.isInQueue = false;
-        // Entrar na fase de draft
-        this.inDraftPhase = true;
-        this.draftData = message.data;
-        this.draftPhase = 'preview'; // Sempre começar na preview
-
-        console.log('🔍 Debug: inDraftPhase depois:', this.inDraftPhase);
-        console.log('🔍 Debug: draftData definido:', this.draftData);
-
-        // Determinar se é líder (primeiro jogador humano do time azul)
-        this.determineMatchLeader();
-        // Atualizar estado compartilhado
-        this.queueStateService.updateCentralizedQueue({
-          isInQueue: false,
-          playersInQueue: 0,
-          averageWaitTime: 0,
-          estimatedTime: 0
-        });
-        this.addNotification('success', 'Draft Iniciado', 'Todos aceitaram! A fase de draft começou.');
-        break;
-      case 'queue_error':
-        this.addNotification('error', 'Erro na Fila', message.message);        break;
-      case 'queue_status':
-        if (message.data) {
-          this.queueStatus = message.data;
-          // Atualizar estado compartilhado
-          this.queueStateService.updateCentralizedQueue({
-            isInQueue: this.isInQueue,
-            playersInQueue: message.data.playersInQueue,
-            averageWaitTime: message.data.averageWaitTime,
-            estimatedTime: message.data.estimatedMatchTime
-          });
-        }
-        break;
-    }
+    // Método removido - não é mais necessário
   }
+
   private loadPlayerData(): void {
     const savedPlayer = localStorage.getItem('currentPlayer');
     if (savedPlayer) {
@@ -704,118 +573,79 @@ export class App implements OnInit, OnDestroy {
   // Métodos de fila
   async joinQueue(preferences?: QueuePreferences): Promise<void> {
     if (!this.currentPlayer) {
-      this.addNotification('warning', 'Configuração Necessária', 'Configure seu nome de invocador primeiro');
-      this.setCurrentView('settings');
-      return;
-    }
-
-    if (!this.currentPlayer.summonerName) {
-      this.addNotification('error', 'Erro', 'Nome do invocador não encontrado');
+      this.addNotification('error', 'Erro', 'Nenhum jogador carregado');
       return;
     }
 
     try {
-      console.log('🎯 Tentando entrar na fila...');
-
-      // 🎮 PRIORIDADE: Usar Discord se disponível
-      if (this.discordService.isConnected()) {
-        console.log('🎮 Discord conectado! Usando fila Discord (prioridade)');
-
-        // Usar o sistema novo do Discord com dados completos
-        await this.websocketService.joinDiscordQueue(this.currentPlayer, preferences);
-
-        this.isInQueue = true;
-        this.currentQueueType = 'discord';
-        this.addNotification('success', 'Fila Discord', `Entrou na fila Discord como ${preferences?.primaryLane || 'qualquer lane'}`);
-        return;
-      }
-
-      // 🌐 FALLBACK: Usar fila centralizada se Discord não disponível
-      console.log('🌐 Discord não disponível, usando fila centralizada');
-      await this.websocketService.joinQueue(this.currentPlayer, preferences);
+      console.log('🎯 Entrando na fila com preferências:', preferences);
       this.isInQueue = true;
       this.currentQueueType = 'centralized';
-
-      // Atualizar estado compartilhado
-      this.queueStateService.updateCentralizedQueue({
-        isInQueue: true
+      
+      // Usar o DiscordService para entrar na fila Discord
+      const role = preferences?.primaryLane || 'fill';
+      const success = this.discordService.joinDiscordQueue(role, this.currentPlayer.summonerName || 'Unknown', {
+        gameName: this.currentPlayer.gameName || '',
+        tagLine: this.currentPlayer.tagLine || ''
       });
-
-      this.addNotification('success', 'Fila Central', `Entrou na fila centralizada como ${preferences?.primaryLane || 'qualquer lane'}`);
+      
+      if (success) {
+        this.addNotification('success', 'Na Fila', 'Você entrou na fila Discord!');
+      } else {
+        this.addNotification('error', 'Erro', 'Falha ao entrar na fila Discord');
+        this.isInQueue = false;
+      }
     } catch (error) {
-      console.error('Erro ao entrar na fila:', error);
-      this.addNotification('error', 'Erro', 'Não foi possível entrar na fila');
+      console.error('❌ Erro ao entrar na fila:', error);
+      this.addNotification('error', 'Erro', 'Falha ao entrar na fila');
+      this.isInQueue = false;
     }
   }
 
-  // Método específico para fila Discord com dados completos
   async joinDiscordQueueWithFullData(data: {player: Player | null, preferences: QueuePreferences}): Promise<void> {
     if (!data.player) {
-      this.addNotification('warning', 'Configuração Necessária', 'Configure seu nome de invocador primeiro');
-      this.setCurrentView('settings');
-      return;
-    }
-
-    if (!data.player.summonerName) {
-      this.addNotification('error', 'Erro', 'Nome do invocador não encontrado');
+      this.addNotification('error', 'Erro', 'Dados do jogador não encontrados');
       return;
     }
 
     try {
       console.log('🎮 Entrando na fila Discord com dados completos:', data);
-
-      // Usar Discord como meio de organização, mas backend faz o balanceamento
-      // O Discord Bot vai apenas detectar jogadores e organizar em canais
-      // Todo o matchmaking (MMR, lanes, balanceamento) é feito pelo backend
-
-      // Enviar dados completos para o Discord Service (mesma lógica da fila centralizada)
-      await this.websocketService.joinDiscordQueue(data.player, data.preferences);
-
       this.isInQueue = true;
       this.currentQueueType = 'discord';
-
-      this.addNotification('success', 'Fila Discord',
-        `Entrou na fila Discord como ${data.preferences.primaryLane}/${data.preferences.secondaryLane}`);
-
+      
+      // Usar o DiscordService para entrar na fila Discord
+      const role = data.preferences?.primaryLane || 'fill';
+      const success = this.discordService.joinDiscordQueue(role, data.player.summonerName || 'Unknown', {
+        gameName: data.player.gameName || '',
+        tagLine: data.player.tagLine || ''
+      });
+      
+      if (success) {
+        this.addNotification('success', 'Na Fila Discord', 'Você entrou na fila Discord!');
+      } else {
+        this.addNotification('error', 'Erro', 'Falha ao entrar na fila Discord');
+        this.isInQueue = false;
+      }
     } catch (error) {
-      console.error('Erro ao entrar na fila Discord:', error);
-      this.addNotification('error', 'Erro', 'Não foi possível entrar na fila Discord');
+      console.error('❌ Erro ao entrar na fila Discord:', error);
+      this.addNotification('error', 'Erro', 'Falha ao entrar na fila Discord');
+      this.isInQueue = false;
     }
-  }
-
-  private mapLaneToRole(lane: string): string {
-    const laneMap: { [key: string]: string } = {
-      'top': 'top',
-      'jungle': 'jungle',
-      'mid': 'mid',
-      'adc': 'adc',
-      'support': 'support'
-    };    return laneMap[lane] || 'mid';
   }
 
   async leaveQueue(): Promise<void> {
     try {
-      console.log(`🚪 Saindo da fila ${this.currentQueueType}...`);      if (this.currentQueueType === 'discord') {
-        // Sair da fila Discord
-        console.log('🎮 Saindo da fila Discord');
-        this.discordService.leaveDiscordQueue();
-        this.addNotification('info', 'Fila Discord', 'Você saiu da fila Discord');
-      } else {
-        // Sair da fila centralizada
-        console.log('🌐 Saindo da fila centralizada');
-        await this.websocketService.leaveQueue();
-        // Atualizar estado compartilhado
-        this.queueStateService.updateCentralizedQueue({
-          isInQueue: false
-        });
-        this.addNotification('info', 'Fila Central', 'Você saiu da fila centralizada');
-      }
-
+      console.log('👋 Saindo da fila');
       this.isInQueue = false;
       this.currentQueueType = null;
+      
+      // Usar o DiscordService para sair da fila
+      this.discordService.leaveDiscordQueue();
+      
+      this.addNotification('info', 'Saiu da Fila', 'Você saiu da fila');
     } catch (error) {
-      console.error('Erro ao sair da fila:', error);
-      this.addNotification('error', 'Erro', 'Erro ao sair da fila');
+      console.error('❌ Erro ao sair da fila:', error);
+      this.addNotification('error', 'Erro', 'Falha ao sair da fila');
     }
   }
 
@@ -1875,20 +1705,53 @@ export class App implements OnInit, OnDestroy {
   // Placeholder Implementations for missing methods
 
   private startLCUStatusCheck(): void {
-    console.log('Placeholder: startLCUStatusCheck called');
-    // TODO: Implement LCU status checking logic
-    // Ex: setInterval(() => this.refreshLCUConnection(), 30000); // Check every 30 seconds
-    this.refreshLCUConnection(); // Initial check
+    console.log('🎮 Iniciando verificação de status do LCU...');
+    
+    // Verificar status inicial
+    this.checkLCUStatus();
+    
+    // Verificar a cada 30 segundos
+    setInterval(() => {
+      this.checkLCUStatus();
+    }, 30000);
+  }
+  
+  private checkLCUStatus(): void {
+    this.apiService.getLCUStatus().subscribe({
+      next: (status) => {
+        this.lcuStatus = status;
+        console.log('✅ LCU conectado:', status.isConnected);
+      },
+      error: (error) => {
+        this.lcuStatus = { isConnected: false };
+        console.warn('❌ LCU desconectado:', error.message);
+      }
+    });
   }
 
   private startQueueStatusCheck(): void {
-    console.log('Placeholder: startQueueStatusCheck called');
-    // TODO: Implement queue status checking logic
-    // Ex: setInterval(() => {
-    //   if (this.isConnected && this.currentPlayer) {
-    //     this.apiService.getQueueStatus().subscribe(status => this.queueStatus = status);
-    //   }
-    // }, 10000); // Check every 10 seconds
+    console.log('🔄 Iniciando verificação de status da fila...');
+    
+    // Verificar status inicial
+    this.checkBackendConnection();
+    
+    // Verificar a cada 10 segundos
+    setInterval(() => {
+      this.checkBackendConnection();
+    }, 10000);
+  }
+  
+  private checkBackendConnection(): void {
+    this.apiService.checkHealth().subscribe({
+      next: (response) => {
+        this.isConnected = true;
+        console.log('✅ Backend conectado');
+      },
+      error: (error) => {
+        this.isConnected = false;
+        console.warn('❌ Backend desconectado:', error.message);
+      }
+    });
   }
   private createMockPlayer(): void {
     // Criar dados básicos quando não há dados reais disponíveis
@@ -1953,18 +1816,48 @@ export class App implements OnInit, OnDestroy {
   }
 
   checkDiscordStatus(): void {
-    this.apiService.getDiscordStatus().subscribe({
-      next: (status) => {
-        this.discordStatus = status;
-      },
-      error: (error) => {
-        console.warn('Erro ao verificar status do Discord:', error);
+    // Verificar se o WebSocket está conectado
+    if (!this.discordService.isConnected()) {
+      console.log('🔍 [App] Discord não conectado, forçando reconexão...');
+      this.discordService.forceReconnect();
+      
+      // Aguardar um pouco e verificar novamente
+      setTimeout(() => {
         this.discordStatus = {
-          isConnected: false,
-          botUsername: ''
+          isConnected: this.discordService.isConnected(),
+          botUsername: this.discordService.getCurrentDiscordUser()?.username || 'Discord Bot'
         };
-      }
+        console.log('🔍 [App] Status Discord após reconexão:', this.discordStatus);
+      }, 2000);
+      return;
+    }
+    
+    // Usar o DiscordIntegrationService em vez do HTTP
+    this.discordStatus = {
+      isConnected: this.discordService.isConnected(),
+      botUsername: this.discordService.getCurrentDiscordUser()?.username || 'Discord Bot'
+    };
+    
+    console.log('🔍 [App] Status Discord atualizado:', this.discordStatus);
+  }
+
+  // Adicionar listener para atualizações automáticas do Discord
+  private setupDiscordStatusListener(): void {
+    this.discordService.onConnectionChange().subscribe(isConnected => {
+      console.log('🔗 [App] Status Discord alterado:', isConnected);
+      this.discordStatus = {
+        isConnected: isConnected,
+        botUsername: this.discordService.getCurrentDiscordUser()?.username || 'Discord Bot'
+      };
     });
+    
+    // Verificação periódica do status (a cada 30 segundos)
+    setInterval(() => {
+      if (!this.discordService.isConnected()) {
+        console.log('🔍 [App] Verificação periódica: Discord desconectado, tentando reconectar...');
+        this.discordService.forceReconnect();
+      }
+    }, 30000);
   }
 
   // Electron window controls
@@ -2098,6 +1991,118 @@ export class App implements OnInit, OnDestroy {
     } catch (error) {
       console.warn('⚠️ Erro ao analisar partida:', error);
       return false; // Em caso de erro, considerar como não-real para segurança
+    }
+  }
+
+  // Novo método para carregar configurações do banco de dados
+  private loadConfigFromDatabase(): void {
+    console.log('🔍 Carregando configurações do banco de dados...');
+    
+    this.apiService.getConfigSettings().subscribe({
+      next: (response) => {
+        if (response.success && response.settings) {
+          console.log('✅ Configurações carregadas do banco de dados');
+          
+          // Configurar Riot API Key se existir no banco
+          if (response.settings.riotApiKey && response.settings.riotApiKey.trim() !== '') {
+            this.settingsForm.riotApiKey = response.settings.riotApiKey;
+            this.apiService.setRiotApiKey(response.settings.riotApiKey).subscribe({
+              next: () => {
+                console.log('✅ Riot API Key configurada do banco de dados');
+                // Atualizar localStorage como backup
+                localStorage.setItem('riotApiKey', response.settings.riotApiKey);
+              },
+              error: (error: HttpErrorResponse) => {
+                console.warn('⚠️ Falha ao configurar Riot API Key do banco:', error.message);
+                // Fallback para localStorage
+                this.loadRiotApiKeyFromLocalStorage();
+              }
+            });
+          } else {
+            // Fallback para localStorage se não existir no banco
+            this.loadRiotApiKeyFromLocalStorage();
+          }
+
+          // Configurar Discord Bot Token se existir no banco
+          if (response.settings.discordBotToken && response.settings.discordBotToken.trim() !== '') {
+            this.settingsForm.discordBotToken = response.settings.discordBotToken;
+            this.apiService.setDiscordBotToken(response.settings.discordBotToken).subscribe({
+              next: () => {
+                console.log('✅ Discord Bot Token configurado do banco de dados');
+                // Atualizar localStorage como backup
+                localStorage.setItem('discordBotToken', response.settings.discordBotToken);
+                this.checkDiscordStatus();
+              },
+              error: (error: HttpErrorResponse) => {
+                console.warn('⚠️ Falha ao configurar Discord Bot Token do banco:', error.message);
+                // Fallback para localStorage
+                this.loadDiscordTokenFromLocalStorage();
+              }
+            });
+          } else {
+            // Fallback para localStorage se não existir no banco
+            this.loadDiscordTokenFromLocalStorage();
+          }
+        } else {
+          console.warn('⚠️ Falha ao carregar configurações do banco, usando fallbacks');
+          this.loadConfigFromFallbacks();
+        }
+      },
+      error: (error: HttpErrorResponse) => {
+        console.warn('⚠️ Erro ao carregar configurações do banco:', error.message);
+        // Fallback para localStorage e .env
+        this.loadConfigFromFallbacks();
+      }
+    });
+  }
+
+  // Método para carregar configurações dos fallbacks (localStorage + .env)
+  private loadConfigFromFallbacks(): void {
+    console.log('🔄 Carregando configurações dos fallbacks...');
+    this.loadRiotApiKeyFromLocalStorage();
+    this.loadDiscordTokenFromLocalStorage();
+  }
+
+  // Método para carregar Riot API Key do localStorage
+  private loadRiotApiKeyFromLocalStorage(): void {
+    const storedApiKey = localStorage.getItem('riotApiKey');
+    if (storedApiKey) {
+      this.settingsForm.riotApiKey = storedApiKey;
+      this.apiService.setRiotApiKey(storedApiKey).subscribe({
+        next: () => {
+          console.log('✅ Riot API Key configurada do localStorage');
+        },
+        error: (error: HttpErrorResponse) => {
+          console.warn('⚠️ Falha ao configurar Riot API Key do localStorage:', error.message);
+          localStorage.removeItem('riotApiKey');
+          this.settingsForm.riotApiKey = '';
+        }
+      });
+    } else {
+      console.log('ℹ️ Nenhuma Riot API Key encontrada nos fallbacks');
+    }
+  }
+
+  // Método para carregar Discord Bot Token do localStorage
+  private loadDiscordTokenFromLocalStorage(): void {
+    const storedDiscordToken = localStorage.getItem('discordBotToken');
+    if (storedDiscordToken) {
+      this.settingsForm.discordBotToken = storedDiscordToken;
+      this.apiService.setDiscordBotToken(storedDiscordToken).subscribe({
+        next: () => {
+          console.log('✅ Discord Bot Token configurado do localStorage');
+          this.checkDiscordStatus();
+        },
+        error: (error: HttpErrorResponse) => {
+          console.warn('⚠️ Falha ao configurar Discord Bot Token do localStorage:', error.message);
+          localStorage.removeItem('discordBotToken');
+          this.settingsForm.discordBotToken = '';
+        }
+      });
+    } else {
+      console.log('ℹ️ Nenhum Discord Bot Token encontrado nos fallbacks');
+      // Verificar status do Discord mesmo sem token salvo
+      this.checkDiscordStatus();
     }
   }
 }

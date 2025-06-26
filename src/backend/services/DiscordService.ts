@@ -32,8 +32,8 @@ export class DiscordService {
   private targetChannelName = 'lol-matchmaking';
   private databaseManager: DatabaseManager;
 
-  // WebSocket para comunicação com frontend
-  private connectedClients: Set<WSClient> = new Set();
+  // WebSocket principal do servidor
+  private wss: any = null;
 
   constructor(databaseManager: DatabaseManager) {
     this.databaseManager = databaseManager;
@@ -41,7 +41,8 @@ export class DiscordService {
       intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.GuildVoiceStates
+        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.GuildMembers
       ]
     });
 
@@ -50,9 +51,14 @@ export class DiscordService {
 
   private setupDiscordEvents(): void {
     this.client.on('ready', () => {
-      console.log(`🎮 Discord Bot ${this.client.user?.tag} conectado!`);
+      console.log(`🎮 [DiscordService] Discord Bot ${this.client.user?.tag} conectado!`);
+      console.log(`🎮 [DiscordService] Bot ID: ${this.client.user?.id}`);
+      console.log(`🎮 [DiscordService] Servidores conectados: ${this.client.guilds.cache.size}`);
       this.isConnected = true;
       this.registerSlashCommands();
+      
+      // Teste inicial de detecção
+      this.performInitialChannelCheck();
     });
 
     // Detectar quando alguém entra/sai do canal
@@ -103,34 +109,84 @@ export class DiscordService {
     });
   }
 
+  // Método para verificação inicial do canal
+  private async performInitialChannelCheck(): Promise<void> {
+    console.log('🔍 [INIT] Verificação inicial do canal de matchmaking...');
+    
+    const guild = this.client.guilds.cache.first();
+    if (!guild) {
+      console.log('❌ [INIT] Guild não encontrada');
+      return;
+    }
+
+    console.log(`🏠 [INIT] Servidor: ${guild.name}`);
+    console.log(`👥 [INIT] Total de membros no servidor: ${guild.memberCount}`);
+    
+    const matchmakingChannel = guild.channels.cache.find(
+      channel => channel.name === this.targetChannelName && channel.type === ChannelType.GuildVoice
+    );
+
+    if (!matchmakingChannel) {
+      console.log(`❌ [INIT] Canal ${this.targetChannelName} não encontrado`);
+      console.log(`📋 [INIT] Canais disponíveis:`, guild.channels.cache.map(c => `${c.name} (${c.type})`));
+      return;
+    }
+
+    console.log(`✅ [INIT] Canal ${this.targetChannelName} encontrado`);
+    
+    // Verificar permissões do bot no canal
+    const botMember = guild.members.cache.get(this.client.user?.id || '');
+    if (botMember) {
+      const permissions = botMember.permissionsIn(matchmakingChannel);
+      console.log(`🔐 [INIT] Permissões do bot no canal:`);
+      console.log(`  - View Channel: ${permissions.has(PermissionFlagsBits.ViewChannel)}`);
+      console.log(`  - Connect: ${permissions.has(PermissionFlagsBits.Connect)}`);
+      console.log(`  - View Members: ${permissions.has(PermissionFlagsBits.ViewAuditLog)}`);
+    }
+
+    // Fazer primeira verificação de usuários
+    setTimeout(async () => {
+      const usersInChannel = await this.getUsersInMatchmakingChannel();
+      console.log(`👥 [INIT] Usuários encontrados no canal: ${usersInChannel.length}`);
+      await this.broadcastUsersInChannel();
+    }, 2000);
+  }
+
   async initialize(token?: string): Promise<boolean> {
+    console.log('🚀 [DiscordService] Iniciando inicialização do Discord Bot...');
+    
     if (!token) {
-      console.log('⚠️ Token do Discord não fornecido, Discord Bot não será iniciado');
+      console.log('⚠️ [DiscordService] Token do Discord não fornecido, Discord Bot não será iniciado');
       return false;
     }
+
+    console.log('🔑 [DiscordService] Token fornecido, tentando conectar...');
 
     try {
       // Se já está conectado, desconectar antes de trocar o token
       if (this.isConnected || this.client?.user) {
-        console.log('🔄 Reinicializando Discord Bot com novo token...');
+        console.log('🔄 [DiscordService] Reinicializando Discord Bot com novo token...');
         await this.client.destroy();
         // Criar nova instância do client
         this.client = new Client({
           intents: [
             GatewayIntentBits.Guilds,
             GatewayIntentBits.GuildMessages,
-            GatewayIntentBits.GuildVoiceStates
+            GatewayIntentBits.GuildVoiceStates,
+            GatewayIntentBits.GuildMembers
           ]
         });
         this.setupDiscordEvents();
         this.isConnected = false;
       }
+      
       this.botToken = token;
+      console.log('🔐 [DiscordService] Tentando login com token...');
       await this.client.login(token);
-      console.log('✅ Discord Bot inicializado com sucesso');
+      console.log('✅ [DiscordService] Discord Bot inicializado com sucesso');
       return true;
     } catch (error) {
-      console.error('❌ Erro ao inicializar Discord Bot:', error);
+      console.error('❌ [DiscordService] Erro ao inicializar Discord Bot:', error);
       return false;
     }
   }
@@ -142,7 +198,7 @@ export class DiscordService {
       this.checkUserForQueue(newState.member.user);
       
       // Enviar lista atualizada de usuários no canal
-      this.broadcastUsersInChannel();
+      await this.broadcastUsersInChannel();
     }
     
     // Usuário saiu do canal
@@ -151,7 +207,7 @@ export class DiscordService {
       this.removeFromQueue(oldState.member.user.id);
       
       // Enviar lista atualizada de usuários no canal
-      this.broadcastUsersInChannel();
+      await this.broadcastUsersInChannel();
     }
   }
 
@@ -177,43 +233,13 @@ export class DiscordService {
 
   // Métodos para comunicação com frontend
   addClient(ws: WSClient): void {
-    this.connectedClients.add(ws);
-    
-    ws.on('close', () => {
-      this.connectedClients.delete(ws);
-    });
-
-    ws.on('message', (data) => {
-      try {
-        const message = JSON.parse(data.toString());
-        this.handleClientMessage(ws, message);
-      } catch (error) {
-        console.error('❌ Erro ao processar mensagem do cliente:', error);
-      }
-    });
+    // Método removido - não é mais necessário
+    // O DiscordService agora usa o WebSocket principal do servidor
   }
 
   private async handleClientMessage(ws: WSClient, message: any): Promise<void> {
-    switch (message.type) {
-      case 'join_queue':
-        await this.addToQueue(message.userId, message.username, message.role, message.lcuData);
-        break;
-      case 'leave_queue':
-        this.removeFromQueue(message.userId);
-        break;
-      case 'get_queue_status':
-        this.sendQueueStatus(ws);
-        break;
-      case 'get_discord_status':
-        this.sendDiscordStatus(ws);
-        break;
-      case 'get_discord_users_online':
-        this.sendUsersInChannel(ws);
-        break;
-      case 'get_discord_links':
-        await this.sendDiscordLinks(ws);
-        break;
-    }
+    // Método removido - não é mais necessário
+    // As mensagens são processadas pelo handleWebSocketMessage no server.ts
   }
 
   private async addToQueue(userId: string, username: string, role: string, lcuData?: {gameName: string, tagLine: string}): Promise<void> {
@@ -424,62 +450,17 @@ export class DiscordService {
   }
 
   private broadcastToClients(data: any): void {
-    this.connectedClients.forEach(client => {
-      if (client.readyState === WSClient.OPEN) {
+    if (!this.wss) {
+      console.warn('⚠️ WebSocket não configurado no DiscordService');
+      return;
+    }
+    
+    // Enviar para todos os clientes conectados ao WebSocket principal
+    this.wss.clients.forEach((client: any) => {
+      if (client.readyState === 1) { // WebSocket.OPEN
         client.send(JSON.stringify(data));
       }
     });
-  }
-
-  private sendQueueStatus(ws: WSClient): void {
-    ws.send(JSON.stringify({
-      type: 'queue_status',
-      queueSize: this.queue.size,
-      queue: Array.from(this.queue.values())
-    }));
-  }
-
-  private sendDiscordStatus(ws: WSClient): void {
-    ws.send(JSON.stringify({
-      type: 'discord_status',
-      isConnected: this.isConnected,
-      botUsername: this.getBotUsername(),
-      queueSize: this.getQueueSize(),
-      activeMatches: this.getActiveMatches(),
-      inChannel: this.hasUsersInMatchmakingChannel()
-    }));
-  }
-
-  private sendUsersInChannel(ws: WSClient): void {
-    const usersInChannel = this.getUsersInMatchmakingChannel();
-    ws.send(JSON.stringify({
-      type: 'discord_users_online',
-      users: usersInChannel
-    }));
-  }
-
-  private async sendDiscordLinks(ws: WSClient): Promise<void> {
-    try {
-      const links = await this.databaseManager.getAllDiscordLinks();
-      ws.send(JSON.stringify({
-        type: 'discord_links_update',
-        links: links
-      }));
-    } catch (error) {
-      console.error('❌ Erro ao enviar vinculações:', error);
-    }
-  }
-
-  private async broadcastDiscordLinks(): Promise<void> {
-    try {
-      const links = await this.databaseManager.getAllDiscordLinks();
-      this.broadcastToClients({
-        type: 'discord_links_update',
-        links: links
-      });
-    } catch (error) {
-      console.error('❌ Erro ao broadcast vinculações:', error);
-    }
   }
 
   private async registerSlashCommands(): Promise<void> {
@@ -783,7 +764,18 @@ export class DiscordService {
 
   // Métodos públicos para integração
   isDiscordConnected(): boolean {
-    return this.isConnected;
+    const clientReady = this.client?.user !== undefined;
+    const isConnected = this.isConnected;
+    const finalStatus = isConnected && clientReady;
+    
+    console.log(`🔍 [DiscordService] Status de conexão:`, {
+      isConnected,
+      clientReady,
+      finalStatus,
+      botUsername: this.client?.user?.tag || 'N/A'
+    });
+    
+    return finalStatus;
   }
 
   getBotUsername(): string {
@@ -799,7 +791,7 @@ export class DiscordService {
   }
 
   // Verificar se há usuários no canal de matchmaking
-  hasUsersInMatchmakingChannel(): boolean {
+  async hasUsersInMatchmakingChannel(): Promise<boolean> {
     console.log('🔍 [DEBUG] Verificando se há usuários no canal...');
     
     if (!this.isConnected || !this.client) {
@@ -836,7 +828,7 @@ export class DiscordService {
   }
 
   // Obter lista de usuários no canal de matchmaking
-  getUsersInMatchmakingChannel(): any[] {
+  async getUsersInMatchmakingChannel(): Promise<any[]> {
     console.log('🔍 [DEBUG] Iniciando busca de usuários no canal...');
     
     if (!this.isConnected || !this.client) {
@@ -879,26 +871,66 @@ export class DiscordService {
 
     console.log(`🔍 [DEBUG] Members encontrados: ${members.size}`);
 
-    const usersInChannel = Array.from(members.values()).map((member: any) => {
+    // Se não há membros na cache, tentar buscar da API
+    if (members.size === 0) {
+      console.log('⚠️ [DEBUG] Cache vazia, tentando buscar da API...');
+      this.refreshChannelMembers(matchmakingChannel.id);
+    }
+
+    const usersInChannel = [];
+    
+    for (const member of members.values()) {
       const user = member.user;
-      return {
+      
+      // Buscar nick vinculado no banco de dados
+      let linkedNickname = null;
+      try {
+        linkedNickname = await this.getLinkedNicknameForUser(user.id);
+        console.log(`🔗 [DEBUG] Nick vinculado para ${user.username}:`, linkedNickname);
+      } catch (error) {
+        console.error(`❌ [DEBUG] Erro ao buscar nick vinculado para ${user.username}:`, error);
+      }
+      
+      const userData = {
         id: user.id,
         username: user.username,
         discriminator: user.discriminator,
         avatar: user.avatar,
-        hasAppOpen: true, // Por enquanto, assumir que está online
-        discordId: user.id
+        hasAppOpen: true, // Se está no canal Discord, considera que tem o app aberto
+        discordId: user.id,
+        linkedNickname: linkedNickname // Incluir nick vinculado
       };
-    });
+      
+      usersInChannel.push(userData);
+    }
 
-    console.log(`👥 Usuários no canal ${this.targetChannelName}:`, usersInChannel.map(u => u.username));
+    console.log(`👥 Usuários no canal ${this.targetChannelName}:`, usersInChannel.map(u => `${u.username}${u.linkedNickname ? ` (${u.linkedNickname.gameName}#${u.linkedNickname.tagLine})` : ''}`));
     return usersInChannel;
   }
 
+  // Método para atualizar membros do canal via API
+  private async refreshChannelMembers(channelId: string): Promise<void> {
+    try {
+      const guild = this.client.guilds.cache.first();
+      if (!guild) return;
+
+      console.log('🔄 [DEBUG] Atualizando cache de membros...');
+      await guild.members.fetch();
+      console.log('✅ [DEBUG] Cache de membros atualizada');
+      
+      // Broadcast atualizado após refresh
+      setTimeout(() => {
+        this.broadcastUsersInChannel();
+      }, 1000);
+    } catch (error) {
+      console.error('❌ [DEBUG] Erro ao atualizar cache de membros:', error);
+    }
+  }
+
   // Enviar lista de usuários online para todos os clientes
-  broadcastUsersInChannel(): void {
+  async broadcastUsersInChannel(): Promise<void> {
     console.log('📡 [DEBUG] Iniciando broadcast de usuários no canal...');
-    const usersInChannel = this.getUsersInMatchmakingChannel();
+    const usersInChannel = await this.getUsersInMatchmakingChannel();
     
     console.log(`📡 [DEBUG] Broadcast enviando ${usersInChannel.length} usuários`);
     
@@ -909,14 +941,19 @@ export class DiscordService {
   }
 
   setWebSocketServer(wss: any): void {
-    // Adicionar todos os clientes já conectados
-    wss.clients.forEach((client: WSClient) => {
-      this.addClient(client);
-    });
+    this.wss = wss;
+    console.log('🔗 DiscordService conectado ao WebSocket principal');
+  }
 
-    // Escutar novas conexões
-    wss.on('connection', (ws: WSClient) => {
-      this.addClient(ws);
-    });
+  private async broadcastDiscordLinks(): Promise<void> {
+    try {
+      const links = await this.databaseManager.getAllDiscordLinks();
+      this.broadcastToClients({
+        type: 'discord_links_update',
+        links: links
+      });
+    } catch (error) {
+      console.error('❌ Erro ao broadcast vinculações:', error);
+    }
   }
 }

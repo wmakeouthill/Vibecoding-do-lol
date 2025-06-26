@@ -274,20 +274,28 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   private setupDiscordListeners() {
-    // Escutar eventos do Discord
-    window.addEventListener('discordUsersUpdate', ((event: CustomEvent) => {
-      this.discordUsersOnline = event.detail.users;
-      this.isDiscordConnected = this.discordService.isConnected();
-      this.isInDiscordChannel = this.discordService.isInChannel();
-    }) as EventListener);
-
-    window.addEventListener('queueUpdate', ((event: CustomEvent) => {
-      this.discordQueue = event.detail.queue;
-    }) as EventListener);
-
-    window.addEventListener('matchFound', ((event: CustomEvent) => {
-      this.handleDiscordMatchFound(event.detail);
-    }) as EventListener);
+    console.log('🎧 [Queue] Configurando listeners do Discord...');
+    
+    // Usar observables para atualização automática
+    this.discordService.onUsersUpdate().subscribe(users => {
+      console.log('👥 [Queue] Usuários Discord atualizados:', users.length, 'usuários');
+      this.discordUsersOnline = users;
+    });
+    
+    this.discordService.onConnectionChange().subscribe(isConnected => {
+      console.log('🔗 [Queue] Status de conexão Discord alterado:', isConnected);
+      this.isDiscordConnected = isConnected;
+      this.showDiscordMode = isConnected; // Mostrar Discord toggle quando conectado
+      
+      // Se conectou, verificar se está no canal
+      if (isConnected) {
+        this.isInDiscordChannel = this.discordService.isInChannel();
+        this.currentDiscordUser = this.discordService.getCurrentDiscordUser();
+      } else {
+        this.isInDiscordChannel = false;
+        this.currentDiscordUser = null;
+      }
+    });
   }
 
   private checkDiscordConnection() {
@@ -297,6 +305,15 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     this.currentDiscordUser = this.discordService.getCurrentDiscordUser();
     this.discordUsersOnline = this.discordService.getDiscordUsersOnline();
     this.discordQueue = this.discordService.getQueueParticipants();
+    this.showDiscordMode = this.isDiscordConnected; // Mostrar Discord toggle quando conectado
+    
+    console.log('🔍 [Queue] Status Discord atualizado:', {
+      isConnected: this.isDiscordConnected,
+      isInChannel: this.isInDiscordChannel,
+      usersOnline: this.discordUsersOnline.length,
+      queueSize: this.discordQueue.length,
+      showDiscordMode: this.showDiscordMode
+    });
   }
 
   onJoinDiscordQueue() {
@@ -419,18 +436,6 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     
     // Atualizar dados do Discord
     this.discordService.requestDiscordStatus();
-    
-    // Solicitar especificamente a lista de usuários no canal
-    if (this.discordService.isConnected()) {
-      const message = {
-        type: 'get_discord_users'
-      };
-      
-      // Enviar via WebSocket se disponível
-      if (this.discordService['ws'] && this.discordService['ws'].readyState === WebSocket.OPEN) {
-        this.discordService['ws'].send(JSON.stringify(message));
-      }
-    }
     
     // Simular delay de atualização
     setTimeout(() => {

@@ -165,16 +165,41 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
       ws.send(JSON.stringify(discordStatus));
       
       // Enviar também a lista de usuários no canal
-      discordService.broadcastUsersInChannel();
+      await discordService.broadcastUsersInChannel();
       break;
     case 'get_discord_users':
       console.log('👥 Solicitando lista de usuários Discord...');
       // Enviar lista de usuários no canal diretamente para este cliente
-      const usersInChannel = discordService.getUsersInMatchmakingChannel();
+      const usersInChannel = await discordService.getUsersInMatchmakingChannel();
       ws.send(JSON.stringify({
         type: 'discord_users_online',
         users: usersInChannel
       }));
+      break;
+    case 'get_discord_users_online':
+      console.log('👥 Solicitando lista de usuários Discord online...');
+      // Enviar lista de usuários no canal diretamente para este cliente
+      const usersInChannel2 = await discordService.getUsersInMatchmakingChannel();
+      ws.send(JSON.stringify({
+        type: 'discord_users_online',
+        users: usersInChannel2
+      }));
+      break;
+    case 'get_discord_links':
+      console.log('🔗 Solicitando vinculações Discord...');
+      try {
+        const links = await dbManager.getAllDiscordLinks();
+        ws.send(JSON.stringify({
+          type: 'discord_links_update',
+          links: links
+        }));
+      } catch (error) {
+        console.error('❌ Erro ao buscar vinculações:', error);
+        ws.send(JSON.stringify({
+          type: 'discord_links_update',
+          links: []
+        }));
+      }
       break;
     case 'ping':
       ws.send(JSON.stringify({ type: 'pong' }));
@@ -1583,24 +1608,38 @@ app.post('/api/stats/refresh-rebuild-players', async (req: Request, res: Respons
 
 // Configurar Discord Bot Token
 app.post('/api/config/discord-token', (async (req: Request, res: Response) => {
-  console.log('🤖 Endpoint Discord token chamado:', req.body);
+  console.log('🤖 Endpoint Discord token chamado');
+  console.log('📋 Headers:', req.headers);
+  console.log('📦 Body:', req.body);
+  console.log('📦 Body type:', typeof req.body);
+  console.log('📦 Body keys:', Object.keys(req.body || {}));
+  
   try {
     const { token } = req.body;
     
+    console.log('🔑 Token recebido:', token ? `${token.substring(0, 10)}...` : 'null/undefined');
+    console.log('🔑 Token type:', typeof token);
+    console.log('🔑 Token length:', token ? token.length : 0);
+    
     if (!token || typeof token !== 'string' || token.trim() === '') {
+      console.log('❌ Token inválido ou vazio');
       return res.status(400).json({ 
         success: false, 
         error: 'Token do Discord é obrigatório' 
       });
     }
 
-    // Salvar no banco de dados
+    console.log('💾 Salvando token no banco...');
+    // Salvar no banco de dados PRIMEIRO
     await dbManager.setSetting('discord_bot_token', token.trim());
+    console.log('✅ Token salvo no banco');
     
+    console.log('🤖 Tentando inicializar Discord Bot...');
     // Tentar inicializar o Discord Bot com o novo token
     const discordInitialized = await discordService.initialize(token.trim());
     
     if (discordInitialized) {
+      console.log('✅ Discord Bot inicializado com sucesso');
       // Conectar ao WebSocket se inicializou com sucesso
       discordService.setWebSocketServer(wss);
       
@@ -1610,9 +1649,13 @@ app.post('/api/config/discord-token', (async (req: Request, res: Response) => {
         connected: discordService.isDiscordConnected()
       });
     } else {
-      res.status(400).json({
-        success: false,
-        error: 'Token do Discord inválido ou erro na conexão'
+      console.log('⚠️ Token salvo no banco, mas Discord Bot não conseguiu conectar');
+      // Retornar sucesso mesmo se a inicialização falhar, pois o token foi salvo
+      res.json({
+        success: true,
+        message: 'Token salvo no banco. Discord Bot será inicializado automaticamente quando o servidor reiniciar.',
+        connected: false,
+        warning: 'Token pode ser inválido ou Discord pode estar offline'
       });
     }
     
@@ -1690,6 +1733,29 @@ app.get('/api/config/status', (async (req: Request, res: Response) => {
     
   } catch (error: any) {
     console.error('❌ Erro ao obter status das configurações:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+}) as RequestHandler);
+
+// Obter configurações do banco de dados (incluindo tokens)
+app.get('/api/config/settings', (async (req: Request, res: Response) => {
+  try {
+    const riotApiKey = await dbManager.getSetting('riot_api_key');
+    const discordToken = await dbManager.getSetting('discord_bot_token');
+    
+    res.json({
+      success: true,
+      settings: {
+        riotApiKey: riotApiKey || '',
+        discordBotToken: discordToken || ''
+      }
+    });
+    
+  } catch (error: any) {
+    console.error('❌ Erro ao obter configurações do banco:', error);
     res.status(500).json({ 
       success: false, 
       error: error.message 
@@ -1781,7 +1847,17 @@ async function initializeServices() {
         // globalRiotAPI.setApiKey(''); // ou null
       }
     } else {
-      console.log('[Server] Nenhuma Riot API Key encontrada no banco de dados para carregar.');
+      // Fallback para .env
+      const envApiKey = process.env.RIOT_API_KEY;
+      if (envApiKey && envApiKey.trim() !== '') {
+        globalRiotAPI.setApiKey(envApiKey);
+        console.log('[Server] Riot API Key carregada do .env como fallback.');
+        // Salvar no banco para uso futuro
+        await dbManager.setSetting('riot_api_key', envApiKey);
+        console.log('[Server] Riot API Key do .env salva no banco de dados.');
+      } else {
+        console.log('[Server] Nenhuma Riot API Key encontrada no banco de dados ou .env.');
+      }
     }
 
     // Matchmaking
@@ -1804,13 +1880,34 @@ async function initializeServices() {
       const discordInitialized = await discordService.initialize(savedDiscordToken);
       if (discordInitialized) {
         console.log('✅ Discord Bot inicializado com sucesso');
-        // Conectar ao WebSocket para comunicação com frontend
-        discordService.setWebSocketServer(wss);
       } else {
         console.warn('⚠️ Falha ao inicializar Discord Bot');
       }
+      // SEMPRE conectar ao WebSocket, independente do status do bot
+      discordService.setWebSocketServer(wss);
+      console.log('🔗 DiscordService conectado ao WebSocket');
     } else {
-      console.log('⚠️ Token do Discord Bot não configurado. Discord será desabilitado.');
+      // Fallback para .env
+      const envDiscordToken = process.env.DISCORD_BOT_TOKEN;
+      if (envDiscordToken && envDiscordToken.trim() !== '') {
+        const discordInitialized = await discordService.initialize(envDiscordToken);
+        if (discordInitialized) {
+          console.log('✅ Discord Bot inicializado com token do .env como fallback');
+          // Salvar no banco para uso futuro
+          await dbManager.setSetting('discord_bot_token', envDiscordToken);
+          console.log('[Server] Discord Bot Token do .env salvo no banco de dados.');
+        } else {
+          console.warn('⚠️ Falha ao inicializar Discord Bot com token do .env');
+        }
+        // SEMPRE conectar ao WebSocket, independente do status do bot
+        discordService.setWebSocketServer(wss);
+        console.log('🔗 DiscordService conectado ao WebSocket');
+      } else {
+        console.log('⚠️ Token do Discord Bot não configurado no banco ou .env. Discord será desabilitado.');
+        // Mesmo sem token, conectar ao WebSocket para responder com status de desconectado
+        discordService.setWebSocketServer(wss);
+        console.log('🔗 DiscordService conectado ao WebSocket (modo desconectado)');
+      }
     }
   } catch (error) {
     console.error('Erro ao inicializar serviços:', error);
