@@ -11,7 +11,7 @@ build/
 out-tsc/
 bazel-out/
 tmp/
-Vibecoding-do-lol OLD/
+ignore/
 
 # IDEs and editors
 .idea/
@@ -36,7 +36,7 @@ Vibecoding-do-lol OLD/
 # System files
 .DS_Store
 Thumbs.db
-
+Vibecoding-do-lol OLD
 # Logs
 logs
 *.log
@@ -45,6 +45,7 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+
 
 # Environment variables
 #.env
