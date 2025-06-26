@@ -66,26 +66,101 @@ export class MatchmakingService {
   private queue: QueuedPlayer[] = [];
   private activeMatches: Map<number, Match> = new Map();
   private matchmakingInterval: NodeJS.Timeout | null = null;
+  private cleanupInterval: NodeJS.Timeout | null = null; // Novo: intervalo de limpeza
   private isActive = true;
   private recentActivities: QueueActivity[] = [];
   private readonly MAX_ACTIVITIES = 20;
+  private readonly QUEUE_TIMEOUT_MINUTES = 10; // Timeout para jogadores inativos
+  private readonly CLEANUP_INTERVAL_MS = 30000; // Limpeza a cada 30 segundos
 
   constructor(dbManager: DatabaseManager, wss?: any) {
     this.dbManager = dbManager;
     this.wss = wss;
-  }  async initialize(): Promise<void> {
+  }
+
+  async initialize(): Promise<void> {
     // Carregar jogadores da fila persistente
     await this.loadQueueFromDatabase();
     
     // Adicionar atividades iniciais
     this.addActivity('system_update', 'Sistema de matchmaking inicializado');
     this.addActivity('system_update', 'Aguardando jogadores para a fila');    
+    
     // Iniciar processamento de matchmaking a cada 5 segundos
     this.matchmakingInterval = setInterval(() => {
       this.processMatchmaking();
     }, 5000);
 
-    // console.log('✅ Sistema de matchmaking ativo');
+    // Iniciar limpeza automática de jogadores inativos a cada 30 segundos
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupInactivePlayers();
+    }, this.CLEANUP_INTERVAL_MS);
+
+    console.log('✅ Sistema de matchmaking ativo com limpeza automática');
+  }
+
+  // Novo método: Limpeza automática de jogadores inativos
+  private async cleanupInactivePlayers(): Promise<void> {
+    try {
+      const now = new Date();
+      const timeoutMs = this.QUEUE_TIMEOUT_MINUTES * 60 * 1000;
+      const playersToRemove: QueuedPlayer[] = [];
+
+      // Verificar jogadores inativos
+      for (const player of this.queue) {
+        const timeInQueue = now.getTime() - player.joinTime.getTime();
+        const isWebSocketDead = player.websocket && 
+          (player.websocket.readyState === WebSocket.CLOSED || 
+           player.websocket.readyState === WebSocket.CLOSING);
+
+        // Remover se:
+        // 1. WebSocket está morto OU
+        // 2. Jogador está na fila há mais tempo que o timeout
+        if (isWebSocketDead || timeInQueue > timeoutMs) {
+          playersToRemove.push(player);
+        }
+      }
+
+      // Remover jogadores inativos
+      for (const player of playersToRemove) {
+        const playerIndex = this.queue.findIndex(p => p.id === player.id);
+        if (playerIndex !== -1) {
+          this.queue.splice(playerIndex, 1);
+          
+          // Persistir saída da fila no banco
+          await this.dbManager.removePlayerFromQueue(player.id);
+          
+          // Adicionar atividade de saída automática
+          this.addActivity(
+            'player_left',
+            `${player.summonerName} removido automaticamente da fila (inativo)`,
+            player.summonerName
+          );
+          
+          console.log(`🧹 Removido jogador inativo: ${player.summonerName}`);
+        }
+      }
+
+      // Atualizar posições na fila se houve remoções
+      if (playersToRemove.length > 0) {
+        this.queue.forEach((p, index) => {
+          p.queuePosition = index + 1;
+        });
+        
+        // Broadcast atualização da fila
+        await this.broadcastQueueUpdate();
+        
+        console.log(`🧹 Limpeza concluída: ${playersToRemove.length} jogadores removidos`);
+      }
+    } catch (error) {
+      console.error('❌ Erro na limpeza automática:', error);
+    }
+  }
+
+  // Método para verificar se um WebSocket está ativo
+  private isWebSocketActive(websocket: WebSocket): boolean {
+    return websocket && 
+           websocket.readyState === WebSocket.OPEN;
   }
 
   // Método para carregar fila do banco de dados
@@ -1056,5 +1131,40 @@ export class MatchmakingService {
     }
     
     return false;
+  }
+
+  // Método para desligar o serviço e limpar intervalos
+  public shutdown(): void {
+    console.log('🔄 Desligando serviço de matchmaking...');
+    
+    // Limpar intervalos
+    if (this.matchmakingInterval) {
+      clearInterval(this.matchmakingInterval);
+      this.matchmakingInterval = null;
+    }
+    
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+    
+    // Limpar partidas ativas
+    for (const [matchId, match] of this.activeMatches.entries()) {
+      if (match.acceptTimeout) {
+        clearTimeout(match.acceptTimeout);
+      }
+    }
+    this.activeMatches.clear();
+    
+    // Limpar fila
+    this.queue = [];
+    
+    this.isActive = false;
+    console.log('✅ Serviço de matchmaking desligado');
+  }
+
+  // Método para verificar se o serviço está ativo
+  public isServiceActive(): boolean {
+    return this.isActive;
   }
 }

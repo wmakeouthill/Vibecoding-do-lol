@@ -22,6 +22,10 @@ export class DiscordIntegrationService {
   private static instanceCount = 0;
   private instanceId: number;
 
+  // Throttling para evitar múltiplas solicitações
+  private lastStatusRequest = 0;
+  private readonly STATUS_REQUEST_COOLDOWN = 5000; // 5 segundos entre solicitações
+
   constructor() {
     DiscordIntegrationService.instanceCount++;
     this.instanceId = DiscordIntegrationService.instanceCount;
@@ -140,13 +144,21 @@ export class DiscordIntegrationService {
     }
   }
 
-  // Solicitar status atual do Discord
+  // Solicitar status atual do Discord (com throttling)
   requestDiscordStatus() {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       console.warn(`⚠️ [DiscordService #${this.instanceId}] WebSocket não está conectado, não é possível solicitar status`);
       return;
     }
 
+    // Verificar throttling
+    const now = Date.now();
+    if (now - this.lastStatusRequest < this.STATUS_REQUEST_COOLDOWN) {
+      console.log(`⏱️ [DiscordService #${this.instanceId}] Solicitação ignorada (throttling): ${now - this.lastStatusRequest}ms desde última solicitação`);
+      return;
+    }
+
+    this.lastStatusRequest = now;
     console.log(`🔍 [DiscordService #${this.instanceId}] Solicitando status do Discord...`);
 
     // Enviar todas as solicitações

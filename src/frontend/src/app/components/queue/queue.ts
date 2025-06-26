@@ -434,8 +434,13 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   refreshPlayersData(): void {
     this.isRefreshing = true;
     
-    // Atualizar dados do Discord
-    this.discordService.requestDiscordStatus();
+    // Não fazer solicitação frequente do Discord - apenas atualizar dados locais
+    // this.discordService.requestDiscordStatus();
+    
+    // Atualizar dados locais do Discord
+    this.discordUsersOnline = this.discordService.getDiscordUsersOnline();
+    this.isDiscordConnected = this.discordService.isConnected();
+    this.isInDiscordChannel = this.discordService.isInChannel();
     
     // Simular delay de atualização
     setTimeout(() => {
@@ -501,7 +506,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     if (this.autoRefreshEnabled) {
       this.autoRefreshInterval = window.setInterval(() => {
         this.refreshPlayersData();
-      }, 5000); // Atualizar a cada 5 segundos
+      }, 30000); // Atualizar a cada 30 segundos (era 5 segundos)
     }
   }
 

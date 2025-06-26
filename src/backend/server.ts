@@ -164,8 +164,8 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
       };
       ws.send(JSON.stringify(discordStatus));
       
-      // Enviar também a lista de usuários no canal
-      await discordService.broadcastUsersInChannel();
+      // Remover o broadcast automático - será feito apenas quando solicitado explicitamente
+      // await discordService.broadcastUsersInChannel();
       break;
     case 'get_discord_users':
       console.log('👥 Solicitando lista de usuários Discord...');

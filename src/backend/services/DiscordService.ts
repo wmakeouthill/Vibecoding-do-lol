@@ -35,6 +35,10 @@ export class DiscordService {
   // WebSocket principal do servidor
   private wss: any = null;
 
+  // Throttling para broadcast de usuários
+  private lastBroadcastTime = 0;
+  private readonly BROADCAST_COOLDOWN = 10000; // 10 segundos entre broadcasts
+
   constructor(databaseManager: DatabaseManager) {
     this.databaseManager = databaseManager;
     this.client = new Client({
@@ -918,10 +922,8 @@ export class DiscordService {
       await guild.members.fetch();
       console.log('✅ [DEBUG] Cache de membros atualizada');
       
-      // Broadcast atualizado após refresh
-      setTimeout(() => {
-        this.broadcastUsersInChannel();
-      }, 1000);
+      // Remover o setTimeout que estava causando broadcast frequente
+      // O broadcast será feito apenas quando necessário
     } catch (error) {
       console.error('❌ [DEBUG] Erro ao atualizar cache de membros:', error);
     }
@@ -929,6 +931,14 @@ export class DiscordService {
 
   // Enviar lista de usuários online para todos os clientes
   async broadcastUsersInChannel(): Promise<void> {
+    // Verificar throttling
+    const now = Date.now();
+    if (now - this.lastBroadcastTime < this.BROADCAST_COOLDOWN) {
+      console.log(`⏱️ [DiscordService] Broadcast ignorado (throttling): ${now - this.lastBroadcastTime}ms desde último broadcast`);
+      return;
+    }
+
+    this.lastBroadcastTime = now;
     console.log('📡 [DEBUG] Iniciando broadcast de usuários no canal...');
     const usersInChannel = await this.getUsersInMatchmakingChannel();
     
