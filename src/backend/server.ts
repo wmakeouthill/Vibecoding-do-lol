@@ -834,9 +834,14 @@ app.post('/api/capture-match/:playerId', (req: Request, res: Response) => {
 */
 
 // Rotas de matchmaking
-app.get('/api/queue/status', (req: Request, res: Response) => {
-  const queueStatus = matchmakingService.getQueueStatus();
-  res.json(queueStatus);
+app.get('/api/queue/status', async (req: Request, res: Response) => {
+  try {
+    const queueStatus = await matchmakingService.getQueueStatus();
+    res.json(queueStatus);
+  } catch (error: any) {
+    console.error('Erro ao obter status da fila:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Endpoint para entrar na fila via HTTP
@@ -866,7 +871,7 @@ app.post('/api/queue/join', (async (req: Request, res: Response) => {
     res.json({ 
       success: true, 
       message: 'Jogador adicionado à fila com sucesso',
-      queueStatus: matchmakingService.getQueueStatus()
+      queueStatus: await matchmakingService.getQueueStatus()
     });
   } catch (error: any) {
     console.error('Erro ao adicionar jogador à fila:', error);
@@ -896,7 +901,7 @@ app.post('/api/queue/leave', (async (req: Request, res: Response) => {
       res.json({ 
         success: true, 
         message: 'Jogador removido da fila com sucesso',
-        queueStatus: matchmakingService.getQueueStatus()
+        queueStatus: await matchmakingService.getQueueStatus()
       });
     } else {
       res.status(404).json({ 
@@ -959,7 +964,7 @@ app.post('/api/queue/join-legacy', (async (req: Request, res: Response) => {
     res.json({ 
       success: true, 
       message: 'Jogador adicionado à fila legacy com sucesso',
-      queueStatus: matchmakingService.getQueueStatus()
+      queueStatus: await matchmakingService.getQueueStatus()
     });
   } catch (error: any) {
     console.error('Erro ao adicionar jogador à fila legacy:', error);
@@ -988,7 +993,7 @@ app.post('/api/queue/leave-legacy', (async (req: Request, res: Response) => {
       res.json({ 
         success: true, 
         message: 'Jogador removido da fila legacy com sucesso',
-        queueStatus: matchmakingService.getQueueStatus()
+        queueStatus: await matchmakingService.getQueueStatus()
       });
     } else {
       res.status(404).json({ 

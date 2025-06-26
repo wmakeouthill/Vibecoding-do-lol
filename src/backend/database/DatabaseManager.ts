@@ -25,6 +25,7 @@ export interface Player {
   custom_wins?: number;
   custom_losses?: number;
   custom_win_streak?: number;
+  custom_lp?: number; // LP acumulado das partidas customizadas
 }
 
 export interface Match {
@@ -128,6 +129,11 @@ export class DatabaseManager {
         console.log('✅ Coluna custom_win_streak adicionada');
       }
       
+      if (!columnNames.includes('custom_lp')) {
+        await this.db.exec('ALTER TABLE players ADD COLUMN custom_lp INTEGER DEFAULT 0');
+        console.log('✅ Coluna custom_lp adicionada');
+      }
+      
       // Verificar e migrar tabela custom_matches
       const customMatchColumns = await this.db.all("PRAGMA table_info(custom_matches)");
       const customMatchColumnNames = customMatchColumns.map(col => col.name);
@@ -204,7 +210,8 @@ export class DatabaseManager {
         custom_games_played INTEGER DEFAULT 0,
         custom_wins INTEGER DEFAULT 0,
         custom_losses INTEGER DEFAULT 0,
-        custom_win_streak INTEGER DEFAULT 0
+        custom_win_streak INTEGER DEFAULT 0,
+        custom_lp INTEGER DEFAULT 0
       )
     `);
 
@@ -255,6 +262,23 @@ export class DatabaseManager {
         value TEXT NOT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Tabela para persistir jogadores na fila
+    await this.db.exec(`
+      CREATE TABLE IF NOT EXISTS queue_players (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        player_id INTEGER NOT NULL,
+        summoner_name TEXT NOT NULL,
+        region TEXT NOT NULL,
+        custom_lp INTEGER DEFAULT 0,
+        primary_lane TEXT,
+        secondary_lane TEXT,
+        join_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+        queue_position INTEGER,
+        is_active INTEGER DEFAULT 1,
+        FOREIGN KEY (player_id) REFERENCES players (id)
       )
     `);
 
@@ -1435,9 +1459,85 @@ export class DatabaseManager {
    */
   async updatePlayerNickname(oldName: string, newName: string): Promise<void> {
     if (!this.db) throw new Error('Banco de dados não inicializado');
+    
     await this.db.run(
       'UPDATE players SET summoner_name = ? WHERE summoner_name = ?',
       [newName, oldName]
     );
+    
+    // Atualizar também em custom_matches
+    await this.db.run(
+      'UPDATE custom_matches SET created_by = ? WHERE created_by = ?',
+      [newName, oldName]
+    );
+  }
+
+  // Métodos para gerenciar fila persistente
+  async addPlayerToQueue(playerId: number, summonerName: string, region: string, customLp: number, preferences: any): Promise<void> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+    
+    // Remover jogador da fila se já estiver (evitar duplicatas)
+    await this.removePlayerFromQueue(playerId);
+    
+    // Adicionar jogador à fila
+    await this.db.run(`
+      INSERT INTO queue_players 
+      (player_id, summoner_name, region, custom_lp, primary_lane, secondary_lane, queue_position) 
+      VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(queue_position), 0) + 1 FROM queue_players WHERE is_active = 1))
+    `, [
+      playerId, 
+      summonerName, 
+      region, 
+      customLp, 
+      preferences?.primaryLane || 'fill',
+      preferences?.secondaryLane || 'fill'
+    ]);
+  }
+
+  async removePlayerFromQueue(playerId: number): Promise<void> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+    
+    await this.db.run(
+      'UPDATE queue_players SET is_active = 0 WHERE player_id = ?',
+      [playerId]
+    );
+    
+    // Reordenar posições da fila
+    await this.reorderQueuePositions();
+  }
+
+  async getActiveQueuePlayers(): Promise<any[]> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+    
+    return await this.db.all(`
+      SELECT qp.*, p.custom_lp 
+      FROM queue_players qp 
+      JOIN players p ON qp.player_id = p.id 
+      WHERE qp.is_active = 1 
+      ORDER BY qp.queue_position ASC
+    `);
+  }
+
+  async clearQueue(): Promise<void> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+    
+    await this.db.run('UPDATE queue_players SET is_active = 0');
+  }
+
+  private async reorderQueuePositions(): Promise<void> {
+    if (!this.db) throw new Error('Banco de dados não inicializado');
+    
+    const activePlayers = await this.db.all(`
+      SELECT id FROM queue_players 
+      WHERE is_active = 1 
+      ORDER BY join_time ASC
+    `);
+    
+    for (let i = 0; i < activePlayers.length; i++) {
+      await this.db.run(
+        'UPDATE queue_players SET queue_position = ? WHERE id = ?',
+        [i + 1, activePlayers[i].id]
+      );
+    }
   }
 }

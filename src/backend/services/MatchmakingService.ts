@@ -74,7 +74,8 @@ export class MatchmakingService {
     this.dbManager = dbManager;
     this.wss = wss;
   }  async initialize(): Promise<void> {
-    // console.log('🔍 Inicializando sistema de matchmaking...');
+    // Carregar jogadores da fila persistente
+    await this.loadQueueFromDatabase();
     
     // Adicionar atividades iniciais
     this.addActivity('system_update', 'Sistema de matchmaking inicializado');
@@ -85,7 +86,38 @@ export class MatchmakingService {
     }, 5000);
 
     // console.log('✅ Sistema de matchmaking ativo');
-  }async addPlayerToQueue(websocket: WebSocket, requestData: any): Promise<void> {
+  }
+
+  // Método para carregar fila do banco de dados
+  private async loadQueueFromDatabase(): Promise<void> {
+    try {
+      const queuePlayers = await this.dbManager.getActiveQueuePlayers();
+      
+      for (const dbPlayer of queuePlayers) {
+        const queuedPlayer: QueuedPlayer = {
+          id: dbPlayer.player_id,
+          summonerName: dbPlayer.summoner_name,
+          region: dbPlayer.region,
+          currentMMR: dbPlayer.custom_lp || 0,
+          joinTime: new Date(dbPlayer.join_time),
+          websocket: null as any, // WebSocket será atualizado quando o jogador reconectar
+          queuePosition: dbPlayer.queue_position,
+          preferences: {
+            primaryLane: dbPlayer.primary_lane || 'fill',
+            secondaryLane: dbPlayer.secondary_lane || 'fill'
+          }
+        };
+        
+        this.queue.push(queuedPlayer);
+      }
+      
+      console.log(`📊 Carregados ${this.queue.length} jogadores da fila persistente`);
+    } catch (error) {
+      console.error('❌ Erro ao carregar fila do banco:', error);
+    }
+  }
+
+  async addPlayerToQueue(websocket: WebSocket, requestData: any): Promise<void> {
     try {
       // Validar dados da requisição
       if (!requestData) {
@@ -119,7 +151,8 @@ export class MatchmakingService {
           games_played: 0,
           wins: 0,
           losses: 0,
-          win_streak: 0
+          win_streak: 0,
+          custom_lp: 0 // Inicializar custom_lp
         });
         player = await this.dbManager.getPlayer(playerId);
       }
@@ -143,12 +176,21 @@ export class MatchmakingService {
         id: player.id!,
         summonerName: player.summoner_name,
         region: player.region,
-        currentMMR: player.current_mmr,
+        currentMMR: player.custom_lp || 0, // Usar custom_lp em vez de current_mmr
         joinTime: new Date(),
         websocket: websocket,
         queuePosition: this.queue.length + 1,
         preferences: preferences
-      };      this.queue.push(queuedPlayer);      // Adicionar atividade
+      };      this.queue.push(queuedPlayer);      // Persistir entrada na fila no banco
+      await this.dbManager.addPlayerToQueue(
+        queuedPlayer.id, 
+        queuedPlayer.summonerName, 
+        queuedPlayer.region, 
+        queuedPlayer.currentMMR, 
+        preferences
+      );
+
+      // Adicionar atividade
       const primaryLaneName = this.getLaneDisplayName(preferences?.primaryLane);
       const playerTag = ''; // Remover tag_line que não existe no Player
       this.addActivity(
@@ -172,9 +214,9 @@ export class MatchmakingService {
       }));
 
       // Broadcast atualização da fila
-      this.broadcastQueueUpdate();
+      await this.broadcastQueueUpdate();
 
-      // console.log(`➕ ${player.summoner_name} entrou na fila (Posição: ${this.queue.length}, MMR: ${player.current_mmr})`);
+      // console.log(`➕ ${player.summoner_name} entrou na fila (Posição: ${this.queue.length}, MMR: ${player.custom_lp})`);
 
     } catch (error: any) {
       console.error('Erro ao adicionar jogador à fila:', error);
@@ -183,7 +225,7 @@ export class MatchmakingService {
         message: 'Falha ao entrar na fila: ' + error.message
       }));
     }
-  }  removePlayerFromQueue(websocket: WebSocket): void {
+  }  async removePlayerFromQueue(websocket: WebSocket): Promise<void> {
     // console.log('🔍 removePlayerFromQueue chamado');
     const playerIndex = this.queue.findIndex(player => player.websocket === websocket);
     // console.log('🔍 Player index encontrado:', playerIndex);
@@ -193,6 +235,11 @@ export class MatchmakingService {
       const playerTag = player.summonerName.includes('#') ? '' : ''; // Tag já incluída no summonerName se existir
       
       this.queue.splice(playerIndex, 1);
+
+      // Persistir saída da fila no banco
+      this.dbManager.removePlayerFromQueue(player.id).catch(error => {
+        console.error('❌ Erro ao remover jogador da fila persistente:', error);
+      });
 
       // Adicionar atividade de saída
       this.addActivity(
@@ -207,7 +254,7 @@ export class MatchmakingService {
 
       // console.log(`➖ ${player.summonerName} saiu da fila`);
       // console.log('🔍 Tamanho da fila depois:', this.queue.length);
-      this.broadcastQueueUpdate();
+      await this.broadcastQueueUpdate();
     } else {
       // console.log('⚠️ Jogador não encontrado na fila para remoção');
     }
@@ -745,36 +792,63 @@ export class MatchmakingService {
   }
 
   // Método para fazer broadcast das atualizações da fila
-  public broadcastQueueUpdate(): void {
+  public async broadcastQueueUpdate(): Promise<void> {
     if (!this.wss) return;
 
-    const queueStatus = this.getQueueStatus();
-    
-    this.wss.clients.forEach((client: WebSocket) => {
-      if (client.readyState === 1) { // WebSocket.OPEN
-        try {
-          client.send(JSON.stringify({
-            type: 'queue_update',
-            data: queueStatus
-          }));
-        } catch (error) {
-          console.error('Erro ao enviar atualização da fila:', error);
+    try {
+      const queueStatus = await this.getQueueStatus();
+      
+      this.wss.clients.forEach((client: WebSocket) => {
+        if (client.readyState === 1) { // WebSocket.OPEN
+          try {
+            client.send(JSON.stringify({
+              type: 'queue_update',
+              data: queueStatus
+            }));
+          } catch (error) {
+            console.error('Erro ao enviar atualização da fila:', error);
+          }
         }
-      }
-    });
+      });
+    } catch (error) {
+      console.error('Erro ao obter status da fila para broadcast:', error);
+    }
   }
 
   // Método para obter status atual da fila
-  getQueueStatus(): QueueStatus {
-    const playersInQueueList: QueuedPlayerInfo[] = this.queue.map((player, index) => ({
-      summonerName: player.summonerName,
-      tagLine: undefined, // Pode adicionar se necessário
-      primaryLane: player.preferences?.primaryLane || 'fill',
-      secondaryLane: player.preferences?.secondaryLane || 'fill',
-      mmr: player.currentMMR,
-      queuePosition: index + 1,
-      joinTime: player.joinTime
-    }));
+  async getQueueStatus(): Promise<QueueStatus> {
+    // Buscar MMR atualizado do banco para cada jogador na fila
+    const playersInQueueList: QueuedPlayerInfo[] = [];
+    
+    for (const player of this.queue) {
+      try {
+        // Buscar dados atualizados do jogador no banco
+        const dbPlayer = await this.dbManager.getPlayer(player.id);
+        const currentMMR = dbPlayer?.custom_lp || 0;
+        
+        playersInQueueList.push({
+          summonerName: player.summonerName,
+          tagLine: undefined, // Pode adicionar se necessário
+          primaryLane: player.preferences?.primaryLane || 'fill',
+          secondaryLane: player.preferences?.secondaryLane || 'fill',
+          mmr: currentMMR,
+          queuePosition: player.queuePosition || 0,
+          joinTime: player.joinTime
+        });
+      } catch (error) {
+        console.error(`❌ Erro ao buscar dados do jogador ${player.summonerName}:`, error);
+        // Usar dados em memória como fallback
+        playersInQueueList.push({
+          summonerName: player.summonerName,
+          tagLine: undefined,
+          primaryLane: player.preferences?.primaryLane || 'fill',
+          secondaryLane: player.preferences?.secondaryLane || 'fill',
+          mmr: player.currentMMR,
+          queuePosition: player.queuePosition || 0,
+          joinTime: player.joinTime
+        });
+      }
+    }
 
     return {
       playersInQueue: this.queue.length,
@@ -956,6 +1030,11 @@ export class MatchmakingService {
     if (playerIndex !== -1) {
       const player = this.queue[playerIndex];
       this.queue.splice(playerIndex, 1);
+      
+      // Persistir saída da fila no banco
+      this.dbManager.removePlayerFromQueue(player.id).catch(error => {
+        console.error('❌ Erro ao remover jogador da fila persistente:', error);
+      });
       
       // Atualizar posições na fila
       this.queue.forEach((p, index) => {
