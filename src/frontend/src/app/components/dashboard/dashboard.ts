@@ -657,25 +657,29 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
 
   // Método para carregar contagem de partidas customizadas
   public loadCustomMatchesCount(): void {
-    if (!this.player) {
-      this.customMatchesCount = 0;
-      return;
-    }
+    if (!this.player) return;
 
-    this.isLoadingCustomCount = true;
-    const playerIdentifier = this.player.summonerName || this.player.id.toString();
+    // Usar o formato correto do Riot ID (gameName#tagLine) se disponível
+    let playerIdentifier = this.player.summonerName || this.player.id.toString();
+    
+    // Se temos gameName e tagLine, usar o formato Riot ID
+    if (this.player.gameName && this.player.tagLine) {
+      playerIdentifier = `${this.player.gameName}#${this.player.tagLine}`;
+    } else if (this.player.summonerName && this.player.tagLine) {
+      playerIdentifier = `${this.player.summonerName}#${this.player.tagLine}`;
+    }
 
     console.log('🔢 Carregando contagem de partidas customizadas para:', playerIdentifier);
 
     const countSub = this.apiService.getCustomMatchesCount(playerIdentifier)
       .subscribe({
         next: (response) => {
-          if (response && response.success && typeof response.count === 'number') {
-            this.customMatchesCount = response.count;
+          if (response && response.success) {
+            this.customMatchesCount = response.count || 0;
             console.log('✅ Contagem de partidas customizadas carregada:', this.customMatchesCount);
           } else {
+            console.warn('⚠️ Resposta inválida ao carregar contagem:', response);
             this.customMatchesCount = 0;
-            console.log('📝 Nenhuma partida customizada encontrada');
           }
           this.isLoadingCustomCount = false;
         },
@@ -752,7 +756,25 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
 
     console.log('💾 Loading custom matches from database...');
 
-    const playerIdentifier = this.player.summonerName || this.player.id.toString();
+    // Usar o formato correto do Riot ID (gameName#tagLine) se disponível
+    let playerIdentifier = this.player.summonerName || this.player.id.toString();
+    
+    // Se temos gameName e tagLine, usar o formato Riot ID
+    if (this.player.gameName && this.player.tagLine) {
+      playerIdentifier = `${this.player.gameName}#${this.player.tagLine}`;
+    } else if (this.player.summonerName && this.player.tagLine) {
+      playerIdentifier = `${this.player.summonerName}#${this.player.tagLine}`;
+    }
+
+    console.log('🔍 [DASHBOARD] Player data received:', {
+      summonerName: this.player.summonerName,
+      gameName: this.player.gameName,
+      tagLine: this.player.tagLine,
+      rank: this.player.rank,
+      rankedData: this.player.rankedData
+    });
+
+    console.log('🎯 [DASHBOARD] Using player identifier for search:', playerIdentifier);
 
     const customMatchesSub = this.apiService.getCustomMatches(playerIdentifier, 0, 3)
       .subscribe({

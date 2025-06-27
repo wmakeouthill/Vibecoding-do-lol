@@ -287,13 +287,36 @@ export class App implements OnInit, OnDestroy {
           : `Partida entre ${gameResult.team1.length}v${gameResult.team2.length}`,
         team1Players: gameResult.team1.map((player: any) => {
           // Garantir que temos um identificador válido
+          // Se for o usuário logado, usar Riot ID completo
+          if (this.currentPlayer && 
+              (player.summonerName === this.currentPlayer.summonerName || 
+               player.id === this.currentPlayer.id)) {
+            const currentPlayerName = this.currentPlayer.summonerName;
+            const currentPlayerTagLine = this.currentPlayer.tagLine;
+            return currentPlayerTagLine ? `${currentPlayerName}#${currentPlayerTagLine}` : currentPlayerName;
+          }
           return player.id?.toString() || player.summonerName || player.toString();
         }),
         team2Players: gameResult.team2.map((player: any) => {
           // Garantir que temos um identificador válido
+          // Se for o usuário logado, usar Riot ID completo
+          if (this.currentPlayer && 
+              (player.summonerName === this.currentPlayer.summonerName || 
+               player.id === this.currentPlayer.id)) {
+            const currentPlayerName = this.currentPlayer.summonerName;
+            const currentPlayerTagLine = this.currentPlayer.tagLine;
+            return currentPlayerTagLine ? `${currentPlayerName}#${currentPlayerTagLine}` : currentPlayerName;
+          }
           return player.id?.toString() || player.summonerName || player.toString();
         }),
-        createdBy: this.currentPlayer?.id?.toString() || this.currentPlayer?.summonerName || '1',
+        createdBy: (() => {
+          if (this.currentPlayer) {
+            const currentPlayerName = this.currentPlayer.summonerName;
+            const currentPlayerTagLine = this.currentPlayer.tagLine;
+            return currentPlayerTagLine ? `${currentPlayerName}#${currentPlayerTagLine}` : currentPlayerName;
+          }
+          return '1';
+        })(),
         gameMode: 'CLASSIC',
         winnerTeam: gameResult.winner === 'blue' ? 1 : 2,
         duration: Math.floor(gameResult.duration / 60), // Converter segundos para minutos

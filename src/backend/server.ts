@@ -1,12 +1,24 @@
 import express, { Request, Response, NextFunction, RequestHandler } from 'express';
+import dotenv from 'dotenv';
+import * as path from 'path';
+import * as fs from 'fs';
+
+// Carregar variáveis de ambiente do arquivo .env
+const envPath = path.resolve(process.cwd(), '.env');
+if (fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath });
+  console.log('✅ Arquivo .env carregado:', envPath);
+} else {
+  console.warn('⚠️ Arquivo .env não encontrado em:', envPath);
+  dotenv.config(); // Tentar carregar do diretório atual
+}
+
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { createServer, IncomingMessage } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Server as SocketIOServer } from 'socket.io';
-import * as path from 'path';
-import * as fs from 'fs';
 
 import { DatabaseManager } from './database/DatabaseManager';
 import { MatchmakingService } from './services/MatchmakingService';
@@ -463,13 +475,38 @@ app.get('/api/stats/leaderboard', (async (req: Request, res: Response) => {
 app.get('/api/stats/participants-leaderboard', (async (req: Request, res: Response) => {
   try {
     const limit = parseInt(req.query.limit as string) || 100;
+    
+    console.log('🏆 [GET /api/stats/participants-leaderboard] Iniciando busca do leaderboard');
+    
     // Atualizar dados dos jogadores antes de retornar o leaderboard
-    await dbManager.refreshPlayersFromCustomMatches();
+    try {
+      await dbManager.refreshPlayersFromCustomMatches();
+      console.log('✅ [GET /api/stats/participants-leaderboard] Dados dos jogadores atualizados');
+    } catch (refreshError: any) {
+      console.warn('⚠️ [GET /api/stats/participants-leaderboard] Erro ao atualizar jogadores:', refreshError.message);
+      // Continuar mesmo se falhar a atualização
+    }
+    
     const leaderboard = await dbManager.getParticipantsLeaderboard(limit);
-    res.json({ success: true, data: leaderboard });
+    console.log('📊 [GET /api/stats/participants-leaderboard] Leaderboard encontrado:', leaderboard.length, 'jogadores');
+    
+    res.json({ 
+      success: true, 
+      data: leaderboard,
+      total: leaderboard.length,
+      message: leaderboard.length === 0 ? 'Nenhum jogador encontrado. Complete algumas partidas customizadas para ver o leaderboard.' : null
+    });
   } catch (error: any) {
-    console.error('❌ Erro ao buscar leaderboard de participantes:', error);
-    res.status(500).json({ error: error.message });
+    console.error('❌ [GET /api/stats/participants-leaderboard] Erro:', error);
+    
+    // Em vez de retornar erro 500, retornar array vazio
+    res.json({ 
+      success: true, 
+      data: [],
+      total: 0,
+      message: 'Nenhum jogador encontrado. Complete algumas partidas customizadas para ver o leaderboard.',
+      error: error.message // Para debug, mas não quebra o frontend
+    });
   }
 }) as RequestHandler);
 
@@ -1240,14 +1277,22 @@ app.get('/api/lcu/match-history-all', (async (req: Request, res: Response) => {
 app.get('/api/lcu/current-match-details', (async (req: Request, res: Response) => {
   try {
     if (!lcuService.isClientConnected()) {
-      return res.status(503).json({ error: 'Cliente do LoL não conectado' });
+      return res.json({ 
+        success: false, 
+        error: 'Cliente do LoL não conectado',
+        message: 'Nenhuma partida ativa encontrada'
+      });
     }
     
     // Tentar obter dados da partida atual usando método mais robusto
     const currentMatchDetails = await lcuService.getCurrentMatchDetails();
     
     if (!currentMatchDetails || !currentMatchDetails.details) {
-      return res.status(404).json({ error: 'Nenhuma partida ativa encontrada' });
+      return res.json({ 
+        success: false, 
+        error: 'Nenhuma partida ativa encontrada',
+        message: 'Nenhuma partida ativa encontrada'
+      });
     }
 
     res.json({
@@ -1257,7 +1302,11 @@ app.get('/api/lcu/current-match-details', (async (req: Request, res: Response) =
 
   } catch (error: any) {
     console.error('💥 [LCU Current Match] Erro:', error);
-    res.status(503).json({ error: 'Erro ao buscar partida atual do LCU: ' + error.message });
+    res.json({ 
+      success: false, 
+      error: 'Erro ao buscar partida atual do LCU: ' + error.message,
+      message: 'Nenhuma partida ativa encontrada'
+    });
   }
 }) as RequestHandler);
 
@@ -1639,11 +1688,33 @@ app.post('/api/custom_matches', (async (req: Request, res: Response) => {
 app.get('/api/matches/custom/:playerId', (req: Request, res: Response) => {
   (async () => {
     try {
-      const playerIdParam = req.params.playerId;
-      const offset = parseInt(req.query.offset as string) || 0;
-      const limit = parseInt(req.query.limit as string) || 10;
+      const playerIdParam = decodeURIComponent(req.params.playerId);
+      
+      // Validar e converter offset e limit para números
+      let offset = 0;
+      let limit = 10;
+      
+      if (req.query.offset !== undefined) {
+        const offsetValue = parseInt(req.query.offset as string);
+        if (!isNaN(offsetValue) && offsetValue >= 0) {
+          offset = offsetValue;
+        }
+      }
+      
+      if (req.query.limit !== undefined) {
+        const limitValue = parseInt(req.query.limit as string);
+        if (!isNaN(limitValue) && limitValue > 0 && limitValue <= 100) {
+          limit = limitValue;
+        }
+      }
 
-      console.log('🔍 [GET /api/matches/custom] playerIdParam:', playerIdParam);
+      console.log('🔍 [GET /api/matches/custom] Parâmetros processados:', {
+        playerIdParam,
+        offset,
+        limit,
+        offsetType: typeof offset,
+        limitType: typeof limit
+      });
 
       let playerIdentifier = playerIdParam;
       const numericId = parseInt(playerIdParam);
@@ -1677,9 +1748,9 @@ app.get('/api/matches/custom/:playerId', (req: Request, res: Response) => {
 app.get('/api/matches/custom/:playerId/count', (req: Request, res: Response) => {
   (async () => {
     try {
-      const playerIdParam = req.params.playerId;
+      const playerIdParam = decodeURIComponent(req.params.playerId);
 
-      console.log('🔢 [GET /api/matches/custom/count] playerIdParam:', playerIdParam);
+      console.log('🔢 [GET /api/matches/custom/count] playerIdParam (decoded):', playerIdParam);
 
       let playerIdentifier = playerIdParam;
       const numericId = parseInt(playerIdParam);
@@ -1765,7 +1836,7 @@ app.post('/api/players/update-nickname', (req: Request, res: Response) => {
 app.post('/api/stats/refresh-rebuild-players', async (req: Request, res: Response) => {
   try {
     // Limpar todos os jogadores
-    await dbManager.db?.run('DELETE FROM players');
+    await dbManager.clearAllPlayers();
     // Recalcular todos os agregados a partir das partidas customizadas
     await dbManager.refreshPlayersFromCustomMatches();
     res.json({ success: true, message: 'Tabela players limpa e reconstruída com sucesso.' });

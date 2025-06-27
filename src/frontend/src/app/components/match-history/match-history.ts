@@ -399,37 +399,79 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         if (match.pick_ban_data) {
           pickBanData = typeof match.pick_ban_data === 'string' ? JSON.parse(match.pick_ban_data) : match.pick_ban_data;
         }
+
+        // Parse participants_data se existir
+        if (match.participants_data) {
+          match.participants_data = typeof match.participants_data === 'string' ? 
+            JSON.parse(match.participants_data) : match.participants_data;
+        }
       } catch (e) {
         team1Players = [];
         team2Players = [];
         pickBanData = null;
-      }      // Determinar o campeão do jogador a partir dos dados de pick/ban
+      }      // Verificar se temos dados reais dos participantes
+      const hasRealData = match.participants_data && Array.isArray(match.participants_data) && match.participants_data.length > 0;
+
+      // Debug: Log dos dados para verificar se estão chegando corretamente
+      console.log('🔍 [mapApiMatchesToModel] Debug dados da partida:', {
+        matchId: match.id,
+        hasRealData,
+        participantsDataLength: match.participants_data?.length || 0,
+        participantsDataSample: match.participants_data?.[0] || null,
+        team1Players,
+        team2Players,
+        pickBanData: !!pickBanData
+      });
+
+      // Determinar o campeão do jogador a partir dos dados de pick/ban
       let playerChampion = 'Unknown';
       let currentPlayerIndex = -1; // Índice do jogador atual nos times
       let currentPlayerTeam = -1;  // Time do jogador atual (1 ou 2)
 
       try {
         if (pickBanData && pickBanData.team1Picks) {
-          const playerTeam = match.player_team || (match.player_won && match.winner_team === 1 ? 1 : 2);
-          const picks = playerTeam === 1 ? pickBanData.team1Picks : pickBanData.team2Picks;
-
-          if (picks && picks.length > 0) {
-            // Tentar encontrar o pick do jogador atual
-            const currentPlayerName = this.player?.summonerName?.toLowerCase();
-            let playerPick = picks.find((pick: any, index: number) => {
-              if (pick.player && pick.player.toString().toLowerCase().includes(currentPlayerName || '')) {
+          const currentPlayerName = this.player?.summonerName?.toLowerCase() || '';
+          const currentPlayerTagLine = this.player?.tagLine || '';
+          const fullPlayerName = currentPlayerTagLine ? `${currentPlayerName}#${currentPlayerTagLine}` : currentPlayerName;
+          
+          // Buscar o jogador atual nos dados reais primeiro
+          if (hasRealData) {
+            const realPlayerData = match.participants_data.find((p: any) => {
+              const pName = p.summonerName?.toLowerCase() || '';
+              const pRiotId = p.riotIdGameName && p.riotIdTagline ? 
+                `${p.riotIdGameName}#${p.riotIdTagline}`.toLowerCase() : '';
+              
+              return pName === currentPlayerName || pRiotId === fullPlayerName.toLowerCase();
+            });
+            
+            if (realPlayerData) {
+              currentPlayerTeam = realPlayerData.teamId === 100 ? 1 : 2;
+              playerChampion = ChampionService.getChampionNameById(realPlayerData.championId) || 'Unknown';
+            }
+          }
+          
+          // Fallback para dados de pick/ban se não encontrou nos dados reais
+          if (currentPlayerTeam === -1) {
+            // Tentar encontrar em team1
+            let playerPick = pickBanData.team1Picks?.find((pick: any, index: number) => {
+              if (pick.player && pick.player.toString().toLowerCase().includes(currentPlayerName)) {
                 currentPlayerIndex = index;
-                currentPlayerTeam = playerTeam;
+                currentPlayerTeam = 1;
                 return true;
               }
               return false;
             });
 
-            if (!playerPick && picks.length > 0) {
-              // Se não encontrou por nome, usar o primeiro pick como fallback
-              playerPick = picks[0];
-              currentPlayerIndex = 0;
-              currentPlayerTeam = playerTeam;
+            // Se não encontrou em team1, tentar team2
+            if (!playerPick && pickBanData.team2Picks) {
+              playerPick = pickBanData.team2Picks.find((pick: any, index: number) => {
+                if (pick.player && pick.player.toString().toLowerCase().includes(currentPlayerName)) {
+                  currentPlayerIndex = index;
+                  currentPlayerTeam = 2;
+                  return true;
+                }
+                return false;
+              });
             }
 
             if (playerPick && playerPick.champion) {
@@ -439,35 +481,29 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         }
       } catch (e) {
         // Silently handle error
-      }      // Verificar se temos dados reais dos participantes
-      const hasRealData = match.participants_data && Array.isArray(match.participants_data) && match.participants_data.length > 0;
-
+      }      // Verificar se temos dados reais do jogador atual
       let playerRealData = null;
-      if (hasRealData) {
-        // Encontrar dados reais do jogador atual
+      if (hasRealData && this.player) {
+        const currentPlayerName = this.player.summonerName?.toLowerCase().trim() || '';
+        const currentPlayerTagLine = this.player.tagLine || '';
+        const fullPlayerName = currentPlayerTagLine ? `${currentPlayerName}#${currentPlayerTagLine}` : currentPlayerName;
+        
+        // Buscar o jogador atual nos dados reais
         playerRealData = match.participants_data.find((p: any) => {
-          const pName = p.summonerName?.toLowerCase() || '';
-          const currentName = this.player?.summonerName?.toLowerCase() || '';
-          return pName === currentName || pName.includes(currentName) || currentName.includes(pName);
+          const pName = p.summonerName?.toLowerCase().trim() || '';
+          const pRiotId = p.riotIdGameName && p.riotIdTagline ? 
+            `${p.riotIdGameName}#${p.riotIdTagline}`.toLowerCase() : '';
+          
+          // Correspondência exata
+          return pName === currentPlayerName || pRiotId === fullPlayerName.toLowerCase();
         });
 
         // Se temos dados reais, usar o campeão real
         if (playerRealData && playerRealData.championId) {
           playerChampion = ChampionService.getChampionNameById(playerRealData.championId) || playerChampion;
+          currentPlayerTeam = playerRealData.teamId === 100 ? 1 : 2;
         }
       }
-
-      // Função para obter dados reais de um participante por nome
-      const getRealDataForPlayer = (playerName: string, teamId: number) => {
-        if (!hasRealData) return null;
-
-        return match.participants_data.find((p: any) => {
-          const pName = p.summonerName?.toLowerCase() || '';
-          const searchName = playerName?.toString().toLowerCase() || '';
-          const teamMatches = (teamId === 100 && p.teamId === 100) || (teamId === 200 && p.teamId === 200);
-          return teamMatches && (pName === searchName || pName.includes(searchName) || searchName.includes(pName));
-        });
-      };
 
       // Usar dados reais quando disponíveis, senão gerar aleatórios para o jogador atual
       const isWin = match.player_won || false;
@@ -488,73 +524,163 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         ];
       } else {
         playerItems = this.generateRandomItems();
-      }        // Convert database match to our frontend Match interface
-        const mappedMatch = {
-          id: match.id || match.match_id,
-          createdAt: new Date(match.created_at),
-          duration: match.duration ? (match.duration * 60) : 1500, // Converter minutos para segundos
-          gameMode: match.game_mode || 'CUSTOM',        team1: team1Players.map((playerId: any, index: number) => {
-            let championName = 'Unknown';
-            let playerName = 'Unknown Player';
+      }
 
-            // Obter dados reais para este jogador primeiro (prioridade)
-            const realData = getRealDataForPlayer(playerId.toString(), 100);
-              if (realData) {
-              // Se temos dados reais, usar eles como fonte principal
-              championName = ChampionService.getChampionNameById(realData.championId) || 'Unknown';
-              playerName = realData.summonerName || 'Unknown Player';
-            } else {
-              // Fallback para dados de pick/ban se não temos dados reais
-              try {
-                if (pickBanData && pickBanData.team1Picks && pickBanData.team1Picks[index]) {
-                  championName = pickBanData.team1Picks[index].champion || 'Unknown';
-                  if (pickBanData.team1Picks[index].player) {
-                    playerName = pickBanData.team1Picks[index].player.toString();
-                  }
+      // Função para obter dados reais de um participante por nome
+      const getRealDataForPlayer = (playerName: string, teamId: number) => {
+        if (!hasRealData) return null;
+
+        // Normalizar o nome do jogador para busca
+        const normalizedPlayerName = playerName?.toString().toLowerCase().trim() || '';
+        
+        console.log('🔍 [getRealDataForPlayer] Buscando jogador:', {
+          playerName,
+          normalizedPlayerName,
+          teamId,
+          participantsDataLength: match.participants_data?.length || 0
+        });
+        
+        // Buscar por correspondência exata primeiro
+        let foundPlayer = match.participants_data.find((p: any) => {
+          const pName = p.summonerName?.toLowerCase().trim() || '';
+          const teamMatches = (teamId === 100 && p.teamId === 100) || (teamId === 200 && p.teamId === 200);
+          
+          // Correspondência exata por summonerName
+          if (teamMatches && pName === normalizedPlayerName) {
+            console.log('✅ [getRealDataForPlayer] Encontrado por summonerName exato:', pName);
+            return true;
+          }
+          
+          // Correspondência por Riot ID (gameName#tagLine)
+          if (teamMatches && p.riotIdGameName && p.riotIdTagline) {
+            const riotId = `${p.riotIdGameName}#${p.riotIdTagline}`.toLowerCase();
+            if (riotId === normalizedPlayerName) {
+              console.log('✅ [getRealDataForPlayer] Encontrado por Riot ID exato:', riotId);
+              return true;
+            }
+          }
+          
+          // Correspondência por Riot ID completo passado como parâmetro
+          if (teamMatches && normalizedPlayerName.includes('#')) {
+            const pRiotId = p.riotIdGameName && p.riotIdTagline ? 
+              `${p.riotIdGameName}#${p.riotIdTagline}`.toLowerCase() : '';
+            if (pRiotId === normalizedPlayerName) {
+              console.log('✅ [getRealDataForPlayer] Encontrado por Riot ID completo:', pRiotId);
+              return true;
+            }
+          }
+          
+          return false;
+        });
+
+        // Se não encontrou por correspondência exata, tentar busca parcial mais restritiva
+        if (!foundPlayer) {
+          foundPlayer = match.participants_data.find((p: any) => {
+            const pName = p.summonerName?.toLowerCase().trim() || '';
+            const teamMatches = (teamId === 100 && p.teamId === 100) || (teamId === 200 && p.teamId === 200);
+            
+            // Busca parcial mais restritiva - só se um nome contém o outro completamente
+            const found = teamMatches && (
+              (pName.includes(normalizedPlayerName) && normalizedPlayerName.length > 2) || 
+              (normalizedPlayerName.includes(pName) && pName.length > 2)
+            );
+            
+            if (found) {
+              console.log('✅ [getRealDataForPlayer] Encontrado por busca parcial:', pName);
+            }
+            
+            return found;
+          });
+        }
+
+        if (foundPlayer) {
+          console.log('✅ [getRealDataForPlayer] Dados encontrados:', {
+            summonerName: foundPlayer.summonerName,
+            championId: foundPlayer.championId,
+            championName: ChampionService.getChampionNameById(foundPlayer.championId),
+            kills: foundPlayer.kills,
+            deaths: foundPlayer.deaths,
+            assists: foundPlayer.assists,
+            items: [foundPlayer.item0, foundPlayer.item1, foundPlayer.item2, foundPlayer.item3, foundPlayer.item4, foundPlayer.item5]
+          });
+        } else {
+          console.log('❌ [getRealDataForPlayer] Nenhum jogador encontrado para:', normalizedPlayerName);
+        }
+
+        return foundPlayer;
+      };
+
+      // Convert database match to our frontend Match interface
+      const mappedMatch = {
+        id: match.id || match.match_id,
+        createdAt: new Date(match.created_at),
+        duration: match.duration ? (match.duration * 60) : 1500, // Converter minutos para segundos
+        gameMode: match.game_mode || 'CUSTOM',        team1: team1Players.map((playerId: any, index: number) => {
+          let championName = 'Unknown';
+          let playerName = 'Unknown Player';
+
+          // Obter dados reais para este jogador primeiro (prioridade)
+          const realData = getRealDataForPlayer(playerId.toString(), 100);
+          if (realData) {
+            // Se temos dados reais, usar eles como fonte principal
+            championName = ChampionService.getChampionNameById(realData.championId) || 'Unknown';
+            playerName = realData.summonerName || 'Unknown Player';
+          } else {
+            // Fallback para dados de pick/ban se não temos dados reais
+            try {
+              if (pickBanData && pickBanData.team1Picks && pickBanData.team1Picks[index]) {
+                championName = pickBanData.team1Picks[index].champion || 'Unknown';
+                if (pickBanData.team1Picks[index].player) {
+                  playerName = pickBanData.team1Picks[index].player.toString();
                 }
-              } catch (e) {
-                // Silently handle error
               }
-
-              // Se é o jogador atual, usar seus dados reais
-              if (currentPlayerTeam === 1 && currentPlayerIndex === index && this.player?.summonerName) {
-                playerName = this.player.summonerName;
-              }
+            } catch (e) {
+              // Silently handle error
             }
 
-            const teamItems = realData ? [
-              realData.item0 || 0,
-              realData.item1 || 0,
-              realData.item2 || 0,
-              realData.item3 || 0,
-              realData.item4 || 0,
-              realData.item5 || 0
-            ] : this.generateRandomItems();
+            // Se é o jogador atual, usar seus dados reais
+            if (currentPlayerTeam === 1 && currentPlayerIndex === index && this.player?.summonerName) {
+              // Usar Riot ID completo se disponível
+              const currentPlayerName = this.player.summonerName;
+              const currentPlayerTagLine = this.player.tagLine;
+              playerName = currentPlayerTagLine ? `${currentPlayerName}#${currentPlayerTagLine}` : currentPlayerName;
+            }
+          }
 
-            return {
-              name: playerName, // Usar o nome real ao invés do playerId
-              champion: championName,
-              championName: championName, // Para compatibilidade com o template
-              summonerName: playerName, // Nome real do jogadorpuuid: currentPlayerTeam === 1 && currentPlayerIndex === index ? this.player?.puuid || `custom_player_${playerId}_${index}` : `custom_player_${playerId}_${index}`,
-              teamId: 100,
-              kills: realData?.kills ?? Math.floor(Math.random() * 10) + 2,
-              deaths: realData?.deaths ?? Math.floor(Math.random() * 8) + 1,
-              assists: realData?.assists ?? Math.floor(Math.random() * 12) + 3,
-              champLevel: realData?.champLevel ?? Math.floor(Math.random() * 6) + 13,
-              goldEarned: realData?.goldEarned ?? Math.floor(Math.random() * 8000) + 12000,
-              totalMinionsKilled: realData?.totalMinionsKilled ?? Math.floor(Math.random() * 150) + 100,
-              neutralMinionsKilled: realData?.neutralMinionsKilled ?? Math.floor(Math.random() * 50) + 10,
-              totalDamageDealtToChampions: realData?.totalDamageDealtToChampions ?? Math.floor(Math.random() * 20000) + 15000,
-              visionScore: realData?.visionScore ?? Math.floor(Math.random() * 40) + 20,
-              firstBloodKill: realData?.firstBloodKill ?? Math.random() > 0.9, // 10% chance de first blood
-              item0: teamItems[0],
-              item1: teamItems[1],
-              item2: teamItems[2],
-              item3: teamItems[3],
-              item4: teamItems[4],
-              item5: teamItems[5]
-            };
-          }),        team2: team2Players.map((playerId: any, index: number) => {
+          const teamItems = realData ? [
+            realData.item0 || 0,
+            realData.item1 || 0,
+            realData.item2 || 0,
+            realData.item3 || 0,
+            realData.item4 || 0,
+            realData.item5 || 0
+          ] : this.generateRandomItems();
+
+          return {
+            name: playerName, // Usar o nome real ao invés do playerId
+            champion: championName,
+            championName: championName, // Para compatibilidade com o template
+            summonerName: playerName, // Nome real do jogador
+            puuid: currentPlayerTeam === 1 && currentPlayerIndex === index ? this.player?.puuid || `custom_player_${playerId}_${index}` : `custom_player_${playerId}_${index}`,
+            teamId: 100,
+            kills: realData?.kills ?? Math.floor(Math.random() * 10) + 2,
+            deaths: realData?.deaths ?? Math.floor(Math.random() * 8) + 1,
+            assists: realData?.assists ?? Math.floor(Math.random() * 12) + 3,
+            champLevel: realData?.champLevel ?? Math.floor(Math.random() * 6) + 13,
+            goldEarned: realData?.goldEarned ?? Math.floor(Math.random() * 8000) + 12000,
+            totalMinionsKilled: realData?.totalMinionsKilled ?? Math.floor(Math.random() * 150) + 100,
+            neutralMinionsKilled: realData?.neutralMinionsKilled ?? Math.floor(Math.random() * 50) + 10,
+            totalDamageDealtToChampions: realData?.totalDamageDealtToChampions ?? Math.floor(Math.random() * 20000) + 15000,
+            visionScore: realData?.visionScore ?? Math.floor(Math.random() * 40) + 20,
+            firstBloodKill: realData?.firstBloodKill ?? Math.random() > 0.9, // 10% chance de first blood
+            item0: teamItems[0],
+            item1: teamItems[1],
+            item2: teamItems[2],
+            item3: teamItems[3],
+            item4: teamItems[4],
+            item5: teamItems[5]
+          };
+        }),        team2: team2Players.map((playerId: any, index: number) => {
           let championName = 'Unknown';
           let playerName = 'Unknown Player';
 
@@ -580,7 +706,10 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
 
             // Se é o jogador atual, usar seus dados reais
             if (currentPlayerTeam === 2 && currentPlayerIndex === index && this.player?.summonerName) {
-              playerName = this.player.summonerName;
+              // Usar Riot ID completo se disponível
+              const currentPlayerName = this.player.summonerName;
+              const currentPlayerTagLine = this.player.tagLine;
+              playerName = currentPlayerTagLine ? `${currentPlayerName}#${currentPlayerTagLine}` : currentPlayerName;
             }
           }
             const teamItems = realData ? [

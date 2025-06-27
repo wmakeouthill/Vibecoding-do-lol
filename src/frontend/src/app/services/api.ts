@@ -778,7 +778,11 @@ export class ApiService {
 
   // Método para buscar partidas customizadas de um jogador
   getCustomMatches(playerIdentifier: string, offset: number = 0, limit: number = 10): Observable<any> {
-    return this.http.get(`${this.baseUrl}/matches/custom/${playerIdentifier}?offset=${offset}&limit=${limit}`)
+    // Garantir que offset e limit sejam números válidos
+    const offsetValue = Math.max(0, parseInt(offset.toString()) || 0);
+    const limitValue = Math.max(1, Math.min(100, parseInt(limit.toString()) || 10));
+    
+    return this.http.get(`${this.baseUrl}/matches/custom/${encodeURIComponent(playerIdentifier)}?offset=${offsetValue}&limit=${limitValue}`)
       .pipe(
         catchError(this.handleError)
       );
@@ -786,7 +790,7 @@ export class ApiService {
 
   // Método para contar partidas customizadas de um jogador
   getCustomMatchesCount(playerIdentifier: string): Observable<any> {
-    return this.http.get(`${this.baseUrl}/matches/custom/${playerIdentifier}/count`)
+    return this.http.get(`${this.baseUrl}/matches/custom/${encodeURIComponent(playerIdentifier)}/count`)
       .pipe(
         catchError(this.handleError)
       );
