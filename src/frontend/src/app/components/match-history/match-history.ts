@@ -533,13 +533,6 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         // Normalizar o nome do jogador para busca
         const normalizedPlayerName = playerName?.toString().toLowerCase().trim() || '';
         
-        console.log('🔍 [getRealDataForPlayer] Buscando jogador:', {
-          playerName,
-          normalizedPlayerName,
-          teamId,
-          participantsDataLength: match.participants_data?.length || 0
-        });
-        
         // Buscar por correspondência exata primeiro
         let foundPlayer = match.participants_data.find((p: any) => {
           const pName = p.summonerName?.toLowerCase().trim() || '';
@@ -547,7 +540,6 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           
           // Correspondência exata por summonerName
           if (teamMatches && pName === normalizedPlayerName) {
-            console.log('✅ [getRealDataForPlayer] Encontrado por summonerName exato:', pName);
             return true;
           }
           
@@ -555,7 +547,6 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           if (teamMatches && p.riotIdGameName && p.riotIdTagline) {
             const riotId = `${p.riotIdGameName}#${p.riotIdTagline}`.toLowerCase();
             if (riotId === normalizedPlayerName) {
-              console.log('✅ [getRealDataForPlayer] Encontrado por Riot ID exato:', riotId);
               return true;
             }
           }
@@ -565,7 +556,6 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
             const pRiotId = p.riotIdGameName && p.riotIdTagline ? 
               `${p.riotIdGameName}#${p.riotIdTagline}`.toLowerCase() : '';
             if (pRiotId === normalizedPlayerName) {
-              console.log('✅ [getRealDataForPlayer] Encontrado por Riot ID completo:', pRiotId);
               return true;
             }
           }
@@ -580,31 +570,11 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
             const teamMatches = (teamId === 100 && p.teamId === 100) || (teamId === 200 && p.teamId === 200);
             
             // Busca parcial mais restritiva - só se um nome contém o outro completamente
-            const found = teamMatches && (
+            return teamMatches && (
               (pName.includes(normalizedPlayerName) && normalizedPlayerName.length > 2) || 
               (normalizedPlayerName.includes(pName) && pName.length > 2)
             );
-            
-            if (found) {
-              console.log('✅ [getRealDataForPlayer] Encontrado por busca parcial:', pName);
-            }
-            
-            return found;
           });
-        }
-
-        if (foundPlayer) {
-          console.log('✅ [getRealDataForPlayer] Dados encontrados:', {
-            summonerName: foundPlayer.summonerName,
-            championId: foundPlayer.championId,
-            championName: ChampionService.getChampionNameById(foundPlayer.championId),
-            kills: foundPlayer.kills,
-            deaths: foundPlayer.deaths,
-            assists: foundPlayer.assists,
-            items: [foundPlayer.item0, foundPlayer.item1, foundPlayer.item2, foundPlayer.item3, foundPlayer.item4, foundPlayer.item5]
-          });
-        } else {
-          console.log('❌ [getRealDataForPlayer] Nenhum jogador encontrado para:', normalizedPlayerName);
         }
 
         return foundPlayer;
@@ -1504,6 +1474,11 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
 
   // Method specifically for custom matches team organization
   organizeCustomTeamByLanes(team: any[] | undefined): { [lane: string]: any } {
+    console.log('🚀 [organizeCustomTeamByLanes] Função chamada com:', {
+      teamLength: team?.length || 0,
+      team: team?.map(p => ({ name: p.summonerName || p.name, champion: p.championName || p.champion }))
+    });
+
     const organizedTeam: { [lane: string]: any } = {
       'TOP': null,
       'JUNGLE': null,
@@ -1516,32 +1491,217 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       return organizedTeam;
     }
 
-    // For custom matches, we'll assign players sequentially to lanes
-    const lanes = ['TOP', 'JUNGLE', 'MIDDLE', 'ADC', 'SUPPORT'];
+    // Função para detectar lane baseada em dados reais
+    const detectLane = (participant: any): string => {
+      const championName = participant.championName || participant.champion;
+      
+      console.log('🔍 [detectLane] Analisando jogador:', {
+        championName,
+        summonerName: participant.summonerName || participant.name,
+        summoner1Id: participant.summoner1Id,
+        summoner2Id: participant.summoner2Id,
+        items: [participant.item0, participant.item1, participant.item2, participant.item3, participant.item4, participant.item5]
+      });
 
-    team.forEach((participant, index) => {
-      if (index < lanes.length) {
-        organizedTeam[lanes[index]] = {
-          ...participant,
-          championName: participant.champion,
-          summonerName: participant.name,
-          kills: participant.kills || 0,
-          deaths: participant.deaths || 0,
-          assists: participant.assists || 0,
-          champLevel: participant.champLevel || 18,
-          goldEarned: participant.goldEarned || 0,
-          totalMinionsKilled: participant.totalMinionsKilled || 0,
-          neutralMinionsKilled: participant.neutralMinionsKilled || 0,
-          totalDamageDealtToChampions: participant.totalDamageDealtToChampions || 0,
-          visionScore: participant.visionScore || 0,
-          item0: participant.item0 || 0,
-          item1: participant.item1 || 0,
-          item2: participant.item2 || 0,
-          item3: participant.item3 || 0,
-          item4: participant.item4 || 0,
-          item5: participant.item5 || 0
-        };
+      // Sistema de pontuação para cada lane
+      const laneScores: { [key: string]: number } = {
+        'TOP': 0,
+        'JUNGLE': 0,
+        'MIDDLE': 0,
+        'ADC': 0,
+        'SUPPORT': 0
+      };
+
+      // 1. Verificar SMITE (Jungle) - Pontuação máxima
+      const hasSmite = participant.summoner1Id === 11 || participant.summoner2Id === 11;
+      if (hasSmite) {
+        laneScores['JUNGLE'] += 100; // Pontuação máxima
+        console.log('✅ [detectLane] +100 pontos para JUNGLE por SMITE:', championName);
       }
+
+      // 2. Verificar itens de suporte
+      const items = [
+        participant.item0, participant.item1, participant.item2,
+        participant.item3, participant.item4, participant.item5
+      ];
+      
+      const supportItems = [
+        3850, 3851, 3853, 3854, 3855, 3857, 3858, 3859, 3860, 3862, 3863, 3864
+      ];
+      const hasSupportItem = items.some(item => supportItems.includes(item));
+      
+      if (hasSupportItem) {
+        laneScores['SUPPORT'] += 100; // Pontuação máxima
+        console.log('✅ [detectLane] +100 pontos para SUPPORT por item:', championName);
+      }
+
+      // 3. Verificar tags do campeão
+      const championTags = this.getChampionTags(championName);
+      
+      console.log('🔍 [detectLane] Tags do campeão:', {
+        championName,
+        championTags
+      });
+
+      // Pontuação por tags
+      if (championTags.includes('Marksman')) {
+        laneScores['ADC'] += 80;
+        console.log('✅ [detectLane] +80 pontos para ADC por Marksman:', championName);
+      }
+      
+      if (championTags.includes('Support')) {
+        laneScores['SUPPORT'] += 80;
+        console.log('✅ [detectLane] +80 pontos para SUPPORT por Support:', championName);
+      }
+      
+      if (championTags.includes('Mage')) {
+        laneScores['MIDDLE'] += 60;
+        laneScores['ADC'] += 20; // Mages também podem ser ADC
+        console.log('✅ [detectLane] +60 pontos para MIDDLE e +20 para ADC por Mage:', championName);
+      }
+      
+      if (championTags.includes('Fighter')) {
+        laneScores['TOP'] += 60;
+        laneScores['JUNGLE'] += 20; // Fighters também podem ser jungle
+        console.log('✅ [detectLane] +60 pontos para TOP e +20 para JUNGLE por Fighter:', championName);
+      }
+      
+      if (championTags.includes('Tank')) {
+        laneScores['TOP'] += 60;
+        laneScores['SUPPORT'] += 20; // Tanks também podem ser support
+        console.log('✅ [detectLane] +60 pontos para TOP e +20 para SUPPORT por Tank:', championName);
+      }
+      
+      if (championTags.includes('Assassin')) {
+        laneScores['JUNGLE'] += 60;
+        laneScores['MIDDLE'] += 40; // Assassins também podem ser mid
+        laneScores['TOP'] += 20; // Assassins também podem ser top
+        console.log('✅ [detectLane] +60 pontos para JUNGLE, +40 para MIDDLE e +20 para TOP por Assassin:', championName);
+      }
+
+      // 4. Casos especiais (bonus)
+      const specialCases: { [key: string]: { [key: string]: number } } = {
+        'Vladimir': { 'ADC': 50, 'MIDDLE': 30 },
+        'Katarina': { 'MIDDLE': 50, 'JUNGLE': 20 },
+        'Gragas': { 'TOP': 50, 'JUNGLE': 30 },
+        'Khazix': { 'JUNGLE': 50, 'MIDDLE': 20 },
+        'Akshan': { 'MIDDLE': 50, 'TOP': 20 }
+      };
+      
+      if (specialCases[championName]) {
+        Object.entries(specialCases[championName]).forEach(([lane, points]) => {
+          laneScores[lane] += points;
+        });
+        console.log('✅ [detectLane] Bonus por caso especial:', {
+          championName,
+          bonuses: specialCases[championName]
+        });
+      }
+
+      // Encontrar a lane com maior pontuação
+      const bestLane = Object.entries(laneScores).reduce((a, b) => 
+        laneScores[a[0]] > laneScores[b[0]] ? a : b
+      )[0];
+
+      console.log('🎯 [detectLane] Pontuações finais:', {
+        championName,
+        laneScores,
+        bestLane,
+        bestScore: laneScores[bestLane]
+      });
+
+      // Se a melhor pontuação for 0, usar fallback
+      if (laneScores[bestLane] === 0) {
+        console.log('❌ [detectLane] Fallback para UNKNOWN:', championName);
+        return 'UNKNOWN';
+      }
+
+      console.log('✅ [detectLane] Lane detectada:', {
+        championName,
+        lane: bestLane,
+        score: laneScores[bestLane]
+      });
+
+      return bestLane;
+    };
+
+    // Detectar lanes para cada participante
+    const participantsWithLanes = team.map(participant => ({
+      ...participant,
+      championName: participant.championName || participant.champion,
+      summonerName: participant.summonerName || participant.name,
+      kills: participant.kills || 0,
+      deaths: participant.deaths || 0,
+      assists: participant.assists || 0,
+      champLevel: participant.champLevel || 18,
+      goldEarned: participant.goldEarned || 0,
+      totalMinionsKilled: participant.totalMinionsKilled || 0,
+      neutralMinionsKilled: participant.neutralMinionsKilled || 0,
+      totalDamageDealtToChampions: participant.totalDamageDealtToChampions || 0,
+      visionScore: participant.visionScore || 0,
+      item0: participant.item0 || 0,
+      item1: participant.item1 || 0,
+      item2: participant.item2 || 0,
+      item3: participant.item3 || 0,
+      item4: participant.item4 || 0,
+      item5: participant.item5 || 0,
+      summoner1Id: participant.summoner1Id || 0,
+      summoner2Id: participant.summoner2Id || 0,
+      detectedLane: detectLane(participant)
+    }));
+
+    // Organizar por lanes detectadas
+    participantsWithLanes.forEach(participant => {
+      const lane = participant.detectedLane;
+      
+      if (lane !== 'UNKNOWN' && !organizedTeam[lane]) {
+        organizedTeam[lane] = participant;
+      }
+    });
+
+    // Para participantes não classificados, usar ordem sequencial
+    const remainingParticipants = participantsWithLanes.filter(p => p.detectedLane === 'UNKNOWN');
+    const availableLanes = ['TOP', 'JUNGLE', 'MIDDLE', 'ADC', 'SUPPORT'].filter(lane => !organizedTeam[lane]);
+    
+    remainingParticipants.forEach((participant, index) => {
+      if (index < availableLanes.length) {
+        organizedTeam[availableLanes[index]] = participant;
+      }
+    });
+
+    // Se ainda há lanes vazias, redistribuir jogadores que podem ter múltiplas lanes
+    const emptyLanes = ['TOP', 'JUNGLE', 'MIDDLE', 'ADC', 'SUPPORT'].filter(lane => !organizedTeam[lane]);
+    if (emptyLanes.length > 0) {
+      console.log('⚠️ [organizeCustomTeamByLanes] Lanes vazias encontradas:', emptyLanes);
+      
+      // Buscar jogadores que podem ser redistribuídos
+      const allParticipants = participantsWithLanes;
+      const usedParticipants = Object.values(organizedTeam).filter(p => p !== null);
+      const unusedParticipants = allParticipants.filter(p => !usedParticipants.includes(p));
+      
+      console.log('🔍 [organizeCustomTeamByLanes] Jogadores não utilizados:', unusedParticipants.map(p => p.summonerName || p.name));
+      
+      // Distribuir jogadores não utilizados nas lanes vazias
+      unusedParticipants.forEach((participant, index) => {
+        if (index < emptyLanes.length) {
+          organizedTeam[emptyLanes[index]] = participant;
+          console.log('✅ [organizeCustomTeamByLanes] Redistribuído:', {
+            player: participant.summonerName || participant.name,
+            champion: participant.championName || participant.champion,
+            lane: emptyLanes[index]
+          });
+        }
+      });
+    }
+
+    console.log('🎯 [organizeCustomTeamByLanes] Resultado final:', {
+      team: team.map(p => p.summonerName || p.name),
+      organizedLanes: Object.keys(organizedTeam).map(lane => ({
+        lane,
+        player: organizedTeam[lane]?.summonerName || organizedTeam[lane]?.name,
+        champion: organizedTeam[lane]?.championName || organizedTeam[lane]?.champion,
+        detectedLane: organizedTeam[lane]?.detectedLane
+      }))
     });
 
     return organizedTeam;
@@ -1563,9 +1723,20 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       case 'TOP': return 'Top';
       case 'JUNGLE': return 'Jungle';
       case 'MIDDLE': return 'Mid';
-      case 'ADC': return 'ADC';      case 'SUPPORT': return 'Support';
+      case 'ADC': return 'ADC';
+      case 'SUPPORT': return 'Support';
       default: return 'Unknown';
     }
+  }
+
+  // Método para obter as tags de um campeão usando o ChampionService
+  private getChampionTags(championName: string): string[] {
+    if (!championName) return [];
+    
+    // Criar uma instância do ChampionService para obter as tags
+    const championService = new ChampionService();
+    const champion = championService.getAllChampions().find((c: any) => c.name === championName);
+    return champion?.tags || [];
   }
 
   // New method to process LCU match data

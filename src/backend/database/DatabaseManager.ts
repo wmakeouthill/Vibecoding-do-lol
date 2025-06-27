@@ -298,15 +298,15 @@ export class DatabaseManager {
           custom_games_played, custom_wins, custom_losses, custom_win_streak, custom_lp
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          playerData.summoner_name,
+      playerData.summoner_name,
           playerData.summoner_id || null,
           playerData.puuid || null,
-          playerData.region,
-          playerData.current_mmr,
-          playerData.peak_mmr,
-          playerData.games_played,
-          playerData.wins,
-          playerData.losses,
+      playerData.region,
+      playerData.current_mmr,
+      playerData.peak_mmr,
+      playerData.games_played,
+      playerData.wins,
+      playerData.losses,
           playerData.win_streak,
           playerData.custom_mmr || 1000,
           playerData.custom_peak_mmr || 1000,
@@ -354,18 +354,18 @@ export class DatabaseManager {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
     
     try {
-      const matchId = `match_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
+    const matchId = `match_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
       const [result] = await this.pool.execute(
         `INSERT INTO matches (
           match_id, team1_players, team2_players, average_mmr_team1, average_mmr_team2,
           status, created_at
         ) VALUES (?, ?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP)`,
         [
-          matchId,
-          JSON.stringify(team1Players),
-          JSON.stringify(team2Players),
-          avgMMR1,
+      matchId,
+      JSON.stringify(team1Players),
+      JSON.stringify(team2Players),
+      avgMMR1,
           avgMMR2
         ]
       );
@@ -383,7 +383,7 @@ export class DatabaseManager {
     try {
       const [rows] = await this.pool.execute(
         `SELECT * FROM matches 
-         WHERE team1_players LIKE ? OR team2_players LIKE ?
+      WHERE team1_players LIKE ? OR team2_players LIKE ?
          ORDER BY created_at DESC LIMIT ? OFFSET ?`,
         [`%${playerId}%`, `%${playerId}%`, limit, offset]
       );
@@ -981,7 +981,7 @@ export class DatabaseManager {
       
       // Query simplificada sem LIMIT para evitar problemas com parâmetros
       const query = `
-        SELECT 
+      SELECT 
           id,
           title,
           description,
@@ -1001,7 +1001,7 @@ export class DatabaseManager {
           notes,
           lp_changes,
           custom_lp
-        FROM custom_matches 
+      FROM custom_matches
         WHERE team1_players LIKE ? OR team2_players LIKE ?
         ORDER BY created_at DESC
       `;
@@ -1283,8 +1283,8 @@ export class DatabaseManager {
     try {
       await this.pool.execute(
         'UPDATE players SET summoner_name = ?, updated_at = CURRENT_TIMESTAMP WHERE summoner_name = ?',
-        [newName, oldName]
-      );
+      [newName, oldName]
+    );
     } catch (error) {
       console.error('Erro ao atualizar nickname do jogador:', error);
       throw error;

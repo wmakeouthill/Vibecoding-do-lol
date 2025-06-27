@@ -194,7 +194,7 @@
                         <span class="lane-icon">{{ getLaneIcon(lane) }}</span>
                         <span class="lane-name">{{ getLaneName(lane) }}</span>
                       </div>                      <div class="participant-detailed-card"
-                           *ngIf="organizeTeamByLanes(match.team1)[lane] as participant"
+                           *ngIf="(isCustomTab() ? organizeCustomTeamByLanes(match.team1) : organizeTeamByLanes(match.team1))[lane] as participant"
                            [class.current-player]="participant.puuid === player?.puuid">
 
                         <!-- Champion Info -->
@@ -292,7 +292,7 @@
                         <span class="lane-icon">{{ getLaneIcon(lane) }}</span>
                         <span class="lane-name">{{ getLaneName(lane) }}</span>
                       </div>                      <div class="participant-detailed-card"
-                           *ngIf="organizeTeamByLanes(match.team2)[lane] as participant"
+                           *ngIf="(isCustomTab() ? organizeCustomTeamByLanes(match.team2) : organizeTeamByLanes(match.team2))[lane] as participant"
                            [class.current-player]="participant.puuid === player?.puuid">
 
                         <!-- Champion Info -->
