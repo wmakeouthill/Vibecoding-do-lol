@@ -1815,6 +1815,45 @@ app.delete('/api/matches/cleanup-test-matches', (req: Request, res: Response) =>
   })();
 });
 
+// Rota para limpeza COMPLETA da tabela custom_matches
+app.delete('/api/matches/clear-all-custom-matches', (req: Request, res: Response) => {
+  (async () => {
+    try {
+      console.log('🧹 [DELETE /api/matches/clear-all-custom-matches] Iniciando limpeza COMPLETA da tabela custom_matches');
+      
+      // Contar total antes da limpeza
+      const totalBefore = await dbManager.getCustomMatchesCount();
+      
+      // Executar limpeza completa
+      const deletedCount = await dbManager.clearAllCustomMatches();
+      
+      // Contar total depois da limpeza
+      const totalAfter = await dbManager.getCustomMatchesCount();
+      
+      console.log('✅ [DELETE /api/matches/clear-all-custom-matches] Limpeza completa concluída:', {
+        deletedCount,
+        totalBefore,
+        totalAfter
+      });
+      
+      res.json({
+        success: true,
+        deletedCount,
+        totalBefore,
+        totalAfter,
+        message: `${deletedCount} partidas removidas. Tabela custom_matches completamente limpa!`
+      });
+      
+    } catch (error: any) {
+      console.error('💥 [DELETE /api/matches/clear-all-custom-matches] Erro:', error);
+      res.status(500).json({ 
+        success: false,
+        error: error.message 
+      });
+    }
+  })();
+});
+
 // Endpoint para atualizar nickname de um jogador
 app.post('/api/players/update-nickname', (req: Request, res: Response) => {
   (async () => {

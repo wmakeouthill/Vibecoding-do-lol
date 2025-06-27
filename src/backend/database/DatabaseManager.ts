@@ -1236,6 +1236,28 @@ export class DatabaseManager {
     }
   }
 
+  async clearAllCustomMatches(): Promise<number> {
+    if (!this.pool) throw new Error('Pool de conexão não inicializado');
+    
+    try {
+      // Garantir que a tabela existe antes de limpar
+      await this.ensureCustomMatchesTable();
+      
+      console.log('🧹 [clearAllCustomMatches] Iniciando limpeza COMPLETA da tabela custom_matches');
+      
+      const [result] = await this.pool.execute("DELETE FROM custom_matches");
+      
+      const deletedCount = (result as any).affectedRows;
+      
+      console.log(`✅ [clearAllCustomMatches] Limpeza concluída: ${deletedCount} partidas removidas`);
+      
+      return deletedCount;
+    } catch (error) {
+      console.error('❌ Erro ao limpar todas as partidas customizadas:', error);
+      throw error;
+    }
+  }
+
   async getCustomMatchesCount(): Promise<number> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
     
@@ -1461,47 +1483,56 @@ export class DatabaseManager {
       
       console.log('🔄 [refreshPlayersFromCustomMatches] Iniciando atualização de jogadores...');
       
-      // Buscar todos os jogadores únicos das partidas customizadas
+      // Buscar todas as partidas customizadas com dados completos
       const [matches] = await this.pool.execute(
-        'SELECT team1_players, team2_players FROM custom_matches'
+        "SELECT team1_players, team2_players, winner_team, lp_changes, custom_lp FROM custom_matches WHERE status IN ('finished', 'completed')"
       );
       
       console.log(`📊 [refreshPlayersFromCustomMatches] Encontradas ${(matches as any[]).length} partidas`);
       
       const allPlayers = new Set<string>();
       
-      // Novo: Map para contar jogos, vitórias e derrotas
-      const playerStats: Record<string, { games: number, wins: number, losses: number }> = {};
+      // Map para contar jogos, vitórias, derrotas e MMR total
+      const playerStats: Record<string, { games: number, wins: number, losses: number, totalMMR: number }> = {};
 
       for (const match of matches as any[]) {
         try {
           const team1Players = JSON.parse(match.team1_players);
           const team2Players = JSON.parse(match.team2_players);
-
-          // Time vencedor
           const winnerTeam = match.winner_team;
+          const lpChanges = match.lp_changes ? JSON.parse(match.lp_changes) : {};
 
           // Processar team1_players
           team1Players.forEach((playerString: string) => {
             if (playerString && typeof playerString === 'string') {
-              // Usar o Riot ID completo (gameName#tagLine) em vez de apenas gameName
               allPlayers.add(playerString);
-              if (!playerStats[playerString]) playerStats[playerString] = { games: 0, wins: 0, losses: 0 };
+              if (!playerStats[playerString]) playerStats[playerString] = { games: 0, wins: 0, losses: 0, totalMMR: 0 };
               playerStats[playerString].games++;
+              
+              // Calcular vitória/derrota
               if (winnerTeam == 1) playerStats[playerString].wins++;
               else if (winnerTeam == 2) playerStats[playerString].losses++;
+              
+              // Somar MMR da partida
+              const playerMMR = lpChanges[playerString] || 0;
+              playerStats[playerString].totalMMR += playerMMR;
             }
           });
 
           // Processar team2_players
           team2Players.forEach((playerString: string) => {
             if (playerString && typeof playerString === 'string') {
-              // Usar o Riot ID completo (gameName#tagLine) em vez de apenas gameName
               allPlayers.add(playerString);
-              if (!playerStats[playerString]) playerStats[playerString] = { games: 0, wins: 0, losses: 0 };
+              if (!playerStats[playerString]) playerStats[playerString] = { games: 0, wins: 0, losses: 0, totalMMR: 0 };
               playerStats[playerString].games++;
+              
+              // Calcular vitória/derrota
               if (winnerTeam == 2) playerStats[playerString].wins++;
               else if (winnerTeam == 1) playerStats[playerString].losses++;
+              
+              // Somar MMR da partida
+              const playerMMR = lpChanges[playerString] || 0;
+              playerStats[playerString].totalMMR += playerMMR;
             }
           });
         } catch (error) {
@@ -1513,7 +1544,8 @@ export class DatabaseManager {
       for (const summonerName of allPlayers) {
         try {
           const existingPlayer = await this.getPlayerBySummonerName(summonerName);
-          const stats = playerStats[summonerName] || { games: 0, wins: 0, losses: 0 };
+          const stats = playerStats[summonerName] || { games: 0, wins: 0, losses: 0, totalMMR: 0 };
+          
           if (!existingPlayer) {
             console.log(`➕ [refreshPlayersFromCustomMatches] Criando jogador: ${summonerName}`);
             await this.createPlayer({
@@ -1527,16 +1559,17 @@ export class DatabaseManager {
               win_streak: 0,
               custom_games_played: stats.games,
               custom_wins: stats.wins,
-              custom_losses: stats.losses
+              custom_losses: stats.losses,
+              custom_lp: stats.totalMMR // Soma total do MMR de todas as partidas
             });
-            console.log(`✅ [refreshPlayersFromCustomMatches] Jogador criado: ${summonerName}`);
+            console.log(`✅ [refreshPlayersFromCustomMatches] Jogador criado: ${summonerName} - MMR total: ${stats.totalMMR}`);
           } else {
-            // Atualizar estatísticas customizadas
+            // Atualizar estatísticas customizadas incluindo MMR total
             await this.pool.execute(
-              'UPDATE players SET custom_games_played = ?, custom_wins = ?, custom_losses = ? WHERE summoner_name = ?',
-              [stats.games, stats.wins, stats.losses, summonerName]
+              'UPDATE players SET custom_games_played = ?, custom_wins = ?, custom_losses = ?, custom_lp = ? WHERE summoner_name = ?',
+              [stats.games, stats.wins, stats.losses, stats.totalMMR, summonerName]
             );
-            console.log(`✅ [refreshPlayersFromCustomMatches] Jogador já existe e atualizado: ${summonerName}`);
+            console.log(`✅ [refreshPlayersFromCustomMatches] Jogador atualizado: ${summonerName} - MMR total: ${stats.totalMMR}`);
           }
         } catch (error) {
           console.error(`❌ [refreshPlayersFromCustomMatches] Erro ao criar/verificar jogador ${summonerName}:`, error);
