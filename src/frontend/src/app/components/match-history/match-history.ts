@@ -1555,28 +1555,36 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       }
       
       if (championTags.includes('Mage')) {
-        laneScores['MIDDLE'] += 60;
-        laneScores['ADC'] += 20; // Mages também podem ser ADC
-        console.log('✅ [detectLane] +60 pontos para MIDDLE e +20 para ADC por Mage:', championName);
+        laneScores['MIDDLE'] += 70;
+        // Mages podem ser ADC apenas se não forem Support
+        if (!championTags.includes('Support')) {
+          laneScores['ADC'] += 10;
+        }
+        console.log('✅ [detectLane] +70 pontos para MIDDLE e +10 para ADC por Mage:', championName);
       }
       
       if (championTags.includes('Fighter')) {
-        laneScores['TOP'] += 60;
-        laneScores['JUNGLE'] += 20; // Fighters também podem ser jungle
-        console.log('✅ [detectLane] +60 pontos para TOP e +20 para JUNGLE por Fighter:', championName);
+        laneScores['TOP'] += 70;
+        laneScores['JUNGLE'] += 30; // Fighters também podem ser jungle
+        console.log('✅ [detectLane] +70 pontos para TOP e +30 para JUNGLE por Fighter:', championName);
       }
       
       if (championTags.includes('Tank')) {
-        laneScores['TOP'] += 60;
-        laneScores['SUPPORT'] += 20; // Tanks também podem ser support
-        console.log('✅ [detectLane] +60 pontos para TOP e +20 para SUPPORT por Tank:', championName);
+        laneScores['TOP'] += 70;
+        laneScores['SUPPORT'] += 30; // Tanks também podem ser support
+        console.log('✅ [detectLane] +70 pontos para TOP e +30 para SUPPORT por Tank:', championName);
       }
       
       if (championTags.includes('Assassin')) {
         laneScores['JUNGLE'] += 60;
-        laneScores['MIDDLE'] += 40; // Assassins também podem ser mid
+        laneScores['MIDDLE'] += 50; // Assassins também podem ser mid
         laneScores['TOP'] += 20; // Assassins também podem ser top
-        console.log('✅ [detectLane] +60 pontos para JUNGLE, +40 para MIDDLE e +20 para TOP por Assassin:', championName);
+        // Assassins que são Marksman têm prioridade para MIDDLE, não ADC
+        if (championTags.includes('Marksman')) {
+          laneScores['MIDDLE'] += 40; // Bonus para mid
+          laneScores['ADC'] -= 30; // Penalidade para ADC
+        }
+        console.log('✅ [detectLane] +60 pontos para JUNGLE, +50 para MIDDLE e +20 para TOP por Assassin:', championName);
       }
 
       // 4. Casos especiais (bonus)
@@ -1621,6 +1629,9 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         lane: bestLane,
         score: laneScores[bestLane]
       });
+
+      // Casos específicos para champions problemáticos
+      // Removidos para tornar a lógica mais flexível e inteligente
 
       return bestLane;
     };
