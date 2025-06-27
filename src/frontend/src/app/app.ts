@@ -103,18 +103,24 @@ export class App implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.isElectron = !!(window as any).electronAPI;
 
+    console.log('🚀 [APP] Iniciando aplicação...');
+
     // Carregar configurações do banco de dados primeiro
     this.loadConfigFromDatabase();
 
-    // Load initial data
-    this.loadPlayerData();
-    this.recoverGameState();
-    this.tryLoadRealPlayerData();
+    // Iniciar verificações de status primeiro
     this.startLCUStatusCheck();
     this.startQueueStatusCheck();
     
     // Configurar listener do status do Discord
     this.setupDiscordStatusListener();
+
+    // Aguardar um pouco para o LCU conectar e então carregar dados
+    setTimeout(() => {
+      this.loadPlayerData();
+      this.recoverGameState();
+      this.tryLoadRealPlayerData();
+    }, 2000); // Aguardar 2 segundos para o LCU conectar
   }
 
   ngOnDestroy(): void {
@@ -1488,9 +1494,10 @@ export class App implements OnInit, OnDestroy {
 
     // Strategy 1: Always try LCU first (primary data source)
     if (this.lcuStatus.isConnected) {
-      console.log('� LCU connected, loading from League Client...');
+      console.log('🎮 LCU connected, loading from League Client...');
 
-      try {        // Use the LCU-focused endpoint
+      try {
+        // Use the LCU-focused endpoint
         this.apiService.getPlayerFromLCU().subscribe({
           next: (player: Player) => {
             this.currentPlayer = player;
@@ -1518,11 +1525,20 @@ export class App implements OnInit, OnDestroy {
         console.warn('⚠️ LCU connection error:', error);
         this.handleLCUDataFailure(error as Error);
       }
+    } else {
+      // Strategy 2: LCU not available, try fallback options
+      console.log('📱 LCU not available, trying fallback options...');
+      
+      // Tentar novamente em 5 segundos se o LCU não estiver conectado
+      setTimeout(() => {
+        if (!this.currentPlayer) {
+          console.log('🔄 Tentando carregar dados novamente...');
+          this.tryLoadRealPlayerData();
+        }
+      }, 5000);
+      
+      this.handleLCUDataFailure(new Error('LCU not connected'));
     }
-
-    // Strategy 2: LCU not available, try fallback options
-    console.log('📱 LCU not available, trying fallback options...');
-    this.handleLCUDataFailure(new Error('LCU not connected'));
   }
 
   private handleLCUDataFailure(error: Error): void {
@@ -1791,8 +1807,22 @@ export class App implements OnInit, OnDestroy {
   private checkLCUStatus(): void {
     this.apiService.getLCUStatus().subscribe({
       next: (status) => {
+        const wasConnected = this.lcuStatus.isConnected;
         this.lcuStatus = status;
-        console.log('✅ LCU conectado:', status.isConnected);
+        
+        if (status.isConnected) {
+          console.log('✅ LCU conectado:', status.isConnected);
+          
+          // Se acabou de conectar e não temos dados do jogador, carregar
+          if (!wasConnected && !this.currentPlayer) {
+            console.log('🎯 LCU acabou de conectar, carregando dados do jogador...');
+            setTimeout(() => {
+              this.tryLoadRealPlayerData();
+            }, 1000); // Aguardar 1 segundo para estabilizar
+          }
+        } else {
+          console.warn('❌ LCU desconectado');
+        }
       },
       error: (error) => {
         this.lcuStatus = { isConnected: false };

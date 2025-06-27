@@ -83,14 +83,14 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
           games_played: player.games_played ?? player.custom_games_played ?? 0,
           riot_id_game_name: player.riot_id_game_name ?? undefined,
           riot_id_tagline: player.riot_id_tagline ?? undefined,
-          profileIconId: undefined
+          profileIconId: undefined,
+          // Usar MMR calculado pelo backend
+          calculated_mmr: player.calculated_mmr ?? player.lp ?? 0,
+          lp: player.lp ?? player.custom_lp ?? 0
         }));
         this.isLoadingProfileIcons = true;
         await this.loadProfileIcons();
         this.isLoadingProfileIcons = false;
-        this.isLoadingMMR = true;
-        await this.loadRealTotalMMR();
-        this.isLoadingMMR = false;
         this.lastUpdated = new Date();
       } else {
         this.error = 'Erro ao carregar leaderboard';

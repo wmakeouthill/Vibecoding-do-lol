@@ -39,7 +39,7 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
 
   constructor(private apiService: ApiService, private cdr: ChangeDetectorRef, private http: HttpClient) {}  // Detectar mudanças no player
   ngOnChanges(): void {
-    if (this.player) {
+    if (this.player && !this.isLoadingMatches) {
       console.log('🎮 [DASHBOARD] Player data received:', {
         summonerName: this.player.summonerName,
         gameName: this.player.gameName,
@@ -47,7 +47,11 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
         rank: this.player.rank,
         rankedData: this.player.rankedData
       });
-      this.loadRecentMatches();
+      
+      // Só carregar se não estiver já carregando
+      if (!this.isLoadingMatches) {
+        this.loadRecentMatches();
+      }
       this.loadCustomMatchesCount();
       this.loadLeaderboardPosition();
     }
@@ -200,12 +204,20 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
       return;
     }
 
+    // Evitar chamadas duplicadas
+    if (this.isLoadingMatches) {
+      console.log('🔄 [DASHBOARD] Already loading matches, skipping...');
+      return;
+    }
+
     this.isLoadingMatches = true;
     this.matchHistoryError = null;
 
     // Priorizar partidas customizadas do banco de dados primeiro
     this.loadCustomMatchesFromDatabase();
-  }private loadFromLCU(): void {
+  }
+
+  private loadFromLCU(): void {
     console.log('🎮 Loading match history from LCU (primary source)...');
 
     // First try to load custom matches from database
@@ -753,6 +765,12 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
   }
   public loadCustomMatchesFromDatabase(): void {
     if (!this.player) return;
+
+    // Evitar chamadas duplicadas
+    if (this.isLoadingMatches && this.recentMatches.length > 0) {
+      console.log('🔄 [DASHBOARD] Already have recent matches, skipping database load...');
+      return;
+    }
 
     console.log('💾 Loading custom matches from database...');
 

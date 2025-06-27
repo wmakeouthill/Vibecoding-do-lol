@@ -1835,13 +1835,47 @@ app.post('/api/players/update-nickname', (req: Request, res: Response) => {
 // Endpoint para rebuild/refresh completo da tabela players
 app.post('/api/stats/refresh-rebuild-players', async (req: Request, res: Response) => {
   try {
+    console.log('🔄 [POST /api/stats/refresh-rebuild-players] Iniciando rebuild completo da tabela players...');
+    
     // Limpar todos os jogadores
     await dbManager.clearAllPlayers();
+    console.log('✅ [POST /api/stats/refresh-rebuild-players] Tabela players limpa');
+    
     // Recalcular todos os agregados a partir das partidas customizadas
     await dbManager.refreshPlayersFromCustomMatches();
-    res.json({ success: true, message: 'Tabela players limpa e reconstruída com sucesso.' });
+    console.log('✅ [POST /api/stats/refresh-rebuild-players] Jogadores recriados das partidas customizadas');
+    
+    // Verificar quantos jogadores foram criados
+    const count = await dbManager.getPlayersCount();
+    
+    console.log(`✅ [POST /api/stats/refresh-rebuild-players] Rebuild concluído. Total de jogadores: ${count}`);
+    
+    res.json({ 
+      success: true, 
+      message: `Tabela players limpa e reconstruída com sucesso. Total de jogadores: ${count}`,
+      playerCount: count
+    });
   } catch (error: any) {
-    console.error('Erro ao rebuildar tabela players:', error);
+    console.error('❌ [POST /api/stats/refresh-rebuild-players] Erro ao rebuildar tabela players:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Endpoint de debug para verificar dados das tabelas
+app.get('/api/debug/tables', async (req: Request, res: Response) => {
+  try {
+    console.log('🔍 [GET /api/debug/tables] Verificando dados das tabelas...');
+    
+    const debugData = await dbManager.getTablesStats();
+    
+    console.log('✅ [GET /api/debug/tables] Dados das tabelas:', debugData);
+    
+    res.json({
+      success: true,
+      data: debugData
+    });
+  } catch (error: any) {
+    console.error('❌ [GET /api/debug/tables] Erro ao verificar tabelas:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -2006,6 +2040,25 @@ app.get('/api/config/settings', (async (req: Request, res: Response) => {
 }) as RequestHandler);
 
 // === FIM CONFIGURAÇÕES APIs ===
+
+// Endpoint para corrigir status das partidas antigas
+app.post('/api/debug/fix-match-status', async (req: Request, res: Response) => {
+  try {
+    console.log('🔧 [POST /api/debug/fix-match-status] Corrigindo status das partidas antigas...');
+    
+    const result = await dbManager.fixMatchStatus();
+    
+    res.json({ 
+      success: true, 
+      message: `${result.affectedMatches} partidas corrigidas e ${result.playerCount} jogadores criados`,
+      affectedMatches: result.affectedMatches,
+      playerCount: result.playerCount
+    });
+  } catch (error: any) {
+    console.error('❌ [POST /api/debug/fix-match-status] Erro:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // Middleware de erro
 app.use((error: any, req: Request, res: Response, next: NextFunction) => {

@@ -891,10 +891,43 @@ export class DatabaseManager {
         throw new Error('Partida customizada não encontrada');
       }
 
+      // Se não há lpChanges, calcular automaticamente baseado no resultado
+      let lpChanges = extraData.lpChanges;
+      if (!lpChanges) {
+        console.log('🔄 Calculando lpChanges automaticamente para partida', matchId);
+        
+        const team1Players = JSON.parse(match.team1_players);
+        const team2Players = JSON.parse(match.team2_players);
+        
+        lpChanges = {};
+        
+        // LP base: +18 para vitória, -15 para derrota
+        const baseLpWin = 18;
+        const baseLpLoss = -15;
+        
+        // Processar time 1
+        team1Players.forEach((playerString: string) => {
+          if (playerString && typeof playerString === 'string') {
+            const lpChange = winnerTeam === 1 ? baseLpWin : baseLpLoss;
+            lpChanges[playerString] = lpChange;
+          }
+        });
+        
+        // Processar time 2
+        team2Players.forEach((playerString: string) => {
+          if (playerString && typeof playerString === 'string') {
+            const lpChange = winnerTeam === 2 ? baseLpWin : baseLpLoss;
+            lpChanges[playerString] = lpChange;
+          }
+        });
+        
+        console.log('📊 lpChanges calculados:', lpChanges);
+      }
+
       // Calcular LP total da partida
       let totalLp = 0;
-      if (extraData.lpChanges) {
-        totalLp = Object.values(extraData.lpChanges).reduce((sum: number, lpChange: any) => {
+      if (lpChanges) {
+        totalLp = Object.values(lpChanges).reduce((sum: number, lpChange: any) => {
           return sum + Math.abs(Number(lpChange));
         }, 0);
       }
@@ -903,7 +936,7 @@ export class DatabaseManager {
       await this.pool.execute(
         `UPDATE custom_matches SET 
           winner_team = ?, 
-          status = 'completed', 
+          status = 'finished', 
           completed_at = CURRENT_TIMESTAMP,
           duration = ?,
           lp_changes = ?,
@@ -914,7 +947,7 @@ export class DatabaseManager {
         [
           winnerTeam,
           extraData.duration || 0,
-          JSON.stringify(extraData.lpChanges || {}),
+          JSON.stringify(lpChanges || {}),
           JSON.stringify(extraData.participantsData || {}),
           totalLp,
           matchId
@@ -922,19 +955,34 @@ export class DatabaseManager {
       );
 
       // Atualizar estatísticas dos jogadores
-      if (extraData.lpChanges) {
-        for (const [playerId, lpChange] of Object.entries(extraData.lpChanges)) {
+      if (lpChanges) {
+        for (const [playerString, lpChange] of Object.entries(lpChanges)) {
           const lpChangeValue = Number(lpChange);
-          await this.pool.execute(
-            `UPDATE players SET 
-              custom_lp = custom_lp + ?,
-              custom_games_played = custom_games_played + 1,
-              ${lpChangeValue > 0 ? 'custom_wins = custom_wins + 1' : 'custom_losses = custom_losses + 1'},
-              custom_peak_mmr = GREATEST(custom_peak_mmr, custom_lp + ?),
-              updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?`,
-            [lpChangeValue, lpChangeValue, parseInt(playerId)]
+          
+          // Buscar o jogador pelo summoner_name (Riot ID completo)
+          const [playerRows] = await this.pool.execute(
+            'SELECT id FROM players WHERE summoner_name = ?',
+            [playerString]
           );
+          
+          if ((playerRows as any[]).length > 0) {
+            const playerId = (playerRows as any[])[0].id;
+            
+            await this.pool.execute(
+              `UPDATE players SET 
+                custom_lp = custom_lp + ?,
+                custom_games_played = custom_games_played + 1,
+                ${lpChangeValue > 0 ? 'custom_wins = custom_wins + 1' : 'custom_losses = custom_losses + 1'},
+                custom_peak_mmr = GREATEST(custom_peak_mmr, custom_lp + ?),
+                updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?`,
+              [lpChangeValue, lpChangeValue, playerId]
+            );
+            
+            console.log(`✅ Jogador ${playerString} atualizado: LP +${lpChangeValue}, ID: ${playerId}`);
+          } else {
+            console.warn(`⚠️ Jogador ${playerString} não encontrado na tabela players`);
+          }
         }
       }
 
@@ -1024,11 +1072,50 @@ export class DatabaseManager {
       const limitedRows = (rows as any[]).slice(0, limitValue);
       
       // Retornar dados brutos para o frontend processar (como esperado)
-      const rawRows = limitedRows.map(row => ({
-        ...row,
-        // Garantir que custom_lp seja um número
-        custom_lp: row.custom_lp || 0
-      }));
+      const rawRows = limitedRows.map(row => {
+        // Processar lp_changes para calcular o LP change do jogador específico
+        let playerLpChange = 0;
+        let playerMmrChange = 0;
+        let playerTeam = null;
+        let playerWon = false;
+        
+        if (row.lp_changes) {
+          try {
+            const lpChanges = JSON.parse(row.lp_changes);
+            const playerLpChangeValue = lpChanges[playerIdentifier];
+            
+            if (playerLpChangeValue !== undefined) {
+              playerLpChange = Number(playerLpChangeValue);
+              playerMmrChange = playerLpChange; // Para partidas customizadas, MMR = LP
+              
+              // Determinar time e resultado
+              const team1Players = JSON.parse(row.team1_players);
+              const team2Players = JSON.parse(row.team2_players);
+              
+              if (team1Players.includes(playerIdentifier)) {
+                playerTeam = 1;
+                playerWon = row.winner_team === 1;
+              } else if (team2Players.includes(playerIdentifier)) {
+                playerTeam = 2;
+                playerWon = row.winner_team === 2;
+              }
+            }
+          } catch (parseError) {
+            console.warn('⚠️ Erro ao processar lp_changes:', parseError);
+          }
+        }
+        
+        return {
+          ...row,
+          // Garantir que custom_lp seja um número
+          custom_lp: row.custom_lp || 0,
+          // Adicionar campos específicos do jogador
+          player_lp_change: playerLpChange,
+          player_mmr_change: playerMmrChange,
+          player_team: playerTeam,
+          player_won: playerWon
+        };
+      });
       
       console.log('✅ [getPlayerCustomMatches] Resultado final:', rawRows.length, 'registros brutos');
       
@@ -1165,12 +1252,13 @@ export class DatabaseManager {
     }
   }
 
-  async getParticipantsLeaderboard(limit: number = 100): Promise<any[]> {
+  async getParticipantsLeaderboard(limit: number | string = 100): Promise<any[]> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
     
     try {
       // Garantir que limit seja um número válido
       let limitValue = 100;
+      
       if (typeof limit === 'number' && !isNaN(limit) && limit > 0) {
         limitValue = Math.min(500, Math.max(1, limit));
       } else if (typeof limit === 'string') {
@@ -1186,9 +1274,9 @@ export class DatabaseManager {
         limitType: typeof limitValue
       });
       
-      // Verificar se a tabela players existe e tem as colunas necessárias
+      // Verificar se a tabela players existe
       const [tableCheck] = await this.pool.execute(
-        `SELECT COUNT(*) as count FROM information_schema.columns 
+        `SELECT COUNT(*) as count FROM information_schema.tables 
          WHERE table_name = 'players' AND table_schema = DATABASE()`
       );
       
@@ -1197,24 +1285,165 @@ export class DatabaseManager {
         return [];
       }
       
-      const [rows] = await this.pool.execute(
-        `SELECT 
+      // Query melhorada para incluir MMR total e estatísticas detalhadas
+      const query = `
+        SELECT 
           summoner_name,
-          COALESCE(custom_lp, 0) as custom_lp,
-          COALESCE(custom_games_played, 0) as custom_games_played,
-          COALESCE(custom_wins, 0) as custom_wins,
-          COALESCE(custom_losses, 0) as custom_losses,
-          ROUND((COALESCE(custom_wins, 0) * 100.0) / NULLIF(COALESCE(custom_games_played, 0), 0), 2) as win_rate
-         FROM players 
-         WHERE COALESCE(custom_games_played, 0) > 0
-         ORDER BY custom_lp DESC, win_rate DESC
-         LIMIT ?`,
-        [limitValue]
-      );
+          IFNULL(custom_lp, 0) as custom_lp,
+          IFNULL(custom_games_played, 0) as custom_games_played,
+          IFNULL(custom_wins, 0) as custom_wins,
+          IFNULL(custom_losses, 0) as custom_losses,
+          CASE 
+            WHEN IFNULL(custom_games_played, 0) > 0 
+            THEN ROUND((IFNULL(custom_wins, 0) * 100.0) / IFNULL(custom_games_played, 0), 2)
+            ELSE 0 
+          END as win_rate
+        FROM players 
+        WHERE IFNULL(custom_games_played, 0) > 0
+        ORDER BY custom_lp DESC, win_rate DESC
+        LIMIT ${limitValue}
+      `;
       
-      console.log('✅ [getParticipantsLeaderboard] Resultado:', (rows as any[]).length, 'registros');
+      const [rows] = await this.pool.execute(query);
       
-      return rows as any[];
+      console.log('✅ [getParticipantsLeaderboard] Resultado base:', (rows as any[]).length, 'registros');
+      
+      // Para cada jogador, buscar estatísticas detalhadas das partidas
+      const detailedPlayers = await Promise.all((rows as any[]).map(async (player) => {
+        try {
+          // Buscar todas as partidas do jogador para calcular estatísticas
+          const [matches] = await this.pool!.execute(
+            `SELECT participants_data FROM custom_matches 
+             WHERE (team1_players LIKE ? OR team2_players LIKE ?) 
+             AND status IN ('finished', 'completed')`,
+            [`%${player.summoner_name}%`, `%${player.summoner_name}%`]
+          );
+          
+          let totalKills = 0;
+          let totalDeaths = 0;
+          let totalAssists = 0;
+          let totalGold = 0;
+          let totalDamage = 0;
+          let totalCS = 0;
+          let totalVision = 0;
+          let maxKills = 0;
+          let maxDamage = 0;
+          let championStats: { [key: string]: number } = {};
+          let gamesCounted = 0;
+          
+          // Processar cada partida
+          for (const match of matches as any[]) {
+            if (match.participants_data) {
+              try {
+                const participants = JSON.parse(match.participants_data);
+                
+                // Encontrar o participante que corresponde ao jogador
+                const participant = participants.find((p: any) => {
+                  const participantName = p.summonerName || `${p.riotIdGameName}#${p.riotIdTagline}`;
+                  return participantName.includes(player.summoner_name);
+                });
+                
+                if (participant) {
+                  gamesCounted++;
+                  totalKills += participant.kills || 0;
+                  totalDeaths += participant.deaths || 0;
+                  totalAssists += participant.assists || 0;
+                  totalGold += participant.goldEarned || 0;
+                  totalDamage += participant.totalDamageDealtToChampions || 0;
+                  totalCS += (participant.totalMinionsKilled || 0) + (participant.neutralMinionsKilled || 0);
+                  totalVision += participant.visionScore || 0;
+                  
+                  maxKills = Math.max(maxKills, participant.kills || 0);
+                  maxDamage = Math.max(maxDamage, participant.totalDamageDealtToChampions || 0);
+                  
+                  // Contar campeões
+                  const championName = participant.championName || `Champion${participant.championId}`;
+                  championStats[championName] = (championStats[championName] || 0) + 1;
+                }
+              } catch (parseError) {
+                console.warn('⚠️ Erro ao processar participants_data:', parseError);
+              }
+            }
+          }
+          
+          // Calcular médias
+          const avgKills = gamesCounted > 0 ? totalKills / gamesCounted : 0;
+          const avgDeaths = gamesCounted > 0 ? totalDeaths / gamesCounted : 0;
+          const avgAssists = gamesCounted > 0 ? totalAssists / gamesCounted : 0;
+          const avgGold = gamesCounted > 0 ? totalGold / gamesCounted : 0;
+          const avgDamage = gamesCounted > 0 ? totalDamage / gamesCounted : 0;
+          const avgCS = gamesCounted > 0 ? totalCS / gamesCounted : 0;
+          const avgVision = gamesCounted > 0 ? totalVision / gamesCounted : 0;
+          
+          // Calcular KDA ratio
+          const kdaRatio = avgDeaths > 0 ? (avgKills + avgAssists) / avgDeaths : (avgKills + avgAssists);
+          
+          // Encontrar campeão favorito
+          let favoriteChampion = null;
+          if (Object.keys(championStats).length > 0) {
+            const favoriteChampionName = Object.keys(championStats).reduce((a, b) => 
+              championStats[a] > championStats[b] ? a : b
+            );
+            favoriteChampion = {
+              name: favoriteChampionName,
+              id: 0, // Será calculado pelo frontend
+              games: championStats[favoriteChampionName]
+            };
+          }
+          
+          return {
+            ...player,
+            // Estatísticas detalhadas
+            avg_kills: Math.round(avgKills * 100) / 100,
+            avg_deaths: Math.round(avgDeaths * 100) / 100,
+            avg_assists: Math.round(avgAssists * 100) / 100,
+            kda_ratio: Math.round(kdaRatio * 100) / 100,
+            avg_gold: Math.round(avgGold),
+            avg_damage: Math.round(avgDamage),
+            avg_cs: Math.round(avgCS * 100) / 100,
+            avg_vision: Math.round(avgVision * 100) / 100,
+            max_kills: maxKills,
+            max_damage: maxDamage,
+            calculated_mmr: player.custom_lp, // MMR total é a soma dos custom_lp
+            lp: player.custom_lp, // LP atual
+            favorite_champion: favoriteChampion,
+            // Manter compatibilidade com nomes antigos
+            wins: player.custom_wins,
+            games_played: player.custom_games_played,
+            // Extrair gameName e tagLine do summoner_name completo
+            riot_id_game_name: player.summoner_name.includes('#') ? player.summoner_name.split('#')[0] : player.summoner_name,
+            riot_id_tagline: player.summoner_name.includes('#') ? player.summoner_name.split('#')[1] : undefined
+          };
+          
+        } catch (error) {
+          console.error(`❌ Erro ao processar estatísticas detalhadas para ${player.summoner_name}:`, error);
+          return {
+            ...player,
+            avg_kills: 0,
+            avg_deaths: 0,
+            avg_assists: 0,
+            kda_ratio: 0,
+            avg_gold: 0,
+            avg_damage: 0,
+            avg_cs: 0,
+            avg_vision: 0,
+            max_kills: 0,
+            max_damage: 0,
+            calculated_mmr: player.custom_lp,
+            lp: player.custom_lp,
+            favorite_champion: null,
+            wins: player.custom_wins,
+            games_played: player.custom_games_played,
+            // Extrair gameName e tagLine do summoner_name completo
+            riot_id_game_name: player.summoner_name.includes('#') ? player.summoner_name.split('#')[0] : player.summoner_name,
+            riot_id_tagline: player.summoner_name.includes('#') ? player.summoner_name.split('#')[1] : undefined
+          };
+        }
+      }));
+      
+      console.log('✅ [getParticipantsLeaderboard] Estatísticas detalhadas calculadas para', detailedPlayers.length, 'jogadores');
+      
+      return detailedPlayers;
     } catch (error: any) {
       console.error('❌ Erro ao buscar leaderboard de participantes:', error);
       console.error('Parâmetros que causaram erro:', { limit });
@@ -1230,49 +1459,93 @@ export class DatabaseManager {
       // Garantir que a tabela existe antes de consultar
       await this.ensureCustomMatchesTable();
       
+      console.log('🔄 [refreshPlayersFromCustomMatches] Iniciando atualização de jogadores...');
+      
       // Buscar todos os jogadores únicos das partidas customizadas
       const [matches] = await this.pool.execute(
-        'SELECT team1_players, team2_players FROM custom_matches WHERE status = "completed"'
+        'SELECT team1_players, team2_players FROM custom_matches'
       );
+      
+      console.log(`📊 [refreshPlayersFromCustomMatches] Encontradas ${(matches as any[]).length} partidas`);
       
       const allPlayers = new Set<string>();
       
+      // Novo: Map para contar jogos, vitórias e derrotas
+      const playerStats: Record<string, { games: number, wins: number, losses: number }> = {};
+
       for (const match of matches as any[]) {
         try {
           const team1Players = JSON.parse(match.team1_players);
           const team2Players = JSON.parse(match.team2_players);
-          
-          team1Players.forEach((player: any) => {
-            if (player.summonerName) allPlayers.add(player.summonerName);
+
+          // Time vencedor
+          const winnerTeam = match.winner_team;
+
+          // Processar team1_players
+          team1Players.forEach((playerString: string) => {
+            if (playerString && typeof playerString === 'string') {
+              // Usar o Riot ID completo (gameName#tagLine) em vez de apenas gameName
+              allPlayers.add(playerString);
+              if (!playerStats[playerString]) playerStats[playerString] = { games: 0, wins: 0, losses: 0 };
+              playerStats[playerString].games++;
+              if (winnerTeam == 1) playerStats[playerString].wins++;
+              else if (winnerTeam == 2) playerStats[playerString].losses++;
+            }
           });
-          
-          team2Players.forEach((player: any) => {
-            if (player.summonerName) allPlayers.add(player.summonerName);
+
+          // Processar team2_players
+          team2Players.forEach((playerString: string) => {
+            if (playerString && typeof playerString === 'string') {
+              // Usar o Riot ID completo (gameName#tagLine) em vez de apenas gameName
+              allPlayers.add(playerString);
+              if (!playerStats[playerString]) playerStats[playerString] = { games: 0, wins: 0, losses: 0 };
+              playerStats[playerString].games++;
+              if (winnerTeam == 2) playerStats[playerString].wins++;
+              else if (winnerTeam == 1) playerStats[playerString].losses++;
+            }
           });
         } catch (error) {
-          console.error('Erro ao processar jogadores da partida:', error);
+          console.error('❌ [refreshPlayersFromCustomMatches] Erro ao processar jogadores da partida:', error);
+        }
+      }
+
+      // Atualizar estatísticas dos jogadores
+      for (const summonerName of allPlayers) {
+        try {
+          const existingPlayer = await this.getPlayerBySummonerName(summonerName);
+          const stats = playerStats[summonerName] || { games: 0, wins: 0, losses: 0 };
+          if (!existingPlayer) {
+            console.log(`➕ [refreshPlayersFromCustomMatches] Criando jogador: ${summonerName}`);
+            await this.createPlayer({
+              summoner_name: summonerName,
+              region: 'br1', // Default
+              current_mmr: 1000,
+              peak_mmr: 1000,
+              games_played: 0,
+              wins: 0,
+              losses: 0,
+              win_streak: 0,
+              custom_games_played: stats.games,
+              custom_wins: stats.wins,
+              custom_losses: stats.losses
+            });
+            console.log(`✅ [refreshPlayersFromCustomMatches] Jogador criado: ${summonerName}`);
+          } else {
+            // Atualizar estatísticas customizadas
+            await this.pool.execute(
+              'UPDATE players SET custom_games_played = ?, custom_wins = ?, custom_losses = ? WHERE summoner_name = ?',
+              [stats.games, stats.wins, stats.losses, summonerName]
+            );
+            console.log(`✅ [refreshPlayersFromCustomMatches] Jogador já existe e atualizado: ${summonerName}`);
+          }
+        } catch (error) {
+          console.error(`❌ [refreshPlayersFromCustomMatches] Erro ao criar/verificar jogador ${summonerName}:`, error);
         }
       }
       
-      // Criar jogadores que não existem
-      for (const summonerName of allPlayers) {
-        const existingPlayer = await this.getPlayerBySummonerName(summonerName);
-        if (!existingPlayer) {
-          await this.createPlayer({
-            summoner_name: summonerName,
-            region: 'br1', // Default
-            current_mmr: 1000,
-            peak_mmr: 1000,
-            games_played: 0,
-            wins: 0,
-            losses: 0,
-            win_streak: 0
-          });
-          console.log(`✅ Jogador criado: ${summonerName}`);
-        }
-      }
+      console.log('✅ [refreshPlayersFromCustomMatches] Atualização de jogadores concluída');
     } catch (error) {
-      console.error('Erro ao atualizar jogadores das partidas customizadas:', error);
+      console.error('❌ [refreshPlayersFromCustomMatches] Erro ao atualizar jogadores das partidas customizadas:', error);
       throw error;
     }
   }
@@ -1454,6 +1727,124 @@ export class DatabaseManager {
       }
     } catch (error) {
       console.error('❌ Erro ao verificar/criar tabela custom_matches:', error);
+      throw error;
+    }
+  }
+
+  // Método para obter estatísticas das tabelas (para debug)
+  async getTablesStats(): Promise<any> {
+    if (!this.pool) throw new Error('Pool de conexão não inicializado');
+    
+    try {
+      // Verificar custom_matches
+      const [customMatchesCount] = await this.pool.execute('SELECT COUNT(*) as count FROM custom_matches');
+      
+      // Verificar estrutura da tabela custom_matches
+      const [tableStructure] = await this.pool.execute('DESCRIBE custom_matches');
+      
+      // Verificar valores únicos na coluna status (se existir)
+      let statusValues: any[] = [];
+      let hasStatusColumn = false;
+      
+      try {
+        const [statusCheck] = await this.pool.execute('SELECT DISTINCT status FROM custom_matches');
+        statusValues = statusCheck as any[];
+        hasStatusColumn = true;
+      } catch (e) {
+        console.warn('⚠️ Coluna status não encontrada na tabela custom_matches');
+        hasStatusColumn = false;
+      }
+      
+      // Tentar diferentes status possíveis
+      let finishedMatchesCount = 0;
+      if (hasStatusColumn) {
+        try {
+          const [finishedCount] = await this.pool.execute('SELECT COUNT(*) as count FROM custom_matches WHERE status = "finished"');
+          finishedMatchesCount = (finishedCount as any[])[0].count;
+        } catch (e) {
+          try {
+            const [completedCount] = await this.pool.execute('SELECT COUNT(*) as count FROM custom_matches WHERE status = "completed"');
+            finishedMatchesCount = (completedCount as any[])[0].count;
+          } catch (e2) {
+            console.warn('⚠️ Não foi possível contar partidas finalizadas:', e2);
+          }
+        }
+      }
+      
+      const [playersCount] = await this.pool.execute('SELECT COUNT(*) as count FROM players');
+      const [playersWithCustomData] = await this.pool.execute('SELECT COUNT(*) as count FROM players WHERE custom_games_played > 0');
+      
+      // Buscar algumas partidas de exemplo
+      const [sampleMatches] = await this.pool.execute('SELECT id, title, created_at FROM custom_matches ORDER BY created_at DESC LIMIT 5');
+      
+      // Buscar alguns jogadores de exemplo
+      const [samplePlayers] = await this.pool.execute('SELECT summoner_name, custom_games_played, custom_lp FROM players ORDER BY custom_lp DESC LIMIT 5');
+      
+      return {
+        customMatches: {
+          total: (customMatchesCount as any[])[0].count,
+          finished: finishedMatchesCount,
+          hasStatusColumn: hasStatusColumn
+        },
+        players: {
+          total: (playersCount as any[])[0].count,
+          withCustomData: (playersWithCustomData as any[])[0].count
+        },
+        tableStructure: tableStructure as any[],
+        statusValues: statusValues,
+        sampleMatches: sampleMatches as any[],
+        samplePlayers: samplePlayers as any[]
+      };
+    } catch (error) {
+      console.error('❌ Erro ao obter estatísticas das tabelas:', error);
+      throw error;
+    }
+  }
+
+  // Método para obter contagem de jogadores
+  async getPlayersCount(): Promise<number> {
+    if (!this.pool) throw new Error('Pool de conexão não inicializado');
+    
+    try {
+      const [playerCount] = await this.pool.execute('SELECT COUNT(*) as count FROM players');
+      return (playerCount as any[])[0].count;
+    } catch (error) {
+      console.error('❌ Erro ao obter contagem de jogadores:', error);
+      throw error;
+    }
+  }
+
+  // Método para corrigir status das partidas antigas
+  async fixMatchStatus(): Promise<{ affectedMatches: number, playerCount: number }> {
+    if (!this.pool) throw new Error('Pool de conexão não inicializado');
+    
+    try {
+      console.log('🔧 [fixMatchStatus] Corrigindo status das partidas antigas...');
+      
+      // Atualizar partidas com status 'completed' para 'finished'
+      const [updateResult] = await this.pool.execute(
+        'UPDATE custom_matches SET status = ? WHERE status = ?',
+        ['finished', 'completed']
+      );
+      
+      const affectedRows = (updateResult as any).affectedRows;
+      
+      console.log(`✅ [fixMatchStatus] ${affectedRows} partidas atualizadas de 'completed' para 'finished'`);
+      
+      // Agora rodar o rebuild dos jogadores
+      await this.refreshPlayersFromCustomMatches();
+      
+      // Verificar quantos jogadores foram criados
+      const playerCount = await this.getPlayersCount();
+      
+      console.log(`✅ [fixMatchStatus] Rebuild concluído. Total de jogadores: ${playerCount}`);
+      
+      return {
+        affectedMatches: affectedRows,
+        playerCount: playerCount
+      };
+    } catch (error) {
+      console.error('❌ [fixMatchStatus] Erro:', error);
       throw error;
     }
   }

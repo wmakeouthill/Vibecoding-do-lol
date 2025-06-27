@@ -73,7 +73,7 @@
           </div>
 
           <!-- MMR -->
-          <div class="mmr-col" [ngStyle]="{'color': player.lp > 0 ? '#3fc380' : (player.lp < 0 ? '#e74c3c' : '#cdbe91'), 'font-weight': 'bold'}">{{ player.lp }} LP</div>
+          <div class="mmr-col" [ngStyle]="{'color': player.calculated_mmr > 0 ? '#3fc380' : (player.calculated_mmr < 0 ? '#e74c3c' : '#cdbe91'), 'font-weight': 'bold'}">{{ player.calculated_mmr }} MMR</div>
 
           <!-- Partidas -->
           <div class="games-col">
