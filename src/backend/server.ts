@@ -2099,6 +2099,26 @@ app.post('/api/debug/fix-match-status', async (req: Request, res: Response) => {
   }
 });
 
+// Endpoint para recalcular LP de partidas customizadas com novo sistema MMR
+app.post('/api/admin/recalculate-custom-lp', async (req: Request, res: Response) => {
+  try {
+    console.log('🔄 [POST /api/admin/recalculate-custom-lp] Recalculando LP de partidas customizadas...');
+    
+    const result = await dbManager.recalculateCustomLP();
+    
+    res.json({ 
+      success: true, 
+      message: `LP recalculado para ${result.affectedMatches} partidas e ${result.affectedPlayers} jogadores`,
+      affectedMatches: result.affectedMatches,
+      affectedPlayers: result.affectedPlayers,
+      details: result.details
+    });
+  } catch (error: any) {
+    console.error('❌ [POST /api/admin/recalculate-custom-lp] Erro:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Middleware de erro
 app.use((error: any, req: Request, res: Response, next: NextFunction) => {
   console.error('Erro não tratado:', error);

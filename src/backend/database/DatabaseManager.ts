@@ -894,34 +894,48 @@ export class DatabaseManager {
       // Se não há lpChanges, calcular automaticamente baseado no resultado
       let lpChanges = extraData.lpChanges;
       if (!lpChanges) {
-        console.log('🔄 Calculando lpChanges automaticamente para partida', matchId);
+        console.log('🔄 Calculando lpChanges com novo sistema MMR para partida', matchId);
         
         const team1Players = JSON.parse(match.team1_players);
         const team2Players = JSON.parse(match.team2_players);
         
         lpChanges = {};
         
-        // LP base: +18 para vitória, -15 para derrota
-        const baseLpWin = 18;
-        const baseLpLoss = -15;
+        // Calcular MMR médio dos times
+        const team1AverageMMR = await this.calculateTeamAverageMMRWithRealData(team1Players);
+        const team2AverageMMR = await this.calculateTeamAverageMMRWithRealData(team2Players);
+        
+        console.log(`📊 MMR médio - Time 1: ${team1AverageMMR}, Time 2: ${team2AverageMMR}`);
         
         // Processar time 1
-        team1Players.forEach((playerString: string) => {
+        for (const playerString of team1Players) {
           if (playerString && typeof playerString === 'string') {
-            const lpChange = winnerTeam === 1 ? baseLpWin : baseLpLoss;
+            const playerMMR = await this.getPlayerCurrentMMR(playerString);
+            const isWin = winnerTeam === 1;
+            const opponentMMR = team2AverageMMR;
+            
+            const lpChange = this.calculateLPChange(playerMMR, opponentMMR, isWin);
             lpChanges[playerString] = lpChange;
+            
+            console.log(`👤 ${playerString} (MMR: ${playerMMR}) vs Time 2 (MMR: ${opponentMMR}) - ${isWin ? 'VITÓRIA' : 'DERROTA'}: ${lpChange > 0 ? '+' : ''}${lpChange} LP`);
           }
-        });
+        }
         
         // Processar time 2
-        team2Players.forEach((playerString: string) => {
+        for (const playerString of team2Players) {
           if (playerString && typeof playerString === 'string') {
-            const lpChange = winnerTeam === 2 ? baseLpWin : baseLpLoss;
+            const playerMMR = await this.getPlayerCurrentMMR(playerString);
+            const isWin = winnerTeam === 2;
+            const opponentMMR = team1AverageMMR;
+            
+            const lpChange = this.calculateLPChange(playerMMR, opponentMMR, isWin);
             lpChanges[playerString] = lpChange;
+            
+            console.log(`👤 ${playerString} (MMR: ${playerMMR}) vs Time 1 (MMR: ${opponentMMR}) - ${isWin ? 'VITÓRIA' : 'DERROTA'}: ${lpChange > 0 ? '+' : ''}${lpChange} LP`);
           }
-        });
+        }
         
-        console.log('📊 lpChanges calculados:', lpChanges);
+        console.log('📊 lpChanges calculados com novo sistema:', lpChanges);
       }
 
       // Calcular LP total da partida
@@ -1879,6 +1893,327 @@ export class DatabaseManager {
     } catch (error) {
       console.error('❌ [fixMatchStatus] Erro:', error);
       throw error;
+    }
+  }
+
+  // ========== FUNÇÕES DE CÁLCULO DE MMR E LP ==========
+
+  /**
+   * Calcula a mudança de LP baseada no sistema descrito em CUSTOM_MMR_LP_SYSTEM.md
+   */
+  private calculateLPChange(playerMMR: number, opponentMMR: number, isWin: boolean): number {
+    // LP base: +18 para vitória, -15 para derrota
+    const baseLpWin = 18;
+    const baseLpLoss = -15;
+    
+    // Calcular diferença de MMR
+    const mmrDifference = opponentMMR - playerMMR;
+    
+    // Ajuste por diferença de MMR: ±8 LP para cada 100 pontos de diferença
+    const mmrAdjustment = (mmrDifference / 100) * 8;
+    
+    // LP inicial baseado no resultado
+    let lpChange = isWin ? baseLpWin : baseLpLoss;
+    
+    // Aplicar ajuste por diferença de MMR
+    lpChange += mmrAdjustment;
+    
+    // Ajustes por MMR atual do jogador
+    if (playerMMR < 1200) {
+      // Jogadores com MMR baixo (< 1200)
+      const mmrBelow1200 = 1200 - playerMMR;
+      if (isWin) {
+        // Vitórias: +1 LP adicional para cada 50 MMR abaixo de 1200
+        lpChange += Math.floor(mmrBelow1200 / 50);
+      } else {
+        // Derrotas: Perdas reduzidas: +1 LP para cada 100 MMR abaixo de 1200
+        lpChange += Math.floor(mmrBelow1200 / 100);
+      }
+    } else if (playerMMR > 1800) {
+      // Jogadores com MMR alto (> 1800)
+      const mmrAbove1800 = playerMMR - 1800;
+      if (isWin) {
+        // Vitórias: -1 LP para cada 100 MMR acima de 1800
+        lpChange -= Math.floor(mmrAbove1800 / 100);
+      } else {
+        // Derrotas: Perdas aumentadas: -1 LP adicional para cada 80 MMR acima de 1800
+        lpChange -= Math.floor(mmrAbove1800 / 80);
+      }
+    }
+    
+    // Aplicar limites
+    if (isWin) {
+      lpChange = Math.max(8, Math.min(35, lpChange));
+    } else {
+      lpChange = Math.max(-25, Math.min(-8, lpChange));
+    }
+    
+    return Math.round(lpChange);
+  }
+
+  /**
+   * Calcula a mudança de MMR usando o sistema Elo (mais conservador)
+   */
+  private calculateMMRChange(playerMMR: number, opponentMMR: number, isWin: boolean): number {
+    const K_FACTOR = 16; // Fator K mais conservador (metade do padrão)
+    
+    // Calcular score esperado usando fórmula Elo
+    const expectedScore = 1 / (1 + Math.pow(10, (opponentMMR - playerMMR) / 400));
+    
+    // Score atual (1 para vitória, 0 para derrota)
+    const actualScore = isWin ? 1 : 0;
+    
+    // Calcular mudança de MMR
+    const mmrChange = Math.round(K_FACTOR * (actualScore - expectedScore));
+    
+    return mmrChange;
+  }
+
+  /**
+   * Calcula o MMR médio de um time
+   */
+  private calculateTeamAverageMMR(teamPlayers: string[]): number {
+    if (!teamPlayers || teamPlayers.length === 0) return 0; // MMR inicial 0
+    
+    let totalMMR = 0;
+    let validPlayers = 0;
+    
+    for (const playerString of teamPlayers) {
+      if (playerString && typeof playerString === 'string') {
+        // Buscar MMR do jogador no banco
+        // Por enquanto, usar MMR padrão de 0
+        // TODO: Implementar busca real do MMR do jogador
+        totalMMR += 0;
+        validPlayers++;
+      }
+    }
+    
+    return validPlayers > 0 ? Math.round(totalMMR / validPlayers) : 0;
+  }
+
+  /**
+   * Busca o MMR atual de um jogador
+   */
+  private async getPlayerCurrentMMR(playerString: string): Promise<number> {
+    try {
+      const [rows] = await this.pool!.execute(
+        'SELECT custom_lp FROM players WHERE summoner_name = ?',
+        [playerString]
+      );
+      
+      if ((rows as any[]).length > 0) {
+        return (rows as any[])[0].custom_lp || 0; // MMR inicial 0
+      }
+      
+      return 0; // MMR padrão para novos jogadores
+    } catch (error) {
+      console.warn(`⚠️ Erro ao buscar MMR do jogador ${playerString}:`, error);
+      return 0;
+    }
+  }
+
+  /**
+   * Calcula o MMR médio de um time usando dados reais do banco
+   */
+  private async calculateTeamAverageMMRWithRealData(teamPlayers: string[]): Promise<number> {
+    if (!teamPlayers || teamPlayers.length === 0) return 0; // MMR inicial 0
+    
+    let totalMMR = 0;
+    let validPlayers = 0;
+    
+    for (const playerString of teamPlayers) {
+      if (playerString && typeof playerString === 'string') {
+        const playerMMR = await this.getPlayerCurrentMMR(playerString);
+        totalMMR += playerMMR;
+        validPlayers++;
+      }
+    }
+    
+    return validPlayers > 0 ? Math.round(totalMMR / validPlayers) : 0;
+  }
+
+  /**
+   * Recalcula LP de todas as partidas customizadas existentes usando o novo sistema MMR
+   */
+  async recalculateCustomLP(): Promise<{ affectedMatches: number, affectedPlayers: number, details: any[] }> {
+    if (!this.pool) throw new Error('Pool de conexão não inicializado');
+    
+    try {
+      console.log('🔄 Iniciando recálculo de LP para partidas customizadas...');
+      
+      // Buscar todas as partidas customizadas finalizadas
+      const [matches] = await this.pool.execute(
+        'SELECT id, team1_players, team2_players, winner_team, lp_changes FROM custom_matches WHERE status = "finished" AND winner_team IS NOT NULL'
+      );
+      
+      const matchRows = matches as any[];
+      let affectedMatches = 0;
+      let affectedPlayers = 0;
+      const details: any[] = [];
+      
+      console.log(`📊 Encontradas ${matchRows.length} partidas para recálculo`);
+      
+      for (const match of matchRows) {
+        try {
+          const team1Players = JSON.parse(match.team1_players);
+          const team2Players = JSON.parse(match.team2_players);
+          const winnerTeam = match.winner_team;
+          
+          // Calcular MMR médio dos times
+          const team1AverageMMR = await this.calculateTeamAverageMMRWithRealData(team1Players);
+          const team2AverageMMR = await this.calculateTeamAverageMMRWithRealData(team2Players);
+          
+          const newLpChanges: any = {};
+          let matchAffectedPlayers = 0;
+          
+          // Processar time 1
+          for (const playerString of team1Players) {
+            if (playerString && typeof playerString === 'string') {
+              const playerMMR = await this.getPlayerCurrentMMR(playerString);
+              const isWin = winnerTeam === 1;
+              const opponentMMR = team2AverageMMR;
+              
+              const newLpChange = this.calculateLPChange(playerMMR, opponentMMR, isWin);
+              newLpChanges[playerString] = newLpChange;
+              matchAffectedPlayers++;
+            }
+          }
+          
+          // Processar time 2
+          for (const playerString of team2Players) {
+            if (playerString && typeof playerString === 'string') {
+              const playerMMR = await this.getPlayerCurrentMMR(playerString);
+              const isWin = winnerTeam === 2;
+              const opponentMMR = team1AverageMMR;
+              
+              const newLpChange = this.calculateLPChange(playerMMR, opponentMMR, isWin);
+              newLpChanges[playerString] = newLpChange;
+              matchAffectedPlayers++;
+            }
+          }
+          
+          // Calcular LP total da partida
+          const totalLp = Object.values(newLpChanges).reduce((sum: number, lpChange: any) => {
+            return sum + Math.abs(Number(lpChange));
+          }, 0);
+          
+          // Atualizar partida com novos LP changes
+          if (this.pool) {
+            await this.pool.execute(
+              'UPDATE custom_matches SET lp_changes = ?, custom_lp = ? WHERE id = ?',
+              [JSON.stringify(newLpChanges), totalLp, match.id]
+            );
+          }
+          
+          // Recalcular estatísticas dos jogadores
+          for (const [playerString, lpChange] of Object.entries(newLpChanges)) {
+            const lpChangeValue = Number(lpChange);
+            
+            // Buscar o jogador
+            if (this.pool) {
+              const [playerRows] = await this.pool.execute(
+                'SELECT id, custom_lp, custom_games_played, custom_wins, custom_losses FROM players WHERE summoner_name = ?',
+                [playerString]
+              );
+              
+              if ((playerRows as any[]).length > 0) {
+                const player = (playerRows as any[])[0];
+                const playerId = player.id;
+                
+                // Recalcular estatísticas do zero para este jogador
+                await this.recalculatePlayerStats(playerId, playerString);
+              }
+            }
+          }
+          
+          affectedMatches++;
+          affectedPlayers += matchAffectedPlayers;
+          
+          details.push({
+            matchId: match.id,
+            team1MMR: team1AverageMMR,
+            team2MMR: team2AverageMMR,
+            winnerTeam,
+            affectedPlayers: matchAffectedPlayers,
+            newLpChanges
+          });
+          
+          console.log(`✅ Partida ${match.id} recalculada - Time 1 MMR: ${team1AverageMMR}, Time 2 MMR: ${team2AverageMMR}, Vencedor: ${winnerTeam}`);
+          
+        } catch (matchError) {
+          console.error(`❌ Erro ao recalcular partida ${match.id}:`, matchError);
+        }
+      }
+      
+      console.log(`✅ Recálculo concluído: ${affectedMatches} partidas e ${affectedPlayers} jogadores afetados`);
+      
+      return {
+        affectedMatches,
+        affectedPlayers,
+        details
+      };
+      
+    } catch (error) {
+      console.error('❌ Erro no recálculo de LP:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Recalcula estatísticas de um jogador específico baseado em suas partidas customizadas
+   */
+  private async recalculatePlayerStats(playerId: number, playerString: string): Promise<void> {
+    if (!this.pool) return;
+    
+    try {
+      // Buscar todas as partidas do jogador
+      const [matches] = await this.pool.execute(
+        'SELECT lp_changes, winner_team, team1_players, team2_players FROM custom_matches WHERE status = "finished" AND (team1_players LIKE ? OR team2_players LIKE ?)',
+        [`%${playerString}%`, `%${playerString}%`]
+      );
+      
+      let totalLp = 0;
+      let gamesPlayed = 0;
+      let wins = 0;
+      let losses = 0;
+      
+      for (const match of matches as any[]) {
+        if (match.lp_changes) {
+          const lpChanges = JSON.parse(match.lp_changes);
+          const playerLpChange = lpChanges[playerString];
+          
+          if (playerLpChange !== undefined) {
+            totalLp += Number(playerLpChange);
+            gamesPlayed++;
+            
+            if (Number(playerLpChange) > 0) {
+              wins++;
+            } else {
+              losses++;
+            }
+          }
+        }
+      }
+      
+      // Atualizar estatísticas do jogador
+      if (this.pool) {
+        await this.pool.execute(
+          `UPDATE players SET 
+            custom_lp = ?,
+            custom_games_played = ?,
+            custom_wins = ?,
+            custom_losses = ?,
+            custom_peak_mmr = GREATEST(custom_peak_mmr, ?),
+            updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [totalLp, gamesPlayed, wins, losses, totalLp, playerId]
+        );
+      }
+      
+      console.log(`✅ Estatísticas recalculadas para ${playerString}: LP ${totalLp}, Jogos ${gamesPlayed}, Vitórias ${wins}, Derrotas ${losses}`);
+      
+    } catch (error) {
+      console.error(`❌ Erro ao recalcular estatísticas do jogador ${playerString}:`, error);
     }
   }
 }
