@@ -451,14 +451,20 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     }
 
     const currentPhase = this.session.phases[this.session.currentAction];
+    const currentPlayer = this.getCurrentPlayer();
 
     // Lock the selection
     currentPhase.champion = this.selectedChampion;
     currentPhase.locked = true;
-    currentPhase.playerId = this.currentPlayer?.id;
-    currentPhase.playerName = this.currentPlayer?.name;
-
-    console.log(`✅ ${currentPhase.action} confirmado: ${this.selectedChampion.name}`);
+    
+    // CORREÇÃO: Incluir informações do jogador que escolheu
+    if (currentPlayer) {
+      currentPhase.playerId = currentPlayer.id;
+      currentPhase.playerName = currentPlayer.summonerName;
+      console.log(`✅ ${currentPhase.action} confirmado por ${currentPlayer.summonerName}: ${this.selectedChampion.name}`);
+    } else {
+      console.log(`✅ ${currentPhase.action} confirmado: ${this.selectedChampion.name} (jogador não identificado)`);
+    }
 
     // Remove selected champion from available list (for picks only)
     if (currentPhase.action === 'pick') {
@@ -519,14 +525,31 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
       this.timer = null;
     }
 
-    // Emit completed pick/ban data
+    // CORREÇÃO: Incluir informações dos jogadores que escolheram cada campeão
     const result = {
       sessionId: this.session.id,
       bans: this.session.phases.filter(p => p.action === 'ban' && p.champion),
-      picks: this.session.phases.filter(p => p.action === 'pick' && p.champion),
-      blueTeamPicks: this.session.phases.filter(p => p.action === 'pick' && p.team === 'blue' && p.champion),
-      redTeamPicks: this.session.phases.filter(p => p.action === 'pick' && p.team === 'red' && p.champion)
+      picks: this.session.phases.filter(p => p.action === 'pick' && p.champion).map(p => ({
+        ...p,
+        playerId: p.playerId,
+        playerName: p.playerName,
+        champion: p.champion
+      })),
+      blueTeamPicks: this.session.phases.filter(p => p.action === 'pick' && p.team === 'blue' && p.champion).map(p => ({
+        ...p,
+        playerId: p.playerId,
+        playerName: p.playerName,
+        champion: p.champion
+      })),
+      redTeamPicks: this.session.phases.filter(p => p.action === 'pick' && p.team === 'red' && p.champion).map(p => ({
+        ...p,
+        playerId: p.playerId,
+        playerName: p.playerName,
+        champion: p.champion
+      }))
     };
+
+    console.log('🎯 [completePickBan] Resultado com informações dos jogadores:', result);
 
     this.onPickBanComplete.emit(result);
   }

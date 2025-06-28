@@ -1889,4 +1889,88 @@ export class MatchmakingService {
 
     this.addActivity('match_created', `Draft da partida ${matchId} cancelado por ${reason}`);
   }
+
+  // Método para cancelar partida em andamento (após o draft)
+  async cancelGameInProgress(matchId: number, reason: string): Promise<void> {
+    console.log(`🔍 [CancelGameInProgress] Iniciando cancelamento para matchId: ${matchId}`);
+    console.log(`🔍 [CancelGameInProgress] Tipo do matchId: ${typeof matchId}`);
+    console.log(`🔍 [CancelGameInProgress] Reason: ${reason}`);
+    
+    const match = this.activeMatches.get(matchId);
+    if (!match) {
+      console.log(`⚠️ [CancelGameInProgress] Partida ${matchId} não encontrada nas partidas ativas`);
+      console.log(`🔍 [CancelGameInProgress] Partidas ativas disponíveis:`, Array.from(this.activeMatches.keys()));
+      return;
+    }
+
+    console.log(`🎉 [CancelGameInProgress] Partida em andamento ${matchId} cancelada por ${reason}`);
+    console.log(`🔍 [CancelGameInProgress] Dados da partida:`, {
+      matchId: matchId,
+      matchIdInMatch: match.id,
+      team1Size: match.team1.length,
+      team2Size: match.team2.length,
+      status: match.status
+    });
+
+    // Remover partida das ativas
+    this.activeMatches.delete(matchId);
+
+    // APAGAR partida do banco de dados se foi salva
+    try {
+      if (match.id) {
+        console.log(`🗑️ [CancelGameInProgress] Tentando apagar partida ${matchId} do banco (ID: ${match.id})`);
+        await this.dbManager.deleteCustomMatch(match.id);
+        console.log(`🗑️ [CancelGameInProgress] Partida ${matchId} apagada do banco de dados (ID: ${match.id})`);
+      } else {
+        console.log(`⚠️ [CancelGameInProgress] Partida ${matchId} não tem ID no banco para apagar`);
+      }
+    } catch (error) {
+      console.error(`❌ [CancelGameInProgress] Erro ao apagar partida ${matchId} do banco:`, error);
+    }
+
+    // Retornar TODOS os jogadores para a fila
+    const allPlayers = [...match.team1, ...match.team2];
+
+    allPlayers.forEach(player => {
+      // Resetar websocket para null (será atualizado quando reconectar)
+      player.websocket = null as any;
+
+      // Adicionar timestamp de cancelamento para evitar matchmaking imediato
+      (player as any).gameCancelledAt = Date.now();
+
+      this.queue.push(player);
+      console.log(`🔄 [CancelGameInProgress] ${player.summonerName} retornou à fila após cancelamento da partida (Bot: ${player.id < 0})`);
+    });
+
+    // Notificar jogadores sobre o cancelamento da partida
+    allPlayers.forEach(player => {
+      if (player.websocket && player.id > 0) { // Pular bots
+        try {
+          const message = {
+            type: 'game_cancelled',
+            data: {
+              matchId: matchId,
+              reason: reason
+            }
+          };
+
+          console.log(`📡 [CancelGameInProgress] Enviando mensagem para ${player.summonerName}:`, JSON.stringify(message, null, 2));
+          player.websocket.send(JSON.stringify(message));
+          console.log(`✅ [CancelGameInProgress] Mensagem enviada com sucesso para ${player.summonerName}`);
+        } catch (error) {
+          console.error(`❌ [CancelGameInProgress] Erro ao notificar cancelamento da partida para ${player.summonerName}:`, error);
+        }
+      }
+    });
+
+    // Atualizar posições na fila
+    this.queue.forEach((p, index) => {
+      p.queuePosition = index + 1;
+    });
+
+    // Broadcast atualização da fila
+    this.broadcastQueueUpdate();
+
+    this.addActivity('match_created', `Partida em andamento ${matchId} cancelada por ${reason}`);
+  }
 }

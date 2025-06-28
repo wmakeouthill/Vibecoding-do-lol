@@ -154,6 +154,21 @@ export class App implements OnInit, OnDestroy {
           return;
         }
 
+        // Verificar se é cancelamento de partida em andamento
+        if (matchData.type === 'game_cancelled') {
+          console.log('[WebSocket] Partida em andamento cancelada:', matchData);
+          this.showMatchFound = false;
+          this.matchFoundData = null;
+          this.inDraftPhase = false;
+          this.draftData = null;
+          this.inGamePhase = false;
+          this.gameData = null;
+
+          const reason = matchData.reason || 'Partida em andamento cancelada';
+          this.addNotification('info', 'Partida Cancelada', reason);
+          return;
+        }
+
         // Verificar se é início do draft
         if (matchData.phase === 'draft_started') {
           console.log('[WebSocket] Fase de draft iniciada:', matchData);
@@ -251,6 +266,8 @@ export class App implements OnInit, OnDestroy {
 
   startGamePhase(pickBanResult: any): void {
     console.log('🎮 Iniciando fase de jogo:', pickBanResult);
+    console.log('🔍 Draft data antes de criar gameData:', this.draftData);
+    console.log('🔍 Draft data matchId:', this.draftData?.matchId);
 
     this.inDraftPhase = false;
     this.draftPhase = 'preview';
@@ -262,8 +279,12 @@ export class App implements OnInit, OnDestroy {
       team2: this.draftData?.team2 || this.draftData?.redTeam || [],
       startTime: new Date(),
       pickBanData: pickBanResult,
-      isCustomGame: true
+      isCustomGame: true,
+      originalMatchId: this.draftData?.matchId // Adicionar matchId do draft para cancelamento
     };
+
+    console.log('🔍 Game data criado com originalMatchId:', this.gameData.originalMatchId);
+    console.log('🔍 Tipo do originalMatchId:', typeof this.gameData.originalMatchId);
 
     this.updatePlayersWithChampions(pickBanResult);
     this.inGamePhase = true;
@@ -275,20 +296,96 @@ export class App implements OnInit, OnDestroy {
   private updatePlayersWithChampions(pickBanResult: any): void {
     if (!this.gameData || !pickBanResult.picks) return;
 
+    console.log('🎯 [updatePlayersWithChampions] Iniciando mapeamento de campeões aos jogadores');
+    console.log('📊 Pick/Ban result:', pickBanResult);
+
+    // CORREÇÃO: Mapear campeões aos jogadores específicos que os escolheram
+    // Buscar os picks com informações do jogador que escolheu
+    const picksWithPlayerInfo = pickBanResult.picks || [];
+    
+    console.log('👥 Picks com informações de jogador:', picksWithPlayerInfo);
+
+    // Mapear campeões aos jogadores do time azul (team1)
+    this.gameData.team1.forEach((player: any, index: number) => {
+      // Buscar o pick correspondente a este jogador
+      const playerPick = picksWithPlayerInfo.find((pick: any) => {
+        // Verificar se o pick é do time azul e corresponde ao jogador
+        if (pick.team === 'blue') {
+          // Se temos informação do jogador que escolheu
+          if (pick.playerId && pick.playerId === player.id) {
+            return true;
+          }
+          if (pick.playerName && pick.playerName === player.summonerName) {
+            return true;
+          }
+          // Se não temos informação específica, usar ordem de index
+          if (!pick.playerId && !pick.playerName) {
+            return true; // Será filtrado por ordem
+          }
+        }
+        return false;
+      });
+
+      if (playerPick && playerPick.champion) {
+        player.champion = playerPick.champion;
+        console.log(`✅ [Team1] ${player.summonerName} mapeado para ${playerPick.champion.name}`);
+      } else {
+        console.log(`⚠️ [Team1] ${player.summonerName} não encontrou pick correspondente`);
+      }
+    });
+
+    // Mapear campeões aos jogadores do time vermelho (team2)
+    this.gameData.team2.forEach((player: any, index: number) => {
+      // Buscar o pick correspondente a este jogador
+      const playerPick = picksWithPlayerInfo.find((pick: any) => {
+        // Verificar se o pick é do time vermelho e corresponde ao jogador
+        if (pick.team === 'red') {
+          // Se temos informação do jogador que escolheu
+          if (pick.playerId && pick.playerId === player.id) {
+            return true;
+          }
+          if (pick.playerName && pick.playerName === player.summonerName) {
+            return true;
+          }
+          // Se não temos informação específica, usar ordem de index
+          if (!pick.playerId && !pick.playerName) {
+            return true; // Será filtrado por ordem
+          }
+        }
+        return false;
+      });
+
+      if (playerPick && playerPick.champion) {
+        player.champion = playerPick.champion;
+        console.log(`✅ [Team2] ${player.summonerName} mapeado para ${playerPick.champion.name}`);
+      } else {
+        console.log(`⚠️ [Team2] ${player.summonerName} não encontrou pick correspondente`);
+      }
+    });
+
+    // Fallback: Se não conseguimos mapear por jogador específico, usar ordem sequencial
     const bluePicks = pickBanResult.blueTeamPicks || pickBanResult.picks.filter((p: any) => p.team === 'blue');
     const redPicks = pickBanResult.redTeamPicks || pickBanResult.picks.filter((p: any) => p.team === 'red');
 
+    // Aplicar fallback para time azul
     this.gameData.team1.forEach((player: any, index: number) => {
-      if (bluePicks[index] && bluePicks[index].champion) {
+      if (!player.champion && bluePicks[index] && bluePicks[index].champion) {
         player.champion = bluePicks[index].champion;
+        console.log(`🔄 [Fallback Team1] ${player.summonerName} mapeado para ${bluePicks[index].champion.name} (por ordem)`);
       }
     });
 
+    // Aplicar fallback para time vermelho
     this.gameData.team2.forEach((player: any, index: number) => {
-      if (redPicks[index] && redPicks[index].champion) {
+      if (!player.champion && redPicks[index] && redPicks[index].champion) {
         player.champion = redPicks[index].champion;
+        console.log(`🔄 [Fallback Team2] ${player.summonerName} mapeado para ${redPicks[index].champion.name} (por ordem)`);
       }
     });
+
+    console.log('✅ [updatePlayersWithChampions] Mapeamento concluído');
+    console.log('📊 Team1 com campeões:', this.gameData.team1.map((p: any) => ({ name: p.summonerName, champion: p.champion?.name })));
+    console.log('📊 Team2 com campeões:', this.gameData.team2.map((p: any) => ({ name: p.summonerName, champion: p.champion?.name })));
   }
 
   onGameComplete(gameResult: any): void {
@@ -305,7 +402,30 @@ export class App implements OnInit, OnDestroy {
 
   onGameCancel(): void {
     console.log('❌ Jogo cancelado');
-    this.exitGame();
+    console.log('🔍 Game data completo:', this.gameData);
+    console.log('🔍 Draft data:', this.draftData);
+    
+    // Enviar mensagem de cancelamento de partida em andamento para o backend
+    if (this.gameData?.originalMatchId) {
+      console.log('📤 Enviando cancelamento de partida em andamento para matchId:', this.gameData.originalMatchId);
+      console.log('📤 Tipo do originalMatchId:', typeof this.gameData.originalMatchId);
+      this.discordService.sendWebSocketMessage({
+        type: 'cancel_game_in_progress',
+        data: {
+          matchId: this.gameData.originalMatchId,
+          reason: 'Partida cancelada pelo usuário'
+        }
+      });
+    } else {
+      console.warn('⚠️ Game data não tem originalMatchId:', this.gameData);
+      console.warn('⚠️ Draft data tem matchId?', this.draftData?.matchId);
+    }
+    
+    // CORREÇÃO: Seguir a mesma estrutura do onPickBanCancel
+    this.inGamePhase = false;
+    this.gameData = null;
+    this.currentView = 'dashboard';
+    this.clearGameState();
     this.addNotification('info', 'Partida Cancelada', 'A partida foi cancelada.');
   }
 

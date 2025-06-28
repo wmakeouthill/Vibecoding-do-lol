@@ -300,6 +300,25 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
         }));
       }
       break;
+    case 'cancel_game_in_progress':
+      console.log('❌ Recebida mensagem cancel_game_in_progress:', data.data);
+      try {
+        await matchmakingService.cancelGameInProgress(
+          data.data.matchId,
+          data.data.reason || 'Partida cancelada pelo usuário'
+        );
+        ws.send(JSON.stringify({
+          type: 'game_cancelled',
+          data: { matchId: data.data.matchId }
+        }));
+      } catch (error: any) {
+        console.error('❌ Erro ao cancelar partida em andamento:', error);
+        ws.send(JSON.stringify({
+          type: 'error',
+          message: 'Erro ao cancelar partida em andamento: ' + error.message
+        }));
+      }
+      break;
     case 'cancel_draft':
       console.log('❌ Recebida mensagem cancel_draft:', data.data);
       try {
