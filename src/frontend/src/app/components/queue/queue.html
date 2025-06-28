@@ -284,26 +284,30 @@
       </div>
 
       <!-- Botão único Discord com estilos do botão original -->
-      <button class="queue-btn join-btn"
-              [disabled]="!queueStatus.isActive || !currentPlayer"
-              (click)="onJoinDiscordQueue()">
-        <i class="fab fa-discord"></i>
-        <span>Entrar na Fila Discord</span>
-      </button>
+      <div class="button-wrapper">
+        <button class="queue-btn join-btn"
+                [disabled]="!queueStatus.isActive || !currentPlayer"
+                (click)="onJoinDiscordQueue()">
+          <i class="fab fa-discord"></i>
+          <span>Entrar na Fila Discord</span>
+        </button>
+      </div>
 
       <!-- Status do Discord -->
       <div class="discord-status-info" *ngIf="showDiscordMode">
-        <div class="status-item" [class.connected]="isDiscordConnected">
-          <i class="fas fa-server"></i>
-          <span>Servidor: {{ isDiscordConnected ? 'Conectado' : 'Desconectado' }}</span>
-        </div>
-        <div class="status-item" [class.connected]="discordService.isDiscordBackendConnected()">
-          <i class="fab fa-discord"></i>
-          <span>Discord Bot: {{ discordService.isDiscordBackendConnected() ? 'Conectado' : 'Offline' }}</span>
-        </div>
-        <div class="status-item" [class.connected]="discordService.isInChannel()">
-          <i class="fas fa-hashtag"></i>
-          <span>Canal: {{ discordService.isInChannel() ? 'Conectado' : 'Não detectado' }}</span>
+        <div class="status-row">
+          <div class="status-item" [class.connected]="isDiscordConnected">
+            <div class="status-indicator"></div>
+            <span>Servidor</span>
+          </div>
+          <div class="status-item" [class.connected]="discordService.isDiscordBackendConnected()">
+            <div class="status-indicator"></div>
+            <span>Discord Bot</span>
+          </div>
+          <div class="status-item" [class.connected]="discordService.isInChannel()">
+            <div class="status-indicator"></div>
+            <span>Canal</span>
+          </div>
         </div>
       </div>
 
@@ -344,10 +348,12 @@
         </div>
       </div>
 
-      <button class="queue-btn leave-btn" (click)="onLeaveDiscordQueue()">
-        <i class="icon-exit"></i>
-        <span>Sair da Fila</span>
-      </button>
+      <div class="button-wrapper">
+        <button class="queue-btn leave-btn" (click)="onLeaveDiscordQueue()">
+          <i class="icon-exit"></i>
+          <span>Sair da Fila</span>
+        </button>
+      </div>
     </div>
   </div>
 
