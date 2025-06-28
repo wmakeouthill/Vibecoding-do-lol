@@ -26,6 +26,12 @@ export class DiscordIntegrationService {
   // Throttling para evitar múltiplas solicitações
   private lastStatusRequest = 0;
   private readonly STATUS_REQUEST_COOLDOWN = 5000; // 5 segundos entre solicitações
+  
+  // Otimizações de performance
+  private lastQueueUpdate = 0;
+  private readonly QUEUE_UPDATE_THROTTLE = 1000; // 1 segundo entre atualizações de fila
+  private pendingQueueUpdate: any = null;
+  private queueUpdateTimeout: any = null;
 
   constructor() {
     DiscordIntegrationService.instanceCount++;
@@ -159,7 +165,30 @@ export class DiscordIntegrationService {
 
       case 'queue_update':
         console.log(`🎯 [DiscordService #${this.instanceId}] Fila atualizada:`, data.queue?.length || 0, 'jogadores');
-        this.queueParticipants = data.queue;
+        
+        // Throttling para atualizações de fila
+        const now = Date.now();
+        if (now - this.lastQueueUpdate < this.QUEUE_UPDATE_THROTTLE) {
+          // Armazenar a atualização mais recente
+          this.pendingQueueUpdate = data.queue;
+          
+          // Se não há timeout agendado, agendar um
+          if (!this.queueUpdateTimeout) {
+            this.queueUpdateTimeout = setTimeout(() => {
+              this.queueUpdateTimeout = null;
+              if (this.pendingQueueUpdate) {
+                console.log(`🎯 [DiscordService #${this.instanceId}] Aplicando atualização de fila throttled`);
+                this.queueParticipants = this.pendingQueueUpdate;
+                this.pendingQueueUpdate = null;
+              }
+            }, this.QUEUE_UPDATE_THROTTLE);
+          }
+        } else {
+          // Aplicar imediatamente se passou tempo suficiente
+          this.queueParticipants = data.queue;
+          this.lastQueueUpdate = now;
+          console.log(`🎯 [DiscordService #${this.instanceId}] Atualização de fila aplicada imediatamente`);
+        }
         break;
 
       case 'queue_joined':
@@ -369,12 +398,34 @@ export class DiscordIntegrationService {
 
   // Cleanup
   ngOnDestroy() {
-    console.log(`🗑️ [DiscordService #${this.instanceId}] Destruindo instância...`);
+    console.log(`🔧 [DiscordService #${this.instanceId}] Destruindo instância`);
+    
+    // Limpar timeouts
+    if (this.queueUpdateTimeout) {
+      clearTimeout(this.queueUpdateTimeout);
+      this.queueUpdateTimeout = null;
+    }
+    
+    // Fechar WebSocket
     if (this.ws) {
-      console.log(`🔌 [DiscordService #${this.instanceId}] Fechando WebSocket...`);
       this.ws.close();
       this.ws = undefined;
     }
+    
+    // Limpar dados
+    this.discordUsersOnline = [];
+    this.linkedNicknames.clear();
+    this.currentDiscordUser = null;
+    this.isInDiscordChannel = false;
+    this.queueParticipants = [];
+    this.isBackendConnected = false;
+    
+    // Emitir desconexão
+    this.connectionSubject.next(false);
+    this.usersSubject.next([]);
+    
+    DiscordIntegrationService.instanceCount--;
+    console.log(`🔧 [DiscordService] Instância #${this.instanceId} destruída (Total: ${DiscordIntegrationService.instanceCount})`);
   }
 
   // Atualizar vinculações quando receber dados do backend

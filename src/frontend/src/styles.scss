@@ -224,6 +224,29 @@ body {
 .text-left { text-align: left; }
 .text-right { text-align: right; }
 
+// Regras específicas para botões da fila
+.queue-action .button-wrapper {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  text-align: center !important;
+  width: 100% !important;
+}
+
+.queue-action .queue-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  margin: 0 auto !important;
+}
+
+.queue-action .queue-btn span {
+  text-align: center !important;
+  display: inline-block !important;
+  width: auto !important;
+}
+
 .flex { display: flex; }
 .flex-col { flex-direction: column; }
 .flex-wrap { flex-wrap: wrap; }

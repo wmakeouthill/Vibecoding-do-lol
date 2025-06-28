@@ -74,6 +74,13 @@ export class MatchmakingService {
   private readonly MAX_ACTIVITIES = 20;
   private readonly QUEUE_TIMEOUT_MINUTES = 120; // Timeout para jogadores inativos (2 horas)
   private readonly CLEANUP_INTERVAL_MS = 30000; // Limpeza a cada 30 segundos
+  
+  // Otimizações de performance
+  private broadcastTimeout: NodeJS.Timeout | null = null;
+  private readonly BROADCAST_DEBOUNCE_MS = 500; // Debounce de 500ms para broadcasts
+  private lastBroadcastTime = 0;
+  private readonly MIN_BROADCAST_INTERVAL = 1000; // Mínimo 1 segundo entre broadcasts
+  private pendingQueueUpdate = false;
 
   constructor(dbManager: DatabaseManager, wss?: any) {
     this.dbManager = dbManager;
@@ -357,8 +364,8 @@ export class MatchmakingService {
         }
       }));
 
-      // Broadcast atualização da fila
-      await this.broadcastQueueUpdate();
+      // Broadcast atualização da fila (forçar imediatamente para entrada)
+      await this.forceQueueUpdate();
 
       console.log(`➕ [Matchmaking] ${fullSummonerName} entrou na fila (Posição: ${this.queue.length}, MMR: ${player.custom_lp})`);
 
@@ -408,7 +415,8 @@ export class MatchmakingService {
       console.log('🔍 [Matchmaking] Tamanho da fila depois:', this.queue.length);
       console.log('🔍 [Matchmaking] Nova fila:', this.queue.map(p => ({ id: p.id, name: p.summonerName })));
       
-      await this.broadcastQueueUpdate();
+      // Broadcast atualização da fila (forçar imediatamente para saída)
+      await this.forceQueueUpdate();
     } else {
       console.log('⚠️ [Matchmaking] Jogador não encontrado na fila para remoção via WebSocket');
       console.log('🔍 [Matchmaking] WebSocket recebido:', websocket);
@@ -845,24 +853,77 @@ export class MatchmakingService {
     return lanes[laneId || 'fill'] || 'Preenchimento';
   }
 
-  // Método para broadcast de atualização da fila
-  public async broadcastQueueUpdate(): Promise<void> {
+  // Método otimizado para broadcast com debouncing
+  public async broadcastQueueUpdate(force: boolean = false): Promise<void> {
     if (!this.wss) return;
 
-    const queueStatus = await this.getQueueStatus();
+    const now = Date.now();
     
-    this.wss.clients.forEach((client: WebSocket) => {
-      if (client.readyState === WebSocket.OPEN) {
-        try {
-          client.send(JSON.stringify({
-            type: 'queue_update',
-            data: queueStatus
-          }));
-        } catch (error) {
-          console.error('Erro ao enviar atualização da fila:', error);
-        }
+    // Se não for forçado, verificar se já fizemos broadcast recentemente
+    if (!force && now - this.lastBroadcastTime < this.MIN_BROADCAST_INTERVAL) {
+      // Marcar que há uma atualização pendente
+      this.pendingQueueUpdate = true;
+      
+      // Se não há timeout agendado, agendar um
+      if (!this.broadcastTimeout) {
+        this.broadcastTimeout = setTimeout(() => {
+          this.broadcastTimeout = null;
+          if (this.pendingQueueUpdate) {
+            this.pendingQueueUpdate = false;
+            this.broadcastQueueUpdate(true);
+          }
+        }, this.BROADCAST_DEBOUNCE_MS);
       }
-    });
+      return;
+    }
+
+    // Limpar timeout se existir
+    if (this.broadcastTimeout) {
+      clearTimeout(this.broadcastTimeout);
+      this.broadcastTimeout = null;
+    }
+
+    this.pendingQueueUpdate = false;
+    this.lastBroadcastTime = now;
+
+    try {
+      const queueStatus = await this.getQueueStatus();
+      
+      // Usar Promise.all para enviar todas as mensagens em paralelo
+      const sendPromises: Promise<void>[] = [];
+      
+      this.wss.clients.forEach((client: WebSocket) => {
+        if (client.readyState === WebSocket.OPEN) {
+          const sendPromise = new Promise<void>((resolve, reject) => {
+            try {
+              client.send(JSON.stringify({
+                type: 'queue_update',
+                data: queueStatus,
+                timestamp: now // Adicionar timestamp para debug
+              }), (error) => {
+                if (error) {
+                  console.error('Erro ao enviar atualização da fila:', error);
+                  reject(error);
+                } else {
+                  resolve();
+                }
+              });
+            } catch (error) {
+              console.error('Erro ao enviar atualização da fila:', error);
+              reject(error);
+            }
+          });
+          sendPromises.push(sendPromise);
+        }
+      });
+
+      // Aguardar todas as mensagens serem enviadas
+      await Promise.allSettled(sendPromises);
+      
+      console.log(`📡 Broadcast enviado para ${sendPromises.length} clientes em ${Date.now() - now}ms`);
+    } catch (error) {
+      console.error('❌ Erro no broadcast da fila:', error);
+    }
   }
 
   // Método para obter status da fila
@@ -1259,8 +1320,8 @@ export class MatchmakingService {
         }
       }));
 
-      // Broadcast atualização da fila
-      await this.broadcastQueueUpdate();
+      // Broadcast atualização da fila (forçar imediatamente para entrada)
+      await this.forceQueueUpdate();
 
       console.log(`✅ [Matchmaking] ${discordFullName} entrou na fila via Discord (Posição: ${this.queue.length})`);
 
@@ -1370,5 +1431,10 @@ export class MatchmakingService {
   // Método para verificar se o serviço está ativo
   public isServiceActive(): boolean {
     return this.isActive;
+  }
+
+  // Método para forçar atualização imediata (usado para ações críticas)
+  public async forceQueueUpdate(): Promise<void> {
+    await this.broadcastQueueUpdate(true);
   }
 }
