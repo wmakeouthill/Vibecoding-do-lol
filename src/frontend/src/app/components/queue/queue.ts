@@ -438,6 +438,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     // Chamar diretamente o DiscordService com os dados do LCU
     const success = this.discordService.joinDiscordQueue(
       preferences.primaryLane,
+      preferences.secondaryLane,
       this.currentPlayer.summonerName,
       lcuData
     );
@@ -497,26 +498,33 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     // Solicitar atualização completa do Discord
     this.discordService.requestDiscordStatus();
     
-    // Aguardar um pouco para receber as respostas
+    // Atualizar dados locais imediatamente
+    this.discordUsersOnline = this.discordService.getDiscordUsersOnline() || [];
+    this.isDiscordConnected = this.discordService.isConnected();
+    this.isInDiscordChannel = this.discordService.isInChannel();
+    this.discordQueue = this.discordService.getQueueParticipants() || [];
+    
+    // Atualizar status de conexão
+    this.checkDiscordConnection();
+    
+    console.log('✅ [Queue] Dados atualizados:', {
+      usersOnline: this.discordUsersOnline.length,
+      queueSize: this.discordQueue.length,
+      isDiscordConnected: this.isDiscordConnected,
+      isInChannel: this.isInDiscordChannel
+    });
+    
+    // Aguardar um pouco e atualizar novamente para garantir dados mais recentes
     setTimeout(() => {
-      // Atualizar dados locais do Discord
       this.discordUsersOnline = this.discordService.getDiscordUsersOnline() || [];
-      this.isDiscordConnected = this.discordService.isConnected();
-      this.isInDiscordChannel = this.discordService.isInChannel();
       this.discordQueue = this.discordService.getQueueParticipants() || [];
-      
-      // Atualizar status de conexão
-      this.checkDiscordConnection();
-      
-      console.log('✅ [Queue] Dados atualizados:', {
-        usersOnline: this.discordUsersOnline.length,
-        queueSize: this.discordQueue.length,
-        isDiscordConnected: this.isDiscordConnected,
-        isInChannel: this.isInDiscordChannel
-      });
-      
       this.isRefreshing = false;
-    }, 1000);
+      
+      console.log('✅ [Queue] Atualização finalizada:', {
+        usersOnline: this.discordUsersOnline.length,
+        queueSize: this.discordQueue.length
+      });
+    }, 500);
   }
 
   // Método para atualizar especificamente a fila
@@ -614,10 +622,20 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     
     if (this.autoRefreshEnabled) {
       this.autoRefreshInterval = window.setInterval(() => {
-        // Não chamar refreshPlayersData aqui para evitar conflitos
-        // Apenas atualizar dados locais se necessário
+        // Atualizar dados locais do Discord
         this.discordUsersOnline = this.discordService.getDiscordUsersOnline() || [];
         this.discordQueue = this.discordService.getQueueParticipants() || [];
+        
+        // Solicitar atualização do Discord a cada 30 segundos
+        if (this.discordService.isConnected()) {
+          this.discordService.requestDiscordStatus();
+        }
+        
+        console.log('🔄 [Queue] Auto-refresh executado:', {
+          usersOnline: this.discordUsersOnline.length,
+          queueSize: this.discordQueue.length,
+          timestamp: new Date().toLocaleTimeString()
+        });
       }, 30000); // Atualizar a cada 30 segundos
     }
   }

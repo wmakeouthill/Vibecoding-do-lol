@@ -637,11 +637,17 @@ export class App implements OnInit, OnDestroy {
         
         // SEGUNDO: Se Discord estiver disponível, entrar também na fila Discord
         if (this.discordService.isConnected() && this.discordService.isInChannel()) {
-          const role = preferences?.primaryLane || 'fill';
-          const discordSuccess = this.discordService.joinDiscordQueue(role, this.currentPlayer.summonerName || 'Unknown', {
-            gameName: this.currentPlayer.gameName || '',
-            tagLine: this.currentPlayer.tagLine || ''
-          });
+          const primaryLane = preferences?.primaryLane || 'fill';
+          const secondaryLane = preferences?.secondaryLane || 'fill';
+          const discordSuccess = this.discordService.joinDiscordQueue(
+            primaryLane, 
+            secondaryLane,
+            this.currentPlayer.summonerName || 'Unknown', 
+            {
+              gameName: this.currentPlayer.gameName || '',
+              tagLine: this.currentPlayer.tagLine || ''
+            }
+          );
           
           if (discordSuccess) {
             this.addNotification('info', 'Discord', 'Também conectado à fila Discord!');
@@ -671,11 +677,17 @@ export class App implements OnInit, OnDestroy {
       this.currentQueueType = 'discord';
       
       // Usar o DiscordService para entrar na fila Discord
-      const role = data.preferences?.primaryLane || 'fill';
-      const success = this.discordService.joinDiscordQueue(role, data.player.summonerName || 'Unknown', {
-        gameName: data.player.gameName || '',
-        tagLine: data.player.tagLine || ''
-      });
+      const primaryLane = data.preferences?.primaryLane || 'fill';
+      const secondaryLane = data.preferences?.secondaryLane || 'fill';
+      const success = this.discordService.joinDiscordQueue(
+        primaryLane, 
+        secondaryLane,
+        data.player.summonerName || 'Unknown', 
+        {
+          gameName: data.player.gameName || '',
+          tagLine: data.player.tagLine || ''
+        }
+      );
       
       if (success) {
         this.addNotification('success', 'Na Fila Discord', 'Você entrou na fila Discord!');

@@ -284,6 +284,13 @@ export class MatchmakingService {
         preferences: preferences
       };
 
+      console.log('🔍 [Matchmaking] Preferências do jogador:', {
+        receivedPreferences: preferences,
+        finalPreferences: queuedPlayer.preferences,
+        primaryLane: queuedPlayer.preferences?.primaryLane,
+        secondaryLane: queuedPlayer.preferences?.secondaryLane
+      });
+
       this.queue.push(queuedPlayer);
 
       // Persistir entrada na fila no banco
@@ -1180,6 +1187,13 @@ export class MatchmakingService {
         queuePosition: this.queue.length + 1,
         preferences: requestData.preferences || { primaryLane: 'fill', secondaryLane: 'fill' }
       };
+
+      console.log('🔍 [Matchmaking] Preferências do jogador:', {
+        receivedPreferences: requestData.preferences,
+        finalPreferences: queuedPlayer.preferences,
+        primaryLane: queuedPlayer.preferences?.primaryLane,
+        secondaryLane: queuedPlayer.preferences?.secondaryLane
+      });
 
       this.queue.push(queuedPlayer);
 

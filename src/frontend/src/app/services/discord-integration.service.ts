@@ -196,7 +196,7 @@ export class DiscordIntegrationService {
   }
 
   // Entrar na fila Discord
-  joinDiscordQueue(role: string, username: string, lcuData?: {gameName: string, tagLine: string}) {
+  joinDiscordQueue(primaryLane: string, secondaryLane: string, username: string, lcuData?: {gameName: string, tagLine: string}) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       console.error('❌ WebSocket não conectado');
       return false;
@@ -249,6 +249,10 @@ export class DiscordIntegrationService {
         gameName: discordGameName,
         tagLine: discordTagLine
       },
+      lanes: {
+        primary: primaryLane,
+        secondary: secondaryLane
+      },
       usingDiscordData: true
     });
 
@@ -260,8 +264,8 @@ export class DiscordIntegrationService {
         tagLine: discordTagLine,   // Usar dados do Discord
         lcuData: lcuData, // Manter dados do LCU para verificação
         preferences: {
-          primaryLane: role,
-          secondaryLane: role
+          primaryLane: primaryLane,
+          secondaryLane: secondaryLane
         }
       }
     };
