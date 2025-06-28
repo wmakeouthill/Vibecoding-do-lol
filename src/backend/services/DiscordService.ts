@@ -164,7 +164,14 @@ export class DiscordService {
       return false;
     }
 
-    console.log('🔑 [DiscordService] Token fornecido, tentando conectar...');
+    // Validar formato do token
+    if (!token.match(/^[A-Za-z0-9_-]{23,28}\.[A-Za-z0-9_-]{6,7}\.[A-Za-z0-9_-]{27,}$/)) {
+      console.error('❌ [DiscordService] Formato de token inválido. O token deve ter o formato correto do Discord Bot.');
+      console.error('💡 Dica: Verifique se você copiou o token correto do Discord Developer Portal');
+      return false;
+    }
+
+    console.log('🔑 [DiscordService] Token fornecido, validando formato...');
 
     try {
       // Se já está conectado, desconectar antes de trocar o token
@@ -186,11 +193,43 @@ export class DiscordService {
       
       this.botToken = token;
       console.log('🔐 [DiscordService] Tentando login com token...');
-      await this.client.login(token);
+      
+      // Tentar conectar com timeout
+      const loginPromise = this.client.login(token);
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Timeout ao conectar ao Discord')), 10000);
+      });
+      
+      await Promise.race([loginPromise, timeoutPromise]);
+      
       console.log('✅ [DiscordService] Discord Bot inicializado com sucesso');
+      console.log('🎮 [DiscordService] Bot conectado como:', this.client.user?.tag);
+      console.log('🏠 [DiscordService] Servidores conectados:', this.client.guilds.cache.size);
+      
       return true;
-    } catch (error) {
-      console.error('❌ [DiscordService] Erro ao inicializar Discord Bot:', error);
+    } catch (error: any) {
+      console.error('❌ [DiscordService] Erro ao inicializar Discord Bot:', error.message);
+      
+      // Dar dicas específicas baseadas no erro
+      if (error.code === 'TokenInvalid') {
+        console.error('🔧 [DiscordService] SOLUÇÃO:');
+        console.error('   1. Vá para https://discord.com/developers/applications');
+        console.error('   2. Selecione sua aplicação');
+        console.error('   3. Vá em "Bot" → "Reset Token"');
+        console.error('   4. Copie o novo token');
+        console.error('   5. Cole no app e salve');
+      } else if (error.code === 'DisallowedIntents') {
+        console.error('🔧 [DiscordService] SOLUÇÃO:');
+        console.error('   1. Vá para https://discord.com/developers/applications');
+        console.error('   2. Selecione sua aplicação → "Bot"');
+        console.error('   3. Ative "Server Members Intent"');
+        console.error('   4. Salve as alterações');
+      } else if (error.message.includes('Timeout')) {
+        console.error('🔧 [DiscordService] SOLUÇÃO:');
+        console.error('   1. Verifique sua conexão com a internet');
+        console.error('   2. Tente novamente em alguns segundos');
+      }
+      
       return false;
     }
   }
@@ -201,8 +240,11 @@ export class DiscordService {
       console.log(`👤 ${newState.member.user.username} entrou no canal de matchmaking`);
       this.checkUserForQueue(newState.member.user);
       
-      // Enviar lista atualizada de usuários no canal
-      await this.broadcastUsersInChannel();
+      // Aguardar um pouco para garantir que o estado foi atualizado
+      setTimeout(async () => {
+        console.log(`📡 [VOICE_STATE] Broadcast após entrada de ${newState.member.user.username}`);
+        await this.broadcastUsersInChannel();
+      }, 1000);
     }
     
     // Usuário saiu do canal
@@ -210,8 +252,11 @@ export class DiscordService {
       console.log(`👋 ${oldState.member.user.username} saiu do canal de matchmaking`);
       this.removeFromQueue(oldState.member.user.id);
       
-      // Enviar lista atualizada de usuários no canal
-      await this.broadcastUsersInChannel();
+      // Aguardar um pouco para garantir que o estado foi atualizado
+      setTimeout(async () => {
+        console.log(`📡 [VOICE_STATE] Broadcast após saída de ${oldState.member.user.username}`);
+        await this.broadcastUsersInChannel();
+      }, 1000);
     }
   }
 
@@ -275,7 +320,7 @@ export class DiscordService {
       linkedNickname
     });
 
-    console.log(`🎯 ${displayName} entrou na fila como ${role} (${this.queue.size}/10)`);
+    console.log(`🎮 ${displayName} entrou na fila como ${role} (${this.queue.size}/10)`);
     
     this.broadcastQueueUpdate();
     
@@ -770,14 +815,32 @@ export class DiscordService {
   isDiscordConnected(): boolean {
     const clientReady = this.client?.user !== undefined;
     const isConnected = this.isConnected;
+    const hasToken = !!this.botToken;
     const finalStatus = isConnected && clientReady;
     
-    console.log(`🔍 [DiscordService] Status de conexão:`, {
+    console.log(`🔍 [DiscordService] Status de conexão detalhado:`, {
       isConnected,
       clientReady,
+      hasToken,
       finalStatus,
-      botUsername: this.client?.user?.tag || 'N/A'
+      botUsername: this.client?.user?.tag || 'N/A',
+      clientExists: !!this.client,
+      userExists: !!this.client?.user,
+      tokenExists: hasToken
     });
+    
+    // Se não está conectado, dar dicas sobre o problema
+    if (!finalStatus) {
+      if (!hasToken) {
+        console.log('❌ [DiscordService] Problema: Token não configurado');
+      } else if (!this.client) {
+        console.log('❌ [DiscordService] Problema: Client não inicializado');
+      } else if (!clientReady) {
+        console.log('❌ [DiscordService] Problema: Client não está pronto (user não definido)');
+      } else if (!isConnected) {
+        console.log('❌ [DiscordService] Problema: Flag isConnected é false');
+      }
+    }
     
     return finalStatus;
   }
@@ -865,21 +928,65 @@ export class DiscordService {
 
     console.log(`✅ [DEBUG] Canal encontrado: ${matchmakingChannel.name}`);
 
-    const voiceChannel = matchmakingChannel as any;
-    const members = voiceChannel.members;
+    // Tentar buscar membros do canal de forma mais robusta
+    let members: any = null;
     
-    if (!members) {
-      console.log('❌ [DEBUG] Members não disponível no canal');
+    try {
+      // Método 1: Tentar acessar members diretamente
+      const voiceChannel = matchmakingChannel as any;
+      if (voiceChannel.members && voiceChannel.members.size > 0) {
+        members = voiceChannel.members;
+        console.log(`✅ [DEBUG] Members encontrados via cache: ${members.size}`);
+      } else {
+        console.log('⚠️ [DEBUG] Cache vazia, tentando buscar da API...');
+        
+        // Método 2: Tentar buscar via API
+        try {
+          await guild.members.fetch();
+          console.log('✅ [DEBUG] Cache de membros atualizada via API');
+          
+          // Tentar novamente após atualizar cache
+          if (voiceChannel.members && voiceChannel.members.size > 0) {
+            members = voiceChannel.members;
+            console.log(`✅ [DEBUG] Members encontrados após atualização: ${members.size}`);
+          }
+        } catch (fetchError) {
+          console.error('❌ [DEBUG] Erro ao buscar membros via API:', fetchError);
+        }
+      }
+      
+      // Método 3: Se ainda não funcionou, tentar buscar via guild.members
+      if (!members || members.size === 0) {
+        console.log('⚠️ [DEBUG] Tentando método alternativo via guild.members...');
+        const allMembers = guild.members.cache;
+        const membersInChannel: any[] = [];
+        
+        for (const member of allMembers.values()) {
+          if (member.voice.channel && member.voice.channel.id === matchmakingChannel.id) {
+            membersInChannel.push(member);
+          }
+        }
+        
+        if (membersInChannel.length > 0) {
+          console.log(`✅ [DEBUG] Members encontrados via guild.members: ${membersInChannel.length}`);
+          members = new Map();
+          membersInChannel.forEach(member => {
+            members.set(member.id, member);
+          });
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ [DEBUG] Erro ao buscar membros do canal:', error);
       return [];
     }
 
-    console.log(`🔍 [DEBUG] Members encontrados: ${members.size}`);
-
-    // Se não há membros na cache, tentar buscar da API
-    if (members.size === 0) {
-      console.log('⚠️ [DEBUG] Cache vazia, tentando buscar da API...');
-      this.refreshChannelMembers(matchmakingChannel.id);
+    if (!members || members.size === 0) {
+      console.log('❌ [DEBUG] Nenhum membro encontrado no canal');
+      return [];
     }
+
+    console.log(`🔍 [DEBUG] Processando ${members.size} membros do canal`);
 
     const usersInChannel = [];
     
@@ -919,11 +1026,18 @@ export class DiscordService {
       if (!guild) return;
 
       console.log('🔄 [DEBUG] Atualizando cache de membros...');
+      
+      // Buscar todos os membros da guild
       await guild.members.fetch();
       console.log('✅ [DEBUG] Cache de membros atualizada');
       
-      // Remover o setTimeout que estava causando broadcast frequente
-      // O broadcast será feito apenas quando necessário
+      // Buscar especificamente o canal
+      const channel = guild.channels.cache.get(channelId);
+      if (channel && channel.type === ChannelType.GuildVoice) {
+        const voiceChannel = channel as any;
+        console.log(`🔍 [DEBUG] Canal ${channel.name} tem ${voiceChannel.members?.size || 0} membros após atualização`);
+      }
+      
     } catch (error) {
       console.error('❌ [DEBUG] Erro ao atualizar cache de membros:', error);
     }

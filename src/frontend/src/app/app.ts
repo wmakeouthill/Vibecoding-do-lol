@@ -90,7 +90,10 @@ export class App implements OnInit, OnDestroy {
   // Status do Discord
   discordStatus = {
     isConnected: false,
-    botUsername: ''
+    botUsername: '',
+    queueSize: 0,
+    activeMatches: 0,
+    inChannel: false
   };
 
   private destroy$ = new Subject<void>();  constructor(
@@ -1915,66 +1918,161 @@ export class App implements OnInit, OnDestroy {
     }
   }
   updateDiscordBotToken(): void {
-    if (this.settingsForm.discordBotToken) {
-      this.apiService.setDiscordBotToken(this.settingsForm.discordBotToken).subscribe({
-        next: () => {
-          localStorage.setItem('discordBotToken', this.settingsForm.discordBotToken);
-          this.addNotification('success', 'Discord Bot Configurado', 'Token do Discord Bot foi configurado com sucesso.');
+    const token = this.settingsForm.discordBotToken?.trim();
+    
+    if (!token) {
+      this.addNotification('error', 'Token Vazio', 'Por favor, insira um token do Discord Bot');
+      return;
+    }
+
+    // Validar formato do token do Discord Bot
+    const tokenRegex = /^[A-Za-z0-9_-]{23,28}\.[A-Za-z0-9_-]{6,7}\.[A-Za-z0-9_-]{27,}$/;
+    if (!tokenRegex.test(token)) {
+      this.addNotification('error', 'Token Inválido', 
+        'Formato de token incorreto. Verifique se você copiou o token correto do Discord Developer Portal.');
+      return;
+    }
+
+    console.log('🤖 Salvando token do Discord Bot...');
+    
+    this.apiService.setDiscordBotToken(token).subscribe({
+      next: (response) => {
+        console.log('✅ Token do Discord salvo:', response);
+        
+        if (response.success) {
+          this.addNotification('success', 'Token Salvo', 'Token do Discord Bot salvo com sucesso!');
+          
           // Atualizar status do Discord
           this.checkDiscordStatus();
-        },
-        error: (error: HttpErrorResponse) => {
-          this.addNotification('error', 'Erro ao Configurar Bot', `Não foi possível configurar o Discord Bot: ${error.message}`);
+          
+          // Limpar campo após salvar
+          this.settingsForm.discordBotToken = '';
+        } else {
+          this.addNotification('error', 'Erro', response.error || 'Falha ao salvar token');
         }
-      });
-    } else {
-      this.addNotification('warning', 'Token Ausente', 'Por favor, insira o token do Discord Bot.');
-    }
+      },
+      error: (error) => {
+        console.error('❌ Erro ao salvar token do Discord:', error);
+        
+        let errorMessage = 'Erro ao salvar token';
+        if (error.message?.includes('TokenInvalid')) {
+          errorMessage = 'Token inválido. Verifique se você copiou o token correto do Discord Developer Portal.';
+        } else if (error.message?.includes('DisallowedIntents')) {
+          errorMessage = 'Bot sem permissões. Ative "Server Members Intent" no Discord Developer Portal.';
+        }
+        
+        this.addNotification('error', 'Erro do Discord', errorMessage);
+      }
+    });
   }
 
   checkDiscordStatus(): void {
-    // Verificar se o WebSocket está conectado
-    if (!this.discordService.isConnected()) {
-      console.log('🔍 [App] Discord não conectado, forçando reconexão...');
-      this.discordService.forceReconnect();
-      
-      // Aguardar um pouco e verificar novamente
-      setTimeout(() => {
-        this.discordStatus = {
-          isConnected: this.discordService.isConnected(),
-          botUsername: this.discordService.getCurrentDiscordUser()?.username || 'Discord Bot'
+    console.log('🔍 [App] Verificando status do Discord via API HTTP...');
+    
+    this.apiService.getDiscordStatus().subscribe({
+      next: (response) => {
+        console.log('📡 [App] Status do Discord recebido via API:', response);
+        
+        const newStatus = {
+          isConnected: response.isConnected || false,
+          botUsername: response.botUsername || 'Não conectado',
+          queueSize: response.queueSize || 0,
+          activeMatches: response.activeMatches || 0,
+          inChannel: response.inChannel || false
         };
-        console.log('🔍 [App] Status Discord após reconexão:', this.discordStatus);
-      }, 2000);
-      return;
-    }
-    
-    // Usar o DiscordIntegrationService em vez do HTTP
-    this.discordStatus = {
-      isConnected: this.discordService.isConnected(),
-      botUsername: this.discordService.getCurrentDiscordUser()?.username || 'Discord Bot'
-    };
-    
-    console.log('🔍 [App] Status Discord atualizado:', this.discordStatus);
+        
+        // Verificar se houve mudança significativa
+        const statusChanged = 
+          this.discordStatus.isConnected !== newStatus.isConnected ||
+          this.discordStatus.botUsername !== newStatus.botUsername;
+        
+        if (statusChanged) {
+          console.log('🔄 [App] Status Discord mudou:', {
+            old: this.discordStatus,
+            new: newStatus
+          });
+        }
+        
+        this.discordStatus = newStatus;
+        console.log('✅ [App] Status Discord atualizado:', this.discordStatus);
+
+        // Dar feedback específico baseado no status
+        if (this.discordStatus.isConnected) {
+          console.log('✅ [App] Discord conectado:', this.discordStatus.botUsername);
+          
+          if (this.discordStatus.inChannel) {
+            this.addNotification('success', 'Discord Pronto', 
+              `Bot conectado como ${this.discordStatus.botUsername}. Entre no canal #lol-matchmaking para usar a fila!`);
+          } else {
+            this.addNotification('info', 'Discord Conectado', 
+              `Bot conectado como ${this.discordStatus.botUsername}. Entre no canal #lol-matchmaking para ativar a funcionalidade.`);
+          }
+        } else {
+          console.log('❌ [App] Discord não conectado');
+          
+          // Verificar se há token salvo
+          this.apiService.getConfigSettings().subscribe({
+            next: (config) => {
+              if (config.discordBotToken) {
+                this.addNotification('warning', 'Discord Desconectado', 
+                  'Bot configurado mas não conectado. Verifique se o token está correto e se o bot tem as permissões necessárias.');
+              } else {
+                this.addNotification('info', 'Discord Não Configurado', 
+                  'Configure o token do Discord Bot nas configurações para usar a funcionalidade Discord.');
+              }
+            },
+            error: () => {
+              this.addNotification('info', 'Discord Não Configurado', 
+                'Configure o token do Discord Bot nas configurações para usar a funcionalidade Discord.');
+            }
+          });
+        }
+      },
+      error: (error) => {
+        console.error('❌ [App] Erro ao verificar status do Discord:', error);
+        
+        this.discordStatus = {
+          isConnected: false,
+          botUsername: 'Erro de conexão',
+          queueSize: 0,
+          activeMatches: 0,
+          inChannel: false
+        };
+
+        let errorMessage = 'Erro ao verificar status do Discord';
+        if (error.message?.includes('TokenInvalid')) {
+          errorMessage = 'Token do Discord inválido. Configure um token válido nas configurações.';
+        } else if (error.message?.includes('DisallowedIntents')) {
+          errorMessage = 'Bot sem permissões. Ative "Server Members Intent" no Discord Developer Portal.';
+        }
+        
+        this.addNotification('error', 'Erro do Discord', errorMessage);
+      }
+    });
   }
 
   // Adicionar listener para atualizações automáticas do Discord
   private setupDiscordStatusListener(): void {
-    this.discordService.onConnectionChange().subscribe(isConnected => {
-      console.log('🔗 [App] Status Discord alterado:', isConnected);
-      this.discordStatus = {
-        isConnected: isConnected,
-        botUsername: this.discordService.getCurrentDiscordUser()?.username || 'Discord Bot'
-      };
-    });
+    // Verificação inicial do status do Discord via API HTTP
+    this.checkDiscordStatus();
     
-    // Verificação periódica do status (a cada 30 segundos)
+    // Verificação periódica do status (a cada 30 segundos) via API HTTP
     setInterval(() => {
-      if (!this.discordService.isConnected()) {
-        console.log('🔍 [App] Verificação periódica: Discord desconectado, tentando reconectar...');
-        this.discordService.forceReconnect();
-      }
+      console.log('🔄 [App] Verificação periódica do status do Discord...');
+      this.checkDiscordStatus();
     }, 30000);
+    
+    // Listener para mudanças via WebSocket (apenas para notificações, não para sobrescrever status)
+    this.discordService.onConnectionChange().subscribe(isConnected => {
+      console.log('🔗 [App] Status Discord alterado via WebSocket:', isConnected);
+      
+      // Só atualizar se o status mudou significativamente E se a API HTTP confirmar
+      if (this.discordStatus.isConnected !== isConnected) {
+        console.log('🔄 [App] Mudança detectada via WebSocket, verificando via API HTTP...');
+        // Fazer uma verificação rápida via API HTTP para confirmar
+        this.checkDiscordStatus();
+      }
+    });
   }
 
   // Electron window controls

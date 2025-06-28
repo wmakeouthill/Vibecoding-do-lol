@@ -476,14 +476,39 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   isUserInQueue(user: any): boolean {
     if (!user.linkedNickname) return false;
     
+    // Criar o nome completo do LoL (gameName#tagLine)
     const userSummonerName = `${user.linkedNickname.gameName}#${user.linkedNickname.tagLine}`;
     const playersList = this.queueStatus.playersInQueueList;
     
-    if (!playersList) return false;
+    if (!playersList || playersList.length === 0) return false;
     
-    return playersList.some(player => 
-      player.summonerName === userSummonerName
-    );
+    console.log(`🔍 [DEBUG] Verificando se usuário está na fila:`, {
+      userSummonerName,
+      playersInQueue: playersList.length,
+      players: playersList.map(p => p.summonerName)
+    });
+    
+    // Comparar com diferentes formatos possíveis
+    const isInQueue = playersList.some(player => {
+      // Comparar summonerName completo
+      if (player.summonerName === userSummonerName) {
+        console.log(`✅ [DEBUG] Usuário encontrado na fila: ${userSummonerName}`);
+        return true;
+      }
+      
+      // Comparar usando summonerName e tagLine separadamente
+      if (player.tagLine) {
+        const playerSummonerName = `${player.summonerName}#${player.tagLine}`;
+        if (playerSummonerName === userSummonerName) {
+          console.log(`✅ [DEBUG] Usuário encontrado na fila (formato separado): ${userSummonerName}`);
+          return true;
+        }
+      }
+      
+      return false;
+    });
+    
+    return isInQueue;
   }
 
   inviteToLink(user: any): void {
