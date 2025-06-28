@@ -1,62 +1,81 @@
 require('dotenv').config();
 const mysql = require('mysql2/promise');
 
-async function clearQueue() {
+// Configuração do banco de dados
+const dbConfig = {
+  host: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT || '3306'),
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME || 'lol_matchmaking',
+  ssl: {
+    rejectUnauthorized: false
+  }
+};
+
+async function clearCorruptedQueueData() {
   let connection;
   
   try {
-    // Configuração do banco usando variáveis de ambiente
-    connection = await mysql.createConnection({
-      host: process.env.DB_HOST || 'localhost',
-      user: process.env.DB_USER || 'root',
-      password: process.env.DB_PASSWORD || '',
-      database: process.env.DB_NAME || 'lol_matchmaking'
-    });
-
-    console.log('🔍 Conectado ao banco de dados');
-
-    // Verificar quantos jogadores estão na fila
-    const [countResult] = await connection.execute('SELECT COUNT(*) as count FROM queue_players WHERE is_active = 1');
-    const currentCount = countResult[0].count;
+    console.log('🔧 Conectando ao banco de dados...');
+    connection = await mysql.createConnection(dbConfig);
     
-    console.log(`📊 Jogadores atualmente na fila: ${currentCount}`);
-
-    if (currentCount > 0) {
-      // Mostrar jogadores que serão removidos
-      const [playersResult] = await connection.execute(`
-        SELECT qp.*, p.summoner_name 
-        FROM queue_players qp 
-        LEFT JOIN players p ON qp.player_id = p.id 
-        WHERE qp.is_active = 1
-      `);
+    console.log('✅ Conectado ao banco de dados');
+    
+    // Verificar dados corrompidos na fila
+    const [queuePlayers] = await connection.execute(`
+      SELECT * FROM queue_players 
+      WHERE is_active = 1
+    `);
+    
+    console.log(`📊 Encontrados ${queuePlayers.length} jogadores na fila`);
+    
+    const now = new Date();
+    const corruptedPlayers = [];
+    
+    for (const player of queuePlayers) {
+      const joinTime = new Date(player.join_time);
+      const timeInQueue = now.getTime() - joinTime.getTime();
+      const timeInQueueMinutes = Math.floor(timeInQueue / (1000 * 60));
       
-      console.log('🗑️ Jogadores que serão removidos:');
-      playersResult.forEach((player, index) => {
-        console.log(`${index + 1}. ID: ${player.player_id}, Nome: ${player.summoner_name || 'N/A'}, Entrada: ${player.join_time}`);
-      });
-
-      // Limpar a fila (marcar todos como inativos)
-      const [updateResult] = await connection.execute('UPDATE queue_players SET is_active = 0');
-      
-      console.log(`✅ Fila limpa! ${updateResult.affectedRows} jogadores removidos da fila`);
-      
-      // Verificar se foi limpo
-      const [verifyResult] = await connection.execute('SELECT COUNT(*) as count FROM queue_players WHERE is_active = 1');
-      const remainingCount = verifyResult[0].count;
-      
-      console.log(`📊 Jogadores restantes na fila: ${remainingCount}`);
-      
-      if (remainingCount === 0) {
-        console.log('🎉 Fila completamente limpa!');
-      } else {
-        console.log('⚠️ Ainda há jogadores na fila');
+      // Verificar se os dados estão corrompidos
+      if (timeInQueue < 0 || timeInQueue > (3 * 60 * 60 * 1000)) {
+        corruptedPlayers.push({
+          id: player.id,
+          player_id: player.player_id,
+          summoner_name: player.summoner_name,
+          join_time: player.join_time,
+          timeInQueueMinutes: timeInQueueMinutes,
+          reason: timeInQueue < 0 ? 'Tempo negativo' : 'Muito antigo'
+        });
       }
-    } else {
-      console.log('✅ Fila já está vazia!');
     }
-
+    
+    if (corruptedPlayers.length === 0) {
+      console.log('✅ Nenhum dado corrompido encontrado na fila');
+      return;
+    }
+    
+    console.log(`⚠️ Encontrados ${corruptedPlayers.length} jogadores com dados corrompidos:`);
+    corruptedPlayers.forEach(player => {
+      console.log(`   - ${player.summoner_name}: ${player.timeInQueueMinutes}min (${player.reason})`);
+    });
+    
+    // Limpar automaticamente
+    console.log('🔄 Removendo jogadores com dados corrompidos...');
+    
+    for (const player of corruptedPlayers) {
+      await connection.execute(
+        'UPDATE queue_players SET is_active = 0 WHERE id = ?',
+        [player.id]
+      );
+      console.log(`✅ Removido: ${player.summoner_name}`);
+    }
+    
+    console.log(`✅ Limpeza concluída: ${corruptedPlayers.length} jogadores removidos`);
+    
   } catch (error) {
-    console.error('❌ Erro ao limpar fila:', error);
+    console.error('❌ Erro:', error);
   } finally {
     if (connection) {
       await connection.end();
@@ -65,11 +84,5 @@ async function clearQueue() {
   }
 }
 
-// Executar o script
-clearQueue().then(() => {
-  console.log('🏁 Script concluído');
-  process.exit(0);
-}).catch(error => {
-  console.error('💥 Erro fatal:', error);
-  process.exit(1);
-}); 
+// Executar
+clearCorruptedQueueData(); 

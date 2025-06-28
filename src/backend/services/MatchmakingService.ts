@@ -114,18 +114,28 @@ export class MatchmakingService {
       for (const player of this.queue) {
         const timeInQueue = now.getTime() - player.joinTime.getTime();
         const timeInQueueMinutes = Math.floor(timeInQueue / (1000 * 60));
-        const isWebSocketDead = player.websocket && 
-          (player.websocket.readyState === WebSocket.CLOSED || 
-           player.websocket.readyState === WebSocket.CLOSING);
+        
+        // Verificar se WebSocket está morto ou null
+        const isWebSocketDead = !player.websocket || 
+          player.websocket.readyState === WebSocket.CLOSED || 
+          player.websocket.readyState === WebSocket.CLOSING;
 
         // Log do estado do jogador
-        console.log(`👤 ${player.summonerName}: ${timeInQueueMinutes}min na fila, WebSocket: ${player.websocket ? 'ativo' : 'null'}`);
+        console.log(`👤 ${player.summonerName}: ${timeInQueueMinutes}min na fila, WebSocket: ${player.websocket ? 'ativo' : 'null/inativo'}`);
 
         // Remover se:
-        // 1. WebSocket está morto (jogador desconectou) OU
-        // 2. Jogador está na fila há mais tempo que o timeout (3 horas)
-        if (isWebSocketDead || timeInQueue > timeoutMs) {
-          const reason = isWebSocketDead ? 'WebSocket inativo' : 'Timeout de 3 horas';
+        // 1. WebSocket está morto ou null (jogador desconectou) OU
+        // 2. Jogador está na fila há mais tempo que o timeout (2 horas) OU
+        // 3. Tempo negativo (dados corrompidos)
+        if (isWebSocketDead || timeInQueue > timeoutMs || timeInQueue < 0) {
+          let reason = '';
+          if (timeInQueue < 0) {
+            reason = 'Dados de tempo corrompidos';
+          } else if (isWebSocketDead) {
+            reason = 'WebSocket inativo';
+          } else {
+            reason = 'Timeout de 2 horas';
+          }
           console.log(`⚠️ Marcando ${player.summonerName} para remoção: ${reason}`);
           playersToRemove.push(player);
         }
@@ -181,12 +191,34 @@ export class MatchmakingService {
       const queuePlayers = await this.dbManager.getActiveQueuePlayers();
       
       for (const dbPlayer of queuePlayers) {
+        // Validar dados de tempo
+        const joinTime = new Date(dbPlayer.join_time);
+        const now = new Date();
+        const timeInQueue = now.getTime() - joinTime.getTime();
+        
+        // Se o tempo for negativo ou muito antigo (mais de 3 horas), pular este jogador
+        if (timeInQueue < 0 || timeInQueue > (3 * 60 * 60 * 1000)) {
+          console.log(`⚠️ [Matchmaking] Jogador com dados de tempo inválidos: ${dbPlayer.summoner_name}`);
+          console.log(`   - join_time: ${dbPlayer.join_time}`);
+          console.log(`   - timeInQueue: ${Math.floor(timeInQueue / (1000 * 60))}min`);
+          console.log(`   - Removendo da fila persistente...`);
+          
+          // Remover da fila persistente
+          try {
+            await this.dbManager.removePlayerFromQueue(dbPlayer.player_id);
+            console.log(`✅ [Matchmaking] Jogador removido da fila persistente: ${dbPlayer.summoner_name}`);
+          } catch (error) {
+            console.error(`❌ [Matchmaking] Erro ao remover jogador da fila persistente:`, error);
+          }
+          continue;
+        }
+        
         const queuedPlayer: QueuedPlayer = {
           id: dbPlayer.player_id,
           summonerName: dbPlayer.summoner_name,
           region: dbPlayer.region,
           currentMMR: dbPlayer.custom_lp || 0,
-          joinTime: new Date(dbPlayer.join_time),
+          joinTime: joinTime,
           websocket: null as any, // WebSocket será atualizado quando o jogador reconectar
           queuePosition: dbPlayer.queue_position,
           preferences: {
@@ -196,11 +228,12 @@ export class MatchmakingService {
         };
         
         this.queue.push(queuedPlayer);
+        console.log(`📊 [Matchmaking] Jogador carregado da fila persistente: ${dbPlayer.summoner_name} (${Math.floor(timeInQueue / (1000 * 60))}min na fila)`);
       }
       
-      console.log(`📊 Carregados ${this.queue.length} jogadores da fila persistente`);
+      console.log(`📊 [Matchmaking] Carregados ${this.queue.length} jogadores da fila persistente`);
     } catch (error) {
-      console.error('❌ Erro ao carregar fila do banco:', error);
+      console.error('❌ [Matchmaking] Erro ao carregar fila do banco:', error);
     }
   }
 

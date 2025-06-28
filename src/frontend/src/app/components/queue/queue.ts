@@ -67,6 +67,12 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     this.setupDiscordListeners();
     this.checkDiscordConnection();
     
+    // Verificar se o usuário já está na fila quando reconecta
+    this.checkIfUserInQueue();
+    
+    // Iniciar verificação periódica do estado da fila
+    this.startQueueStateCheck();
+    
     // Show dev tools for special users
     this.showDevTools = this.isSpecialUser();
   }
@@ -293,12 +299,23 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     this.discordService.onConnectionChange().subscribe((connected) => {
       console.log('🔗 [Queue] Status de conexão Discord mudou:', connected);
       this.checkDiscordConnection();
+      
+      // Verificar estado da fila quando reconectar
+      if (connected) {
+        setTimeout(() => {
+          this.checkIfUserInQueue();
+          this.checkUserInDiscordQueue();
+        }, 1000);
+      }
     });
 
     // Escutar atualizações de usuários
     this.discordService.onUsersUpdate().subscribe((users) => {
       console.log('👥 [Queue] Usuários Discord atualizados:', users.length);
       this.discordUsersOnline = users;
+      
+      // Verificar se o usuário está na fila quando a lista de usuários é atualizada
+      this.checkUserInDiscordQueue();
     });
 
     // Escutar confirmação de entrada na fila
@@ -324,6 +341,9 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     this.autoRefreshInterval = setInterval(() => {
       if (this.discordService.isDiscordBackendConnected()) {
         this.discordService.requestChannelStatus();
+        // Verificar estado da fila periodicamente
+        this.checkIfUserInQueue();
+        this.checkUserInDiscordQueue();
       }
     }, 30000); // Verificar a cada 30 segundos
   }
@@ -531,13 +551,13 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   refreshQueueData(): void {
     console.log('🔄 [Queue] Atualizando dados da fila...');
     
-    // Solicitar status da fila
-    if (this.discordService.isConnected()) {
-      this.discordService.requestDiscordStatus();
-    }
+    // Solicitar status atualizado da fila
+    this.discordService.requestDiscordStatus();
     
-    // Emitir evento para o componente pai atualizar a fila
-    // (se necessário, você pode adicionar um Output para isso)
+    // Verificar se o usuário ainda está na fila após atualização
+    setTimeout(() => {
+      this.checkIfUserInQueue();
+    }, 500);
   }
 
   trackByPlayerId(index: number, player: any): string {
@@ -657,5 +677,71 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       preferences: player.preferences,
       fullPlayer: player
     });
+  }
+
+  // Novo método: Verificar se o usuário já está na fila
+  private checkIfUserInQueue() {
+    if (!this.currentPlayer) return;
+    
+    console.log('🔍 [Queue] Verificando se usuário está na fila...');
+    
+    // Verificar se o usuário está na lista de jogadores da fila
+    const userSummonerName = this.currentPlayer.summonerName;
+    const userTagLine = this.currentPlayer.tagLine;
+    const userFullName = userTagLine ? `${userSummonerName}#${userTagLine}` : userSummonerName;
+    
+    const playersInQueue = this.queueStatus.playersInQueueList || [];
+    const isUserInQueue = playersInQueue.some(player => {
+      const playerFullName = player.tagLine ? `${player.summonerName}#${player.tagLine}` : player.summonerName;
+      return playerFullName === userFullName || player.summonerName === userSummonerName;
+    });
+    
+    if (isUserInQueue && !this.isInQueue) {
+      console.log('✅ [Queue] Usuário encontrado na fila, atualizando estado...');
+      this.isInQueue = true;
+      this.queueTimer = 0; // Resetar timer
+      this.startTimer();
+    } else if (!isUserInQueue && this.isInQueue) {
+      console.log('❌ [Queue] Usuário não está mais na fila, atualizando estado...');
+      this.isInQueue = false;
+      this.stopTimer();
+      this.queueTimer = 0;
+    }
+  }
+
+  // Novo método: Verificar estado da fila periodicamente
+  private startQueueStateCheck() {
+    // Verificar a cada 10 segundos se o usuário está na fila
+    setInterval(() => {
+      if (this.discordService.isConnected()) {
+        this.checkIfUserInQueue();
+      }
+    }, 10000);
+  }
+
+  // Novo método: Verificar se o usuário está na fila baseado nos dados do Discord
+  private checkUserInDiscordQueue() {
+    if (!this.currentPlayer || !this.discordService.isConnected()) return;
+    
+    const userSummonerName = this.currentPlayer.summonerName;
+    const userTagLine = this.currentPlayer.tagLine;
+    const userFullName = userTagLine ? `${userSummonerName}#${userTagLine}` : userSummonerName;
+    
+    // Verificar se o usuário está na lista de participantes da fila Discord
+    const queueParticipants = this.discordService.getQueueParticipants();
+    const isInDiscordQueue = queueParticipants.some(participant => {
+      if (participant.linkedNickname) {
+        const participantFullName = `${participant.linkedNickname.gameName}#${participant.linkedNickname.tagLine}`;
+        return participantFullName === userFullName;
+      }
+      return false;
+    });
+    
+    if (isInDiscordQueue && !this.isInQueue) {
+      console.log('✅ [Queue] Usuário encontrado na fila Discord, atualizando estado...');
+      this.isInQueue = true;
+      this.queueTimer = 0;
+      this.startTimer();
+    }
   }
 } 
