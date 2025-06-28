@@ -141,6 +141,19 @@ export class App implements OnInit, OnDestroy {
           return;
         }
         
+        // Verificar se é cancelamento de draft
+        if (matchData.type === 'draft_cancelled') {
+          console.log('[WebSocket] Draft cancelado:', matchData);
+          this.showMatchFound = false;
+          this.matchFoundData = null;
+          this.inDraftPhase = false;
+          this.draftData = null;
+          
+          const reason = matchData.reason || 'Draft cancelado';
+          this.addNotification('info', 'Draft Cancelado', reason);
+          return;
+        }
+        
         // Verificar se é início do draft
         if (matchData.phase === 'draft_started') {
           console.log('[WebSocket] Fase de draft iniciada:', matchData);
@@ -182,6 +195,22 @@ export class App implements OnInit, OnDestroy {
 
   exitDraft(): void {
     console.log('🚪 Saindo do draft...');
+    console.log('🔍 Draft data:', this.draftData);
+    
+    // Enviar mensagem de cancelamento de draft para o backend
+    if (this.draftData?.matchId) {
+      console.log('📤 Enviando cancelamento de draft para matchId:', this.draftData.matchId);
+      this.discordService.sendWebSocketMessage({
+        type: 'cancel_draft',
+        data: {
+          matchId: this.draftData.matchId,
+          reason: 'Usuário saiu do draft'
+        }
+      });
+    } else {
+      console.warn('⚠️ Draft data não tem matchId:', this.draftData);
+    }
+    
     this.inDraftPhase = false;
     this.draftData = null;
     this.currentView = 'dashboard';
@@ -201,6 +230,18 @@ export class App implements OnInit, OnDestroy {
 
   onPickBanCancel(): void {
     console.log('❌ Pick & Ban cancelado');
+    
+    // Enviar mensagem de cancelamento de draft para o backend
+    if (this.draftData?.matchId) {
+      this.discordService.sendWebSocketMessage({
+        type: 'cancel_draft',
+        data: {
+          matchId: this.draftData.matchId,
+          reason: 'Draft cancelado pelo usuário'
+        }
+      });
+    }
+    
     this.inDraftPhase = false;
     this.draftData = null;
     this.draftPhase = 'preview';

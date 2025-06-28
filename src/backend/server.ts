@@ -148,6 +148,9 @@ wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
 });
 
 async function handleWebSocketMessage(ws: WebSocket, data: any) {
+  console.log(`📥 [WebSocket] Mensagem recebida: ${data.type}`);
+  console.log(`📥 [WebSocket] Dados completos:`, JSON.stringify(data, null, 2));
+  
   switch (data.type) {
     case 'join_queue':
       await matchmakingService.addPlayerToQueue(ws, data.data);
@@ -294,6 +297,25 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
         ws.send(JSON.stringify({ 
           type: 'error', 
           message: 'Erro ao recusar partida: ' + error.message 
+        }));
+      }
+      break;
+    case 'cancel_draft':
+      console.log('❌ Recebida mensagem cancel_draft:', data.data);
+      try {
+        await matchmakingService.cancelDraft(
+          data.data.matchId,
+          data.data.reason || 'Draft cancelado pelo usuário'
+        );
+        ws.send(JSON.stringify({ 
+          type: 'draft_cancelled', 
+          data: { matchId: data.data.matchId } 
+        }));
+      } catch (error: any) {
+        console.error('❌ Erro ao cancelar draft:', error);
+        ws.send(JSON.stringify({ 
+          type: 'error', 
+          message: 'Erro ao cancelar draft: ' + error.message 
         }));
       }
       break;

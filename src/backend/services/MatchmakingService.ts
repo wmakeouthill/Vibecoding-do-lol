@@ -1169,23 +1169,45 @@ export class MatchmakingService {
 
   // Método para encontrar melhor partida
   private async findBestMatch(): Promise<Match | null> {
-    console.log(`🔍 [Matchmaking] Verificando matchmaking - ${this.queue.length} jogadores na fila`);
-    
     if (this.queue.length < 10) {
-      console.log(`❌ [Matchmaking] Não há jogadores suficientes (${this.queue.length}/10)`);
+      return null;
+    }
+
+    console.log(`🔍 [Matchmaking] Verificando matchmaking - ${this.queue.length} jogadores na fila`);
+
+    // Filtrar jogadores que não acabaram de ter o draft cancelado (cooldown de 30 segundos)
+    const now = Date.now();
+    const cooldownMs = 30000; // 30 segundos de cooldown
+    const eligiblePlayers = this.queue.filter(player => {
+      const draftCancelledAt = (player as any).draftCancelledAt;
+      if (!draftCancelledAt) return true; // Jogador nunca teve draft cancelado
+      
+      const timeSinceCancel = now - draftCancelledAt;
+      const isEligible = timeSinceCancel > cooldownMs;
+      
+      if (!isEligible) {
+        console.log(`⏳ [Matchmaking] ${player.summonerName} ainda em cooldown após cancelamento (${Math.floor(timeSinceCancel / 1000)}s restantes)`);
+      }
+      
+      return isEligible;
+    });
+
+    if (eligiblePlayers.length < 10) {
+      console.log(`⏳ [Matchmaking] Apenas ${eligiblePlayers.length} jogadores elegíveis (cooldown ativo para alguns)`);
       return null;
     }
 
     // Ordenar jogadores por MMR
-    const sortedPlayers = [...this.queue].sort((a, b) => a.currentMMR - b.currentMMR);
-    console.log(`📊 [Matchmaking] Jogadores ordenados por MMR:`, sortedPlayers.map(p => ({ name: p.summonerName, mmr: p.currentMMR })));
+    const sortedPlayers = eligiblePlayers.sort((a, b) => b.currentMMR - a.currentMMR);
     
-    // Dividir em dois times balanceados
+    console.log(`📊 [Matchmaking] Jogadores ordenados por MMR:`, sortedPlayers.map(p => ({ name: p.summonerName, mmr: p.currentMMR })));
+
+    // Formar times balanceados
     const team1: QueuedPlayer[] = [];
     const team2: QueuedPlayer[] = [];
-    
+
     // Distribuir jogadores alternadamente para balancear MMR
-    for (let i = 0; i < sortedPlayers.length && i < 10; i++) {
+    for (let i = 0; i < sortedPlayers.length; i++) {
       if (i % 2 === 0) {
         team1.push(sortedPlayers[i]);
       } else {
@@ -1198,61 +1220,26 @@ export class MatchmakingService {
       team2: team2.map(p => ({ name: p.summonerName, mmr: p.currentMMR }))
     });
 
-    if (team1.length < 5 || team2.length < 5) {
-      console.log(`❌ [Matchmaking] Times incompletos: Team1=${team1.length}, Team2=${team2.length}`);
-      return null;
-    }
-
     // Calcular MMR médio dos times
     const avgMMR1 = team1.reduce((sum, p) => sum + p.currentMMR, 0) / team1.length;
     const avgMMR2 = team2.reduce((sum, p) => sum + p.currentMMR, 0) / team2.length;
     const mmrDifference = Math.abs(avgMMR1 - avgMMR2);
 
-    console.log(`📊 [Matchmaking] MMR médio: Team1=${Math.round(avgMMR1)}, Team2=${Math.round(avgMMR2)}, Diferença=${mmrDifference}`);
+    console.log(`📊 [Matchmaking] MMR médio: Team1=${Math.round(avgMMR1)}, Team2=${Math.round(avgMMR2)}, Diferença=${Math.round(mmrDifference)}`);
 
-    // Critério de balanceamento mais flexível quando há 10 jogadores
-    // Se há exatamente 10 jogadores, permitir diferença maior (até 500 MMR)
-    // Se há mais jogadores, usar critério mais restritivo (até 200 MMR)
-    const maxAllowedDifference = this.queue.length === 10 ? 500 : 200;
-    
-    if (mmrDifference > maxAllowedDifference) {
-      console.log(`❌ [Matchmaking] Diferença de MMR muito alta: ${mmrDifference} > ${maxAllowedDifference}`);
-      
-      // Se há exatamente 10 jogadores e a diferença é alta, tentar uma distribuição diferente
-      if (this.queue.length === 10) {
-        console.log(`🔄 [Matchmaking] Tentando distribuição alternativa para 10 jogadores...`);
-        
-        // Tentar distribuição em serpentina (1,4,5,8,9 vs 2,3,6,7,10)
-        const alternativeTeam1 = [sortedPlayers[0], sortedPlayers[3], sortedPlayers[4], sortedPlayers[7], sortedPlayers[8]];
-        const alternativeTeam2 = [sortedPlayers[1], sortedPlayers[2], sortedPlayers[5], sortedPlayers[6], sortedPlayers[9]];
-        
-        const altAvgMMR1 = alternativeTeam1.reduce((sum, p) => sum + p.currentMMR, 0) / alternativeTeam1.length;
-        const altAvgMMR2 = alternativeTeam2.reduce((sum, p) => sum + p.currentMMR, 0) / alternativeTeam2.length;
-        const altMmrDifference = Math.abs(altAvgMMR1 - altAvgMMR2);
-        
-        console.log(`🔄 [Matchmaking] Distribuição alternativa - MMR médio: Team1=${Math.round(altAvgMMR1)}, Team2=${Math.round(altAvgMMR2)}, Diferença=${altMmrDifference}`);
-        
-        if (altMmrDifference <= maxAllowedDifference) {
-          console.log(`✅ [Matchmaking] Distribuição alternativa aceita!`);
-          team1.length = 0;
-          team2.length = 0;
-          team1.push(...alternativeTeam1);
-          team2.push(...alternativeTeam2);
-        } else {
-          console.log(`❌ [Matchmaking] Distribuição alternativa também não atende aos critérios`);
-          return null;
-        }
-      } else {
-        return null;
-      }
+    // Verificar se a diferença de MMR é aceitável (máximo 500)
+    if (mmrDifference > 500) {
+      console.log(`⚠️ [Matchmaking] Diferença de MMR muito alta (${Math.round(mmrDifference)}), aguardando mais jogadores`);
+      return null;
     }
 
     // Atribuir lanes baseado no MMR
     this.assignLanesByMMR(team1);
     this.assignLanesByMMR(team2);
 
+    // Criar partida
     const match: Match = {
-      id: Date.now(),
+      id: 0, // Será definido quando salvar no banco
       team1,
       team2,
       createdAt: new Date(),
@@ -1822,5 +1809,84 @@ export class MatchmakingService {
       console.error(`❌ [Game] Erro ao finalizar partida ${matchId}:`, error);
       throw error;
     }
+  }
+
+  // Método para cancelar draft e remover partida do banco
+  async cancelDraft(matchId: number, reason: string): Promise<void> {
+    const match = this.activeMatches.get(matchId);
+    if (!match) {
+      console.log(`⚠️ [CancelDraft] Partida ${matchId} não encontrada nas partidas ativas`);
+      return;
+    }
+
+    console.log(`🎉 [CancelDraft] Draft da partida ${matchId} cancelado por ${reason}`);
+    console.log(`🔍 [CancelDraft] Dados da partida:`, {
+      matchId: matchId,
+      matchIdInMatch: match.id,
+      team1Size: match.team1.length,
+      team2Size: match.team2.length,
+      status: match.status
+    });
+    
+    // Remover partida das ativas
+    this.activeMatches.delete(matchId);
+
+    // APAGAR partida do banco de dados se foi salva
+    try {
+      if (match.id) {
+        console.log(`🗑️ [CancelDraft] Tentando apagar partida ${matchId} do banco (ID: ${match.id})`);
+        await this.dbManager.deleteCustomMatch(match.id);
+        console.log(`🗑️ [CancelDraft] Partida ${matchId} apagada do banco de dados (ID: ${match.id})`);
+      } else {
+        console.log(`⚠️ [CancelDraft] Partida ${matchId} não tem ID no banco para apagar`);
+      }
+    } catch (error) {
+      console.error(`❌ [CancelDraft] Erro ao apagar partida ${matchId} do banco:`, error);
+    }
+
+    // Retornar TODOS os jogadores para a fila com cooldown para evitar matchmaking imediato
+    const allPlayers = [...match.team1, ...match.team2];
+    
+    allPlayers.forEach(player => {
+      // Resetar websocket para null (será atualizado quando reconectar)
+      player.websocket = null as any;
+      
+      // Adicionar timestamp de cancelamento para evitar matchmaking imediato
+      (player as any).draftCancelledAt = Date.now();
+      
+      this.queue.push(player);
+      console.log(`🔄 [CancelDraft] ${player.summonerName} retornou à fila após cancelamento do draft (Bot: ${player.id < 0})`);
+    });
+
+    // Notificar jogadores sobre o cancelamento do draft
+    allPlayers.forEach(player => {
+      if (player.websocket && player.id > 0) { // Pular bots
+        try {
+          const message = {
+            type: 'draft_cancelled',
+            data: { 
+              matchId: matchId, 
+              reason: reason
+            }
+          };
+          
+          console.log(`📡 [CancelDraft] Enviando mensagem para ${player.summonerName}:`, JSON.stringify(message, null, 2));
+          player.websocket.send(JSON.stringify(message));
+          console.log(`✅ [CancelDraft] Mensagem enviada com sucesso para ${player.summonerName}`);
+        } catch (error) {
+          console.error(`❌ [CancelDraft] Erro ao notificar cancelamento do draft para ${player.summonerName}:`, error);
+        }
+      }
+    });
+
+    // Atualizar posições na fila
+    this.queue.forEach((p, index) => {
+      p.queuePosition = index + 1;
+    });
+
+    // Broadcast atualização da fila
+    this.broadcastQueueUpdate();
+
+    this.addActivity('match_created', `Draft da partida ${matchId} cancelado por ${reason}`);
   }
 }

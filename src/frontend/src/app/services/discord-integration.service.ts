@@ -331,6 +331,15 @@ export class DiscordIntegrationService {
         });
         break;
 
+      case 'draft_cancelled':
+        console.log(`❌ [DiscordService #${this.instanceId}] Draft cancelado!`, data);
+        // Emitir evento de cancelamento de draft
+        this.matchFoundSubject.next({
+          type: 'draft_cancelled',
+          ...data.data
+        });
+        break;
+
       case 'pong':
         // Heartbeat response - já tratado no onmessage
         break;
@@ -485,6 +494,33 @@ export class DiscordIntegrationService {
     const message = { type: 'leave_queue' };
     this.ws.send(JSON.stringify(message));
     console.log('👋 Saindo da fila Discord');
+  }
+
+  // Método para enviar mensagens WebSocket genéricas
+  sendWebSocketMessage(message: any): boolean {
+    console.log(`🔍 [DiscordService] Tentando enviar mensagem WebSocket:`, message);
+    console.log(`🔍 [DiscordService] WebSocket status:`, {
+      exists: !!this.ws,
+      readyState: this.ws?.readyState,
+      isOpen: this.ws?.readyState === WebSocket.OPEN,
+      url: this.ws?.url
+    });
+    
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.error('❌ WebSocket não conectado para enviar mensagem:', message);
+      return false;
+    }
+
+    try {
+      const messageString = JSON.stringify(message);
+      console.log('📤 Enviando mensagem WebSocket:', messageString);
+      this.ws.send(messageString);
+      console.log('✅ Mensagem WebSocket enviada com sucesso');
+      return true;
+    } catch (error) {
+      console.error('❌ Erro ao enviar mensagem WebSocket:', error);
+      return false;
+    }
   }
 
   // Métodos públicos
