@@ -990,7 +990,7 @@ export class MatchmakingService {
       console.error(`❌ [Matchmaking] Erro ao apagar partida ${matchId} do banco:`, error);
     }
 
-    // Retornar TODOS os jogadores para a fila (exceto quem recusou)
+    // CORREÇÃO: Apenas quem recusou sai da fila, os outros continuam
     const allPlayers = [...match.team1, ...match.team2];
 
     // Se a razão indica que alguém recusou, identificar quem recusou
@@ -1001,16 +1001,31 @@ export class MatchmakingService {
       console.log(`🔍 [CancelMatch] Jogador que recusou identificado:`, declinedPlayer?.summonerName);
     }
 
-    // Adicionar jogadores de volta à fila (exceto quem recusou)
+    const removedPlayers: string[] = [];
+    const returnedPlayers: string[] = [];
+
+    // Processar jogadores
     allPlayers.forEach(player => {
-      // Pular apenas quem recusou (incluindo bots)
-      if (player !== declinedPlayer) {
-        // Resetar websocket para null (será atualizado quando reconectar)
-        player.websocket = null as any;
-        this.queue.push(player);
-        console.log(`🔄 [Matchmaking] ${player.summonerName} retornou à fila após cancelamento (Bot: ${player.id < 0})`);
+      if (player === declinedPlayer) {
+        // Apenas quem recusou sai da fila
+        const playerIndex = this.queue.findIndex(p => p.id === player.id);
+        if (playerIndex !== -1) {
+          this.queue.splice(playerIndex, 1);
+          removedPlayers.push(player.summonerName);
+          console.log(`🗑️ [CancelMatch] ${player.summonerName} removido da fila (recusou a partida)`);
+        }
       } else {
-        console.log(`❌ [Matchmaking] ${player.summonerName} NÃO retornou à fila (recusou a partida)`);
+        // Os outros jogadores continuam na fila
+        const playerIndex = this.queue.findIndex(p => p.id === player.id);
+        if (playerIndex === -1) {
+          // Se não está na fila, adicionar de volta
+          player.websocket = null as any; // Resetar websocket
+          this.queue.push(player);
+          returnedPlayers.push(player.summonerName);
+          console.log(`🔄 [CancelMatch] ${player.summonerName} retornou à fila (Bot: ${player.id < 0})`);
+        } else {
+          console.log(`✅ [CancelMatch] ${player.summonerName} já está na fila (Bot: ${player.id < 0})`);
+        }
       }
     });
 
@@ -1040,7 +1055,9 @@ export class MatchmakingService {
     // Broadcast atualização da fila
     this.broadcastQueueUpdate();
 
-    this.addActivity('match_created', `Partida ${matchId} cancelada por ${reason}`);
+    console.log(`✅ [CancelMatch] ${removedPlayers.length} jogador removido da fila:`, removedPlayers);
+    console.log(`✅ [CancelMatch] ${returnedPlayers.length} jogadores retornaram à fila:`, returnedPlayers);
+    this.addActivity('match_created', `Partida ${matchId} cancelada por ${reason} - ${removedPlayers.length} jogador removido, ${returnedPlayers.length} retornaram à fila`);
   }
 
   // Método para adicionar atividade ao histórico
@@ -1844,22 +1861,38 @@ export class MatchmakingService {
       console.error(`❌ [CancelDraft] Erro ao apagar partida ${matchId} do banco:`, error);
     }
 
-    // Retornar TODOS os jogadores para a fila com cooldown para evitar matchmaking imediato
+    // CORREÇÃO: Apenas o jogador que cancelou sai da fila, os outros continuam
     const allPlayers = [...match.team1, ...match.team2];
+    const removedPlayers: string[] = [];
+    const returnedPlayers: string[] = [];
+
+    // Identificar quem cancelou (assumindo que é o primeiro jogador real, não bot)
+    const cancellingPlayer = allPlayers.find(p => p.id > 0); // Primeiro jogador real
 
     allPlayers.forEach(player => {
-      // Resetar websocket para null (será atualizado quando reconectar)
-      player.websocket = null as any;
+      if (player === cancellingPlayer) {
+        // Apenas quem cancelou sai da fila
+        const playerIndex = this.queue.findIndex(p => p.id === player.id);
+        if (playerIndex !== -1) {
+          this.queue.splice(playerIndex, 1);
+          removedPlayers.push(player.summonerName);
+          console.log(`🗑️ [CancelDraft] ${player.summonerName} removido da fila (cancelou o draft)`);
+        }
+      } else {
+        // Os outros jogadores continuam na fila
+        const playerIndex = this.queue.findIndex(p => p.id === player.id);
+        if (playerIndex === -1) {
+          // Se não está na fila, adicionar de volta
+          player.websocket = null as any; // Resetar websocket
+          this.queue.push(player);
+          returnedPlayers.push(player.summonerName);
+          console.log(`🔄 [CancelDraft] ${player.summonerName} retornou à fila (Bot: ${player.id < 0})`);
+        } else {
+          console.log(`✅ [CancelDraft] ${player.summonerName} já está na fila (Bot: ${player.id < 0})`);
+        }
+      }
 
-      // Adicionar timestamp de cancelamento para evitar matchmaking imediato
-      (player as any).draftCancelledAt = Date.now();
-
-      this.queue.push(player);
-      console.log(`🔄 [CancelDraft] ${player.summonerName} retornou à fila após cancelamento do draft (Bot: ${player.id < 0})`);
-    });
-
-    // Notificar jogadores sobre o cancelamento do draft
-    allPlayers.forEach(player => {
+      // Notificar jogador sobre o cancelamento do draft
       if (player.websocket && player.id > 0) { // Pular bots
         try {
           const message = {
@@ -1887,7 +1920,9 @@ export class MatchmakingService {
     // Broadcast atualização da fila
     this.broadcastQueueUpdate();
 
-    this.addActivity('match_created', `Draft da partida ${matchId} cancelado por ${reason}`);
+    console.log(`✅ [CancelDraft] ${removedPlayers.length} jogador removido da fila:`, removedPlayers);
+    console.log(`✅ [CancelDraft] ${returnedPlayers.length} jogadores retornaram à fila:`, returnedPlayers);
+    this.addActivity('match_created', `Draft da partida ${matchId} cancelado por ${reason} - ${removedPlayers.length} jogador removido, ${returnedPlayers.length} retornaram à fila`);
   }
 
   // Método para cancelar partida em andamento (após o draft)
@@ -1928,22 +1963,22 @@ export class MatchmakingService {
       console.error(`❌ [CancelGameInProgress] Erro ao apagar partida ${matchId} do banco:`, error);
     }
 
-    // Retornar TODOS os jogadores para a fila
+    // CORREÇÃO: Remover jogadores da fila ao invés de retorná-los
     const allPlayers = [...match.team1, ...match.team2];
+    const removedPlayers: string[] = [];
 
     allPlayers.forEach(player => {
-      // Resetar websocket para null (será atualizado quando reconectar)
-      player.websocket = null as any;
+      // Remover jogador da fila
+      const playerIndex = this.queue.findIndex(p => p.id === player.id);
+      if (playerIndex !== -1) {
+        this.queue.splice(playerIndex, 1);
+        removedPlayers.push(player.summonerName);
+        console.log(`🗑️ [CancelGameInProgress] ${player.summonerName} removido da fila após cancelamento da partida (Bot: ${player.id < 0})`);
+      } else {
+        console.log(`⚠️ [CancelGameInProgress] ${player.summonerName} não encontrado na fila para remoção`);
+      }
 
-      // Adicionar timestamp de cancelamento para evitar matchmaking imediato
-      (player as any).gameCancelledAt = Date.now();
-
-      this.queue.push(player);
-      console.log(`🔄 [CancelGameInProgress] ${player.summonerName} retornou à fila após cancelamento da partida (Bot: ${player.id < 0})`);
-    });
-
-    // Notificar jogadores sobre o cancelamento da partida
-    allPlayers.forEach(player => {
+      // Notificar jogador sobre o cancelamento da partida
       if (player.websocket && player.id > 0) { // Pular bots
         try {
           const message = {
@@ -1971,6 +2006,7 @@ export class MatchmakingService {
     // Broadcast atualização da fila
     this.broadcastQueueUpdate();
 
-    this.addActivity('match_created', `Partida em andamento ${matchId} cancelada por ${reason}`);
+    console.log(`✅ [CancelGameInProgress] ${removedPlayers.length} jogadores removidos da fila:`, removedPlayers);
+    this.addActivity('match_created', `Partida em andamento ${matchId} cancelada por ${reason} - ${removedPlayers.length} jogadores removidos da fila`);
   }
 }
