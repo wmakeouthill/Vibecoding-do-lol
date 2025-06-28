@@ -21,6 +21,8 @@ export interface PlayerInfo {
   mmr: number;
   primaryLane: string;
   secondaryLane: string;
+  assignedLane: string;
+  isAutofill: boolean;
 }
 
 @Component({
@@ -116,6 +118,19 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
       'fill': 'Preenchimento'
     };
     return names[lane] || lane;
+  }
+
+  getAssignedLaneDisplay(player: PlayerInfo): string {
+    if (player.isAutofill) {
+      return `${this.getLaneIcon(player.assignedLane)} ${this.getLaneName(player.assignedLane)} (Auto)`;
+    }
+    return `${this.getLaneIcon(player.assignedLane)} ${this.getLaneName(player.assignedLane)}`;
+  }
+
+  getLanePreferencesDisplay(player: PlayerInfo): string {
+    const primary = `${this.getLaneIcon(player.primaryLane)} ${this.getLaneName(player.primaryLane)}`;
+    const secondary = `${this.getLaneIcon(player.secondaryLane)} ${this.getLaneName(player.secondaryLane)}`;
+    return `${primary} • ${secondary}`;
   }
 
   getTeamSideName(side: 'blue' | 'red'): string {

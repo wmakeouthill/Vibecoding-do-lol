@@ -258,12 +258,14 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
   }
   private getCurrentPlayer(): any {
     if (!this.session) return null;
-
     const currentPhase = this.session.phases[this.session.currentAction];
-    const currentTeam = currentPhase.team === 'blue' ? this.session.blueTeam : this.session.redTeam;
+    if (!currentPhase) return null;
+    // Checagem defensiva para evitar erro de undefined
+    if (!currentPhase.team) return null;
+    const teamPlayers = currentPhase.team === 'blue' ? this.session.blueTeam : this.session.redTeam;
 
-    console.log(`🔍 [Player] Debug - currentAction: ${this.session.currentAction}, team: ${currentPhase.team}, teamSize: ${currentTeam.length}`);
-    console.log(`🔍 [Player] Team players:`, currentTeam.map(p => ({ id: p.id, name: p.summonerName })));
+    console.log(`🔍 [Player] Debug - currentAction: ${this.session.currentAction}, team: ${currentPhase.team}, teamSize: ${teamPlayers.length}`);
+    console.log(`🔍 [Player] Team players:`, teamPlayers.map(p => ({ id: p.id, name: p.summonerName })));
 
     // Mapeamento simplificado e mais robusto
     let playerIndex = 0;
@@ -272,26 +274,26 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     // Distribuir ações de forma mais simples e previsível
     if (actionIndex < 6) {
       // Primeira fase de bans (0-5): distribuir entre os primeiros 3 players
-      playerIndex = Math.floor(actionIndex / 2) % Math.min(3, currentTeam.length);
+      playerIndex = Math.floor(actionIndex / 2) % Math.min(3, teamPlayers.length);
     } else if (actionIndex >= 6 && actionIndex < 11) {
       // Primeira fase de picks (6-10): distribuir entre todos os players
       const pickIndex = actionIndex - 6;
-      playerIndex = pickIndex % currentTeam.length;
+      playerIndex = pickIndex % teamPlayers.length;
     } else if (actionIndex >= 11 && actionIndex < 15) {
       // Segunda fase de bans (11-14): usar players 3 e 4 se disponíveis
       const banIndex = actionIndex - 11;
-      playerIndex = Math.min(3 + (banIndex % 2), currentTeam.length - 1);
+      playerIndex = Math.min(3 + (banIndex % 2), teamPlayers.length - 1);
     } else {
       // Segunda fase de picks (15-19): usar players restantes
       const pickIndex = actionIndex - 15;
-      playerIndex = Math.min(2 + (pickIndex % 3), currentTeam.length - 1);
+      playerIndex = Math.min(2 + (pickIndex % 3), teamPlayers.length - 1);
     }
 
     // Garantir que o índice seja válido
-    playerIndex = Math.max(0, Math.min(playerIndex, currentTeam.length - 1));
+    playerIndex = Math.max(0, Math.min(playerIndex, teamPlayers.length - 1));
 
     this.session.currentPlayerIndex = playerIndex;
-    const player = currentTeam[playerIndex] || null;
+    const player = teamPlayers[playerIndex] || null;
 
     console.log(`👤 Player atual: ${player?.summonerName || 'Unknown'} (Team: ${currentPhase.team}, Index: ${playerIndex}, Action: ${actionIndex})`);
 
@@ -903,34 +905,90 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
   // ========== MÉTODOS PARA CONFIRMAÇÃO FINAL ==========
 
   /**
+   * Organiza o time por lanes fixas (TOP, JUNGLE, MIDDLE, ADC, SUPPORT)
+   */
+  private organizeTeamByLanes(teamPlayers: any[], teamPicks: any[]): any[] {
+    const lanes = ['TOP', 'JUNGLE', 'MIDDLE', 'ADC', 'SUPPORT'];
+    // Mapear lane para player
+    const laneMap: { [lane: string]: any } = {};
+    // Primeiro, tentar usar assignedLane ou primaryLane
+    teamPlayers.forEach((player, idx) => {
+      const lane = (player.assignedLane || player.primaryLane || player.primary_lane || '').toUpperCase();
+      if (lanes.includes(lane) && !laneMap[lane]) {
+        laneMap[lane] = { player, pick: null };
+      }
+    });
+    // Fallback: se não tem lane, preencher por ordem
+    let fallbackIdx = 0;
+    lanes.forEach(lane => {
+      if (!laneMap[lane] && teamPlayers[fallbackIdx]) {
+        laneMap[lane] = { player: teamPlayers[fallbackIdx], pick: null };
+        fallbackIdx++;
+      }
+    });
+    // Mapear picks para lanes (por playerId)
+    teamPicks.forEach(pick => {
+      const player = teamPlayers.find(p => (p.id && pick.playerId && p.id == pick.playerId) || (p.summonerName && pick.playerName && p.summonerName == pick.playerName));
+      let lane = (player?.assignedLane || player?.primaryLane || player?.primary_lane || '').toUpperCase();
+      if (!lanes.includes(lane)) {
+        // fallback: por ordem do pick
+        lane = lanes[teamPicks.indexOf(pick)] || 'TOP';
+      }
+      if (laneMap[lane]) {
+        laneMap[lane].pick = pick.champion;
+      }
+    });
+    // Retornar array ordenado por lanes
+    return lanes.map(lane => ({
+      lane,
+      player: laneMap[lane]?.player || null,
+      champion: laneMap[lane]?.pick || null
+    }));
+  }
+
+  /**
    * Mostra a confirmação final antes de completar o draft
    */
   showFinalConfirmationDialog(): void {
     if (!this.session) return;
 
-    console.log('🎯 [Confirmação Final] Iniciando preparação dos dados...');
-    console.log('🎯 [Confirmação Final] Session data:', {
-      blueTeam: this.session.blueTeam,
-      redTeam: this.session.redTeam,
-      phases: this.session.phases.filter(p => p.action === 'pick' && p.champion)
-    });
-
     // Mapear picks com jogadores corretamente
     const blueTeamPicksWithPlayers = this.mapPicksWithPlayers('blue');
     const redTeamPicksWithPlayers = this.mapPicksWithPlayers('red');
+
+    // Organizar times por lane fixa
+    const blueTeamByLane = this.organizeTeamByLanes(this.session.blueTeam, blueTeamPicksWithPlayers);
+    const redTeamByLane = this.organizeTeamByLanes(this.session.redTeam, redTeamPicksWithPlayers);
 
     // Preparar dados para confirmação
     this.finalConfirmationData = {
       blueTeamPicks: blueTeamPicksWithPlayers,
       redTeamPicks: redTeamPicksWithPlayers,
+      blueTeamByLane,
+      redTeamByLane,
       bannedChampions: this.getBannedChampions(),
       blueTeamPlayers: this.session.blueTeam,
       redTeamPlayers: this.session.redTeam,
       allPicks: this.session.phases.filter(p => p.action === 'pick' && p.champion)
     };
 
-    console.log('🎯 [Confirmação Final] Dados preparados:', this.finalConfirmationData);
     this.showFinalConfirmation = true;
+  }
+
+  /**
+   * Retorna o nome amigável da lane
+   */
+  getLaneDisplayName(lane: string): string {
+    switch (lane) {
+      case 'TOP': return 'Topo';
+      case 'JUNGLE': return 'Selva';
+      case 'MIDDLE': return 'Meio';
+      case 'MID': return 'Meio';
+      case 'ADC': return 'Atirador';
+      case 'BOT': return 'Atirador';
+      case 'SUPPORT': return 'Suporte';
+      default: return lane;
+    }
   }
 
   /**
@@ -1010,12 +1068,39 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
 
     console.log(`✏️ [Edição] Iniciando edição para jogador ${playerId} na fase ${phaseIndex}`);
 
+    // Verificar se o jogador atual pode editar este pick
+    if (!this.canCurrentPlayerEdit()) {
+      console.log(`❌ [Edição] Jogador atual não pode editar este pick`);
+      return;
+    }
+
     // Definir o jogador que está editando
     this.editingPlayerId = playerId;
     this.isEditingMode = true;
 
+    // Encontrar a fase correta para edição
+    let targetPhaseIndex = phaseIndex;
+    if (phaseIndex === undefined || phaseIndex === null) {
+      // Se não temos o phaseIndex, encontrar a fase do pick atual
+      const teamPicks = this.session.phases.filter(p => p.action === 'pick' && p.champion);
+      const playerPick = teamPicks.find(p => 
+        (p.playerId && p.playerId.toString() === playerId.toString()) ||
+        (p.playerName && p.playerName === playerId)
+      );
+      if (playerPick) {
+        targetPhaseIndex = this.session.phases.indexOf(playerPick);
+      }
+    }
+
     // Voltar para a fase específica
-    this.session.currentAction = phaseIndex;
+    if (targetPhaseIndex !== undefined && targetPhaseIndex >= 0) {
+      this.session.currentAction = targetPhaseIndex;
+    } else {
+      // Fallback: voltar para a última ação
+      if (this.session.currentAction > 0) {
+        this.session.currentAction--;
+      }
+    }
 
     // Resetar o timer
     this.timeRemaining = 30;
@@ -1042,8 +1127,15 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
   canCurrentPlayerEdit(): boolean {
     if (!this.currentPlayer || !this.editingPlayerId) return false;
     
-    return this.currentPlayer.id === this.editingPlayerId || 
-           this.currentPlayer.summonerName === this.editingPlayerId;
+    // Verificar por ID ou summonerName
+    const canEdit = this.currentPlayer.id === this.editingPlayerId || 
+                   this.currentPlayer.summonerName === this.editingPlayerId ||
+                   (this.currentPlayer.id && this.currentPlayer.id.toString() === this.editingPlayerId.toString()) ||
+                   (this.currentPlayer.summonerName && this.currentPlayer.summonerName === this.editingPlayerId);
+    
+    console.log(`🔍 [canCurrentPlayerEdit] Current: ${this.currentPlayer.id}/${this.currentPlayer.summonerName}, Editing: ${this.editingPlayerId}, CanEdit: ${canEdit}`);
+    
+    return canEdit;
   }
 
   /**
@@ -1104,5 +1196,47 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     if (pickIndex === 4) return 4; // Quinto pick
     
     return pickIndex % 5; // Fallback
+  }
+
+  /**
+   * Obtém a lane atribuída a um jogador específico
+   */
+  getPlayerLaneDisplay(team: 'blue' | 'red', slotIndex: number): string {
+    if (!this.session) return '';
+
+    const teamPlayers = team === 'blue' ? this.session.blueTeam : this.session.redTeam;
+    
+    if (slotIndex < teamPlayers.length) {
+      const player = teamPlayers[slotIndex];
+      const assignedLane = player.assignedLane || player.primaryLane || 'fill';
+      const isAutofill = player.isAutofill || false;
+      
+      const laneName = this.getLaneDisplayName(assignedLane.toUpperCase());
+      const laneIcon = this.getLaneIcon(assignedLane);
+      
+      if (isAutofill) {
+        return `${laneIcon} ${laneName} (Auto)`;
+      }
+      return `${laneIcon} ${laneName}`;
+    }
+
+    return '';
+  }
+
+  /**
+   * Obtém o ícone da lane
+   */
+  private getLaneIcon(lane: string): string {
+    const icons: { [key: string]: string } = {
+      'top': '🛡️',
+      'jungle': '🌲',
+      'mid': '⚡',
+      'middle': '⚡',
+      'bot': '🏹',
+      'adc': '🏹',
+      'support': '💎',
+      'fill': '🎲'
+    };
+    return icons[lane.toLowerCase()] || '❓';
   }
 }

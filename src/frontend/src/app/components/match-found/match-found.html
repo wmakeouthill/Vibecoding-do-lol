@@ -55,12 +55,12 @@
             <div class="player-info">
               <span class="player-name">{{ player.summonerName }}</span>
               <div class="player-lanes">
-                <span class="lane primary-lane">
-                  {{ getLaneIcon(player.primaryLane) }} {{ getLaneName(player.primaryLane) }}
+                <span class="lane assigned-lane" [class.autofill]="player.isAutofill">
+                  {{ getAssignedLaneDisplay(player) }}
                 </span>
                 <span class="lane-separator">•</span>
-                <span class="lane secondary-lane">
-                  {{ getLaneIcon(player.secondaryLane) }} {{ getLaneName(player.secondaryLane) }}
+                <span class="lane preferences-lane">
+                  {{ getLanePreferencesDisplay(player) }}
                 </span>
               </div>
               <span class="player-mmr">{{ player.mmr }} MMR</span>
@@ -93,12 +93,12 @@
             <div class="player-info">
               <span class="player-name">{{ player.summonerName }}</span>
               <div class="player-lanes">
-                <span class="lane primary-lane">
-                  {{ getLaneIcon(player.primaryLane) }} {{ getLaneName(player.primaryLane) }}
+                <span class="lane assigned-lane" [class.autofill]="player.isAutofill">
+                  {{ getAssignedLaneDisplay(player) }}
                 </span>
                 <span class="lane-separator">•</span>
-                <span class="lane secondary-lane">
-                  {{ getLaneIcon(player.secondaryLane) }} {{ getLaneName(player.secondaryLane) }}
+                <span class="lane preferences-lane">
+                  {{ getLanePreferencesDisplay(player) }}
                 </span>
               </div>
               <span class="player-mmr">{{ player.mmr }} MMR</span>

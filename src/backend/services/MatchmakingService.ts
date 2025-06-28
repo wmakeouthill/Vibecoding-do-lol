@@ -804,14 +804,18 @@ export class MatchmakingService {
           summonerName: p.summonerName,
           mmr: p.currentMMR,
           primaryLane: p.preferences?.primaryLane || 'fill',
-          secondaryLane: p.preferences?.secondaryLane || 'fill'
+          secondaryLane: p.preferences?.secondaryLane || 'fill',
+          assignedLane: p.preferences?.assignedLane || 'fill',
+          isAutofill: p.preferences?.isAutofill || false
         })),
         enemies: enemyTeam.map(p => ({
           id: p.id,
           summonerName: p.summonerName,
           mmr: p.currentMMR,
           primaryLane: p.preferences?.primaryLane || 'fill',
-          secondaryLane: p.preferences?.secondaryLane || 'fill'
+          secondaryLane: p.preferences?.secondaryLane || 'fill',
+          assignedLane: p.preferences?.assignedLane || 'fill',
+          isAutofill: p.preferences?.isAutofill || false
         })),
         averageMMR: {
           yourTeam: isTeam1 ? match.averageMMR1 : match.averageMMR2,
@@ -1272,20 +1276,80 @@ export class MatchmakingService {
 
   // Método para atribuir lanes baseado no MMR
   private assignLanesByMMR(team: QueuedPlayer[]): void {
-    // Ordenar por MMR (maior MMR = lane mais importante)
+    console.log(`🎯 [AssignLanes] Atribuindo lanes para time com ${team.length} jogadores`);
+    
+    // Ordenar por MMR (maior MMR = prioridade na escolha de lane)
     const sortedByMMR = [...team].sort((a, b) => b.currentMMR - a.currentMMR);
+    
+    console.log(`📊 [AssignLanes] Jogadores ordenados por MMR:`, sortedByMMR.map(p => ({
+      name: p.summonerName,
+      mmr: p.currentMMR,
+      primary: p.preferences?.primaryLane,
+      secondary: p.preferences?.secondaryLane
+    })));
 
-    const lanes = ['mid', 'jungle', 'top', 'bot', 'support'];
+    // Lanes disponíveis (em ordem de prioridade)
+    const availableLanes = ['mid', 'jungle', 'top', 'bot', 'support'];
+    const assignedLanes = new Set<string>();
+    const autofillPlayers: QueuedPlayer[] = [];
 
-    sortedByMMR.forEach((player, index) => {
-      if (index < lanes.length) {
+    // Primeira passada: tentar atribuir lanes baseado nas preferências
+    sortedByMMR.forEach(player => {
+      const primaryLane = player.preferences?.primaryLane;
+      const secondaryLane = player.preferences?.secondaryLane;
+      
+      // Tentar lane primária primeiro
+      if (primaryLane && availableLanes.includes(primaryLane) && !assignedLanes.has(primaryLane)) {
         player.preferences = {
           ...player.preferences,
-          assignedLane: lanes[index],
+          assignedLane: primaryLane,
           isAutofill: false
         };
+        assignedLanes.add(primaryLane);
+        console.log(`✅ [AssignLanes] ${player.summonerName} recebeu lane primária: ${primaryLane}`);
+      }
+      // Tentar lane secundária
+      else if (secondaryLane && availableLanes.includes(secondaryLane) && !assignedLanes.has(secondaryLane)) {
+        player.preferences = {
+          ...player.preferences,
+          assignedLane: secondaryLane,
+          isAutofill: false
+        };
+        assignedLanes.add(secondaryLane);
+        console.log(`✅ [AssignLanes] ${player.summonerName} recebeu lane secundária: ${secondaryLane}`);
+      }
+      // Se não conseguiu nenhuma das preferências, vai para autofill
+      else {
+        autofillPlayers.push(player);
+        console.log(`⚠️ [AssignLanes] ${player.summonerName} não conseguiu suas preferências, será autofill`);
       }
     });
+
+    // Segunda passada: atribuir lanes restantes para autofill
+    const remainingLanes = availableLanes.filter(lane => !assignedLanes.has(lane));
+    console.log(`🎲 [AssignLanes] Lanes restantes para autofill:`, remainingLanes);
+
+    autofillPlayers.forEach((player, index) => {
+      if (index < remainingLanes.length) {
+        const assignedLane = remainingLanes[index];
+        player.preferences = {
+          ...player.preferences,
+          assignedLane: assignedLane,
+          isAutofill: true
+        };
+        console.log(`🎲 [AssignLanes] ${player.summonerName} recebeu autofill: ${assignedLane}`);
+      }
+    });
+
+    // Log final das atribuições
+    console.log(`📋 [AssignLanes] Atribuições finais:`, team.map(p => ({
+      name: p.summonerName,
+      mmr: p.currentMMR,
+      assignedLane: p.preferences?.assignedLane,
+      isAutofill: p.preferences?.isAutofill,
+      primary: p.preferences?.primaryLane,
+      secondary: p.preferences?.secondaryLane
+    })));
   }
 
   // Método para iniciar fase de draft
@@ -1316,7 +1380,9 @@ export class MatchmakingService {
         name: p.summonerName, // Frontend espera 'name' também
         mmr: p.currentMMR,
         primaryLane: p.preferences?.primaryLane || 'fill',
-        secondaryLane: p.preferences?.secondaryLane || 'fill'
+        secondaryLane: p.preferences?.secondaryLane || 'fill',
+        assignedLane: p.preferences?.assignedLane || 'fill',
+        isAutofill: p.preferences?.isAutofill || false
       })),
       team2: match.team2.map(p => ({
         id: p.id,
@@ -1324,7 +1390,9 @@ export class MatchmakingService {
         name: p.summonerName, // Frontend espera 'name' também
         mmr: p.currentMMR,
         primaryLane: p.preferences?.primaryLane || 'fill',
-        secondaryLane: p.preferences?.secondaryLane || 'fill'
+        secondaryLane: p.preferences?.secondaryLane || 'fill',
+        assignedLane: p.preferences?.assignedLane || 'fill',
+        isAutofill: p.preferences?.isAutofill || false
       })),
       // Dados adicionais para o draft
       averageMMR: {
