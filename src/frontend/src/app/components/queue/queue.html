@@ -16,34 +16,7 @@
         <span *ngIf="!isDiscordConnected">Desconectado</span>
       </div>
       <div class="discord-user" *ngIf="currentDiscordUser">
-        👤 {{ currentDiscordUser.username }}
-      </div>
-    </div>
-  </div>
-
-  <!-- Discord Users Online Section -->
-  <div class="discord-users-section" *ngIf="isDiscordConnected && discordUsersOnline.length > 0">
-    <div class="section-header">
-      <h3>👥 Usuários Discord Online</h3>
-      <span class="user-count">{{ discordUsersOnline.length }} no canal</span>
-    </div>
-    
-    <div class="discord-users-grid">
-      <div *ngFor="let user of discordUsersOnline" class="discord-user-card" [class.has-app]="user.hasAppOpen">
-        <div class="user-avatar">
-          <i class="fab fa-discord"></i>
-          <div class="status-indicator" [class.online]="user.hasAppOpen"></div>
-        </div>
-        <div class="user-info">
-          <div class="username">{{ user.username }}</div>
-          <div class="nickname" *ngIf="user.linkedNickname">
-            {{ user.linkedNickname.gameName }}#{{ user.linkedNickname.tagLine }}
-          </div>
-          <div class="status">
-            <span *ngIf="user.hasAppOpen" class="app-open">📱 App Aberto</span>
-            <span *ngIf="!user.hasAppOpen" class="app-closed">💻 Apenas Discord</span>
-          </div>
-        </div>
+        👤 {{ currentDiscordUser.displayName || currentDiscordUser.username }}
       </div>
     </div>
   </div>
@@ -220,7 +193,7 @@
           <div class="col-player">
             <div class="discord-user-info">
               <i class="fab fa-discord"></i>
-              <span class="username">{{ user.username }}</span>
+              <span class="username">{{ user.displayName || user.username }}</span>
             </div>
           </div>
           <div class="col-lol">

@@ -1007,15 +1007,29 @@ export class DiscordService {
         username: user.username,
         discriminator: user.discriminator,
         avatar: user.avatar,
+        displayName: member.displayName || user.username, // Usar nickname customizado se disponível
         hasAppOpen: true, // Se está no canal Discord, considera que tem o app aberto
         discordId: user.id,
         linkedNickname: linkedNickname // Incluir nick vinculado
       };
       
+      // Log detalhado para debug
+      console.log(`👤 [DEBUG] Usuário processado:`, {
+        id: userData.id,
+        username: userData.username,
+        displayName: userData.displayName,
+        linkedNickname: userData.linkedNickname,
+        hasCustomNick: member.displayName !== user.username
+      });
+      
       usersInChannel.push(userData);
     }
 
-    console.log(`👥 Usuários no canal ${this.targetChannelName}:`, usersInChannel.map(u => `${u.username}${u.linkedNickname ? ` (${u.linkedNickname.gameName}#${u.linkedNickname.tagLine})` : ''}`));
+    console.log(`👥 Usuários no canal ${this.targetChannelName}:`, usersInChannel.map(u => {
+      const discordName = u.displayName || u.username;
+      const lolInfo = u.linkedNickname ? ` (${u.linkedNickname.gameName}#${u.linkedNickname.tagLine})` : '';
+      return `${discordName}${lolInfo}`;
+    }));
     return usersInChannel;
   }
 
@@ -1079,5 +1093,45 @@ export class DiscordService {
     } catch (error) {
       console.error('❌ Erro ao broadcast vinculações:', error);
     }
+  }
+
+  // Obter informações do usuário atual no canal Discord
+  async getCurrentUserInfo(): Promise<any> {
+    if (!this.isConnected || !this.client) {
+      return null;
+    }
+    
+    const guild = this.client.guilds.cache.first();
+    if (!guild) {
+      return null;
+    }
+
+    const matchmakingChannel = guild.channels.cache.find(
+      channel => channel.name === this.targetChannelName && channel.type === ChannelType.GuildVoice
+    );
+
+    if (!matchmakingChannel || matchmakingChannel.type !== ChannelType.GuildVoice) {
+      return null;
+    }
+
+    // Buscar o usuário atual baseado no bot (ou implementar lógica para identificar o usuário)
+    // Por enquanto, vamos retornar informações do primeiro usuário no canal
+    const voiceChannel = matchmakingChannel as any;
+    const members = voiceChannel.members;
+    
+    if (members && members.size > 0) {
+      const firstMember = members.first();
+      const user = firstMember.user;
+      
+      return {
+        id: user.id,
+        username: user.username,
+        displayName: firstMember.displayName || user.username,
+        discriminator: user.discriminator,
+        avatar: user.avatar
+      };
+    }
+    
+    return null;
   }
 }

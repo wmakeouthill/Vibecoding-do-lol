@@ -124,10 +124,21 @@ export class DiscordIntegrationService {
         console.log(`🎮 [DiscordService #${this.instanceId}] inChannel:`, data.inChannel);
         
         this.isInDiscordChannel = data.inChannel;
-        this.currentDiscordUser = {
-          id: 'current_user',
-          username: 'Current User'
-        };
+        
+        // Buscar usuário atual real se estiver conectado
+        if (data.isConnected && data.inChannel && data.currentUser) {
+          this.currentDiscordUser = {
+            id: data.currentUser.id,
+            username: data.currentUser.username,
+            displayName: data.currentUser.displayName || data.currentUser.username
+          };
+        } else {
+          this.currentDiscordUser = {
+            id: 'current_user',
+            username: 'Current User',
+            displayName: 'Current User'
+          };
+        }
         
         // Atualizar status de conexão baseado na resposta do backend
         // Só atualizar se receber uma resposta válida

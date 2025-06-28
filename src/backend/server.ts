@@ -163,6 +163,10 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
       break;
     case 'get_discord_status':
       console.log('🎮 Solicitando status do Discord...');
+      
+      // Buscar informações do usuário atual no canal
+      const currentUser = await discordService.getCurrentUserInfo();
+      
       // Enviar status do Discord para o frontend
       const discordStatus = {
         type: 'discord_status',
@@ -170,7 +174,8 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
         botUsername: discordService.getBotUsername(),
         queueSize: discordService.getQueueSize(),
         activeMatches: discordService.getActiveMatches(),
-        inChannel: false // Será atualizado pelo frontend quando necessário
+        inChannel: await discordService.hasUsersInMatchmakingChannel(),
+        currentUser: currentUser
       };
       ws.send(JSON.stringify(discordStatus));
       
