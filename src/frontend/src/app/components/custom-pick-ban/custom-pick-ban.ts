@@ -52,6 +52,13 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
   timeRemaining: number = 30;
   isMyTurn: boolean = false;
 
+  // NOVAS PROPRIEDADES PARA O MODAL
+  showChampionModal: boolean = false;
+  modalSearchFilter: string = '';
+  modalSelectedRole: string = 'all';
+  modalSelectedChampion: Champion | null = null;
+  isConfirming: boolean = false;
+
   private timer: any = null;
   private botPickTimer: any = null;
 
@@ -390,6 +397,7 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     });
 
     // It's my turn if I'm the current player for this action
+    const wasMyTurn = this.isMyTurn;
     this.isMyTurn = currentPlayer &&
       (currentPlayer.id === this.currentPlayer.id ||
         currentPlayer.summonerName === this.currentPlayer.summonerName ||
@@ -398,6 +406,14 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
       !phase.locked;
 
     console.log(`🎯 Vez de: ${currentPlayer?.summonerName || 'Unknown'}, É minha vez: ${this.isMyTurn}`);
+
+    // Abrir modal automaticamente se acabou de ser minha vez
+    if (this.isMyTurn && !wasMyTurn && !this.showChampionModal) {
+      console.log('🎯 Abrindo modal automaticamente para minha vez');
+      setTimeout(() => {
+        this.openChampionModal();
+      }, 500); // Pequeno delay para garantir que a interface foi atualizada
+    }
   }
 
   getPlayerTeam(): 'blue' | 'red' {
@@ -614,13 +630,175 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
   // ...existing bot methods...
 
   getCurrentPlayerName(): string {
+    if (!this.session) return 'Desconhecido';
+    
     const currentPlayer = this.getCurrentPlayer();
-    if (!currentPlayer) return 'Aguardando...';
+    if (!currentPlayer) return 'Desconhecido';
+    
+    return currentPlayer.summonerName || currentPlayer.name || 'Jogador';
+  }
 
-    const name = currentPlayer.summonerName || currentPlayer.name || 'Jogador';
-    const currentPhase = this.session?.phases[this.session.currentAction];
-    const action = currentPhase?.action === 'ban' ? 'banindo' : 'escolhendo';
+  // ========== NOVOS MÉTODOS PARA O MODAL ==========
 
-    return `${name} está ${action}`;
+  /**
+   * Abre o modal de seleção de campeões
+   */
+  openChampionModal(): void {
+    if (!this.isMyTurn) return;
+    
+    this.showChampionModal = true;
+    this.modalSearchFilter = '';
+    this.modalSelectedRole = 'all';
+    this.modalSelectedChampion = null;
+    this.isConfirming = false;
+    
+    // Focar no campo de busca automaticamente
+    setTimeout(() => {
+      const searchInput = document.getElementById('modal-champion-search') as HTMLInputElement;
+      if (searchInput) {
+        searchInput.focus();
+      }
+    }, 100);
+  }
+
+  /**
+   * Fecha o modal de seleção de campeões
+   */
+  closeChampionModal(): void {
+    this.showChampionModal = false;
+    this.modalSearchFilter = '';
+    this.modalSelectedRole = 'all';
+    this.modalSelectedChampion = null;
+    this.isConfirming = false;
+  }
+
+  /**
+   * Filtra campeões para o modal baseado na busca e role
+   */
+  getModalFilteredChampions(): Champion[] {
+    let filtered = this.champions;
+
+    // Filtrar por role
+    if (this.modalSelectedRole !== 'all' && this.championsByRole[this.modalSelectedRole]) {
+      filtered = this.championsByRole[this.modalSelectedRole];
+    }
+
+    // Filtrar campeões banidos
+    const bannedChampions = this.getBannedChampions();
+    filtered = filtered.filter((champ: Champion) =>
+      !bannedChampions.some(banned => banned.id === champ.id)
+    );
+
+    // Filtrar campeões já escolhidos (apenas na fase de picks)
+    if (this.session && this.session.phase === 'picks') {
+      const pickedChampions = this.getTeamPicks('blue').concat(this.getTeamPicks('red'));
+      filtered = filtered.filter((champ: Champion) =>
+        !pickedChampions.some(picked => picked.id === champ.id)
+      );
+    }
+
+    // Filtrar por busca (case insensitive)
+    if (this.modalSearchFilter.trim()) {
+      const searchTerm = this.modalSearchFilter.toLowerCase().trim();
+      filtered = filtered.filter(champion => 
+        champion.name.toLowerCase().includes(searchTerm)
+      );
+    }
+
+    return filtered;
+  }
+
+  /**
+   * Seleciona um campeão no modal
+   */
+  selectChampionInModal(champion: Champion): void {
+    this.modalSelectedChampion = champion;
+    this.isConfirming = true;
+  }
+
+  /**
+   * Seleciona uma role no modal
+   */
+  selectRoleInModal(role: string): void {
+    this.modalSelectedRole = role;
+    this.modalSelectedChampion = null;
+    this.isConfirming = false;
+  }
+
+  /**
+   * Confirma a seleção no modal
+   */
+  confirmModalSelection(): void {
+    if (!this.modalSelectedChampion) return;
+
+    // Usar a seleção do modal para confirmar
+    this.selectedChampion = this.modalSelectedChampion;
+    this.confirmSelection();
+    this.closeChampionModal();
+  }
+
+  /**
+   * Cancela a seleção no modal
+   */
+  cancelModalSelection(): void {
+    this.closeChampionModal();
+  }
+
+  /**
+   * Obtém o texto da ação atual (Pick/Ban)
+   */
+  getCurrentActionText(): string {
+    if (!this.session || this.session.currentAction >= this.session.phases.length) {
+      return '';
+    }
+    
+    const currentPhase = this.session.phases[this.session.currentAction];
+    return currentPhase.action === 'ban' ? 'Banir Campeão' : 'Escolher Campeão';
+  }
+
+  /**
+   * Obtém o ícone da ação atual
+   */
+  getCurrentActionIcon(): string {
+    if (!this.session || this.session.currentAction >= this.session.phases.length) {
+      return '';
+    }
+    
+    const currentPhase = this.session.phases[this.session.currentAction];
+    return currentPhase.action === 'ban' ? '🚫' : '⭐';
+  }
+
+  /**
+   * Obtém o nome do jogador atual
+   */
+  getCurrentPlayerNameForModal(): string {
+    const currentPlayer = this.getCurrentPlayer();
+    if (!currentPlayer) return 'Desconhecido';
+    
+    return currentPlayer.summonerName || currentPlayer.name || 'Jogador';
+  }
+
+  /**
+   * Obtém o time do jogador atual
+   */
+  getCurrentPlayerTeamForModal(): string {
+    if (!this.session) return '';
+    
+    const currentPhase = this.session.phases[this.session.currentAction];
+    if (!currentPhase) return '';
+    
+    return currentPhase.team === 'blue' ? 'Time Azul' : 'Time Vermelho';
+  }
+
+  /**
+   * Obtém a cor do time atual
+   */
+  getCurrentTeamColor(): string {
+    if (!this.session) return '#ffffff';
+    
+    const currentPhase = this.session.phases[this.session.currentAction];
+    if (!currentPhase) return '#ffffff';
+    
+    return currentPhase.team === 'blue' ? '#5bc0de' : '#d9534f';
   }
 }

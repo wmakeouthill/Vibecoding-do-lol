@@ -87,93 +87,17 @@
       <h3>
         {{ session.phases[session.currentAction] && session.phases[session.currentAction].action === 'ban' ? '🚫 Banir Campeão' : '⭐ Escolher Campeão' }}
       </h3>
-
-      <!-- Role Filter -->
-      <div class="role-filter">
-        <button
-          class="role-btn"
-          [class.active]="selectedRole === 'all'"
-          (click)="selectRole('all')">
-          Todos ({{ champions.length }})
-        </button>
-        <button
-          class="role-btn"
-          [class.active]="selectedRole === 'top'"
-          (click)="selectRole('top')">
-          🛡️ Top ({{ championsByRole.top?.length || 0 }})
-        </button>
-        <button
-          class="role-btn"
-          [class.active]="selectedRole === 'jungle'"
-          (click)="selectRole('jungle')">
-          🌲 Jungle ({{ championsByRole.jungle?.length || 0 }})
-        </button>
-        <button
-          class="role-btn"
-          [class.active]="selectedRole === 'mid'"
-          (click)="selectRole('mid')">
-          ⚡ Mid ({{ championsByRole.mid?.length || 0 }})
-        </button>
-        <button
-          class="role-btn"
-          [class.active]="selectedRole === 'adc'"
-          (click)="selectRole('adc')">
-          🏹 ADC ({{ championsByRole.adc?.length || 0 }})
-        </button>
-        <button
-          class="role-btn"
-          [class.active]="selectedRole === 'support'"
-          (click)="selectRole('support')">
-          💎 Support ({{ championsByRole.support?.length || 0 }})
-        </button>
-      </div>
-
-      <!-- Search -->
-      <div class="search-container">
-        <input
-          type="text"
-          [(ngModel)]="searchFilter"
-          placeholder="Buscar campeão..."
-          class="champion-search">
-        <span class="search-icon">🔍</span>
-        <span class="results-count">{{ getFilteredChampions().length }} campeões</span>
-      </div>
-    </div>    <!-- Champions Grid -->
-    <div class="champions-grid">
-      <div class="champion-card"
-           *ngFor="let champion of getFilteredChampions()"
-           [class.selected]="selectedChampion?.id === champion.id"
-           (click)="selectChampion(champion)">
-        <img
-          [src]="champion.image"
-          [alt]="champion.name"
-          class="champion-portrait"
-          (error)="onImageError($event, champion)"
-          loading="lazy">
-        <span class="champion-label">{{ champion.name }}</span>
-      </div>
-
-      <!-- Empty state when no champions match filter -->
-      <div *ngIf="getFilteredChampions().length === 0" class="no-champions">
-        <div class="no-champions-icon">😔</div>
-        <div class="no-champions-text">Nenhum campeão encontrado</div>
-        <div class="no-champions-hint">Tente ajustar os filtros ou busca</div>
-      </div>
+      <p class="selection-subtitle">
+        Sua vez de {{ session.phases[session.currentAction] && session.phases[session.currentAction].action === 'ban' ? 'banir' : 'escolher' }} um campeão
+      </p>
     </div>
 
-    <!-- Confirm Button -->
-    <div class="confirm-section" *ngIf="selectedChampion">
-      <div class="selected-preview">
-        <img [src]="selectedChampion.image" [alt]="selectedChampion.name" class="preview-img">
-        <div class="preview-info">
-          <span class="preview-name">{{ selectedChampion.name }}</span>          <span class="preview-action">
-            {{ session.phases[session.currentAction] && session.phases[session.currentAction].action === 'ban' ? 'Será banido' : 'Será escolhido' }}
-          </span>
-        </div>
-      </div>
-
-      <button class="btn btn-primary btn-lg" (click)="confirmSelection()">
-        {{ session.phases[session.currentAction] && session.phases[session.currentAction].action === 'ban' ? '🚫 Confirmar Ban' : '⭐ Confirmar Pick' }}
+    <!-- Botão para abrir modal -->
+    <div class="modal-trigger-section">
+      <button class="btn btn-primary btn-lg open-modal-btn" (click)="openChampionModal()">
+        <span class="btn-icon">{{ getCurrentActionIcon() }}</span>
+        <span class="btn-text">{{ getCurrentActionText() }}</span>
+        <span class="btn-hint">Clique para abrir seleção</span>
       </button>
     </div>
   </div>
@@ -198,9 +122,9 @@
         <div class="final-team">
           <h4>🔵 Time Azul</h4>
           <div class="final-picks">
-            <div *ngFor="let pick of getTeamPicks('blue')" class="final-pick">
-              <img [src]="pick.image" [alt]="pick.name">
-              <span>{{ pick.name }}</span>
+            <div class="final-pick" *ngFor="let pick of getTeamPicks('blue')">
+              <img [src]="pick.image" [alt]="pick.name" class="final-champion-img">
+              <span class="final-champion-name">{{ pick.name }}</span>
             </div>
           </div>
         </div>
@@ -208,27 +132,158 @@
         <div class="final-team">
           <h4>🔴 Time Vermelho</h4>
           <div class="final-picks">
-            <div *ngFor="let pick of getTeamPicks('red')" class="final-pick">
-              <img [src]="pick.image" [alt]="pick.name">
-              <span>{{ pick.name }}</span>
+            <div class="final-pick" *ngFor="let pick of getTeamPicks('red')">
+              <img [src]="pick.image" [alt]="pick.name" class="final-champion-img">
+              <span class="final-champion-name">{{ pick.name }}</span>
             </div>
           </div>
         </div>
       </div>
+
+      <div class="completion-actions">
+        <button class="btn btn-success btn-lg" (click)="completePickBan()">
+          ✅ Iniciar Partida
+        </button>
+        <button class="btn btn-secondary btn-lg" (click)="cancelPickBan()">
+          ❌ Cancelar
+        </button>
+      </div>
     </div>
   </div>
 
-  <!-- Control Buttons -->
-  <div class="control-buttons">
-    <button class="btn btn-secondary" (click)="cancelPickBan()">
-      ❌ Cancelar
-    </button>
+  <!-- ========== MODAL DE SELEÇÃO DE CAMPEÕES ========== -->
+  <div class="champion-modal-overlay" *ngIf="showChampionModal" (click)="closeChampionModal()">
+    <div class="champion-modal" (click)="$event.stopPropagation()">
+      <!-- Header do Modal -->
+      <div class="modal-header" [style.border-color]="getCurrentTeamColor()">
+        <div class="modal-title">
+          <span class="modal-icon">{{ getCurrentActionIcon() }}</span>
+          <div class="modal-title-text">
+            <h2>{{ getCurrentActionText() }}</h2>
+            <p class="modal-subtitle">
+              {{ getCurrentPlayerNameForModal() }} - {{ getCurrentPlayerTeamForModal() }}
+            </p>
+          </div>
+        </div>
+        <button class="modal-close-btn" (click)="closeChampionModal()">
+          ✕
+        </button>
+      </div>
 
-    <button
-      class="btn btn-success"
-      *ngIf="session.phase === 'completed'"
-      (click)="completePickBan()">
-      🚀 Iniciar Partida
-    </button>
+      <!-- Conteúdo do Modal -->
+      <div class="modal-content">
+        <!-- Filtros -->
+        <div class="modal-filters">
+          <!-- Role Filter -->
+          <div class="modal-role-filter">
+            <div class="filter-label">Filtrar por Lane:</div>
+            <div class="role-buttons">
+              <button
+                class="role-btn"
+                [class.active]="modalSelectedRole === 'all'"
+                (click)="selectRoleInModal('all')">
+                Todos ({{ champions.length }})
+              </button>
+              <button
+                class="role-btn"
+                [class.active]="modalSelectedRole === 'top'"
+                (click)="selectRoleInModal('top')">
+                🛡️ Top ({{ championsByRole.top?.length || 0 }})
+              </button>
+              <button
+                class="role-btn"
+                [class.active]="modalSelectedRole === 'jungle'"
+                (click)="selectRoleInModal('jungle')">
+                🌲 Jungle ({{ championsByRole.jungle?.length || 0 }})
+              </button>
+              <button
+                class="role-btn"
+                [class.active]="modalSelectedRole === 'mid'"
+                (click)="selectRoleInModal('mid')">
+                ⚡ Mid ({{ championsByRole.mid?.length || 0 }})
+              </button>
+              <button
+                class="role-btn"
+                [class.active]="modalSelectedRole === 'adc'"
+                (click)="selectRoleInModal('adc')">
+                🏹 ADC ({{ championsByRole.adc?.length || 0 }})
+              </button>
+              <button
+                class="role-btn"
+                [class.active]="modalSelectedRole === 'support'"
+                (click)="selectRoleInModal('support')">
+                💎 Support ({{ championsByRole.support?.length || 0 }})
+              </button>
+            </div>
+          </div>
+
+          <!-- Search -->
+          <div class="modal-search-container">
+            <div class="search-wrapper">
+              <input
+                id="modal-champion-search"
+                type="text"
+                [(ngModel)]="modalSearchFilter"
+                placeholder="Buscar campeão pelo nome..."
+                class="modal-champion-search"
+                autocomplete="off">
+              <span class="search-icon">🔍</span>
+            </div>
+            <span class="search-results-count">{{ getModalFilteredChampions().length }} campeões encontrados</span>
+          </div>
+        </div>
+
+        <!-- Grid de Campeões -->
+        <div class="modal-champions-grid">
+          <div class="modal-champion-card"
+               *ngFor="let champion of getModalFilteredChampions()"
+               [class.selected]="modalSelectedChampion?.id === champion.id"
+               (click)="selectChampionInModal(champion)">
+            <img
+              [src]="champion.image"
+              [alt]="champion.name"
+              class="modal-champion-portrait"
+              (error)="onImageError($event, champion)"
+              loading="lazy">
+            <span class="modal-champion-label">{{ champion.name }}</span>
+          </div>
+
+          <!-- Estado vazio -->
+          <div *ngIf="getModalFilteredChampions().length === 0" class="modal-no-champions">
+            <div class="no-champions-icon">😔</div>
+            <div class="no-champions-text">Nenhum campeão encontrado</div>
+            <div class="no-champions-hint">Tente ajustar os filtros ou busca</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer do Modal com Confirmação -->
+      <div class="modal-footer">
+        <div class="modal-selection-preview" *ngIf="modalSelectedChampion">
+          <div class="preview-content">
+            <img [src]="modalSelectedChampion.image" [alt]="modalSelectedChampion.name" class="preview-img">
+            <div class="preview-info">
+              <span class="preview-name">{{ modalSelectedChampion.name }}</span>
+              <span class="preview-action">
+                {{ getCurrentActionText() }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn btn-secondary" (click)="cancelModalSelection()">
+            ❌ Cancelar
+          </button>
+          <button 
+            class="btn btn-primary confirm-btn" 
+            [class.disabled]="!modalSelectedChampion"
+            [disabled]="!modalSelectedChampion"
+            (click)="confirmModalSelection()">
+            {{ getCurrentActionIcon() }} Confirmar {{ getCurrentActionText() }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
