@@ -29,7 +29,7 @@ export class DiscordService {
   private activeMatches: Map<string, DiscordMatch> = new Map();
   private isConnected = false;
   private botToken?: string;
-  private targetChannelName = 'lol-matchmaking';
+  private targetChannelName = '🦆┊Fazenda';
   private databaseManager: DatabaseManager;
 
   // WebSocket principal do servidor

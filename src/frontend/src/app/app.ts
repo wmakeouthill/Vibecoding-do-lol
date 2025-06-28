@@ -1796,15 +1796,15 @@ export class App implements OnInit, OnDestroy {
   // Placeholder Implementations for missing methods
 
   private startLCUStatusCheck(): void {
-    console.log('🎮 Iniciando verificação de status do LCU...');
+    console.log('🔄 Iniciando verificação de status do LCU...');
     
     // Verificar status inicial
     this.checkLCUStatus();
     
-    // Verificar a cada 30 segundos
+    // Verificar a cada 60 segundos (reduzido de 30 para 60)
     setInterval(() => {
       this.checkLCUStatus();
-    }, 30000);
+    }, 60000);
   }
   
   private checkLCUStatus(): void {
@@ -1841,11 +1841,11 @@ export class App implements OnInit, OnDestroy {
     this.checkBackendConnection();
     this.updateQueueStatus();
     
-    // Verificar a cada 10 segundos
+    // Verificar a cada 30 segundos (reduzido de 10 para 30)
     setInterval(() => {
       this.checkBackendConnection();
       this.updateQueueStatus();
-    }, 10000);
+    }, 30000);
   }
   
   private checkBackendConnection(): void {
@@ -2053,14 +2053,16 @@ export class App implements OnInit, OnDestroy {
 
   // Adicionar listener para atualizações automáticas do Discord
   private setupDiscordStatusListener(): void {
+    console.log('🔧 [APP] Configurando listener do Discord...');
+    
     // Verificação inicial do status do Discord via API HTTP
     this.checkDiscordStatus();
     
-    // Verificação periódica do status (a cada 30 segundos) via API HTTP
+    // Verificação periódica do status (a cada 60 segundos) via API HTTP (reduzido de 30 para 60)
     setInterval(() => {
       console.log('🔄 [App] Verificação periódica do status do Discord...');
       this.checkDiscordStatus();
-    }, 30000);
+    }, 60000);
     
     // Listener para mudanças via WebSocket (apenas para notificações, não para sobrescrever status)
     this.discordService.onConnectionChange().subscribe(isConnected => {
@@ -2073,6 +2075,12 @@ export class App implements OnInit, OnDestroy {
         this.checkDiscordStatus();
       }
     });
+
+    // Forçar uma verificação inicial após 2 segundos para garantir que está funcionando
+    setTimeout(() => {
+      console.log('🔍 [App] Verificação inicial do Discord após delay...');
+      this.checkDiscordStatus();
+    }, 2000);
   }
 
   // Electron window controls

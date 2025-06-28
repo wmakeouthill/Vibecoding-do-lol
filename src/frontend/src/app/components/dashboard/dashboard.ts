@@ -27,6 +27,7 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
 
   leaderboardPosition: number = 0;
   private subscriptions: Subscription[] = [];
+  private dataLoaded = false; // Flag para controlar se os dados já foram carregados
 
   // Dados de partidas - agora preenchidos com dados reais
   recentMatches: Match[] = [];
@@ -37,9 +38,11 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
   customMatchesCount: number = 0;
   isLoadingCustomCount: boolean = false;
 
-  constructor(private apiService: ApiService, private cdr: ChangeDetectorRef, private http: HttpClient) {}  // Detectar mudanças no player
+  constructor(private apiService: ApiService, private cdr: ChangeDetectorRef, private http: HttpClient) {}
+
+  // Detectar mudanças no player - APENAS quando o player muda pela primeira vez
   ngOnChanges(): void {
-    if (this.player && !this.isLoadingMatches) {
+    if (this.player && !this.dataLoaded) {
       console.log('🎮 [DASHBOARD] Player data received:', {
         summonerName: this.player.summonerName,
         gameName: this.player.gameName,
@@ -48,12 +51,9 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
         rankedData: this.player.rankedData
       });
       
-      // Só carregar se não estiver já carregando
-      if (!this.isLoadingMatches) {
-        this.loadRecentMatches();
-      }
-      this.loadCustomMatchesCount();
-      this.loadLeaderboardPosition();
+      // Carregar dados apenas uma vez
+      this.loadAllData();
+      this.dataLoaded = true;
     }
   }
 
@@ -649,9 +649,11 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
     this.matchHistoryError = null;
   }
   ngOnInit(): void {
-    this.loadRecentMatches();
-    this.loadCustomMatchesCount();
-    this.loadLeaderboardPosition();
+    // Se já temos dados do player, carregar imediatamente
+    if (this.player && !this.dataLoaded) {
+      this.loadAllData();
+      this.dataLoaded = true;
+    }
   }
 
   ngOnDestroy(): void {
@@ -659,12 +661,19 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
     this.subscriptions.forEach(sub => sub.unsubscribe());
   }
 
-  // Public method to refresh all dashboard data
+  // Método centralizado para carregar todos os dados
+  private loadAllData(): void {
+    this.loadRecentMatches();
+    this.loadCustomMatchesCount();
+    this.loadLeaderboardPosition();
+  }
+
+  // Public method to refresh all dashboard data (para uso manual)
   public refreshAllData(): void {
     console.log('🔄 Atualizando todos os dados do dashboard');
-    this.loadRecentMatches();
-    this.loadCustomMatchesFromDatabase();
-    this.loadCustomMatchesCount();
+    this.dataLoaded = false; // Reset flag para permitir recarregamento
+    this.loadAllData();
+    this.dataLoaded = true;
   }
 
   // Método para carregar contagem de partidas customizadas

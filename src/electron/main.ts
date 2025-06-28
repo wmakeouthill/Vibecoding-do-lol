@@ -141,13 +141,8 @@ function createWindow(): void {
         responseHeaders
       });
     });
-      mainWindow.show();
     
-    // Auto-refresh após 5 segundos para garantir que tudo carregue corretamente
-    setTimeout(() => {
-      console.log('🔄 Auto-refresh após 5 segundos...');
-      mainWindow.webContents.reload();
-    }, 5000);
+    mainWindow.show();
   });
 
   // Configurar menu da aplicação

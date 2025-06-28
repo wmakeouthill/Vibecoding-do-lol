@@ -31,7 +31,10 @@ export class DiscordIntegrationService {
     this.instanceId = DiscordIntegrationService.instanceCount;
     console.log(`🔧 [DiscordService] Instância #${this.instanceId} criada (Total: ${DiscordIntegrationService.instanceCount})`);
     
-    this.connectToWebSocket();
+    // Aguardar um pouco antes de conectar para evitar conflitos de inicialização
+    setTimeout(() => {
+      this.connectToWebSocket();
+    }, 500);
   }
 
   private connectToWebSocket() {
