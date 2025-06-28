@@ -233,17 +233,22 @@
 
     // Join queue section
     .join-queue-section {
+      text-align: center;
+      padding: var(--spacing-xl);
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+
       .queue-info {
         margin-bottom: var(--spacing-lg);
 
         h3 {
           font-size: var(--font-size-xl);
           margin-bottom: var(--spacing-sm);
-          color: var(--primary-gold);
+          color: var(--text-primary);
         }
 
         p {
-          font-size: var(--font-size-md);
           color: var(--text-secondary);
           margin-bottom: var(--spacing-lg);
         }
@@ -252,18 +257,27 @@
           display: flex;
           justify-content: center;
           gap: var(--spacing-lg);
+          margin-bottom: var(--spacing-lg);
 
           .requirement-item {
             display: flex;
             align-items: center;
             gap: var(--spacing-sm);
-            font-size: var(--font-size-sm);
+            color: var(--text-secondary);
 
-            i {
-              color: #e74c3c;
+            .icon-check {
+              width: 20px;
+              height: 20px;
+              border-radius: 50%;
+              background: var(--error);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              color: white;
+              font-size: 12px;
 
               &.met {
-                color: #27ae60;
+                background: var(--success);
               }
             }
           }
@@ -271,27 +285,86 @@
       }
 
       .queue-btn {
-        padding: var(--spacing-lg) var(--spacing-xl);
+        width: 100%;
+        max-width: 300px;
+        padding: var(--spacing-lg);
+        border: none;
+        border-radius: var(--radius-md);
         font-size: var(--font-size-lg);
-        border-radius: var(--radius-lg);
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--spacing-sm);
 
         &.join-btn {
-          background: var(--gradient-primary);
-          color: white;
-          border: 2px solid var(--primary-gold);
-          font-weight: 700;
-          transition: all 0.3s ease;
+          background: var(--primary-gold);
+          color: var(--bg-primary);
 
           &:hover:not(:disabled) {
-            transform: translateY(-3px);
-            box-shadow: 0 8px 25px rgba(200, 155, 60, 0.4);
+            background: var(--primary-gold-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(200, 155, 60, 0.3);
           }
 
           &:disabled {
-            opacity: 0.5;
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
             cursor: not-allowed;
             transform: none;
             box-shadow: none;
+          }
+        }
+
+        &.leave-btn {
+          background: var(--error);
+          color: white;
+
+          &:hover {
+            background: var(--error-hover);
+            transform: translateY(-2px);
+          }
+        }
+
+        i {
+          font-size: var(--font-size-lg);
+        }
+      }
+
+      // Discord status info section
+      .discord-status-info {
+        margin-top: var(--spacing-lg);
+        padding: var(--spacing-md);
+        background: var(--bg-tertiary);
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border-color);
+
+        .status-item {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: var(--spacing-sm);
+          padding: var(--spacing-sm);
+          margin-bottom: var(--spacing-sm);
+          border-radius: var(--radius-sm);
+          background: var(--bg-secondary);
+          color: var(--text-secondary);
+          font-size: var(--font-size-sm);
+          transition: all 0.3s ease;
+
+          &:last-child {
+            margin-bottom: 0;
+          }
+
+          &.connected {
+            background: var(--success);
+            color: white;
+          }
+
+          i {
+            font-size: var(--font-size-md);
           }
         }
       }

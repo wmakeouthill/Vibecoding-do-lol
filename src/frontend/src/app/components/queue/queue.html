@@ -11,8 +11,9 @@
     <div class="discord-toggle" *ngIf="showDiscordMode">
       <div class="discord-status" [class.connected]="isDiscordConnected">
         <i class="fab fa-discord"></i>
-        <span *ngIf="isDiscordConnected">Discord Conectado</span>
-        <span *ngIf="!isDiscordConnected">Discord Desconectado</span>
+        <span *ngIf="isDiscordConnected && discordService.isDiscordBackendConnected()">Discord Conectado</span>
+        <span *ngIf="isDiscordConnected && !discordService.isDiscordBackendConnected()">Servidor Conectado (Discord Offline)</span>
+        <span *ngIf="!isDiscordConnected">Desconectado</span>
       </div>
       <div class="discord-user" *ngIf="currentDiscordUser">
         👤 {{ currentDiscordUser.username }}
@@ -289,6 +290,22 @@
         <i class="fab fa-discord"></i>
         <span>Entrar na Fila Discord</span>
       </button>
+
+      <!-- Status do Discord -->
+      <div class="discord-status-info" *ngIf="showDiscordMode">
+        <div class="status-item" [class.connected]="isDiscordConnected">
+          <i class="fas fa-server"></i>
+          <span>Servidor: {{ isDiscordConnected ? 'Conectado' : 'Desconectado' }}</span>
+        </div>
+        <div class="status-item" [class.connected]="discordService.isDiscordBackendConnected()">
+          <i class="fab fa-discord"></i>
+          <span>Discord Bot: {{ discordService.isDiscordBackendConnected() ? 'Conectado' : 'Offline' }}</span>
+        </div>
+        <div class="status-item" [class.connected]="discordService.isInChannel()">
+          <i class="fas fa-hashtag"></i>
+          <span>Canal: {{ discordService.isInChannel() ? 'Conectado' : 'Não detectado' }}</span>
+        </div>
+      </div>
 
       <!-- Informações automáticas do LCU -->
       <div class="lcu-info-section" *ngIf="currentPlayer && currentPlayer.gameName && currentPlayer.tagLine">

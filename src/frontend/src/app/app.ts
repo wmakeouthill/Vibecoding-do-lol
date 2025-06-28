@@ -2055,32 +2055,37 @@ export class App implements OnInit, OnDestroy {
   private setupDiscordStatusListener(): void {
     console.log('🔧 [APP] Configurando listener do Discord...');
     
-    // Verificação inicial do status do Discord via API HTTP
+    // Verificação inicial do status do Discord via API HTTP (apenas uma vez)
     this.checkDiscordStatus();
     
-    // Verificação periódica do status (a cada 60 segundos) via API HTTP (reduzido de 30 para 60)
+    // Verificação periódica do status (a cada 120 segundos) via API HTTP (reduzido para evitar conflitos)
     setInterval(() => {
       console.log('🔄 [App] Verificação periódica do status do Discord...');
       this.checkDiscordStatus();
-    }, 60000);
+    }, 120000); // 2 minutos em vez de 1 minuto
     
-    // Listener para mudanças via WebSocket (apenas para notificações, não para sobrescrever status)
+    // Listener para mudanças via WebSocket (principal fonte de atualizações)
     this.discordService.onConnectionChange().subscribe(isConnected => {
       console.log('🔗 [App] Status Discord alterado via WebSocket:', isConnected);
       
-      // Só atualizar se o status mudou significativamente E se a API HTTP confirmar
+      // Atualizar status local baseado no WebSocket (mais confiável para mudanças em tempo real)
+      this.discordStatus.isConnected = isConnected;
+      
+      // Só fazer verificação HTTP se houver mudança significativa
       if (this.discordStatus.isConnected !== isConnected) {
         console.log('🔄 [App] Mudança detectada via WebSocket, verificando via API HTTP...');
         // Fazer uma verificação rápida via API HTTP para confirmar
-        this.checkDiscordStatus();
+        setTimeout(() => {
+          this.checkDiscordStatus();
+        }, 5000); // Aguardar 5 segundos para evitar spam
       }
     });
 
-    // Forçar uma verificação inicial após 2 segundos para garantir que está funcionando
+    // Verificação inicial após 5 segundos (reduzido para evitar conflitos)
     setTimeout(() => {
       console.log('🔍 [App] Verificação inicial do Discord após delay...');
       this.checkDiscordStatus();
-    }, 2000);
+    }, 5000);
   }
 
   // Electron window controls

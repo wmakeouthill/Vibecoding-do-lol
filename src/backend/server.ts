@@ -172,7 +172,7 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
         botUsername: discordService.getBotUsername(),
         queueSize: discordService.getQueueSize(),
         activeMatches: discordService.getActiveMatches(),
-        inChannel: discordService.isDiscordConnected() // Se Discord está conectado, permitir usar a fila
+        inChannel: false // Será atualizado pelo frontend quando necessário
       };
       ws.send(JSON.stringify(discordStatus));
       
@@ -210,6 +210,27 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
         ws.send(JSON.stringify({
           type: 'discord_links_update',
           links: []
+        }));
+      }
+      break;
+    case 'get_discord_channel_status':
+      console.log('🔍 Verificando status do canal Discord...');
+      try {
+        const hasUsers = await discordService.hasUsersInMatchmakingChannel();
+        const usersInChannel = await discordService.getUsersInMatchmakingChannel();
+        ws.send(JSON.stringify({
+          type: 'discord_channel_status',
+          hasUsers: hasUsers,
+          usersCount: usersInChannel.length,
+          inChannel: hasUsers
+        }));
+      } catch (error) {
+        console.error('❌ Erro ao verificar canal Discord:', error);
+        ws.send(JSON.stringify({
+          type: 'discord_channel_status',
+          hasUsers: false,
+          usersCount: 0,
+          inChannel: false
         }));
       }
       break;
@@ -1207,7 +1228,7 @@ app.get('/api/discord/status', async (req: Request, res: Response) => {
       botUsername,
       queueSize,
       activeMatches,
-      inChannel: false // Será implementado depois
+      inChannel: false // Será atualizado pelo frontend quando necessário
     };
     
     console.log('📡 [API] Status do Discord retornado:', status);

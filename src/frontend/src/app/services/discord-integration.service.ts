@@ -129,11 +129,20 @@ export class DiscordIntegrationService {
         };
         
         // Atualizar status de conexão baseado na resposta do backend
-        if (data.isConnected !== undefined) {
+        // Só atualizar se receber uma resposta válida
+        if (data.isConnected !== undefined && data.isConnected !== null) {
           console.log(`🎮 [DiscordService #${this.instanceId}] Atualizando status de conexão para:`, data.isConnected);
           this.isBackendConnected = data.isConnected;
           this.connectionSubject.next(data.isConnected);
+        } else {
+          console.log(`⚠️ [DiscordService #${this.instanceId}] Resposta de status inválida, mantendo status atual:`, this.isBackendConnected);
         }
+        break;
+
+      case 'discord_channel_status':
+        console.log(`🔍 [DiscordService #${this.instanceId}] Status do canal Discord recebido:`, data);
+        this.isInDiscordChannel = data.inChannel;
+        console.log(`🔍 [DiscordService #${this.instanceId}] Usuários no canal: ${data.usersCount}, inChannel: ${data.inChannel}`);
         break;
 
       case 'queue_update':
@@ -169,7 +178,8 @@ export class DiscordIntegrationService {
       { type: 'get_discord_status' },
       { type: 'get_discord_users_online' },
       { type: 'get_discord_links' },
-      { type: 'get_queue_status' }
+      { type: 'get_queue_status' },
+      { type: 'get_discord_channel_status' }
     ];
 
     messages.forEach(msg => {
@@ -226,7 +236,7 @@ export class DiscordIntegrationService {
   isConnected(): boolean {
     const wsOpen = this.ws?.readyState === WebSocket.OPEN;
     const backendConnected = this.isBackendConnected;
-    const finalStatus = backendConnected && wsOpen;
+    const finalStatus = wsOpen;
     
     console.log(`🔍 [DiscordService #${this.instanceId}] Status de conexão:`, {
       wsOpen,
@@ -236,6 +246,10 @@ export class DiscordIntegrationService {
     });
     
     return finalStatus;
+  }
+
+  isDiscordBackendConnected(): boolean {
+    return this.isBackendConnected;
   }
 
   isInChannel(): boolean {
@@ -302,5 +316,16 @@ export class DiscordIntegrationService {
         tagLine: link.tag_line
       });
     });
+  }
+
+  // Método para solicitar especificamente o status do canal
+  requestChannelStatus(): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.warn(`⚠️ [DiscordService #${this.instanceId}] WebSocket não está conectado, não é possível solicitar status do canal`);
+      return;
+    }
+
+    console.log(`🔍 [DiscordService #${this.instanceId}] Solicitando status do canal Discord...`);
+    this.ws.send(JSON.stringify({ type: 'get_discord_channel_status' }));
   }
 }
