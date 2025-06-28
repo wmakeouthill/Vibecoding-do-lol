@@ -831,39 +831,67 @@ export class MatchmakingService {
         console.error(`Erro ao notificar jogador ${player.summonerName}:`, error);
       }
     });
-  }  // Método para aceitar partida
+  }
+
+  // Método para aceitar partida
   async acceptMatch(playerId: number, matchId: number, summonerName?: string): Promise<void> {
     const match = this.activeMatches.get(matchId);
     if (!match) {
       throw new Error('Partida não encontrada');
     }
 
-    // Procurar jogador por ID ou por nome
-    let player = [...match.team1, ...match.team2].find(p => p.id === playerId);
+    console.log(`🔍 [Matchmaking] Tentativa de aceitar partida - Match ID: ${matchId}, Player ID: ${playerId}, Nome: ${summonerName}`);
+    console.log(`🔍 [Matchmaking] Jogadores na partida:`, [...match.team1, ...match.team2].map(p => ({ id: p.id, name: p.summonerName })));
+
+    // Procurar jogador - priorizar por nome se disponível
+    let player: QueuedPlayer | undefined;
     
-    // Se não encontrou por ID, tentar por nome (útil para casos onde o ID pode estar inconsistente)
-    if (!player && summonerName) {
+    if (summonerName) {
+      // Primeira tentativa: buscar por nome exato
       player = [...match.team1, ...match.team2].find(p => p.summonerName === summonerName);
+      
+      // Segunda tentativa: buscar por nome parcial (sem tagline)
+      if (!player && summonerName.includes('#')) {
+        const gameNameOnly = summonerName.split('#')[0];
+        player = [...match.team1, ...match.team2].find(p => p.summonerName.startsWith(gameNameOnly + '#'));
+      }
+      
+      // Terceira tentativa: buscar por gameName apenas
+      if (!player) {
+        player = [...match.team1, ...match.team2].find(p => p.summonerName.split('#')[0] === summonerName);
+      }
+    }
+    
+    // Se não encontrou por nome, tentar por ID
+    if (!player && playerId) {
+      player = [...match.team1, ...match.team2].find(p => p.id === playerId);
     }
     
     if (!player) {
-      console.log(`🔍 Tentativa de aceitar partida - Player ID: ${playerId}, Nome: ${summonerName}`);
-      console.log(`🔍 Jogadores na partida:`, [...match.team1, ...match.team2].map(p => ({ id: p.id, name: p.summonerName })));
+      console.log(`❌ [Matchmaking] Jogador não encontrado na partida`);
+      console.log(`🔍 [Matchmaking] Dados recebidos:`, { playerId, summonerName });
+      console.log(`🔍 [Matchmaking] Jogadores disponíveis:`, [...match.team1, ...match.team2].map(p => ({ id: p.id, name: p.summonerName })));
       throw new Error('Jogador não está nesta partida');
+    }
+
+    // Verificar se o jogador já aceitou
+    if (match.acceptedPlayers.has(player.id)) {
+      console.log(`⚠️ [Matchmaking] ${player.summonerName} já aceitou a partida ${matchId}`);
+      return; // Não é um erro, apenas já aceitou
     }
 
     // Adicionar jogador aos que aceitaram
     match.acceptedPlayers.add(player.id);
-    console.log(`✅ ${player.summonerName} aceitou a partida ${matchId}`);
+    console.log(`✅ [Matchmaking] ${player.summonerName} aceitou a partida ${matchId}`);
     
     // Verificar se todos os jogadores aceitaram
     const allPlayers = [...match.team1, ...match.team2];
     const allAccepted = allPlayers.every(p => match.acceptedPlayers.has(p.id));
     
-    console.log(`📊 Partida ${matchId}: ${match.acceptedPlayers.size}/${allPlayers.length} aceitaram`);
+    console.log(`📊 [Matchmaking] Partida ${matchId}: ${match.acceptedPlayers.size}/${allPlayers.length} aceitaram`);
     
     if (allAccepted) {
-      console.log(`🎉 Todos os jogadores aceitaram a partida ${matchId}! Iniciando draft...`);
+      console.log(`🎉 [Matchmaking] Todos os jogadores aceitaram a partida ${matchId}! Iniciando draft...`);
       
       // Limpar timeout se existir
       if (match.acceptTimeout) {
@@ -883,18 +911,41 @@ export class MatchmakingService {
       throw new Error('Partida não encontrada');
     }
 
-    // Procurar jogador por ID ou por nome
-    let player = [...match.team1, ...match.team2].find(p => p.id === playerId);
+    console.log(`🔍 [Matchmaking] Tentativa de recusar partida - Match ID: ${matchId}, Player ID: ${playerId}, Nome: ${summonerName}`);
+    console.log(`🔍 [Matchmaking] Jogadores na partida:`, [...match.team1, ...match.team2].map(p => ({ id: p.id, name: p.summonerName })));
+
+    // Procurar jogador - priorizar por nome se disponível
+    let player: QueuedPlayer | undefined;
     
-    if (!player && summonerName) {
+    if (summonerName) {
+      // Primeira tentativa: buscar por nome exato
       player = [...match.team1, ...match.team2].find(p => p.summonerName === summonerName);
+      
+      // Segunda tentativa: buscar por nome parcial (sem tagline)
+      if (!player && summonerName.includes('#')) {
+        const gameNameOnly = summonerName.split('#')[0];
+        player = [...match.team1, ...match.team2].find(p => p.summonerName.startsWith(gameNameOnly + '#'));
+      }
+      
+      // Terceira tentativa: buscar por gameName apenas
+      if (!player) {
+        player = [...match.team1, ...match.team2].find(p => p.summonerName.split('#')[0] === summonerName);
+      }
+    }
+    
+    // Se não encontrou por nome, tentar por ID
+    if (!player && playerId) {
+      player = [...match.team1, ...match.team2].find(p => p.id === playerId);
     }
     
     if (!player) {
+      console.log(`❌ [Matchmaking] Jogador não encontrado na partida para recusar`);
+      console.log(`🔍 [Matchmaking] Dados recebidos:`, { playerId, summonerName });
+      console.log(`🔍 [Matchmaking] Jogadores disponíveis:`, [...match.team1, ...match.team2].map(p => ({ id: p.id, name: p.summonerName })));
       throw new Error('Jogador não está nesta partida');
     }
 
-    console.log(`❌ ${player.summonerName} recusou a partida ${matchId}`);
+    console.log(`❌ [Matchmaking] ${player.summonerName} recusou a partida ${matchId}`);
     
     // Cancelar partida imediatamente quando alguém recusa
     this.cancelMatch(matchId, `${player.summonerName} recusou a partida`);
@@ -910,13 +961,60 @@ export class MatchmakingService {
     // Remover partida das ativas
     this.activeMatches.delete(matchId);
 
-    // Retornar jogadores que aceitaram para a fila
-    const acceptedPlayers = [...match.team1, ...match.team2].filter(p => match.acceptedPlayers.has(p.id) && p.id > 0);
-    acceptedPlayers.forEach(player => {
-      this.queue.push(player);
+    // Limpar timeout se existir
+    if (match.acceptTimeout) {
+      clearTimeout(match.acceptTimeout);
+      match.acceptTimeout = undefined;
+    }
+
+    // Retornar TODOS os jogadores para a fila (exceto quem recusou)
+    const allPlayers = [...match.team1, ...match.team2];
+    
+    // Se a razão indica que alguém recusou, identificar quem recusou
+    let declinedPlayer: QueuedPlayer | undefined;
+    if (reason.includes('recusou a partida')) {
+      const playerName = reason.replace(' recusou a partida', '');
+      declinedPlayer = allPlayers.find(p => p.summonerName === playerName);
+      console.log(`🔍 [Cancelamento] Jogador que recusou identificado:`, declinedPlayer?.summonerName);
+    }
+
+    // Adicionar jogadores de volta à fila (exceto quem recusou)
+    allPlayers.forEach(player => {
+      // Pular apenas quem recusou (incluindo bots)
+      if (player !== declinedPlayer) {
+        // Resetar websocket para null (será atualizado quando reconectar)
+        player.websocket = null as any;
+        this.queue.push(player);
+        console.log(`🔄 [Matchmaking] ${player.summonerName} retornou à fila após cancelamento (Bot: ${player.id < 0})`);
+      } else {
+        console.log(`❌ [Matchmaking] ${player.summonerName} NÃO retornou à fila (recusou a partida)`);
+      }
     });
 
-    // Atualizar status da fila
+    // Notificar jogadores sobre o cancelamento
+    allPlayers.forEach(player => {
+      if (player.websocket && player.id > 0) { // Pular bots
+        try {
+          player.websocket.send(JSON.stringify({
+            type: 'match_cancelled',
+            data: { 
+              matchId: matchId, 
+              reason: reason,
+              declinedPlayer: declinedPlayer?.summonerName
+            }
+          }));
+        } catch (error) {
+          console.error(`Erro ao notificar cancelamento para ${player.summonerName}:`, error);
+        }
+      }
+    });
+
+    // Atualizar posições na fila
+    this.queue.forEach((p, index) => {
+      p.queuePosition = index + 1;
+    });
+
+    // Broadcast atualização da fila
     this.broadcastQueueUpdate();
 
     this.addActivity('match_created', `Partida ${matchId} cancelada por ${reason}`);
@@ -1166,27 +1264,59 @@ export class MatchmakingService {
   // Método para iniciar fase de draft
   private async startDraftPhase(matchId: number): Promise<void> {
     const match = this.activeMatches.get(matchId);
-    if (!match) return;
+    if (!match) {
+      console.log(`❌ [Draft] Partida ${matchId} não encontrada para iniciar draft`);
+      return;
+    }
 
-    console.log(`🎯 Iniciando fase de draft para partida ${matchId}`);
+    console.log(`🎯 [Draft] Iniciando fase de draft para partida ${matchId}`);
+    console.log(`🎯 [Draft] Jogadores na partida:`, [...match.team1, ...match.team2].map(p => ({ id: p.id, name: p.summonerName })));
 
     // Atualizar status da partida
     match.status = 'in_progress';
 
-    // Criar dados do draft
+    // Criar dados do draft com a estrutura correta que o frontend espera
     const draftData = {
       matchId: matchId,
       phase: 'draft',
       turnOrder: this.generateDraftTurnOrder(match),
       timeLimit: 30, // segundos por turno
-      currentTurn: 0
+      currentTurn: 0,
+      // Estrutura que o frontend espera
+      team1: match.team1.map(p => ({
+        id: p.id,
+        summonerName: p.summonerName,
+        name: p.summonerName, // Frontend espera 'name' também
+        mmr: p.currentMMR,
+        primaryLane: p.preferences?.primaryLane || 'fill',
+        secondaryLane: p.preferences?.secondaryLane || 'fill'
+      })),
+      team2: match.team2.map(p => ({
+        id: p.id,
+        summonerName: p.summonerName,
+        name: p.summonerName, // Frontend espera 'name' também
+        mmr: p.currentMMR,
+        primaryLane: p.preferences?.primaryLane || 'fill',
+        secondaryLane: p.preferences?.secondaryLane || 'fill'
+      })),
+      // Dados adicionais para o draft
+      averageMMR: {
+        team1: match.averageMMR1,
+        team2: match.averageMMR2
+      },
+      estimatedGameDuration: 25, // minutos
+      acceptTimeout: 30 // segundos para aceitar
     };
+
+    console.log(`🎯 [Draft] Dados do draft criados:`, draftData);
 
     // Notificar jogadores sobre o draft
     this.notifyDraftPhase(match, draftData);
 
     // Adicionar atividade
     this.addActivity('match_created', `Fase de draft iniciada para partida ${matchId}`);
+    
+    console.log(`✅ [Draft] Fase de draft iniciada com sucesso para partida ${matchId}`);
   }
 
   // Método para gerar ordem de turnos no draft
@@ -1219,18 +1349,32 @@ export class MatchmakingService {
   private notifyDraftPhase(match: Match, draftData: any): void {
     const allPlayers = [...match.team1, ...match.team2];
     
+    console.log(`📡 [Draft] Notificando ${allPlayers.length} jogadores sobre o draft`);
+    
     allPlayers.forEach(player => {
       if (player.websocket && player.id > 0) {
         try {
-          player.websocket.send(JSON.stringify({
+          const message = {
             type: 'draft_started',
             data: draftData
-          }));
+          };
+          
+          console.log(`📡 [Draft] Enviando mensagem para ${player.summonerName}:`, message);
+          player.websocket.send(JSON.stringify(message));
+          console.log(`✅ [Draft] Mensagem enviada com sucesso para ${player.summonerName}`);
         } catch (error) {
-          console.error(`Erro ao notificar draft para ${player.summonerName}:`, error);
+          console.error(`❌ [Draft] Erro ao notificar draft para ${player.summonerName}:`, error);
         }
+      } else {
+        console.log(`⚠️ [Draft] Pulando ${player.summonerName} (bot ou sem websocket):`, {
+          id: player.id,
+          hasWebSocket: !!player.websocket,
+          isBot: player.id < 0
+        });
       }
     });
+    
+    console.log(`📡 [Draft] Notificação de draft concluída`);
   }
 
   // Método para processar ação do draft

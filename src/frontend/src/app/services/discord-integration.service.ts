@@ -313,6 +313,24 @@ export class DiscordIntegrationService {
         this.matchFoundSubject.next(data.data);
         break;
 
+      case 'draft_started':
+        console.log(`🎯 [DiscordService #${this.instanceId}] Fase de draft iniciada!`, data);
+        // Emitir evento para o app principal processar
+        this.matchFoundSubject.next({
+          ...data.data,
+          phase: 'draft_started'
+        });
+        break;
+
+      case 'match_cancelled':
+        console.log(`❌ [DiscordService #${this.instanceId}] Partida cancelada!`, data);
+        // Emitir evento de cancelamento
+        this.matchFoundSubject.next({
+          type: 'match_cancelled',
+          ...data.data
+        });
+        break;
+
       case 'pong':
         // Heartbeat response - já tratado no onmessage
         break;

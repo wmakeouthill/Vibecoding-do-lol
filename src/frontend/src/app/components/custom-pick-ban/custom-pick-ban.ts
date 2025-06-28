@@ -182,23 +182,42 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     this.checkForBotAutoAction(currentPhase);
   }
   private checkForBotAutoAction(phase: PickBanPhase) {
-    if (!this.session) return;
+    if (!this.session) {
+      console.log('❌ [Bot] Sessão não disponível para verificar ação de bot');
+      return;
+    }
 
     const currentPlayer = this.getCurrentPlayer();
+    console.log('🔍 [Bot] Verificando ação de bot para player:', currentPlayer);
 
     // Check if current player is a bot
     if (currentPlayer && this.isBot(currentPlayer)) {
-      console.log(`🤖 Bot ${currentPlayer.summonerName || currentPlayer.name} irá fazer ${phase.action} automaticamente`);
+      console.log(`🤖 [Bot] Bot ${currentPlayer.summonerName || currentPlayer.name} irá fazer ${phase.action} automaticamente`);
+      console.log(`🤖 [Bot] Dados do bot:`, {
+        id: currentPlayer.id,
+        summonerName: currentPlayer.summonerName,
+        name: currentPlayer.name,
+        isBot: this.isBot(currentPlayer)
+      });
 
       // Clear any existing bot timer
       if (this.botPickTimer) {
         clearTimeout(this.botPickTimer);
+        console.log('🔄 [Bot] Timer anterior limpo');
       }
 
       // Auto-pick/ban after 2 seconds
       this.botPickTimer = setTimeout(() => {
+        console.log(`🤖 [Bot] Executando ação automática para ${currentPlayer.summonerName}`);
         this.performBotAction(phase);
       }, 2000);
+      
+      console.log('⏰ [Bot] Timer de 2 segundos iniciado para ação automática');
+    } else {
+      console.log('👤 [Bot] Não é vez de um bot ou player não encontrado:', {
+        currentPlayer: currentPlayer,
+        isBot: currentPlayer ? this.isBot(currentPlayer) : 'N/A'
+      });
     }
   }
   private getCurrentPlayer(): any {
@@ -250,21 +269,51 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
   }
 
   private isBot(player: any): boolean {
+    if (!player) return false;
+    
     const name = player.summonerName || player.name || '';
-    return name.toLowerCase().startsWith('bot') ||
-           name.toLowerCase().includes('bot') ||
-           player.id < 0; // Negative IDs typically indicate bots
+    const id = player.id;
+    
+    // Verificar por ID negativo (padrão do backend)
+    if (id < 0) {
+      console.log(`🤖 [Bot] Bot identificado por ID negativo: ${id} (${name})`);
+      return true;
+    }
+    
+    // Verificar por nome
+    const isBotByName = name.toLowerCase().startsWith('bot') || 
+                       name.toLowerCase().includes('bot') ||
+                       name.toLowerCase().startsWith('bot');
+    
+    if (isBotByName) {
+      console.log(`🤖 [Bot] Bot identificado por nome: ${name} (ID: ${id})`);
+      return true;
+    }
+    
+    console.log(`👤 [Bot] Player não é bot: ${name} (ID: ${id})`);
+    return false;
   }
 
   private performBotAction(phase: PickBanPhase) {
-    if (!this.session || phase.locked) return;
+    console.log(`🤖 [Bot] performBotAction iniciado para fase:`, phase);
+    
+    if (!this.session || phase.locked) {
+      console.log(`❌ [Bot] Sessão não disponível ou fase bloqueada`);
+      return;
+    }
 
     const availableChampions = this.getFilteredChampions();
-    if (availableChampions.length === 0) return;
+    console.log(`🤖 [Bot] Campeões disponíveis: ${availableChampions.length}`);
+    
+    if (availableChampions.length === 0) {
+      console.log(`❌ [Bot] Nenhum campeão disponível`);
+      return;
+    }
 
     let selectedChampion: Champion;
 
     if (phase.action === 'pick') {
+      console.log(`🤖 [Bot] Fazendo PICK automático`);
       // For picks, try to select a champion suitable for a random role
       const roles = ['top', 'jungle', 'mid', 'adc', 'support'];
       const randomRole = roles[Math.floor(Math.random() * roles.length)];
@@ -276,10 +325,13 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
 
       if (availableRoleChampions.length > 0) {
         selectedChampion = availableRoleChampions[Math.floor(Math.random() * availableRoleChampions.length)];
+        console.log(`🤖 [Bot] Campeão selecionado por role (${randomRole}): ${selectedChampion.name}`);
       } else {
         selectedChampion = availableChampions[Math.floor(Math.random() * availableChampions.length)];
+        console.log(`🤖 [Bot] Campeão aleatório selecionado: ${selectedChampion.name}`);
       }
     } else {
+      console.log(`🤖 [Bot] Fazendo BAN automático`);
       // For bans, select a random strong champion
       const strongChampions = availableChampions.filter(champ =>
         ['Yasuo', 'Zed', 'Akali', 'LeBlanc', 'Azir', 'Kassadin', 'Katarina'].includes(champ.name)
@@ -287,15 +339,18 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
 
       if (strongChampions.length > 0) {
         selectedChampion = strongChampions[Math.floor(Math.random() * strongChampions.length)];
+        console.log(`🤖 [Bot] Campeão forte banido: ${selectedChampion.name}`);
       } else {
         selectedChampion = availableChampions[Math.floor(Math.random() * availableChampions.length)];
+        console.log(`🤖 [Bot] Campeão aleatório banido: ${selectedChampion.name}`);
       }
     }
 
-    console.log(`🤖 Bot auto-selecionou: ${selectedChampion.name} (${phase.action})`);
+    console.log(`🤖 [Bot] Bot auto-selecionou: ${selectedChampion.name} (${phase.action})`);
 
     // Apply the bot's selection
     this.selectedChampion = selectedChampion;
+    console.log(`🤖 [Bot] Confirmando seleção...`);
     this.confirmSelection();
   }
   checkIfMyTurn(phase: PickBanPhase) {

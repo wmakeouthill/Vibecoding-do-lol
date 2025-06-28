@@ -121,6 +121,39 @@ export class App implements OnInit, OnDestroy {
     // Assinar eventos de partida encontrada (match_found)
     this.discordService.onMatchFound().pipe(takeUntil(this.destroy$)).subscribe((matchData) => {
       if (matchData) {
+        console.log('[WebSocket] Mensagem recebida:', matchData);
+        
+        // Verificar se é um cancelamento de partida
+        if (matchData.type === 'match_cancelled') {
+          console.log('[WebSocket] Partida cancelada:', matchData);
+          this.showMatchFound = false;
+          this.matchFoundData = null;
+          this.inDraftPhase = false;
+          this.draftData = null;
+          
+          const reason = matchData.reason || 'Partida cancelada';
+          const declinedPlayer = matchData.declinedPlayer;
+          const message = declinedPlayer 
+            ? `${reason} por ${declinedPlayer}`
+            : reason;
+          
+          this.addNotification('info', 'Partida Cancelada', message);
+          return;
+        }
+        
+        // Verificar se é início do draft
+        if (matchData.phase === 'draft_started') {
+          console.log('[WebSocket] Fase de draft iniciada:', matchData);
+          this.showMatchFound = false;
+          this.matchFoundData = null;
+          this.inDraftPhase = true;
+          this.draftData = matchData;
+          this.draftPhase = 'preview';
+          this.addNotification('success', 'Draft Iniciado', 'A fase de draft começou!');
+          return;
+        }
+        
+        // Partida encontrada normal
         this.matchFoundData = matchData;
         this.showMatchFound = true;
         this.inDraftPhase = false;
