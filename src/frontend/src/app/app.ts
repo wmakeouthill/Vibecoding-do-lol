@@ -694,39 +694,69 @@ export class App implements OnInit, OnDestroy {
     try {
       console.log('👋 Saindo da fila');
       
-      // PRIMEIRO: Sair da fila centralizada via API HTTP
-      if (this.currentPlayer?.id) {
-        console.log('📡 Enviando saída para API HTTP...');
-        const response = await this.apiService.leaveQueue(this.currentPlayer.id).toPromise();
-        console.log('✅ Resposta da saída da API:', response);
-        
-        if (response && response.success) {
-          // Atualizar status da fila
-          this.queueStatus = response.queueStatus || this.queueStatus;
-        }
-      } else if (this.currentPlayer?.summonerName) {
-        // Fallback: usar summonerName se não tiver ID
-        console.log('📡 Enviando saída por summonerName...');
-        const response = await this.apiService.leaveQueue(undefined, this.currentPlayer.summonerName).toPromise();
-        console.log('✅ Resposta da saída da API:', response);
-        
-        if (response && response.success) {
-          this.queueStatus = response.queueStatus || this.queueStatus;
-        }
-      }
-      
-      // SEGUNDO: Sair da fila Discord se estiver conectado
-      if (this.discordService.isConnected()) {
+      // PRIMEIRO: Tentar sair via WebSocket (tempo real)
+      if (this.discordService.isConnected() && this.discordService.isInChannel()) {
+        console.log('📡 Enviando saída via WebSocket (tempo real)...');
         this.discordService.leaveDiscordQueue();
       }
       
+      // SEGUNDO: Sair da fila centralizada via API HTTP (fallback)
+      let httpSuccess = false;
+      
+      // Construir o nome completo (gameName#tagLine)
+      const fullSummonerName = this.currentPlayer?.gameName && this.currentPlayer?.tagLine 
+        ? `${this.currentPlayer.gameName}#${this.currentPlayer.tagLine}`
+        : this.currentPlayer?.summonerName;
+      
+      console.log('🔍 [App] Nome completo para sair da fila:', fullSummonerName);
+      
+      if (this.currentPlayer?.id) {
+        console.log('📡 Enviando saída para API HTTP por ID...');
+        try {
+          const response = await this.apiService.leaveQueue(this.currentPlayer.id).toPromise();
+          console.log('✅ Resposta da saída da API por ID:', response);
+          
+          if (response && response.success) {
+            this.queueStatus = response.queueStatus || this.queueStatus;
+            httpSuccess = true;
+          }
+        } catch (error) {
+          console.log('⚠️ Erro ao sair por ID, tentando por nome completo...');
+        }
+      }
+      
+      // TERCEIRO: Fallback por nome completo (gameName#tagLine) se ID falhou ou não existe
+      if (!httpSuccess && fullSummonerName) {
+        console.log('📡 Enviando saída por nome completo (gameName#tagLine)...');
+        try {
+          const response = await this.apiService.leaveQueue(undefined, fullSummonerName).toPromise();
+          console.log('✅ Resposta da saída da API por nome completo:', response);
+          
+          if (response && response.success) {
+            this.queueStatus = response.queueStatus || this.queueStatus;
+            httpSuccess = true;
+          }
+        } catch (error) {
+          console.log('⚠️ Erro ao sair por nome completo também:', error);
+        }
+      }
+      
+      // QUARTO: Limpar estado local (sempre)
       this.isInQueue = false;
       this.currentQueueType = null;
       
-      this.addNotification('info', 'Saiu da Fila', 'Você saiu da fila');
+      if (httpSuccess) {
+        this.addNotification('success', 'Saiu da Fila', 'Você saiu da fila com sucesso');
+      } else {
+        this.addNotification('info', 'Saiu da Fila', 'Você saiu da fila (estado local limpo)');
+      }
     } catch (error) {
       console.error('❌ Erro ao sair da fila:', error);
       this.addNotification('error', 'Erro', 'Falha ao sair da fila');
+      
+      // Mesmo com erro, limpar estado local
+      this.isInQueue = false;
+      this.currentQueueType = null;
     }
   }
 

@@ -139,14 +139,12 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
       console.log('🎮 Recebida mensagem join_discord_queue com dados completos:', data.data);
       
       // Extrair dados do LCU se disponíveis
-      const playerData = data.data.player;
-      const lcuData = playerData && playerData.gameName && playerData.tagLine ? {
-        gameName: playerData.gameName,
-        tagLine: playerData.tagLine
-      } : undefined;
+      const lcuData = data.data.lcuData;
       
       if (lcuData) {
         console.log('🎯 Dados do LCU detectados:', lcuData);
+      } else {
+        console.log('⚠️ Dados do LCU não encontrados na mensagem');
       }
       
       // Usar a mesma lógica da fila centralizada, mas marcar como Discord
@@ -943,32 +941,43 @@ app.post('/api/queue/join', (async (req: Request, res: Response) => {
 // Endpoint para sair da fila via HTTP
 app.post('/api/queue/leave', (async (req: Request, res: Response) => {
   try {
+    console.log('🔍 [API] Recebida requisição para sair da fila:', req.body);
     const { playerId, summonerName } = req.body;
     
     if (!playerId && !summonerName) {
+      console.log('❌ [API] Erro: playerId ou summonerName é obrigatório');
       return res.status(400).json({ 
         success: false, 
         error: 'playerId ou summonerName é obrigatório' 
       });
     }
 
+    console.log('🔍 [API] Tentando remover jogador:', { playerId, summonerName });
+    console.log('🔍 [API] Fila atual:', matchmakingService.getQueue().map(p => ({ id: p.id, name: p.summonerName })));
+
     // Usar o método público do MatchmakingService
     const removed = matchmakingService.removePlayerFromQueueById(playerId, summonerName);
     
+    console.log('🔍 [API] Resultado da remoção:', removed);
+    
     if (removed) {
+      const queueStatus = await matchmakingService.getQueueStatus();
+      console.log('✅ [API] Jogador removido com sucesso. Nova fila:', queueStatus.playersInQueue, 'jogadores');
+      
       res.json({ 
         success: true, 
         message: 'Jogador removido da fila com sucesso',
-        queueStatus: await matchmakingService.getQueueStatus()
+        queueStatus: queueStatus
       });
     } else {
+      console.log('❌ [API] Jogador não encontrado na fila');
       res.status(404).json({ 
         success: false, 
         error: 'Jogador não encontrado na fila' 
       });
     }
   } catch (error: any) {
-    console.error('Erro ao remover jogador da fila:', error);
+    console.error('❌ [API] Erro ao remover jogador da fila:', error);
     res.status(500).json({ 
       success: false, 
       error: error.message 

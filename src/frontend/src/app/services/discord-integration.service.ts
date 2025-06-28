@@ -17,6 +17,7 @@ export class DiscordIntegrationService {
   // Observables para componentes
   private usersSubject = new BehaviorSubject<any[]>([]);
   private connectionSubject = new BehaviorSubject<boolean>(false);
+  private queueJoinedSubject = new BehaviorSubject<any>(null);
 
   // Contador de instâncias para debug
   private static instanceCount = 0;
@@ -150,6 +151,12 @@ export class DiscordIntegrationService {
         this.queueParticipants = data.queue;
         break;
 
+      case 'queue_joined':
+        console.log(`✅ [DiscordService #${this.instanceId}] Entrou na fila com sucesso!`, data);
+        // Emitir evento para o componente queue
+        this.queueJoinedSubject.next(data.data);
+        break;
+
       case 'match_created':
         console.log(`🎮 [DiscordService #${this.instanceId}] Match criado!`, data);
         break;
@@ -200,14 +207,58 @@ export class DiscordIntegrationService {
       return false;
     }
 
+    // Verificar se temos dados do LCU
+    if (!lcuData || !lcuData.gameName || !lcuData.tagLine) {
+      console.error('❌ Dados do LCU não disponíveis. Certifique-se de estar logado no LoL');
+      return false;
+    }
+
+    // Buscar o Discord ID do usuário atual baseado nos dados do LCU
+    const lcuFullName = `${lcuData.gameName}#${lcuData.tagLine}`;
+    console.log('🔍 [DiscordService] Procurando usuário Discord para:', lcuFullName);
+    
+    // Procurar nos usuários online do Discord que tenham o nick vinculado
+    const matchingUser = this.discordUsersOnline.find(user => {
+      if (user.linkedNickname) {
+        const discordFullName = `${user.linkedNickname.gameName}#${user.linkedNickname.tagLine}`;
+        return discordFullName === lcuFullName;
+      }
+      return false;
+    });
+
+    if (!matchingUser) {
+      console.error('❌ Usuário Discord não encontrado para:', lcuFullName);
+      console.log('🔍 [DiscordService] Usuários disponíveis:', this.discordUsersOnline.map(u => ({
+        username: u.username,
+        linkedNickname: u.linkedNickname
+      })));
+      return false;
+    }
+
+    console.log('✅ [DiscordService] Usuário Discord encontrado:', matchingUser);
+
+    // Usar os dados do Discord vinculado em vez dos dados do LCU
+    const discordGameName = matchingUser.linkedNickname.gameName;
+    const discordTagLine = matchingUser.linkedNickname.tagLine;
+    
+    console.log('🔍 [DiscordService] Dados para entrada na fila:', {
+      discordId: matchingUser.id,
+      discordUsername: matchingUser.username,
+      lcuData: lcuData,
+      discordData: {
+        gameName: discordGameName,
+        tagLine: discordTagLine
+      },
+      usingDiscordData: true
+    });
+
     const message = {
       type: 'join_discord_queue',
       data: {
-        player: {
-          gameName: lcuData?.gameName,
-          tagLine: lcuData?.tagLine,
-          summonerName: username
-        },
+        discordId: matchingUser.id,
+        gameName: discordGameName, // Usar dados do Discord
+        tagLine: discordTagLine,   // Usar dados do Discord
+        lcuData: lcuData, // Manter dados do LCU para verificação
         preferences: {
           primaryLane: role,
           secondaryLane: role
@@ -275,6 +326,10 @@ export class DiscordIntegrationService {
 
   onConnectionChange(): Observable<boolean> {
     return this.connectionSubject.asObservable();
+  }
+
+  onQueueJoined(): Observable<any> {
+    return this.queueJoinedSubject.asObservable();
   }
 
   // Método para forçar reconexão e atualização

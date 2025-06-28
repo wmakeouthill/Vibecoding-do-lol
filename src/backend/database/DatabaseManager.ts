@@ -851,15 +851,46 @@ export class DatabaseManager {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
     
     try {
+      console.log('🔍 [Database] Verificando link Discord:', { discordId, gameName, tagLine });
+      
+      // Buscar o link primeiro
       const [rows] = await this.pool.execute(
-        'SELECT COUNT(*) as count FROM discord_lol_links WHERE discord_id = ? AND game_name = ? AND tag_line = ?',
-        [discordId, gameName, tagLine]
+        'SELECT * FROM discord_lol_links WHERE discord_id = ?',
+        [discordId]
       );
       
       const results = rows as any[];
-      return results[0]?.count > 0;
+      if (results.length === 0) {
+        console.log('❌ [Database] Link Discord não encontrado para ID:', discordId);
+        return false;
+      }
+      
+      const link = results[0];
+      console.log('🔍 [Database] Link encontrado:', {
+        linkGameName: link.game_name,
+        linkTagLine: link.tag_line,
+        requestGameName: gameName,
+        requestTagLine: tagLine
+      });
+      
+      // Comparar gameName (case insensitive)
+      const gameNameMatch = link.game_name.toLowerCase() === gameName.toLowerCase();
+      
+      // Comparar tagLine (remover # se presente)
+      const cleanLinkTagLine = link.tag_line.replace('#', '');
+      const cleanRequestTagLine = tagLine.replace('#', '');
+      const tagLineMatch = cleanLinkTagLine.toLowerCase() === cleanRequestTagLine.toLowerCase();
+      
+      console.log('🔍 [Database] Comparação:', {
+        gameNameMatch,
+        tagLineMatch,
+        cleanLinkTagLine,
+        cleanRequestTagLine
+      });
+      
+      return gameNameMatch && tagLineMatch;
     } catch (error) {
-      console.error('Erro ao verificar link Discord:', error);
+      console.error('❌ [Database] Erro ao verificar link Discord:', error);
       throw error;
     }
   }
@@ -2290,6 +2321,21 @@ export class DatabaseManager {
       
     } catch (error) {
       console.error(`❌ Erro ao recalcular estatísticas do jogador ${playerString}:`, error);
+    }
+  }
+
+  async updatePlayerSummonerName(playerId: number, newSummonerName: string): Promise<void> {
+    if (!this.pool) throw new Error('Pool de conexão não inicializado');
+
+    try {
+      await this.pool.execute(
+        'UPDATE players SET summoner_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [newSummonerName, playerId]
+      );
+      console.log(`✅ [DatabaseManager] Nome do jogador ${playerId} atualizado para: ${newSummonerName}`);
+    } catch (error) {
+      console.error('❌ [DatabaseManager] Erro ao atualizar nome do jogador:', error);
+      throw error;
     }
   }
 }

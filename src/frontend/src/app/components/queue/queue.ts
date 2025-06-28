@@ -102,19 +102,29 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   onLeaveQueue() {
+    console.log('🔍 [Queue] Sair da fila solicitado');
     this.leaveQueue.emit();
     this.stopTimer();
     this.queueTimer = 0;
   }
 
   private startTimer() {
+    // Parar timer existente antes de iniciar novo
+    this.stopTimer();
+    
+    console.log('⏱️ [Queue] Iniciando timer da fila');
     this.timerInterval = window.setInterval(() => {
       this.queueTimer++;
+      // Log a cada minuto para debug
+      if (this.queueTimer % 60 === 0) {
+        console.log(`⏱️ [Queue] Timer: ${this.getTimerDisplay()}`);
+      }
     }, 1000);
   }
 
   private stopTimer() {
     if (this.timerInterval) {
+      console.log('⏱️ [Queue] Parando timer da fila');
       clearInterval(this.timerInterval);
       this.timerInterval = undefined;
     }
@@ -151,7 +161,8 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       'jungle': 'Selva',
       'mid': 'Meio',
       'bot': 'Atirador',
-      'support': 'Suporte'
+      'support': 'Suporte',
+      'fill': 'Preenchimento'
     };
     return lanes[laneId] || laneId;
   }
@@ -162,7 +173,8 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       'jungle': '🌲',
       'mid': '⚡',
       'bot': '🏹',
-      'support': '🛡️'
+      'support': '🛡️',
+      'fill': '🔄'
     };
     return lanes[laneId] || '❓';
   }
@@ -289,6 +301,20 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       this.discordUsersOnline = users;
     });
 
+    // Escutar confirmação de entrada na fila
+    this.discordService.onQueueJoined().subscribe((data) => {
+      console.log('✅ [Queue] Confirmação de entrada na fila recebida:', data);
+      if (data) {
+        this.isInQueue = true;
+        this.queueTimer = 0;
+        this.startTimer();
+        this.showLaneSelector = false;
+        
+        // Atualizar dados da fila
+        this.refreshQueueData();
+      }
+    });
+
     // Verificar status do canal periodicamente se Discord estiver conectado
     // Usar uma variável para controlar o intervalo
     if (this.autoRefreshInterval) {
@@ -395,28 +421,36 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       return;
     }
 
+    // Verificar se temos dados do LCU
+    if (!this.currentPlayer.gameName || !this.currentPlayer.tagLine) {
+      alert('❌ Dados do LCU não disponíveis. Certifique-se de estar logado no LoL!');
+      return;
+    }
+
     // Usar dados do LCU automaticamente
-    const playerData = {
-      ...this.currentPlayer,
+    const lcuData = {
       gameName: this.currentPlayer.gameName,
-      tagLine: this.currentPlayer.tagLine,
-      summonerName: this.currentPlayer.summonerName,
-      preferences: preferences
+      tagLine: this.currentPlayer.tagLine
     };
 
-    console.log('🎮 Confirmando entrada na fila Discord com dados do LCU:', playerData);
+    console.log('🎮 Confirmando entrada na fila Discord com dados do LCU:', lcuData);
 
-    // Emitir evento com dados completos
-    this.joinDiscordQueueWithFullData.emit({
-      player: playerData,
-      preferences: preferences
-    });
+    // Chamar diretamente o DiscordService com os dados do LCU
+    const success = this.discordService.joinDiscordQueue(
+      preferences.primaryLane,
+      this.currentPlayer.summonerName,
+      lcuData
+    );
 
-    this.showLaneSelector = false;
-    this.queuePreferences = preferences;
-    this.isInQueue = true;
-    this.queueTimer = 0;
-    this.startTimer();
+    if (success) {
+      this.showLaneSelector = false;
+      this.queuePreferences = preferences;
+      this.isInQueue = true;
+      this.queueTimer = 0;
+      this.startTimer();
+    } else {
+      alert('❌ Falha ao entrar na fila Discord. Verifique se está no canal correto e logado no LoL.');
+    }
   }
 
   onLeaveDiscordQueue() {
@@ -593,5 +627,17 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       clearInterval(this.autoRefreshInterval);
       this.autoRefreshInterval = undefined;
     }
+  }
+
+  // Método para debugar dados dos jogadores na fila
+  debugPlayerData(player: any): void {
+    console.log('🔍 [Queue] Dados do jogador:', {
+      id: player.id,
+      name: player.summonerName,
+      primaryLane: player.primaryLane,
+      secondaryLane: player.secondaryLane,
+      preferences: player.preferences,
+      fullPlayer: player
+    });
   }
 } 
