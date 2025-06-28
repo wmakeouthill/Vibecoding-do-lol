@@ -2225,10 +2225,13 @@ export class App implements OnInit, OnDestroy {
   get currentMatchData() {
     if (!this.draftData) return null;
 
+    console.log('🔍 [currentMatchData] draftData disponível:', this.draftData);
+    console.log('🔍 [currentMatchData] Propriedades:', Object.keys(this.draftData));
+
     return {
       id: this.draftData.matchId,
-      team1: this.draftData.blueTeam || [],
-      team2: this.draftData.redTeam || []
+      team1: this.draftData.team1 || this.draftData.blueTeam || [],
+      team2: this.draftData.team2 || this.draftData.redTeam || []
     };
   }
 

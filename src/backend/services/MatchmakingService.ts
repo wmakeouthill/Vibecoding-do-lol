@@ -948,15 +948,25 @@ export class MatchmakingService {
     console.log(`❌ [Matchmaking] ${player.summonerName} recusou a partida ${matchId}`);
     
     // Cancelar partida imediatamente quando alguém recusa
-    this.cancelMatch(matchId, `${player.summonerName} recusou a partida`);
+    await this.cancelMatch(matchId, `${player.summonerName} recusou a partida`);
   }
 
   // Método para cancelar partida
-  private cancelMatch(matchId: number, reason: string): void {
+  private async cancelMatch(matchId: number, reason: string): Promise<void> {
     const match = this.activeMatches.get(matchId);
-    if (!match) return;
+    if (!match) {
+      console.log(`⚠️ [CancelMatch] Partida ${matchId} não encontrada nas partidas ativas`);
+      return;
+    }
 
     console.log(`🎉 Partida ${matchId} cancelada por ${reason}`);
+    console.log(`🔍 [CancelMatch] Dados da partida:`, {
+      matchId: matchId,
+      matchIdInMatch: match.id,
+      team1Size: match.team1.length,
+      team2Size: match.team2.length,
+      status: match.status
+    });
     
     // Remover partida das ativas
     this.activeMatches.delete(matchId);
@@ -967,6 +977,19 @@ export class MatchmakingService {
       match.acceptTimeout = undefined;
     }
 
+    // APAGAR partida do banco de dados se foi salva
+    try {
+      if (match.id) {
+        console.log(`🗑️ [CancelMatch] Tentando apagar partida ${matchId} do banco (ID: ${match.id})`);
+        await this.dbManager.deleteCustomMatch(match.id);
+        console.log(`🗑️ [Matchmaking] Partida ${matchId} apagada do banco de dados (ID: ${match.id})`);
+      } else {
+        console.log(`⚠️ [Matchmaking] Partida ${matchId} não tem ID no banco para apagar`);
+      }
+    } catch (error) {
+      console.error(`❌ [Matchmaking] Erro ao apagar partida ${matchId} do banco:`, error);
+    }
+
     // Retornar TODOS os jogadores para a fila (exceto quem recusou)
     const allPlayers = [...match.team1, ...match.team2];
     
@@ -975,7 +998,7 @@ export class MatchmakingService {
     if (reason.includes('recusou a partida')) {
       const playerName = reason.replace(' recusou a partida', '');
       declinedPlayer = allPlayers.find(p => p.summonerName === playerName);
-      console.log(`🔍 [Cancelamento] Jogador que recusou identificado:`, declinedPlayer?.summonerName);
+      console.log(`🔍 [CancelMatch] Jogador que recusou identificado:`, declinedPlayer?.summonerName);
     }
 
     // Adicionar jogadores de volta à fila (exceto quem recusou)
@@ -1744,5 +1767,60 @@ export class MatchmakingService {
   public async forceQueueUpdate(): Promise<void> {
     console.log('🚀 [Matchmaking] Forçando atualização imediata da fila...');
     await this.broadcastQueueUpdate(true);
+  }
+
+  // Método para atualizar partida após picks/bans completados
+  async updateMatchAfterDraft(matchId: number, draftData: any): Promise<void> {
+    const match = this.activeMatches.get(matchId);
+    if (!match) {
+      throw new Error('Partida não encontrada');
+    }
+
+    console.log(`🎯 [Draft] Atualizando partida ${matchId} após draft completado`);
+
+    try {
+      // Atualizar partida no banco com dados do draft
+      await this.dbManager.updateCustomMatch(matchId, {
+        title: `Partida com Draft - ${new Date().toLocaleString()}`,
+        description: `Draft completado - MMR médio: Time 1: ${Math.round(match.averageMMR1)}, Time 2: ${Math.round(match.averageMMR2)}`,
+        status: 'draft_completed',
+        draft_data: draftData // Salvar dados do draft
+      });
+
+      console.log(`✅ [Draft] Partida ${matchId} atualizada com dados do draft`);
+    } catch (error) {
+      console.error(`❌ [Draft] Erro ao atualizar partida ${matchId} após draft:`, error);
+      throw error;
+    }
+  }
+
+  // Método para finalizar partida após jogo completado (usando completeCustomMatch que já funciona)
+  async completeMatchAfterGame(matchId: number, winnerTeam: number, gameData: any): Promise<void> {
+    const match = this.activeMatches.get(matchId);
+    if (!match) {
+      throw new Error('Partida não encontrada');
+    }
+
+    console.log(`🏁 [Game] Finalizando partida ${matchId} após jogo completado - Vencedor: Time ${winnerTeam}`);
+
+    try {
+      // Usar o método completeCustomMatch que já funciona corretamente
+      await this.dbManager.completeCustomMatch(matchId, winnerTeam, {
+        duration: gameData.duration || 0,
+        pickBanData: gameData.pickBanData || null,
+        participantsData: gameData.participantsData || null,
+        detectedByLCU: gameData.detectedByLCU || false,
+        riotGameId: gameData.riotGameId || null,
+        notes: `Partida finalizada via matchmaking - ${gameData.notes || 'Jogo completado'}`
+      });
+
+      // Remover da lista de partidas ativas
+      this.activeMatches.delete(matchId);
+
+      console.log(`✅ [Game] Partida ${matchId} finalizada com sucesso usando completeCustomMatch`);
+    } catch (error) {
+      console.error(`❌ [Game] Erro ao finalizar partida ${matchId}:`, error);
+      throw error;
+    }
   }
 }

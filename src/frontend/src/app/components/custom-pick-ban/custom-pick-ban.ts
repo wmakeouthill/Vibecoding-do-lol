@@ -82,36 +82,30 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
   }
   initializePickBanSession() {
     console.log('🚀 initializePickBanSession iniciado');
-    console.log('📊 matchData disponível:', !!this.matchData);
+    console.log('📊 matchData completo:', this.matchData);
     console.log('👤 currentPlayer:', this.currentPlayer);
 
     if (!this.matchData) {
-      console.warn('⚠️ matchData não está disponível, criando dados de teste');
-      // Criar dados de teste para desenvolvimento
-      this.matchData = {
-        id: 'test_match_' + Date.now(),
-        team1: [
-          { id: 1, summonerName: 'TestPlayer1', name: 'TestPlayer1' },
-          { id: 2, summonerName: 'TestPlayer2', name: 'TestPlayer2' },
-          { id: 3, summonerName: 'Bot1', name: 'Bot1' },
-          { id: 4, summonerName: 'Bot2', name: 'Bot2' },
-          { id: 5, summonerName: 'Bot3', name: 'Bot3' }
-        ],
-        team2: [
-          { id: 6, summonerName: 'Bot4', name: 'Bot4' },
-          { id: 7, summonerName: 'Bot5', name: 'Bot5' },
-          { id: 8, summonerName: 'Bot6', name: 'Bot6' },
-          { id: 9, summonerName: 'Bot7', name: 'Bot7' },
-          { id: 10, summonerName: 'Bot8', name: 'Bot8' }
-        ]
-      };
+      console.error('❌ matchData não está disponível - não é possível inicializar sessão');
+      return;
     }
 
-    // Se não temos currentPlayer, vamos usar o primeiro player do time azul como padrão para teste
-    if (!this.currentPlayer && this.matchData) {
-      this.currentPlayer = this.matchData.team1[0];
-      console.log('🎮 Usando player padrão para teste:', this.currentPlayer);
-    }// Create the pick/ban sequence (seguindo exatamente o padrão do LoL)
+    // Verificar se temos os times necessários
+    if (!this.matchData.team1 || !this.matchData.team2) {
+      console.error('❌ Dados dos times não estão disponíveis no matchData');
+      console.log('📊 matchData recebido:', this.matchData);
+      console.log('📊 Propriedades disponíveis:', Object.keys(this.matchData));
+      return;
+    }
+
+    console.log('✅ Dados dos times disponíveis:', {
+      team1Size: this.matchData.team1.length,
+      team2Size: this.matchData.team2.length,
+      team1: this.matchData.team1.map((p: any) => ({ id: p.id, name: p.summonerName, isBot: p.id < 0 })),
+      team2: this.matchData.team2.map((p: any) => ({ id: p.id, name: p.summonerName, isBot: p.id < 0 }))
+    });
+
+    // Create the pick/ban sequence (seguindo exatamente o padrão do LoL)
     const phases: PickBanPhase[] = [
       // 1ª Fase de Banimento (3 bans por time)
       { team: 'blue', action: 'ban', locked: false, timeRemaining: 30 },   // Ban 1 - Blue
@@ -140,7 +134,9 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
       { team: 'red', action: 'pick', locked: false, timeRemaining: 30 },   // Pick 4 - Red
       { team: 'blue', action: 'pick', locked: false, timeRemaining: 30 },  // Pick 5 - Blue (último pick)
       { team: 'red', action: 'pick', locked: false, timeRemaining: 30 }    // Pick 5 - Red (último pick)
-    ];this.session = {
+    ];
+
+    this.session = {
       id: this.matchData.id || 'custom_session_' + Date.now(),
       phase: 'bans',
       currentAction: 0,
@@ -151,7 +147,16 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
       currentPlayerIndex: 0
     };
 
-    console.log('✅ Sessão Pick&Ban criada:', this.session);
+    console.log('✅ Sessão Pick&Ban criada:', {
+      id: this.session.id,
+      blueTeamSize: this.session.blueTeam.length,
+      redTeamSize: this.session.redTeam.length,
+      phasesCount: this.session.phases.length,
+      currentAction: this.session.currentAction,
+      blueTeam: this.session.blueTeam.map(p => ({ id: p.id, name: p.summonerName })),
+      redTeam: this.session.redTeam.map(p => ({ id: p.id, name: p.summonerName }))
+    });
+    
     this.updateCurrentTurn();
   }  updateCurrentTurn() {
     if (!this.session || this.session.currentAction >= this.session.phases.length) {
@@ -190,14 +195,26 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     const currentPlayer = this.getCurrentPlayer();
     console.log('🔍 [Bot] Verificando ação de bot para player:', currentPlayer);
 
+    if (!currentPlayer) {
+      console.log('❌ [Bot] Player atual é null/undefined');
+      return;
+    }
+
     // Check if current player is a bot
-    if (currentPlayer && this.isBot(currentPlayer)) {
+    const isBotPlayer = this.isBot(currentPlayer);
+    console.log(`🔍 [Bot] Resultado da verificação:`, {
+      player: currentPlayer.summonerName || currentPlayer.name,
+      id: currentPlayer.id,
+      isBot: isBotPlayer
+    });
+
+    if (isBotPlayer) {
       console.log(`🤖 [Bot] Bot ${currentPlayer.summonerName || currentPlayer.name} irá fazer ${phase.action} automaticamente`);
       console.log(`🤖 [Bot] Dados do bot:`, {
         id: currentPlayer.id,
         summonerName: currentPlayer.summonerName,
         name: currentPlayer.name,
-        isBot: this.isBot(currentPlayer)
+        isBot: isBotPlayer
       });
 
       // Clear any existing bot timer
@@ -214,9 +231,10 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
       
       console.log('⏰ [Bot] Timer de 2 segundos iniciado para ação automática');
     } else {
-      console.log('👤 [Bot] Não é vez de um bot ou player não encontrado:', {
-        currentPlayer: currentPlayer,
-        isBot: currentPlayer ? this.isBot(currentPlayer) : 'N/A'
+      console.log('👤 [Bot] Não é vez de um bot:', {
+        currentPlayer: currentPlayer.summonerName || currentPlayer.name,
+        id: currentPlayer.id,
+        isBot: isBotPlayer
       });
     }
   }
@@ -226,53 +244,52 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     const currentPhase = this.session.phases[this.session.currentAction];
     const currentTeam = currentPhase.team === 'blue' ? this.session.blueTeam : this.session.redTeam;
 
-    // Mapeamento específico para cada posição no draft
-    let playerIndex = 0;
+    console.log(`🔍 [Player] Debug - currentAction: ${this.session.currentAction}, team: ${currentPhase.team}, teamSize: ${currentTeam.length}`);
+    console.log(`🔍 [Player] Team players:`, currentTeam.map(p => ({ id: p.id, name: p.summonerName })));
 
-    // Distribuir as ações entre os 5 players de cada time
+    // Mapeamento simplificado e mais robusto
+    let playerIndex = 0;
     const actionIndex = this.session.currentAction;
 
+    // Distribuir ações de forma mais simples e previsível
     if (actionIndex < 6) {
-      // Primeira fase de bans (0-5): distribui entre os primeiros 3 players
-      playerIndex = Math.floor(actionIndex / 2) % 3; // 0, 1, 2
+      // Primeira fase de bans (0-5): distribuir entre os primeiros 3 players
+      playerIndex = Math.floor(actionIndex / 2) % Math.min(3, currentTeam.length);
     } else if (actionIndex >= 6 && actionIndex < 11) {
-      // Primeira fase de picks (6-10): distribui entre diferentes players
+      // Primeira fase de picks (6-10): distribuir entre todos os players
       const pickIndex = actionIndex - 6;
-      if (pickIndex === 0) playerIndex = 0; // Primeiro pick sempre player 0
-      else if (pickIndex === 1) playerIndex = 0; // Red team primeiro pick
-      else if (pickIndex === 2) playerIndex = 1; // Red team segundo pick
-      else if (pickIndex === 3) playerIndex = 1; // Blue team segundo pick
-      else if (pickIndex === 4) playerIndex = 2; // Blue team terceiro pick
+      playerIndex = pickIndex % currentTeam.length;
     } else if (actionIndex >= 11 && actionIndex < 15) {
-      // Segunda fase de bans (11-14): players 3 e 4
+      // Segunda fase de bans (11-14): usar players 3 e 4 se disponíveis
       const banIndex = actionIndex - 11;
-      playerIndex = 3 + (banIndex % 2); // 3 ou 4
+      playerIndex = Math.min(3 + (banIndex % 2), currentTeam.length - 1);
     } else {
-      // Segunda fase de picks (15-19): players restantes
+      // Segunda fase de picks (15-19): usar players restantes
       const pickIndex = actionIndex - 15;
-      if (pickIndex === 0) playerIndex = 2; // Red pick 3
-      else if (pickIndex === 1) playerIndex = 3; // Blue pick 4
-      else if (pickIndex === 2) playerIndex = 3; // Red pick 4
-      else if (pickIndex === 3) playerIndex = 4; // Blue pick 5
-      else if (pickIndex === 4) playerIndex = 4; // Red pick 5
+      playerIndex = Math.min(2 + (pickIndex % 3), currentTeam.length - 1);
     }
 
-    // Garantir que o índice não exceda o tamanho do time
-    playerIndex = playerIndex % currentTeam.length;
+    // Garantir que o índice seja válido
+    playerIndex = Math.max(0, Math.min(playerIndex, currentTeam.length - 1));
 
     this.session.currentPlayerIndex = playerIndex;
     const player = currentTeam[playerIndex] || null;
 
-    console.log(`👤 Player atual: ${player?.summonerName || 'Unknown'} (Team: ${currentPhase.team}, Index: ${playerIndex})`);
+    console.log(`👤 Player atual: ${player?.summonerName || 'Unknown'} (Team: ${currentPhase.team}, Index: ${playerIndex}, Action: ${actionIndex})`);
 
     return player;
   }
 
   private isBot(player: any): boolean {
-    if (!player) return false;
+    if (!player) {
+      console.log(`🤖 [Bot] Player é null/undefined`);
+      return false;
+    }
     
     const name = player.summonerName || player.name || '';
     const id = player.id;
+    
+    console.log(`🔍 [Bot] Verificando se é bot:`, { id, name, summonerName: player.summonerName });
     
     // Verificar por ID negativo (padrão do backend)
     if (id < 0) {
@@ -290,7 +307,13 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
       return true;
     }
     
-    console.log(`👤 [Bot] Player não é bot: ${name} (ID: ${id})`);
+    // Verificar se o nome contém "Bot" (case insensitive)
+    if (name.toLowerCase().includes('bot')) {
+      console.log(`🤖 [Bot] Bot identificado por nome contendo 'bot': ${name} (ID: ${id})`);
+      return true;
+    }
+    
+    console.log(`🤖 [Bot] Player não é bot: ${name} (ID: ${id})`);
     return false;
   }
 
@@ -357,11 +380,21 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     if (!this.currentPlayer || !this.session) return;
 
     const currentPlayer = this.getCurrentPlayer();
+    
+    console.log(`🔍 [Turn] Verificando vez:`, {
+      currentPlayerFromSession: currentPlayer?.summonerName,
+      currentPlayerFromInput: this.currentPlayer?.summonerName,
+      currentPlayerFromSessionId: currentPlayer?.id,
+      currentPlayerFromInputId: this.currentPlayer?.id,
+      phaseLocked: phase.locked
+    });
 
     // It's my turn if I'm the current player for this action
     this.isMyTurn = currentPlayer &&
                    (currentPlayer.id === this.currentPlayer.id ||
-                    currentPlayer.summonerName === this.currentPlayer.summonerName) &&
+                    currentPlayer.summonerName === this.currentPlayer.summonerName ||
+                    (currentPlayer.summonerName && this.currentPlayer.summonerName && 
+                     currentPlayer.summonerName.includes(this.currentPlayer.summonerName.split('#')[0]))) &&
                    !phase.locked;
 
     console.log(`🎯 Vez de: ${currentPlayer?.summonerName || 'Unknown'}, É minha vez: ${this.isMyTurn}`);

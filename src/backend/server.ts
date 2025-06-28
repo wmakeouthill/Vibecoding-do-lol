@@ -2410,3 +2410,50 @@ process.on('SIGTERM', async () => {
 
 // Iniciar aplicação
 startServer();
+
+// Rota para atualizar partida após draft completado
+app.post('/api/matches/:matchId/draft-completed', (async (req: Request, res: Response) => {
+  try {
+    const matchId = parseInt(req.params.matchId);
+    const { draftData } = req.body;
+    
+    console.log(`🎯 [Draft] Atualizando partida ${matchId} após draft completado`);
+    
+    await matchmakingService.updateMatchAfterDraft(matchId, draftData);
+    
+    res.json({
+      success: true,
+      message: 'Partida atualizada após draft',
+      matchId: matchId
+    });
+  } catch (error: any) {
+    console.error('💥 [Draft] Erro ao atualizar partida após draft:', error);
+    res.status(500).json({ error: error.message });
+  }
+}) as RequestHandler);
+
+// Rota para finalizar partida após jogo completado
+app.post('/api/matches/:matchId/game-completed', (async (req: Request, res: Response) => {
+  try {
+    const matchId = parseInt(req.params.matchId);
+    const { winnerTeam, gameData } = req.body;
+    
+    console.log(`🏁 [Game] Finalizando partida ${matchId} após jogo - Vencedor: Time ${winnerTeam}`);
+    
+    if (!winnerTeam || (winnerTeam !== 1 && winnerTeam !== 2)) {
+      return res.status(400).json({ error: 'winnerTeam deve ser 1 ou 2' });
+    }
+    
+    await matchmakingService.completeMatchAfterGame(matchId, winnerTeam, gameData || {});
+    
+    res.json({
+      success: true,
+      message: 'Partida finalizada com sucesso',
+      matchId: matchId,
+      winnerTeam: winnerTeam
+    });
+  } catch (error: any) {
+    console.error('💥 [Game] Erro ao finalizar partida:', error);
+    res.status(500).json({ error: error.message });
+  }
+}) as RequestHandler);

@@ -512,6 +512,60 @@ export class DatabaseManager {
     }
   }
 
+  // Método genérico para atualizar partida customizada
+  async updateCustomMatch(matchId: number, updateData: any): Promise<void> {
+    if (!this.pool) throw new Error('Pool de conexão não inicializado');
+    
+    try {
+      // Garantir que a tabela existe antes de atualizar
+      await this.ensureCustomMatchesTable();
+      
+      // Construir query dinamicamente baseada nos campos fornecidos
+      const fields: string[] = [];
+      const values: any[] = [];
+      
+      // Campos permitidos para atualização
+      const allowedFields = [
+        'title', 'description', 'status', 'winner_team', 'duration',
+        'pick_ban_data', 'participants_data', 'riot_game_id', 'detected_by_lcu',
+        'notes', 'draft_data', 'game_data', 'game_mode'
+      ];
+      
+      for (const [key, value] of Object.entries(updateData)) {
+        if (allowedFields.includes(key)) {
+          fields.push(`${key} = ?`);
+          
+          // Converter objetos para JSON se necessário
+          if (typeof value === 'object' && value !== null) {
+            values.push(JSON.stringify(value));
+          } else {
+            values.push(value);
+          }
+        }
+      }
+      
+      // Sempre adicionar updated_at
+      fields.push('updated_at = CURRENT_TIMESTAMP');
+      
+      // Adicionar matchId no final
+      values.push(matchId);
+      
+      const query = `UPDATE custom_matches SET ${fields.join(', ')} WHERE id = ?`;
+      
+      console.log(`🔄 [updateCustomMatch] Atualizando partida ${matchId}:`, {
+        fields: fields.length,
+        updateData: Object.keys(updateData)
+      });
+      
+      await this.pool.execute(query, values);
+      
+      console.log(`✅ [updateCustomMatch] Partida ${matchId} atualizada com sucesso`);
+    } catch (error) {
+      console.error(`❌ [updateCustomMatch] Erro ao atualizar partida ${matchId}:`, error);
+      throw error;
+    }
+  }
+
   async updateCustomMatchWithRealData(matchId: number, realMatchData: any): Promise<void> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
     
@@ -1236,13 +1290,29 @@ export class DatabaseManager {
   async deleteCustomMatch(matchId: number): Promise<void> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
     
+    console.log(`🗑️ [Database] Tentando deletar partida customizada ID: ${matchId}`);
+    
     try {
       // Garantir que a tabela existe antes de deletar
       await this.ensureCustomMatchesTable();
       
-      await this.pool.execute('DELETE FROM custom_matches WHERE id = ?', [matchId]);
+      // Verificar se a partida existe antes de deletar
+      const [checkResult] = await this.pool.execute('SELECT id FROM custom_matches WHERE id = ?', [matchId]);
+      const exists = (checkResult as any[]).length > 0;
+      
+      console.log(`🔍 [Database] Partida ${matchId} existe no banco: ${exists}`);
+      
+      if (!exists) {
+        console.log(`⚠️ [Database] Partida ${matchId} não encontrada no banco para deletar`);
+        return;
+      }
+      
+      const [deleteResult] = await this.pool.execute('DELETE FROM custom_matches WHERE id = ?', [matchId]);
+      const affectedRows = (deleteResult as any).affectedRows;
+      
+      console.log(`✅ [Database] Partida ${matchId} deletada com sucesso. Linhas afetadas: ${affectedRows}`);
     } catch (error) {
-      console.error('Erro ao deletar partida customizada:', error);
+      console.error(`❌ [Database] Erro ao deletar partida customizada ${matchId}:`, error);
       throw error;
     }
   }
@@ -1885,6 +1955,20 @@ export class DatabaseManager {
           console.log('📋 Adicionando campo custom_lp...');
           await this.pool.execute(
             'ALTER TABLE custom_matches ADD COLUMN custom_lp INT DEFAULT 0 AFTER notes'
+          );
+        }
+        
+        if (!columnNames.includes('draft_data')) {
+          console.log('📋 Adicionando campo draft_data...');
+          await this.pool.execute(
+            'ALTER TABLE custom_matches ADD COLUMN draft_data TEXT AFTER pick_ban_data'
+          );
+        }
+        
+        if (!columnNames.includes('game_data')) {
+          console.log('📋 Adicionando campo game_data...');
+          await this.pool.execute(
+            'ALTER TABLE custom_matches ADD COLUMN game_data TEXT AFTER draft_data'
           );
         }
         
