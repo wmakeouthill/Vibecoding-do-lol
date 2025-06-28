@@ -78,10 +78,7 @@
           [currentPlayer]="currentPlayer"
           (joinQueue)="joinQueue($event)"
           (leaveQueue)="leaveQueue()"
-          (joinDiscordQueueWithFullData)="joinDiscordQueueWithFullData($event)"
-          (addBot)="addBotToQueue()"
-          (simulateLastMatch)="simulateLastCustomMatch()"
-          (cleanupTestMatches)="cleanupTestMatches()">>
+          (joinDiscordQueueWithFullData)="joinDiscordQueueWithFullData($event)">
         </app-queue>
       </div>      <!-- History -->
       <div *ngSwitchCase="'history'" class="view-container">
@@ -306,6 +303,47 @@
                 <p style="color: #5865f2; margin: 0 0 0.5rem 0; font-weight: bold;">✅ Discord Bot conectado</p>
                 <p style="color: #cdbe91; margin: 0;">
                   Bot: <strong style="color: #c9aa71;">{{ discordStatus.botUsername || 'LoL Matchmaking Bot' }}</strong>
+                </p>
+              </div>
+            </div>
+
+            <!-- Development Tools Card -->
+            <div *ngIf="isSpecialUser()" style="background: linear-gradient(135deg, #1e2328 0%, #0f1419 100%); border: 2px solid #463714; border-radius: 12px; padding: 1.5rem; box-shadow: 0 8px 32px rgba(0,0,0,0.4);">
+              <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;">
+                <span style="font-size: 1.5rem;">🛠️</span>
+                <h3 style="color: #c9aa71; margin: 0; font-size: 1.25rem;">Ferramentas de Desenvolvimento</h3>
+              </div>
+              <p style="color: #cdbe91; margin-bottom: 1.5rem; line-height: 1.5;">
+                Ferramentas avançadas para desenvolvimento e testes do sistema
+              </p>
+
+              <div style="display: flex; flex-direction: column; gap: 1rem;">
+                <button
+                  type="button"
+                  (click)="addBotToQueue()"
+                  style="background: linear-gradient(135deg, #c89b3c 0%, #f0e6d2 100%); color: #0f1419; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(200, 155, 60, 0.3); display: flex; align-items: center; gap: 0.5rem; font-size: 1rem;">
+                  🤖 Adicionar Bot à Fila
+                </button>
+
+                <button
+                  type="button"
+                  (click)="simulateLastCustomMatch()"
+                  style="background: linear-gradient(135deg, #5865f2 0%, #7289da 100%); color: #ffffff; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(88, 101, 242, 0.3); display: flex; align-items: center; gap: 0.5rem; font-size: 1rem;">
+                  🎮 Simular Última Partida
+                </button>
+
+                <button
+                  type="button"
+                  (click)="cleanupTestMatches()"
+                  style="background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); color: #ffffff; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(231, 76, 60, 0.3); display: flex; align-items: center; gap: 0.5rem; font-size: 1rem;">
+                  🧹 Limpar Partidas de Teste
+                </button>
+              </div>
+
+              <div style="margin-top: 1rem; padding: 1rem; background: rgba(200, 155, 60, 0.1); border: 1px solid rgba(200, 155, 60, 0.3); border-radius: 8px;">
+                <p style="color: #c9aa71; margin: 0 0 0.5rem 0; font-weight: bold;">⚠️ Aviso</p>
+                <p style="color: #cdbe91; margin: 0; font-size: 0.9rem;">
+                  Estas ferramentas são destinadas apenas para desenvolvimento e testes. Use com cuidado.
                 </p>
               </div>
             </div>

@@ -122,15 +122,28 @@ export class MatchmakingService {
         const timeInQueue = now.getTime() - player.joinTime.getTime();
         const timeInQueueMinutes = Math.floor(timeInQueue / (1000 * 60));
         
+        // Verificar se é um bot (ID negativo)
+        const isBot = player.id < 0;
+        
         // Verificar se WebSocket está morto ou null
         const isWebSocketDead = !player.websocket || 
           player.websocket.readyState === WebSocket.CLOSED || 
           player.websocket.readyState === WebSocket.CLOSING;
 
         // Log do estado do jogador
-        console.log(`👤 ${player.summonerName}: ${timeInQueueMinutes}min na fila, WebSocket: ${player.websocket ? 'ativo' : 'null/inativo'}`);
+        console.log(`👤 ${player.summonerName}: ${timeInQueueMinutes}min na fila, WebSocket: ${player.websocket ? 'ativo' : 'null/inativo'}, Bot: ${isBot}`);
 
-        // Remover se:
+        // Para bots: só remover se tempo for negativo (dados corrompidos) ou timeout muito longo (mais de 24 horas)
+        if (isBot) {
+          if (timeInQueue < 0 || timeInQueue > (24 * 60 * 60 * 1000)) {
+            let reason = timeInQueue < 0 ? 'Dados de tempo corrompidos' : 'Timeout de 24 horas';
+            console.log(`⚠️ Marcando bot ${player.summonerName} para remoção: ${reason}`);
+            playersToRemove.push(player);
+          }
+          continue; // Pular verificações de WebSocket para bots
+        }
+
+        // Para jogadores reais: remover se:
         // 1. WebSocket está morto ou null (jogador desconectou) OU
         // 2. Jogador está na fila há mais tempo que o timeout (2 horas) OU
         // 3. Tempo negativo (dados corrompidos)
@@ -154,8 +167,10 @@ export class MatchmakingService {
         if (playerIndex !== -1) {
           this.queue.splice(playerIndex, 1);
           
-          // Persistir saída da fila no banco
-          await this.dbManager.removePlayerFromQueue(player.id);
+          // Persistir saída da fila no banco (apenas para jogadores reais)
+          if (player.id > 0) {
+            await this.dbManager.removePlayerFromQueue(player.id);
+          }
           
           // Adicionar atividade de saída automática
           this.addActivity(
@@ -504,6 +519,11 @@ export class MatchmakingService {
 
     console.log(`🤖 Bot ${botName} adicionado à fila - Lane: ${primaryLaneName}, MMR: ${randomMMR}`);
     
+    // Atualizar posições na fila
+    this.queue.forEach((p, index) => {
+      p.queuePosition = index + 1;
+    });
+    
     // Notificar todos os clientes sobre a atualização
     this.broadcastQueueUpdate();
   }
@@ -519,10 +539,17 @@ export class MatchmakingService {
     };
     return lanes[laneId] || laneId;
   }  private async processMatchmaking(): Promise<void> {
-    if (!this.isActive || this.queue.length < 10) return; // Precisa de 10 jogadores
+    console.log(`🔄 [Matchmaking] Processando matchmaking - ${this.queue.length} jogadores na fila`);
+    
+    if (!this.isActive || this.queue.length < 10) {
+      console.log(`❌ [Matchmaking] Matchmaking não ativo ou jogadores insuficientes: ativo=${this.isActive}, jogadores=${this.queue.length}`);
+      return;
+    }
 
     try {
+      console.log(`🔍 [Matchmaking] Buscando melhor partida...`);
       const match = await this.findBestMatch();
+      
       if (match) {
         console.log('🎮 Partida encontrada! Criando lobby...', {
           team1Players: match.team1.length,
@@ -553,10 +580,13 @@ export class MatchmakingService {
         this.broadcastQueueUpdate();
 
         console.log('✅ Partida criada com sucesso!');
+      } else {
+        console.log(`❌ [Matchmaking] Nenhuma partida encontrada para ${this.queue.length} jogadores`);
       }
     } catch (error) {
-      console.error('Erro no processamento de matchmaking:', error);
-    }  }
+      console.error('❌ [Matchmaking] Erro no processamento de matchmaking:', error);
+    }
+  }
 
   // Método para criar partida no banco e notificar jogadores
   private async createMatchAndNotify(match: Match): Promise<void> {
@@ -961,10 +991,16 @@ export class MatchmakingService {
 
   // Método para encontrar melhor partida
   private async findBestMatch(): Promise<Match | null> {
-    if (this.queue.length < 10) return null;
+    console.log(`🔍 [Matchmaking] Verificando matchmaking - ${this.queue.length} jogadores na fila`);
+    
+    if (this.queue.length < 10) {
+      console.log(`❌ [Matchmaking] Não há jogadores suficientes (${this.queue.length}/10)`);
+      return null;
+    }
 
     // Ordenar jogadores por MMR
     const sortedPlayers = [...this.queue].sort((a, b) => a.currentMMR - b.currentMMR);
+    console.log(`📊 [Matchmaking] Jogadores ordenados por MMR:`, sortedPlayers.map(p => ({ name: p.summonerName, mmr: p.currentMMR })));
     
     // Dividir em dois times balanceados
     const team1: QueuedPlayer[] = [];
@@ -979,14 +1015,27 @@ export class MatchmakingService {
       }
     }
 
-    if (team1.length < 5 || team2.length < 5) return null;
+    console.log(`👥 [Matchmaking] Times formados:`, {
+      team1: team1.map(p => ({ name: p.summonerName, mmr: p.currentMMR })),
+      team2: team2.map(p => ({ name: p.summonerName, mmr: p.currentMMR }))
+    });
+
+    if (team1.length < 5 || team2.length < 5) {
+      console.log(`❌ [Matchmaking] Times incompletos: Team1=${team1.length}, Team2=${team2.length}`);
+      return null;
+    }
 
     // Calcular MMR médio dos times
     const avgMMR1 = team1.reduce((sum, p) => sum + p.currentMMR, 0) / team1.length;
     const avgMMR2 = team2.reduce((sum, p) => sum + p.currentMMR, 0) / team2.length;
 
+    console.log(`📊 [Matchmaking] MMR médio: Team1=${Math.round(avgMMR1)}, Team2=${Math.round(avgMMR2)}, Diferença=${Math.abs(avgMMR1 - avgMMR2)}`);
+
     // Verificar se a diferença de MMR é aceitável (máximo 200)
-    if (Math.abs(avgMMR1 - avgMMR2) > 200) return null;
+    if (Math.abs(avgMMR1 - avgMMR2) > 200) {
+      console.log(`❌ [Matchmaking] Diferença de MMR muito alta: ${Math.abs(avgMMR1 - avgMMR2)} > 200`);
+      return null;
+    }
 
     // Atribuir lanes baseado no MMR
     this.assignLanesByMMR(team1);
@@ -1003,6 +1052,7 @@ export class MatchmakingService {
       acceptedPlayers: new Set()
     };
 
+    console.log(`✅ [Matchmaking] Partida criada com sucesso!`);
     return match;
   }
 

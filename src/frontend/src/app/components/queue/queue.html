@@ -330,25 +330,6 @@
     </div>
   </div>
 
-  <!-- Development Tools -->
-  <div class="dev-tools" *ngIf="showDevTools">
-    <h3>🛠️ Ferramentas de Desenvolvimento</h3>
-    <div class="dev-buttons">
-      <button class="dev-btn" (click)="onAddBot()">
-        <i class="icon-bot"></i>
-        <span>Adicionar Bot</span>
-      </button>
-      <button class="dev-btn" (click)="onSimulateLastMatch()">
-        <i class="icon-simulate"></i>
-        <span>Simular Última Partida</span>
-      </button>
-      <button class="dev-btn" (click)="onCleanupTestMatches()">
-        <i class="icon-cleanup"></i>
-        <span>Limpar Partidas de Teste</span>
-      </button>
-    </div>
-  </div>
-
   <!-- Lane Selector Modal -->
   <app-lane-selector
     [isVisible]="showLaneSelector"

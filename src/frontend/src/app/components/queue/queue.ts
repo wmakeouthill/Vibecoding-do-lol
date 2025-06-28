@@ -23,10 +23,10 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   @Output() joinQueue = new EventEmitter<QueuePreferences>();
   @Output() leaveQueue = new EventEmitter<void>();
   @Output() joinDiscordQueueWithFullData = new EventEmitter<{player: Player | null, preferences: QueuePreferences}>();
-  // Adicionar outputs para funcionalidade de bots
-  @Output() addBot = new EventEmitter<void>();
-  @Output() simulateLastMatch = new EventEmitter<void>();
-  @Output() cleanupTestMatches = new EventEmitter<void>();
+  // Remover outputs para funcionalidade de bots
+  // @Output() addBot = new EventEmitter<void>();
+  // @Output() simulateLastMatch = new EventEmitter<void>();
+  // @Output() cleanupTestMatches = new EventEmitter<void>();
 
   queueTimer = 0;
   private timerInterval?: number;
@@ -48,7 +48,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   isInDiscordChannel = false;
 
   // Development tools
-  showDevTools = false;
+  // showDevTools = false;
 
   // Players table
   activeTab: 'queue' | 'lobby' | 'all' = 'all';
@@ -72,9 +72,6 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     
     // Iniciar verificação periódica do estado da fila
     this.startQueueStateCheck();
-    
-    // Show dev tools for special users
-    this.showDevTools = this.isSpecialUser();
   }
 
   ngOnDestroy() {
@@ -257,13 +254,6 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     return `${diffHours}h atrás`;
   }
 
-  isSpecialUser(): boolean {
-    // Verificar se é usuário especial (desenvolvedor, admin, etc.)
-    const specialUsers = ['wcaco', 'admin', 'dev', 'popcorn seller'];
-    return specialUsers.includes(this.currentPlayer?.gameName?.toLowerCase() || '') ||
-           specialUsers.includes(this.currentPlayer?.summonerName?.toLowerCase() || '');
-  }
-
   isPlayerAutofilled(player: any): boolean {
     return player.role !== player.preferredRole;
   }
@@ -277,15 +267,18 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   onAddBot(): void {
-    this.addBot.emit();
+    // Implementar lógica para adicionar um bot
+    console.log('Adicionando bot');
   }
 
   onSimulateLastMatch(): void {
-    this.simulateLastMatch.emit();
+    // Implementar lógica para simular o último match
+    console.log('Simulando último match');
   }
 
   onCleanupTestMatches(): void {
-    this.cleanupTestMatches.emit();
+    // Implementar lógica para limpar testes de match
+    console.log('Limpando testes de match');
   }
 
   getLaneSystemExplanation(): string {
@@ -729,8 +722,15 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     
     // Verificar se o usuário está na lista de participantes da fila Discord
     const queueParticipants = this.discordService.getQueueParticipants();
+    
+    // Verificar se queueParticipants existe e é um array
+    if (!queueParticipants || !Array.isArray(queueParticipants)) {
+      console.log('⚠️ [Queue] queueParticipants não está disponível ou não é um array');
+      return;
+    }
+    
     const isInDiscordQueue = queueParticipants.some(participant => {
-      if (participant.linkedNickname) {
+      if (participant && participant.linkedNickname) {
         const participantFullName = `${participant.linkedNickname.gameName}#${participant.linkedNickname.tagLine}`;
         return participantFullName === userFullName;
       }

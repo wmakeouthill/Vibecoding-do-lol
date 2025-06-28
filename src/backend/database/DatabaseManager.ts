@@ -81,9 +81,9 @@ export class DatabaseManager {
         waitForConnections: true,
         connectionLimit: 10,
         queueLimit: 0,
-        ssl: {
-          rejectUnauthorized: false
-        }
+        // Configurações específicas para MySQL 5.6
+        charset: 'utf8mb4',
+        timezone: 'local'
       });
 
       // Testar conexão
@@ -185,7 +185,13 @@ export class DatabaseManager {
         detected_by_lcu TINYINT DEFAULT 0,
         notes TEXT,
         custom_lp INT DEFAULT 0,
-        updated_at TIMESTAMP NULL
+        updated_at TIMESTAMP NULL,
+        pick_ban_data TEXT,
+        linked_results TEXT,
+        actual_winner INT,
+        actual_duration INT,
+        riot_id VARCHAR(255),
+        mmr_changes TEXT
       )
     `);
 
@@ -1850,7 +1856,13 @@ export class DatabaseManager {
             detected_by_lcu TINYINT DEFAULT 0,
             notes TEXT,
             custom_lp INT DEFAULT 0,
-            updated_at TIMESTAMP NULL
+            updated_at TIMESTAMP NULL,
+            pick_ban_data TEXT,
+            linked_results TEXT,
+            actual_winner INT,
+            actual_duration INT,
+            riot_id VARCHAR(255),
+            mmr_changes TEXT
           )
         `);
         console.log('✅ Tabela custom_matches criada com sucesso');
@@ -2335,6 +2347,65 @@ export class DatabaseManager {
       console.log(`✅ [DatabaseManager] Nome do jogador ${playerId} atualizado para: ${newSummonerName}`);
     } catch (error) {
       console.error('❌ [DatabaseManager] Erro ao atualizar nome do jogador:', error);
+      throw error;
+    }
+  }
+
+  // Método para verificar e adicionar colunas faltantes na tabela custom_matches
+  private async ensureCustomMatchesColumns(): Promise<void> {
+    if (!this.pool) throw new Error('Pool de conexão não inicializado');
+    
+    try {
+      console.log('🔍 Verificando colunas da tabela custom_matches...');
+      
+      const [columns] = await this.pool.execute(
+        "SHOW COLUMNS FROM custom_matches"
+      );
+      const columnNames = (columns as any[]).map(col => col.Field);
+      
+      const missingColumns = [];
+      
+      // Verificar colunas que podem estar faltando
+      if (!columnNames.includes('pick_ban_data')) {
+        missingColumns.push('pick_ban_data TEXT');
+      }
+      
+      if (!columnNames.includes('linked_results')) {
+        missingColumns.push('linked_results TEXT');
+      }
+      
+      if (!columnNames.includes('actual_winner')) {
+        missingColumns.push('actual_winner INT');
+      }
+      
+      if (!columnNames.includes('actual_duration')) {
+        missingColumns.push('actual_duration INT');
+      }
+      
+      if (!columnNames.includes('riot_id')) {
+        missingColumns.push('riot_id VARCHAR(255)');
+      }
+      
+      if (!columnNames.includes('mmr_changes')) {
+        missingColumns.push('mmr_changes TEXT');
+      }
+      
+      // Adicionar colunas faltantes
+      for (const columnDef of missingColumns) {
+        const columnName = columnDef.split(' ')[0];
+        console.log(`📋 Adicionando coluna ${columnName}...`);
+        await this.pool.execute(
+          `ALTER TABLE custom_matches ADD COLUMN ${columnDef}`
+        );
+      }
+      
+      if (missingColumns.length > 0) {
+        console.log(`✅ ${missingColumns.length} colunas adicionadas à tabela custom_matches`);
+      } else {
+        console.log('✅ Todas as colunas necessárias já existem na tabela custom_matches');
+      }
+    } catch (error) {
+      console.error('❌ Erro ao verificar/adicionar colunas da tabela custom_matches:', error);
       throw error;
     }
   }

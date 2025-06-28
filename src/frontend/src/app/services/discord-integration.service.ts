@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { BehaviorSubject, Observable } from 'rxjs';
+import { BehaviorSubject, Observable, Subject } from 'rxjs';
 import { WEBSOCKET_URL } from '../app.config';
 
 @Injectable({
@@ -32,6 +32,8 @@ export class DiscordIntegrationService {
   private readonly QUEUE_UPDATE_THROTTLE = 1000; // 1 segundo entre atualizações de fila
   private pendingQueueUpdate: any = null;
   private queueUpdateTimeout: any = null;
+
+  private matchFoundSubject = new Subject<any>();
 
   constructor() {
     DiscordIntegrationService.instanceCount++;
@@ -199,6 +201,11 @@ export class DiscordIntegrationService {
 
       case 'match_created':
         console.log(`🎮 [DiscordService #${this.instanceId}] Match criado!`, data);
+        break;
+
+      case 'match_found':
+        console.log(`🎮 [DiscordService #${this.instanceId}] Partida encontrada!`, data);
+        this.matchFoundSubject.next(data.data);
         break;
     }
   }
@@ -448,5 +455,10 @@ export class DiscordIntegrationService {
 
     console.log(`🔍 [DiscordService #${this.instanceId}] Solicitando status do canal Discord...`);
     this.ws.send(JSON.stringify({ type: 'get_discord_channel_status' }));
+  }
+
+  // Observable para match_found
+  onMatchFound(): Observable<any> {
+    return this.matchFoundSubject.asObservable();
   }
 }

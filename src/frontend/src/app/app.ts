@@ -118,6 +118,17 @@ export class App implements OnInit, OnDestroy {
     // Configurar listener do status do Discord
     this.setupDiscordStatusListener();
 
+    // Assinar eventos de partida encontrada (match_found)
+    this.discordService.onMatchFound().pipe(takeUntil(this.destroy$)).subscribe((matchData) => {
+      if (matchData) {
+        this.matchFoundData = matchData;
+        this.showMatchFound = true;
+        this.inDraftPhase = false;
+        this.inGamePhase = false;
+        console.log('[WebSocket] Partida encontrada:', matchData);
+      }
+    });
+
     // Aguardar um pouco para o LCU conectar e então carregar dados
     setTimeout(() => {
       this.loadPlayerData();
@@ -2355,24 +2366,18 @@ export class App implements OnInit, OnDestroy {
 
   // Método para carregar Discord Bot Token do localStorage
   private loadDiscordTokenFromLocalStorage(): void {
-    const storedDiscordToken = localStorage.getItem('discordBotToken');
-    if (storedDiscordToken) {
-      this.settingsForm.discordBotToken = storedDiscordToken;
-      this.apiService.setDiscordBotToken(storedDiscordToken).subscribe({
-        next: () => {
-          console.log('✅ Discord Bot Token configurado do localStorage');
-          this.checkDiscordStatus();
-        },
-        error: (error: HttpErrorResponse) => {
-          console.warn('⚠️ Falha ao configurar Discord Bot Token do localStorage:', error.message);
-          localStorage.removeItem('discordBotToken');
-          this.settingsForm.discordBotToken = '';
-        }
-      });
-    } else {
-      console.log('ℹ️ Nenhum Discord Bot Token encontrado nos fallbacks');
-      // Verificar status do Discord mesmo sem token salvo
-      this.checkDiscordStatus();
+    const token = localStorage.getItem('discordBotToken');
+    if (token) {
+      this.settingsForm.discordBotToken = token;
+      console.log('🔑 [APP] Discord Bot Token carregado do localStorage');
     }
+  }
+
+  // Função para verificar se é usuário especial (desenvolvedor, admin, etc.)
+  isSpecialUser(): boolean {
+    // Verificar se é usuário especial (desenvolvedor, admin, etc.)
+    const specialUsers = ['wcaco', 'admin', 'dev', 'popcorn seller'];
+    return specialUsers.includes(this.currentPlayer?.gameName?.toLowerCase() || '') ||
+           specialUsers.includes(this.currentPlayer?.summonerName?.toLowerCase() || '');
   }
 }
