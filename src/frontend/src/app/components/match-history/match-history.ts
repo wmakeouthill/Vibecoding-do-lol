@@ -186,6 +186,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
 
     this.loadCurrentTabMatches();
   }
+  
   // Helper function para evitar erro de lint no template
   isCustomTab(): boolean {
     const result = this.activeTab === 'custom';
@@ -194,6 +195,21 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
   isRiotTab(): boolean {
     const result = this.activeTab === 'riot';
     return result;
+  }
+
+  // Método para identificar se um participante é o jogador atual (para partidas customizadas)
+  private isCurrentPlayer(participantName: string): boolean {
+    if (!this.player) return false;
+    
+    const currentPlayerName = this.player.summonerName?.toLowerCase().trim() || '';
+    const currentPlayerTagLine = this.player.tagLine || '';
+    const fullPlayerName = currentPlayerTagLine ? `${currentPlayerName}#${currentPlayerTagLine}` : currentPlayerName;
+    
+    const participantNameLower = participantName?.toLowerCase().trim() || '';
+    
+    // Comparar por nome completo (gameName#tagLine) ou apenas gameName
+    return participantNameLower === fullPlayerName.toLowerCase() || 
+           participantNameLower === currentPlayerName;
   }
 
   ngOnInit() {
@@ -631,7 +647,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
             champion: championName,
             championName: championName, // Para compatibilidade com o template
             summonerName: playerName, // Nome real do jogador
-            puuid: currentPlayerTeam === 1 && currentPlayerIndex === index ? this.player?.puuid || `custom_player_${playerId}_${index}` : `custom_player_${playerId}_${index}`,
+            puuid: this.isCurrentPlayer(playerName) ? this.player?.puuid || `custom_player_${playerId}_${index}` : `custom_player_${playerId}_${index}`,
             teamId: 100,
             kills: realData?.kills ?? Math.floor(Math.random() * 10) + 2,
             deaths: realData?.deaths ?? Math.floor(Math.random() * 8) + 1,
@@ -694,7 +710,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
               champion: championName,
               championName: championName, // Para compatibilidade com o template
               summonerName: playerName, // Nome real do jogador
-              puuid: currentPlayerTeam === 2 && currentPlayerIndex === index ? this.player?.puuid || `custom_player_${playerId}_${index + 5}` : `custom_player_${playerId}_${index + 5}`,
+              puuid: this.isCurrentPlayer(playerName) ? this.player?.puuid || `custom_player_${playerId}_${index + 5}` : `custom_player_${playerId}_${index + 5}`,
               teamId: 200,
               kills: realData?.kills ?? Math.floor(Math.random() * 10) + 2,
               deaths: realData?.deaths ?? Math.floor(Math.random() * 8) + 1,
