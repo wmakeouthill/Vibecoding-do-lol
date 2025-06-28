@@ -63,10 +63,10 @@
     .last-updated {
       font-size: 14px;
       color: #a09b8c;
-    }    .refresh-btn {
-      align-items: center;
-      justify-content: center;
-      padding: 10px 20px;
+    }
+
+    .refresh-btn {
+      padding: 10px 10px;
       background: linear-gradient(135deg, #0596aa, #c89b3c);
       color: #f0e6d2;
       border: 1px solid rgba(200, 155, 60, 0.3);
@@ -76,7 +76,9 @@
       font-size: 14px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      text-align: center;
+      text-align: center !important;
+      align-items: center !important;
+      justify-content: center !important;
       transition: all 0.3s ease;
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 
@@ -99,6 +101,9 @@
       }
 
       .icon-refresh {
+        text-align: center !important;
+        align-items: center !important;
+        justify-content: center !important;
         width: 16px;
         height: 16px;
 
@@ -418,7 +423,9 @@
   p {
     color: #a09b8c;
     margin-bottom: 20px;
-  }  .retry-btn {
+  }
+
+  .retry-btn {
     display: flex;
     align-items: center;
     justify-content: center;

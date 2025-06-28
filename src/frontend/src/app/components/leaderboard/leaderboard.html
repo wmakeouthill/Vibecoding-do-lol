@@ -13,12 +13,13 @@
         <span>Última atualização: {{ formatUpdateTime(lastUpdated) }}</span>
       </div>
       <button class="refresh-btn" (click)="refresh()" [disabled]="isAnyLoading()">
-        <i class="icon-refresh" [class.spinning]="isAnyLoading()"></i>
         Atualizar
+        <i class="icon-refresh" [class.spinning]="isAnyLoading()"></i>
       </button>
       <button class="refresh-btn" (click)="refreshAndRebuildPlayers()" [disabled]="isAnyLoading()">
-        <i class="icon-refresh"></i>
         Refresh
+        <i class="icon-refresh"></i>
+        
       </button>
     </div>
   </div>
