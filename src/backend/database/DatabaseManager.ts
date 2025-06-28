@@ -2409,4 +2409,19 @@ export class DatabaseManager {
       throw error;
     }
   }
+
+  // NOVO: Método para atualizar posição de um jogador na fila
+  async updateQueuePosition(playerId: number, position: number): Promise<void> {
+    if (!this.pool) throw new Error('Pool de conexão não inicializado');
+    
+    try {
+      await this.pool.execute(
+        'UPDATE queue_players SET queue_position = ? WHERE player_id = ? AND is_active = 1',
+        [position, playerId]
+      );
+    } catch (error) {
+      console.error('Erro ao atualizar posição na fila:', error);
+      throw error;
+    }
+  }
 }

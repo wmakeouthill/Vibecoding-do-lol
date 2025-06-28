@@ -2119,6 +2119,31 @@ export class App implements OnInit, OnDestroy {
       }
     });
 
+    // NOVO: Listener para atualizações da fila em tempo real
+    this.discordService.onQueueUpdate().subscribe(queueData => {
+      console.log('🎯 [App] Fila atualizada via WebSocket:', queueData?.playersInQueue || 0, 'jogadores');
+      
+      if (queueData) {
+        // Atualizar estado da fila em tempo real
+        this.queueStatus = {
+          ...this.queueStatus,
+          ...queueData,
+          playersInQueue: queueData.playersInQueue || 0,
+          playersInQueueList: queueData.playersInQueueList || [],
+          recentActivities: queueData.recentActivities || [],
+          averageWaitTime: queueData.averageWaitTime || 0,
+          estimatedMatchTime: queueData.estimatedMatchTime || 0,
+          isActive: queueData.isActive !== undefined ? queueData.isActive : this.queueStatus.isActive
+        };
+        
+        console.log('✅ [App] Estado da fila atualizado em tempo real:', {
+          playersInQueue: this.queueStatus.playersInQueue,
+          playersList: this.queueStatus.playersInQueueList?.map(p => p.summonerName),
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
     // Verificação inicial após 5 segundos (reduzido para evitar conflitos)
     setTimeout(() => {
       console.log('🔍 [App] Verificação inicial do Discord após delay...');

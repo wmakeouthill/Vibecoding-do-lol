@@ -240,7 +240,7 @@ export class MatchmakingService {
           currentMMR: dbPlayer.custom_lp || 0,
           joinTime: joinTime,
           websocket: null as any, // WebSocket será atualizado quando o jogador reconectar
-          queuePosition: dbPlayer.queue_position,
+          queuePosition: dbPlayer.queue_position || 0,
           preferences: {
             primaryLane: dbPlayer.primary_lane || 'fill',
             secondaryLane: dbPlayer.secondary_lane || 'fill'
@@ -250,6 +250,9 @@ export class MatchmakingService {
         this.queue.push(queuedPlayer);
         console.log(`📊 [Matchmaking] Jogador carregado da fila persistente: ${dbPlayer.summoner_name} (${Math.floor(timeInQueue / (1000 * 60))}min na fila)`);
       }
+      
+      // Garantir que as posições estejam corretas após carregar
+      await this.updateQueuePositions();
       
       console.log(`📊 [Matchmaking] Carregados ${this.queue.length} jogadores da fila persistente`);
     } catch (error) {
@@ -355,6 +358,9 @@ export class MatchmakingService {
         preferences
       );
 
+      // Atualizar posições na fila após adicionar o jogador
+      await this.updateQueuePositions();
+
       // Adicionar atividade
       const primaryLaneName = this.getLaneDisplayName(preferences?.primaryLane);
       this.addActivity(
@@ -447,10 +453,8 @@ export class MatchmakingService {
         player.summonerName
       );
 
-      // Atualizar posições na fila
-      this.queue.forEach((p, index) => {
-        p.queuePosition = index + 1;
-      });
+      // Atualizar posições na fila E NO BANCO
+      await this.updateQueuePositions();
 
       console.log(`➖ [Matchmaking] ${player.summonerName} saiu da fila`);
       console.log('🔍 [Matchmaking] Tamanho da fila depois:', this.queue.length);
@@ -470,6 +474,26 @@ export class MatchmakingService {
         wsState: p.websocket?.readyState,
         wsUrl: (p.websocket as any)?.url
       })));
+    }
+  }
+
+  // NOVO: Método para atualizar posições na fila e no banco
+  private async updateQueuePositions(): Promise<void> {
+    try {
+      // Atualizar posições na memória
+      this.queue.forEach((p, index) => {
+        p.queuePosition = index + 1;
+      });
+
+      // Atualizar posições no banco de dados
+      for (let i = 0; i < this.queue.length; i++) {
+        const player = this.queue[i];
+        await this.dbManager.updateQueuePosition(player.id, i + 1);
+      }
+
+      console.log(`✅ [Matchmaking] Posições da fila atualizadas: ${this.queue.length} jogadores`);
+    } catch (error) {
+      console.error('❌ [Matchmaking] Erro ao atualizar posições da fila:', error);
     }
   }
 
@@ -1360,6 +1384,9 @@ export class MatchmakingService {
         queuedPlayer.currentMMR,
         queuedPlayer.preferences
       );
+
+      // Atualizar posições na fila após adicionar o jogador
+      await this.updateQueuePositions();
 
       // Adicionar atividade
       const primaryLaneName = this.getLaneDisplayName(queuedPlayer.preferences?.primaryLane);
