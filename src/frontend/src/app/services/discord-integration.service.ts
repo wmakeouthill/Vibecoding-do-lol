@@ -23,15 +23,28 @@ export class DiscordIntegrationService {
   private static instanceCount = 0;
   private instanceId: number;
 
-  // Throttling para evitar múltiplas solicitações
+  // Throttling simplificado - apenas proteção básica contra spam
   private lastStatusRequest = 0;
-  private readonly STATUS_REQUEST_COOLDOWN = 5000; // 5 segundos entre solicitações
+  private readonly STATUS_REQUEST_COOLDOWN = 500; // 500ms entre solicitações de status
   
-  // Otimizações de performance
+  // Otimizações de performance - REMOVIDO THROTTLING DESNECESSÁRIO
+  // Atualizações de fila em tempo real
   private lastQueueUpdate = 0;
-  private readonly QUEUE_UPDATE_THROTTLE = 1000; // 1 segundo entre atualizações de fila
+  private readonly QUEUE_UPDATE_THROTTLE = 50; // Apenas 50ms para evitar spam extremo
   private pendingQueueUpdate: any = null;
   private queueUpdateTimeout: any = null;
+
+  // Sistema de reconexão robusto
+  private reconnectAttempts = 0;
+  private readonly MAX_RECONNECT_ATTEMPTS = 10;
+  private readonly INITIAL_RECONNECT_DELAY = 100; // Começar com 100ms
+  private readonly MAX_RECONNECT_DELAY = 5000; // Máximo 5 segundos
+  private reconnectTimeout?: number;
+  private heartbeatInterval?: number;
+  private readonly HEARTBEAT_INTERVAL = 30000; // Heartbeat a cada 30 segundos
+  private lastHeartbeat = 0;
+  private connectionTimeout?: number;
+  private readonly CONNECTION_TIMEOUT = 10000; // Timeout de 10 segundos
 
   private matchFoundSubject = new Subject<any>();
 
@@ -53,6 +66,10 @@ export class DiscordIntegrationService {
       return;
     }
 
+    // Limpar timeouts anteriores
+    this.clearReconnectTimeout();
+    this.clearConnectionTimeout();
+
     // Fechar conexão anterior se existir
     if (this.ws) {
       console.log(`🔌 [DiscordService #${this.instanceId}] Fechando conexão anterior...`);
@@ -63,13 +80,27 @@ export class DiscordIntegrationService {
     try {
       // Usar endereço customizável
       const wsUrl = WEBSOCKET_URL;
-      console.log(`[DEBUG] [DiscordService #${this.instanceId}] Conectando WebSocket em: ${wsUrl}`);
+      console.log(`🔗 [DiscordService #${this.instanceId}] Conectando WebSocket em: ${wsUrl}`);
       this.ws = new WebSocket(wsUrl);
 
+      // Configurar timeout de conexão
+      this.connectionTimeout = window.setTimeout(() => {
+        if (this.ws && this.ws.readyState !== WebSocket.OPEN) {
+          console.error(`⏰ [DiscordService #${this.instanceId}] Timeout de conexão - tentando reconectar...`);
+          this.ws.close();
+          this.scheduleReconnect();
+        }
+      }, this.CONNECTION_TIMEOUT);
+
       this.ws.onopen = () => {
-        console.log(`🔗 [DiscordService #${this.instanceId}] WebSocket conectado com sucesso`);
+        console.log(`✅ [DiscordService #${this.instanceId}] WebSocket conectado com sucesso`);
+        this.clearConnectionTimeout();
         this.isBackendConnected = true;
         this.connectionSubject.next(true);
+        this.reconnectAttempts = 0; // Resetar tentativas de reconexão
+        
+        // Iniciar heartbeat
+        this.startHeartbeat();
         
         // Solicitar status inicial imediatamente
         console.log(`🔍 [DiscordService #${this.instanceId}] Solicitando status inicial do Discord...`);
@@ -79,6 +110,14 @@ export class DiscordIntegrationService {
       this.ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
+          
+          // Atualizar último heartbeat se for uma resposta
+          if (data.type === 'pong') {
+            this.lastHeartbeat = Date.now();
+            console.log(`💓 [DiscordService #${this.instanceId}] Heartbeat recebido`);
+            return;
+          }
+          
           console.log(`📥 [DiscordService #${this.instanceId}] Mensagem recebida:`, data.type);
           this.handleBotMessage(data);
         } catch (error) {
@@ -86,28 +125,88 @@ export class DiscordIntegrationService {
         }
       };
 
-      this.ws.onclose = () => {
-        console.log(`🔌 [DiscordService #${this.instanceId}] WebSocket desconectado`);
+      this.ws.onclose = (event) => {
+        console.log(`🔌 [DiscordService #${this.instanceId}] WebSocket desconectado (código: ${event.code}, motivo: ${event.reason})`);
+        this.clearConnectionTimeout();
+        this.stopHeartbeat();
         this.isBackendConnected = false;
         this.connectionSubject.next(false);
         this.isInDiscordChannel = false;
         this.currentDiscordUser = null;
         
-        // Reconectar automaticamente após 3 segundos
-        setTimeout(() => {
-          console.log(`🔄 [DiscordService #${this.instanceId}] Tentando reconectar...`);
-          this.connectToWebSocket();
-        }, 3000);
+        // Tentar reconectar automaticamente
+        this.scheduleReconnect();
       };
 
       this.ws.onerror = (error) => {
         console.error(`❌ [DiscordService #${this.instanceId}] Erro na conexão WebSocket:`, error);
+        this.clearConnectionTimeout();
       };
 
     } catch (error) {
       console.error(`❌ [DiscordService #${this.instanceId}] Erro ao conectar WebSocket:`, error);
+      this.clearConnectionTimeout();
       this.isBackendConnected = false;
       this.connectionSubject.next(false);
+      this.scheduleReconnect();
+    }
+  }
+
+  private scheduleReconnect() {
+    if (this.reconnectAttempts >= this.MAX_RECONNECT_ATTEMPTS) {
+      console.error(`❌ [DiscordService #${this.instanceId}] Máximo de tentativas de reconexão atingido (${this.MAX_RECONNECT_ATTEMPTS})`);
+      return;
+    }
+
+    this.reconnectAttempts++;
+    const delay = Math.min(
+      this.INITIAL_RECONNECT_DELAY * Math.pow(1.5, this.reconnectAttempts - 1),
+      this.MAX_RECONNECT_DELAY
+    );
+
+    console.log(`🔄 [DiscordService #${this.instanceId}] Tentativa ${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS} de reconexão em ${delay}ms`);
+    
+    this.reconnectTimeout = window.setTimeout(() => {
+      this.connectToWebSocket();
+    }, delay);
+  }
+
+  private startHeartbeat() {
+    this.stopHeartbeat(); // Parar heartbeat anterior se existir
+    
+    this.heartbeatInterval = window.setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        console.log(`💓 [DiscordService #${this.instanceId}] Enviando heartbeat...`);
+        this.ws.send(JSON.stringify({ type: 'ping' }));
+        
+        // Verificar se o último heartbeat foi muito antigo
+        const timeSinceLastHeartbeat = Date.now() - this.lastHeartbeat;
+        if (this.lastHeartbeat > 0 && timeSinceLastHeartbeat > this.HEARTBEAT_INTERVAL * 2) {
+          console.warn(`⚠️ [DiscordService #${this.instanceId}] Heartbeat não respondido há ${timeSinceLastHeartbeat}ms, reconectando...`);
+          this.ws.close();
+        }
+      }
+    }, this.HEARTBEAT_INTERVAL);
+  }
+
+  private stopHeartbeat() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = undefined;
+    }
+  }
+
+  private clearReconnectTimeout() {
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = undefined;
+    }
+  }
+
+  private clearConnectionTimeout() {
+    if (this.connectionTimeout) {
+      clearTimeout(this.connectionTimeout);
+      this.connectionTimeout = undefined;
     }
   }
 
@@ -166,31 +265,12 @@ export class DiscordIntegrationService {
         break;
 
       case 'queue_update':
-        console.log(`🎯 [DiscordService #${this.instanceId}] Fila atualizada:`, data.queue?.length || 0, 'jogadores');
+        console.log(`🎯 [DiscordService #${this.instanceId}] Fila atualizada:`, data.data?.playersInQueue || 0, 'jogadores');
         
-        // Throttling para atualizações de fila
-        const now = Date.now();
-        if (now - this.lastQueueUpdate < this.QUEUE_UPDATE_THROTTLE) {
-          // Armazenar a atualização mais recente
-          this.pendingQueueUpdate = data.queue;
-          
-          // Se não há timeout agendado, agendar um
-          if (!this.queueUpdateTimeout) {
-            this.queueUpdateTimeout = setTimeout(() => {
-              this.queueUpdateTimeout = null;
-              if (this.pendingQueueUpdate) {
-                console.log(`🎯 [DiscordService #${this.instanceId}] Aplicando atualização de fila throttled`);
-                this.queueParticipants = this.pendingQueueUpdate;
-                this.pendingQueueUpdate = null;
-              }
-            }, this.QUEUE_UPDATE_THROTTLE);
-          }
-        } else {
-          // Aplicar imediatamente se passou tempo suficiente
-          this.queueParticipants = data.queue;
-          this.lastQueueUpdate = now;
-          console.log(`🎯 [DiscordService #${this.instanceId}] Atualização de fila aplicada imediatamente`);
-        }
+        // Aplicar atualização imediatamente (sem throttling desnecessário)
+        this.queueParticipants = data.data?.playersInQueueList || [];
+        this.lastQueueUpdate = Date.now();
+        console.log(`🎯 [DiscordService #${this.instanceId}] Atualização de fila aplicada imediatamente`);
         break;
 
       case 'queue_joined':
@@ -387,6 +467,14 @@ export class DiscordIntegrationService {
   forceReconnect(): void {
     console.log(`🔄 [DiscordService #${this.instanceId}] Forçando reconexão...`);
     
+    // Resetar tentativas de reconexão
+    this.reconnectAttempts = 0;
+    
+    // Limpar todos os timeouts
+    this.clearReconnectTimeout();
+    this.clearConnectionTimeout();
+    this.stopHeartbeat();
+    
     // Fechar conexão atual se existir
     if (this.ws) {
       this.ws.close();
@@ -407,7 +495,11 @@ export class DiscordIntegrationService {
   ngOnDestroy() {
     console.log(`🔧 [DiscordService #${this.instanceId}] Destruindo instância`);
     
-    // Limpar timeouts
+    // Limpar todos os timeouts
+    this.clearReconnectTimeout();
+    this.clearConnectionTimeout();
+    this.stopHeartbeat();
+    
     if (this.queueUpdateTimeout) {
       clearTimeout(this.queueUpdateTimeout);
       this.queueUpdateTimeout = null;

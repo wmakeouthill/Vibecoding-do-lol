@@ -75,12 +75,10 @@ export class MatchmakingService {
   private readonly QUEUE_TIMEOUT_MINUTES = 120; // Timeout para jogadores inativos (2 horas)
   private readonly CLEANUP_INTERVAL_MS = 30000; // Limpeza a cada 30 segundos
   
-  // Otimizações de performance
-  private broadcastTimeout: NodeJS.Timeout | null = null;
-  private readonly BROADCAST_DEBOUNCE_MS = 500; // Debounce de 500ms para broadcasts
+  // Otimizações de performance - REMOVIDO DEBOUNCE DESNECESSÁRIO
+  // Broadcast imediato apenas quando necessário (entrada/saída da fila)
   private lastBroadcastTime = 0;
-  private readonly MIN_BROADCAST_INTERVAL = 1000; // Mínimo 1 segundo entre broadcasts
-  private pendingQueueUpdate = false;
+  private readonly MIN_BROADCAST_INTERVAL = 100; // Mínimo 100ms entre broadcasts para evitar spam
 
   constructor(dbManager: DatabaseManager, wss?: any) {
     this.dbManager = dbManager;
@@ -395,10 +393,38 @@ export class MatchmakingService {
 
   async removePlayerFromQueue(websocket: WebSocket): Promise<void> {
     console.log('🔍 [Matchmaking] removePlayerFromQueue chamado via WebSocket');
-    console.log('🔍 [Matchmaking] Fila atual:', this.queue.map(p => ({ id: p.id, name: p.summonerName, wsActive: p.websocket?.readyState === WebSocket.OPEN })));
+    console.log('🔍 [Matchmaking] Fila atual:', this.queue.map(p => ({ 
+      id: p.id, 
+      name: p.summonerName, 
+      wsActive: p.websocket?.readyState === WebSocket.OPEN,
+      wsRef: p.websocket === websocket ? 'MATCH' : 'DIFFERENT'
+    })));
     
-    const playerIndex = this.queue.findIndex(player => player.websocket === websocket);
-    console.log('🔍 [Matchmaking] Player index encontrado:', playerIndex);
+    // Tentar encontrar o jogador por WebSocket
+    let playerIndex = this.queue.findIndex(player => player.websocket === websocket);
+    console.log('🔍 [Matchmaking] Player index encontrado por WebSocket:', playerIndex);
+    
+    // Se não encontrou por WebSocket, tentar por WebSocket ID ou referência
+    if (playerIndex === -1) {
+      console.log('🔍 [Matchmaking] Tentando busca alternativa por WebSocket...');
+      console.log('🔍 [Matchmaking] WebSocket recebido:', {
+        readyState: websocket.readyState,
+        url: (websocket as any).url,
+        protocol: (websocket as any).protocol
+      });
+      
+      // Tentar encontrar por qualquer critério que possa identificar o WebSocket
+      playerIndex = this.queue.findIndex(player => {
+        const playerWs = player.websocket;
+        return playerWs && (
+          playerWs === websocket ||
+          playerWs.readyState === websocket.readyState ||
+          (playerWs as any).url === (websocket as any).url
+        );
+      });
+      console.log('🔍 [Matchmaking] Player index encontrado por busca alternativa:', playerIndex);
+    }
+    
     console.log('🔍 [Matchmaking] Tamanho da fila antes:', this.queue.length);
     
     if (playerIndex !== -1) {
@@ -434,8 +460,16 @@ export class MatchmakingService {
       await this.forceQueueUpdate();
     } else {
       console.log('⚠️ [Matchmaking] Jogador não encontrado na fila para remoção via WebSocket');
-      console.log('🔍 [Matchmaking] WebSocket recebido:', websocket);
-      console.log('🔍 [Matchmaking] WebSockets na fila:', this.queue.map(p => ({ name: p.summonerName, ws: p.websocket, wsState: p.websocket?.readyState })));
+      console.log('🔍 [Matchmaking] WebSocket recebido:', {
+        readyState: websocket.readyState,
+        url: (websocket as any).url,
+        protocol: (websocket as any).protocol
+      });
+      console.log('🔍 [Matchmaking] WebSockets na fila:', this.queue.map(p => ({ 
+        name: p.summonerName, 
+        wsState: p.websocket?.readyState,
+        wsUrl: (p.websocket as any)?.url
+      })));
     }
   }
 
@@ -883,74 +917,38 @@ export class MatchmakingService {
     return lanes[laneId || 'fill'] || 'Preenchimento';
   }
 
-  // Método otimizado para broadcast com debouncing
+  // Método simplificado para broadcast imediato
   public async broadcastQueueUpdate(force: boolean = false): Promise<void> {
     if (!this.wss) return;
 
     const now = Date.now();
     
-    // Se não for forçado, verificar se já fizemos broadcast recentemente
+    // Proteção básica contra spam (mínimo 100ms entre broadcasts)
     if (!force && now - this.lastBroadcastTime < this.MIN_BROADCAST_INTERVAL) {
-      // Marcar que há uma atualização pendente
-      this.pendingQueueUpdate = true;
-      
-      // Se não há timeout agendado, agendar um
-      if (!this.broadcastTimeout) {
-        this.broadcastTimeout = setTimeout(() => {
-          this.broadcastTimeout = null;
-          if (this.pendingQueueUpdate) {
-            this.pendingQueueUpdate = false;
-            this.broadcastQueueUpdate(true);
-          }
-        }, this.BROADCAST_DEBOUNCE_MS);
-      }
       return;
     }
 
-    // Limpar timeout se existir
-    if (this.broadcastTimeout) {
-      clearTimeout(this.broadcastTimeout);
-      this.broadcastTimeout = null;
-    }
-
-    this.pendingQueueUpdate = false;
     this.lastBroadcastTime = now;
 
     try {
       const queueStatus = await this.getQueueStatus();
       
-      // Usar Promise.all para enviar todas as mensagens em paralelo
-      const sendPromises: Promise<void>[] = [];
-      
+      // Enviar para todos os clientes conectados
       this.wss.clients.forEach((client: WebSocket) => {
         if (client.readyState === WebSocket.OPEN) {
-          const sendPromise = new Promise<void>((resolve, reject) => {
-            try {
-              client.send(JSON.stringify({
-                type: 'queue_update',
-                data: queueStatus,
-                timestamp: now // Adicionar timestamp para debug
-              }), (error) => {
-                if (error) {
-                  console.error('Erro ao enviar atualização da fila:', error);
-                  reject(error);
-                } else {
-                  resolve();
-                }
-              });
-            } catch (error) {
-              console.error('Erro ao enviar atualização da fila:', error);
-              reject(error);
-            }
-          });
-          sendPromises.push(sendPromise);
+          try {
+            client.send(JSON.stringify({
+              type: 'queue_update',
+              data: queueStatus,
+              timestamp: now
+            }));
+          } catch (error) {
+            console.error('Erro ao enviar atualização da fila:', error);
+          }
         }
       });
-
-      // Aguardar todas as mensagens serem enviadas
-      await Promise.allSettled(sendPromises);
       
-      console.log(`📡 Broadcast enviado para ${sendPromises.length} clientes em ${Date.now() - now}ms`);
+      console.log(`📡 Broadcast enviado para ${this.wss.clients.size} clientes`);
     } catch (error) {
       console.error('❌ Erro no broadcast da fila:', error);
     }
@@ -1396,10 +1394,14 @@ export class MatchmakingService {
     
     let playerIndex = -1;
 
+    // PRIMEIRA TENTATIVA: Buscar por ID
     if (playerId) {
       playerIndex = this.queue.findIndex(p => p.id === playerId);
       console.log(`🔍 [Matchmaking] Buscando por ID ${playerId}, encontrado no índice: ${playerIndex}`);
-    } else if (summonerName) {
+    }
+    
+    // SEGUNDA TENTATIVA: Se não encontrou por ID, buscar por nome
+    if (playerIndex === -1 && summonerName) {
       // Buscar por nome exato primeiro
       playerIndex = this.queue.findIndex(p => p.summonerName === summonerName);
       console.log(`🔍 [Matchmaking] Buscando por nome exato "${summonerName}", encontrado no índice: ${playerIndex}`);
@@ -1416,6 +1418,17 @@ export class MatchmakingService {
         playerIndex = this.queue.findIndex(p => p.summonerName.split('#')[0] === summonerName);
         console.log(`🔍 [Matchmaking] Buscando por gameName apenas "${summonerName}", encontrado no índice: ${playerIndex}`);
       }
+    }
+    
+    // TERCEIRA TENTATIVA: Se ainda não encontrou e temos ID, tentar busca mais flexível
+    if (playerIndex === -1 && playerId) {
+      console.log(`🔍 [Matchmaking] Tentando busca flexível por ID ${playerId}...`);
+      // Tentar encontrar por qualquer critério que possa identificar o jogador
+      playerIndex = this.queue.findIndex(p => {
+        return p.id === playerId || 
+               (summonerName && p.summonerName.includes(summonerName.split('#')[0]));
+      });
+      console.log(`🔍 [Matchmaking] Busca flexível encontrou no índice: ${playerIndex}`);
     }
 
     if (playerIndex !== -1) {
@@ -1450,6 +1463,12 @@ export class MatchmakingService {
       return true;
     } else {
       console.log(`❌ [Matchmaking] Jogador não encontrado na fila:`, { playerId, summonerName });
+      console.log(`🔍 [Matchmaking] Fila atual completa:`, this.queue.map(p => ({ 
+        id: p.id, 
+        name: p.summonerName,
+        gameName: p.summonerName.split('#')[0],
+        tagLine: p.summonerName.split('#')[1]
+      })));
       return false;
     }
   }

@@ -639,7 +639,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
         this.discordUsersOnline = this.discordService.getDiscordUsersOnline() || [];
         this.discordQueue = this.discordService.getQueueParticipants() || [];
         
-        // Solicitar atualização do Discord a cada 30 segundos
+        // Solicitar atualização do Discord a cada 60 segundos (reduzido significativamente)
         if (this.discordService.isConnected()) {
           this.discordService.requestDiscordStatus();
         }
@@ -649,7 +649,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
           queueSize: this.discordQueue.length,
           timestamp: new Date().toLocaleTimeString()
         });
-      }, 30000); // Atualizar a cada 30 segundos
+      }, 60000); // Atualizar a cada 60 segundos (reduzido significativamente)
     }
   }
 
@@ -702,14 +702,17 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     }
   }
 
-  // Novo método: Verificar estado da fila periodicamente
+  // Novo método: Verificar estado da fila periodicamente (APENAS se auto-refresh estiver ativado)
   private startQueueStateCheck() {
-    // Verificar a cada 10 segundos se o usuário está na fila
-    setInterval(() => {
-      if (this.discordService.isConnected()) {
-        this.checkIfUserInQueue();
-      }
-    }, 10000);
+    // Só verificar periodicamente se auto-refresh estiver ativado
+    if (this.autoRefreshEnabled) {
+      // Verificar a cada 30 segundos (reduzido significativamente)
+      setInterval(() => {
+        if (this.discordService.isConnected()) {
+          this.checkIfUserInQueue();
+        }
+      }, 30000);
+    }
   }
 
   // Novo método: Verificar se o usuário está na fila baseado nos dados do Discord

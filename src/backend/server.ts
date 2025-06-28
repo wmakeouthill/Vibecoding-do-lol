@@ -30,12 +30,29 @@ import { DiscordService } from './services/DiscordService';
 
 const app = express();
 const server = createServer(app);
-const wss = new WebSocketServer({ server, path: '/ws' });
+
+// Configurações de keep-alive para melhorar estabilidade da conexão
+server.keepAliveTimeout = 65000; // 65 segundos
+server.headersTimeout = 66000; // 66 segundos (sempre maior que keepAliveTimeout)
+
+const wss = new WebSocketServer({ 
+  server, 
+  path: '/ws',
+  // Configurações para melhorar performance
+  perMessageDeflate: false, // Desabilitar compressão para reduzir latência
+  maxPayload: 1024 * 1024, // 1MB max payload
+  skipUTF8Validation: true // Pular validação UTF-8 para melhor performance
+});
 const io = new SocketIOServer(server, {
   cors: {
     origin: "*",
     methods: ["GET", "POST"]
-  }
+  },
+  // Configurações para melhorar performance
+  pingTimeout: 30000, // 30 segundos
+  pingInterval: 25000, // 25 segundos
+  transports: ['websocket', 'polling'], // Priorizar WebSocket
+  allowEIO3: true
 });
 
 const PORT = process.env.PORT || 3000;
