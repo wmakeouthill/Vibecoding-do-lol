@@ -20,7 +20,7 @@ export class PlayerService {
       // Buscar dados na Riot API
       let summonerId: string | undefined;
       let puuid: string | undefined;
-        try {
+      try {
         const summonerData = await this.riotAPI.getSummoner(summonerName, region);
         summonerId = summonerData.id;
         puuid = summonerData.puuid;
@@ -40,25 +40,25 @@ export class PlayerService {
         losses: 0,
         win_streak: 0
       });
-      
+
       // Se conseguiu dados da Riot API, atualizar MMR inicial baseado no rank
       if (summonerId) {
         try {
           const rankedData = await this.riotAPI.getRankedData(summonerId, region);
           const initialMMR = this.calculateInitialMMR(rankedData);
-          
+
           if (initialMMR !== 1000) {
             await this.dbManager.updatePlayerMMR(playerId, initialMMR);
           }
         } catch (error) {
           // console.log(`⚠️ Não foi possível buscar dados ranqueados para ${summonerName}`);
         }
-      }      const player = await this.dbManager.getPlayer(playerId);
+      } const player = await this.dbManager.getPlayer(playerId);
       if (!player) {
         throw new Error(`Erro ao buscar jogador criado: ${playerId}`);
       }
       // console.log(`✅ Jogador registrado: ${summonerName} (MMR inicial: ${player.current_mmr})`);
-      
+
       return player;
     } catch (error: any) {
       console.error('Erro ao registrar jogador:', error);
@@ -69,7 +69,7 @@ export class PlayerService {
   async getPlayer(playerId: string): Promise<any> {
     const id = parseInt(playerId);
     const player = await this.dbManager.getPlayer(id);
-    
+
     if (!player) {
       throw new Error('Jogador não encontrado');
     }
@@ -80,15 +80,15 @@ export class PlayerService {
   async getPlayerStats(playerId: string): Promise<any> {
     const id = parseInt(playerId);
     const player = await this.dbManager.getPlayer(id);
-    
+
     if (!player) {
       throw new Error('Jogador não encontrado');
     }
 
     // Calcular estatísticas adicionais
-    const winRate = player.games_played > 0 ? 
+    const winRate = player.games_played > 0 ?
       Math.round((player.wins / player.games_played) * 100) : 0;
-    
+
     const rank = this.calculateRankFromMMR(player.current_mmr);
     const nextRankMMR = this.getNextRankMMR(player.current_mmr);
     const progressToNextRank = this.calculateRankProgress(player.current_mmr);
@@ -100,7 +100,7 @@ export class PlayerService {
       nextRankMMR,
       progressToNextRank,
       mmrGainedTotal: player.current_mmr - 1000, // Assumindo 1000 como MMR inicial
-      averageMMRPerGame: player.games_played > 0 ? 
+      averageMMRPerGame: player.games_played > 0 ?
         (player.current_mmr - 1000) / player.games_played : 0
     };
   }
@@ -113,13 +113,13 @@ export class PlayerService {
 
     try {      // Atualizar dados do summoner
       const summonerData = await this.riotAPI.getSummoner(player.summoner_name, player.region);
-      
+
       // Buscar dados ranqueados atualizados
       const rankedData = await this.riotAPI.getRankedData(summonerData.id, player.region);
-      
+
       // Atualizar MMR baseado no rank atual (opcional - pode manter o MMR interno)
       const currentMMRFromRank = this.calculateInitialMMR(rankedData);
-      
+
       return {
         player,
         riotData: {
@@ -141,8 +141,8 @@ export class PlayerService {
     const [gameName, tagLine] = riotId.split('#');
 
     if (!gameName || !tagLine) {
-        throw new Error('gameName e tagLine são obrigatórios do Riot ID.');
-    }    try {
+      throw new Error('gameName e tagLine são obrigatórios do Riot ID.');
+    } try {
       // Usar o método unificado que suporta tanto Riot ID quanto summoner name legado
       const summonerDetails = await this.riotAPI.getSummoner(riotId, region);
 
@@ -225,7 +225,7 @@ export class PlayerService {
 
   private enrichPlayerData(player: any): any {
     const rank = this.calculateRankFromMMR(player.current_mmr);
-    const winRate = player.games_played > 0 ? 
+    const winRate = player.games_played > 0 ?
       Math.round((player.wins / player.games_played) * 100) : 0;
 
     return {
@@ -261,9 +261,9 @@ export class PlayerService {
     // Procurar por RANKED_SOLO_5x5 primeiro, depois RANKED_FLEX_SR
     const soloQueue = rankedData.find(entry => entry.queueType === 'RANKED_SOLO_5x5');
     const flexQueue = rankedData.find(entry => entry.queueType === 'RANKED_FLEX_SR');
-    
+
     const rankedEntry = soloQueue || flexQueue;
-    
+
     if (!rankedEntry) {
       return 1000; // MMR padrão para unranked
     }
@@ -361,10 +361,10 @@ export class PlayerService {
     const nextRankMMR = this.getNextRankMMR(currentMMR);
     const currentRank = this.calculateRankFromMMR(currentMMR);
     const previousRankMMR = this.getPreviousRankMMR(currentMMR);
-    
+
     const totalProgress = nextRankMMR - previousRankMMR;
     const currentProgress = currentMMR - previousRankMMR;
-    
+
     return Math.max(0, Math.min(100, Math.round((currentProgress / totalProgress) * 100)));
   }
 
@@ -388,12 +388,12 @@ export class PlayerService {
     // Implementar busca de jogadores por nome
     // Por enquanto, retorna lista vazia
     return [];
-  }  async getLeaderboard(limit: number = 100): Promise<any[]> {
+  } async getLeaderboard(limit: number = 100): Promise<any[]> {
     try {
       const result = await this.dbManager.getParticipantsLeaderboard(limit);
-        return result.map((player: any, index: number) => {
+      return result.map((player: any, index: number) => {
         let favoriteChampion = null;
-          // Processar dados do campeão favorito
+        // Processar dados do campeão favorito
         if (player.favorite_champion && typeof player.favorite_champion === 'object') {
           favoriteChampion = {
             name: player.favorite_champion.name,
@@ -422,7 +422,8 @@ export class PlayerService {
           averageGold: Math.round(player.avg_gold || 0),
           joinedAt: player.created_at
         };
-      });    } catch (error) {
+      });
+    } catch (error) {
       console.error('❌ Erro ao buscar leaderboard:', error);
       return [];
     }

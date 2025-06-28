@@ -96,7 +96,7 @@ export class App implements OnInit, OnDestroy {
     inChannel: false
   };
 
-  private destroy$ = new Subject<void>();  constructor(
+  private destroy$ = new Subject<void>(); constructor(
     private apiService: ApiService,
     private queueStateService: QueueStateService,
     private discordService: DiscordIntegrationService
@@ -114,7 +114,7 @@ export class App implements OnInit, OnDestroy {
     // Iniciar verificações de status primeiro
     this.startLCUStatusCheck();
     this.startQueueStatusCheck();
-    
+
     // Configurar listener do status do Discord
     this.setupDiscordStatusListener();
 
@@ -122,7 +122,7 @@ export class App implements OnInit, OnDestroy {
     this.discordService.onMatchFound().pipe(takeUntil(this.destroy$)).subscribe((matchData) => {
       if (matchData) {
         console.log('[WebSocket] Mensagem recebida:', matchData);
-        
+
         // Verificar se é um cancelamento de partida
         if (matchData.type === 'match_cancelled') {
           console.log('[WebSocket] Partida cancelada:', matchData);
@@ -130,17 +130,17 @@ export class App implements OnInit, OnDestroy {
           this.matchFoundData = null;
           this.inDraftPhase = false;
           this.draftData = null;
-          
+
           const reason = matchData.reason || 'Partida cancelada';
           const declinedPlayer = matchData.declinedPlayer;
-          const message = declinedPlayer 
+          const message = declinedPlayer
             ? `${reason} por ${declinedPlayer}`
             : reason;
-          
+
           this.addNotification('info', 'Partida Cancelada', message);
           return;
         }
-        
+
         // Verificar se é cancelamento de draft
         if (matchData.type === 'draft_cancelled') {
           console.log('[WebSocket] Draft cancelado:', matchData);
@@ -148,12 +148,12 @@ export class App implements OnInit, OnDestroy {
           this.matchFoundData = null;
           this.inDraftPhase = false;
           this.draftData = null;
-          
+
           const reason = matchData.reason || 'Draft cancelado';
           this.addNotification('info', 'Draft Cancelado', reason);
           return;
         }
-        
+
         // Verificar se é início do draft
         if (matchData.phase === 'draft_started') {
           console.log('[WebSocket] Fase de draft iniciada:', matchData);
@@ -165,7 +165,7 @@ export class App implements OnInit, OnDestroy {
           this.addNotification('success', 'Draft Iniciado', 'A fase de draft começou!');
           return;
         }
-        
+
         // Partida encontrada normal
         this.matchFoundData = matchData;
         this.showMatchFound = true;
@@ -196,7 +196,7 @@ export class App implements OnInit, OnDestroy {
   exitDraft(): void {
     console.log('🚪 Saindo do draft...');
     console.log('🔍 Draft data:', this.draftData);
-    
+
     // Enviar mensagem de cancelamento de draft para o backend
     if (this.draftData?.matchId) {
       console.log('📤 Enviando cancelamento de draft para matchId:', this.draftData.matchId);
@@ -210,7 +210,7 @@ export class App implements OnInit, OnDestroy {
     } else {
       console.warn('⚠️ Draft data não tem matchId:', this.draftData);
     }
-    
+
     this.inDraftPhase = false;
     this.draftData = null;
     this.currentView = 'dashboard';
@@ -230,7 +230,7 @@ export class App implements OnInit, OnDestroy {
 
   onPickBanCancel(): void {
     console.log('❌ Pick & Ban cancelado');
-    
+
     // Enviar mensagem de cancelamento de draft para o backend
     if (this.draftData?.matchId) {
       this.discordService.sendWebSocketMessage({
@@ -241,7 +241,7 @@ export class App implements OnInit, OnDestroy {
         }
       });
     }
-    
+
     this.inDraftPhase = false;
     this.draftData = null;
     this.draftPhase = 'preview';
@@ -382,9 +382,9 @@ export class App implements OnInit, OnDestroy {
         team1Players: gameResult.team1.map((player: any) => {
           // Garantir que temos um identificador válido
           // Se for o usuário logado, usar Riot ID completo
-          if (this.currentPlayer && 
-              (player.summonerName === this.currentPlayer.summonerName || 
-               player.id === this.currentPlayer.id)) {
+          if (this.currentPlayer &&
+            (player.summonerName === this.currentPlayer.summonerName ||
+              player.id === this.currentPlayer.id)) {
             const currentPlayerName = this.currentPlayer.summonerName;
             const currentPlayerTagLine = this.currentPlayer.tagLine;
             return currentPlayerTagLine ? `${currentPlayerName}#${currentPlayerTagLine}` : currentPlayerName;
@@ -394,9 +394,9 @@ export class App implements OnInit, OnDestroy {
         team2Players: gameResult.team2.map((player: any) => {
           // Garantir que temos um identificador válido
           // Se for o usuário logado, usar Riot ID completo
-          if (this.currentPlayer && 
-              (player.summonerName === this.currentPlayer.summonerName || 
-               player.id === this.currentPlayer.id)) {
+          if (this.currentPlayer &&
+            (player.summonerName === this.currentPlayer.summonerName ||
+              player.id === this.currentPlayer.id)) {
             const currentPlayerName = this.currentPlayer.summonerName;
             const currentPlayerTagLine = this.currentPlayer.tagLine;
             return currentPlayerTagLine ? `${currentPlayerName}#${currentPlayerTagLine}` : currentPlayerName;
@@ -698,7 +698,7 @@ export class App implements OnInit, OnDestroy {
       console.log('🎯 Entrando na fila com preferências:', preferences);
       this.isInQueue = true;
       this.currentQueueType = 'centralized';
-      
+
       // PRIMEIRO: Entrar na fila centralizada via API HTTP
       const playerData = {
         summonerName: this.currentPlayer.summonerName,
@@ -710,30 +710,30 @@ export class App implements OnInit, OnDestroy {
       };
 
       console.log('📡 Enviando dados para API HTTP:', playerData);
-      
+
       const response = await this.apiService.joinQueue(playerData, preferences).toPromise();
       console.log('✅ Resposta da API HTTP:', response);
-      
+
       if (response && response.success) {
         this.addNotification('success', 'Na Fila', 'Você entrou na fila centralizada!');
-        
+
         // Atualizar status da fila
         this.queueStatus = response.queueStatus || this.queueStatus;
-        
+
         // SEGUNDO: Se Discord estiver disponível, entrar também na fila Discord
         if (this.discordService.isConnected() && this.discordService.isInChannel()) {
           const primaryLane = preferences?.primaryLane || 'fill';
           const secondaryLane = preferences?.secondaryLane || 'fill';
           const discordSuccess = this.discordService.joinDiscordQueue(
-            primaryLane, 
+            primaryLane,
             secondaryLane,
-            this.currentPlayer.summonerName || 'Unknown', 
+            this.currentPlayer.summonerName || 'Unknown',
             {
               gameName: this.currentPlayer.gameName || '',
               tagLine: this.currentPlayer.tagLine || ''
             }
           );
-          
+
           if (discordSuccess) {
             this.addNotification('info', 'Discord', 'Também conectado à fila Discord!');
             this.currentQueueType = 'discord';
@@ -750,7 +750,7 @@ export class App implements OnInit, OnDestroy {
     }
   }
 
-  async joinDiscordQueueWithFullData(data: {player: Player | null, preferences: QueuePreferences}): Promise<void> {
+  async joinDiscordQueueWithFullData(data: { player: Player | null, preferences: QueuePreferences }): Promise<void> {
     if (!data.player) {
       this.addNotification('error', 'Erro', 'Dados do jogador não encontrados');
       return;
@@ -760,20 +760,20 @@ export class App implements OnInit, OnDestroy {
       console.log('🎮 Entrando na fila Discord com dados completos:', data);
       this.isInQueue = true;
       this.currentQueueType = 'discord';
-      
+
       // Usar o DiscordService para entrar na fila Discord
       const primaryLane = data.preferences?.primaryLane || 'fill';
       const secondaryLane = data.preferences?.secondaryLane || 'fill';
       const success = this.discordService.joinDiscordQueue(
-        primaryLane, 
+        primaryLane,
         secondaryLane,
-        data.player.summonerName || 'Unknown', 
+        data.player.summonerName || 'Unknown',
         {
           gameName: data.player.gameName || '',
           tagLine: data.player.tagLine || ''
         }
       );
-      
+
       if (success) {
         this.addNotification('success', 'Na Fila Discord', 'Você entrou na fila Discord!');
       } else {
@@ -790,29 +790,29 @@ export class App implements OnInit, OnDestroy {
   async leaveQueue(): Promise<void> {
     try {
       console.log('👋 Saindo da fila');
-      
+
       // PRIMEIRO: Tentar sair via WebSocket (tempo real)
       if (this.discordService.isConnected() && this.discordService.isInChannel()) {
         console.log('📡 Enviando saída via WebSocket (tempo real)...');
         this.discordService.leaveDiscordQueue();
       }
-      
+
       // SEGUNDO: Sair da fila centralizada via API HTTP (fallback)
       let httpSuccess = false;
-      
+
       // Construir o nome completo (gameName#tagLine)
-      const fullSummonerName = this.currentPlayer?.gameName && this.currentPlayer?.tagLine 
+      const fullSummonerName = this.currentPlayer?.gameName && this.currentPlayer?.tagLine
         ? `${this.currentPlayer.gameName}#${this.currentPlayer.tagLine}`
         : this.currentPlayer?.summonerName;
-      
+
       console.log('🔍 [App] Nome completo para sair da fila:', fullSummonerName);
-      
+
       if (this.currentPlayer?.id) {
         console.log('📡 Enviando saída para API HTTP por ID...');
         try {
           const response = await this.apiService.leaveQueue(this.currentPlayer.id).toPromise();
           console.log('✅ Resposta da saída da API por ID:', response);
-          
+
           if (response && response.success) {
             this.queueStatus = response.queueStatus || this.queueStatus;
             httpSuccess = true;
@@ -821,14 +821,14 @@ export class App implements OnInit, OnDestroy {
           console.log('⚠️ Erro ao sair por ID, tentando por nome completo...');
         }
       }
-      
+
       // TERCEIRO: Fallback por nome completo (gameName#tagLine) se ID falhou ou não existe
       if (!httpSuccess && fullSummonerName) {
         console.log('📡 Enviando saída por nome completo (gameName#tagLine)...');
         try {
           const response = await this.apiService.leaveQueue(undefined, fullSummonerName).toPromise();
           console.log('✅ Resposta da saída da API por nome completo:', response);
-          
+
           if (response && response.success) {
             this.queueStatus = response.queueStatus || this.queueStatus;
             httpSuccess = true;
@@ -837,11 +837,11 @@ export class App implements OnInit, OnDestroy {
           console.log('⚠️ Erro ao sair por nome completo também:', error);
         }
       }
-      
+
       // QUARTO: Limpar estado local (sempre)
       this.isInQueue = false;
       this.currentQueueType = null;
-      
+
       if (httpSuccess) {
         this.addNotification('success', 'Saiu da Fila', 'Você saiu da fila com sucesso');
       } else {
@@ -850,7 +850,7 @@ export class App implements OnInit, OnDestroy {
     } catch (error) {
       console.error('❌ Erro ao sair da fila:', error);
       this.addNotification('error', 'Erro', 'Falha ao sair da fila');
-      
+
       // Mesmo com erro, limpar estado local
       this.isInQueue = false;
       this.currentQueueType = null;
@@ -878,7 +878,7 @@ export class App implements OnInit, OnDestroy {
   // Verificar se o usuário atual pode adicionar bots
   private isAuthorizedForBots(): boolean {
     return this.currentPlayer?.summonerName === 'popcorn seller' &&
-           this.currentPlayer?.tagLine === 'coup';
+      this.currentPlayer?.tagLine === 'coup';
   }  // Método para limpar partidas de teste (apenas para usuário autorizado)
   async cleanupTestMatches(): Promise<void> {
     // Verificar se o usuário atual é autorizado
@@ -934,7 +934,7 @@ export class App implements OnInit, OnDestroy {
     if (!this.currentPlayer?.id) {
       this.addNotification('error', 'Erro', 'Dados do jogador não disponíveis');
       return;
-    }    try {
+    } try {
       this.addNotification('info', 'Buscando Partida', 'Procurando sua última partida customizada REAL do LCU...');
 
       console.log('Player ID para simulação:', this.currentPlayer.id);
@@ -986,14 +986,14 @@ export class App implements OnInit, OnDestroy {
 
       // TENTATIVA 2B: Buscar mais partidas para filtrar (fallback)
       const response = await this.apiService.getCustomMatches(playerIdForSearch, 0, 20).toPromise();
-      console.log('🔍 Resposta da busca no banco interno (fallback):', response);if (!response || !response.matches || response.matches.length === 0) {
+      console.log('🔍 Resposta da busca no banco interno (fallback):', response); if (!response || !response.matches || response.matches.length === 0) {
         this.addNotification('warning', 'Sem Histórico', 'Você ainda não jogou nenhuma partida customizada real. Para testar a detecção de vencedor, jogue uma partida customizada no LoL primeiro.');
         console.log('❌ Nenhuma partida encontrada no banco interno.');
         return;
       }      // Filtrar partidas REAIS (não partidas de exemplo/teste)      // Filtrar partidas REAIS (não partidas de exemplo/teste) usando método helper
       const realMatches = response.matches.filter((match: any) => this.isRealCustomMatch(match));
 
-      console.log(`📊 Partidas filtradas: ${realMatches.length} reais de ${response.matches.length} totais`);      if (realMatches.length === 0) {
+      console.log(`📊 Partidas filtradas: ${realMatches.length} reais de ${response.matches.length} totais`); if (realMatches.length === 0) {
         this.addNotification('warning', 'Apenas Partidas de Teste',
           `Não foram encontradas partidas customizadas reais. Todas as ${response.matches.length} partidas encontradas são de teste/exemplo. Para testar a detecção de vencedor, jogue uma partida customizada real no LoL primeiro.`);
         console.log('❌ Nenhuma partida customizada REAL encontrada. Todas são de teste/exemplo.');
@@ -1036,7 +1036,7 @@ export class App implements OnInit, OnDestroy {
     }
 
     this.simulateMatchFromData(newResponse.matches[0]);
-  }  private simulateMatchFromData(matchData: any): void {
+  } private simulateMatchFromData(matchData: any): void {
     console.log('🎮 Simulando partida com dados REAIS:', matchData);  // Processar dados dos teams corretamente (podem ser strings ou números)
 
     let team1Players: any[] = [];
@@ -1189,7 +1189,7 @@ export class App implements OnInit, OnDestroy {
 
     // Usar o método de simulação existente
     this.simulateMatchFromData(convertedMatch);
-  }  private convertLCUMatchToInternalFormat(lcuMatch: any): any {
+  } private convertLCUMatchToInternalFormat(lcuMatch: any): any {
     // Converter estrutura do LCU para formato interno
     console.log('🔄 Convertendo dados do LCU para formato interno:', lcuMatch);    // Extrair informações dos participantes - usar AMBOS participants E participantIdentities
     const participants = lcuMatch.participants || [];
@@ -1249,7 +1249,7 @@ export class App implements OnInit, OnDestroy {
         playerName = `Player${index + 1}`;
       }
 
-      console.log(`✅ Nome final do jogador ${index + 1}: "${playerName}"`);      const playerId = participant.summonerId || participant.participantId || playerName;
+      console.log(`✅ Nome final do jogador ${index + 1}: "${playerName}"`); const playerId = participant.summonerId || participant.participantId || playerName;
       const championId = participant.championId || participant.champion || 0;
       const championName = participant.championName || this.getChampionNameById(championId) || `Champion${championId}`;
 
@@ -1290,7 +1290,7 @@ export class App implements OnInit, OnDestroy {
         currentPlayerInMatch = true;
         currentPlayerTeam = participant.teamId;
         console.log(`🎯 Player atual encontrado na partida: ${playerName} (Team ${participant.teamId})`);
-      }      if (participant.teamId === 100) {
+      } if (participant.teamId === 100) {
         team1Players.push(playerName); // Usar nome real ao invés de ID genérico
         team1Picks.push({
           champion: championName,
@@ -1298,7 +1298,8 @@ export class App implements OnInit, OnDestroy {
           lane: friendlyLane,
           championId: championId
         });
-      } else if (participant.teamId === 200) {        team2Players.push(playerName); // Usar nome real ao invés de ID genérico
+      } else if (participant.teamId === 200) {
+        team2Players.push(playerName); // Usar nome real ao invés de ID genérico
         team2Picks.push({
           champion: championName,
           player: playerName, // Usar nome real
@@ -1443,7 +1444,7 @@ export class App implements OnInit, OnDestroy {
       this.showMatchFound = false;
       this.matchFoundData = null;
     }
-  }  async onDeclineMatch(matchId: number): Promise<void> {
+  } async onDeclineMatch(matchId: number): Promise<void> {
     try {
       await this.apiService.declineMatch(
         matchId,
@@ -1524,7 +1525,7 @@ export class App implements OnInit, OnDestroy {
         next: (status) => {
           this.lcuStatus = status;
           if (status.isConnected) {
-            this.addNotification('success', 'LoL Cliente', 'Conectado ao cliente do League of Legends');            if (status.summoner) {
+            this.addNotification('success', 'LoL Cliente', 'Conectado ao cliente do League of Legends'); if (status.summoner) {
               // Auto-load player data from LCU
               this.currentPlayer = {
                 id: 0,
@@ -1547,7 +1548,7 @@ export class App implements OnInit, OnDestroy {
     } catch (error) {
       this.lcuStatus = { isConnected: false };
     }
-  }  private async tryAutoLoadCurrentPlayer(): Promise<void> {
+  } private async tryAutoLoadCurrentPlayer(): Promise<void> {
     // Priority 1: Try LCU first (League Client is the primary source)
     if (this.lcuStatus.isConnected) {
       try {
@@ -1619,7 +1620,7 @@ export class App implements OnInit, OnDestroy {
         }
       }
     });
-  }  private async tryLoadRealPlayerData(): Promise<void> {
+  } private async tryLoadRealPlayerData(): Promise<void> {
     console.log('🚀 Starting intelligent player data loading...');
 
     // Strategy 1: Always try LCU first (primary data source)
@@ -1658,7 +1659,7 @@ export class App implements OnInit, OnDestroy {
     } else {
       // Strategy 2: LCU not available, try fallback options
       console.log('📱 LCU not available, trying fallback options...');
-      
+
       // Tentar novamente em 5 segundos se o LCU não estiver conectado
       setTimeout(() => {
         if (!this.currentPlayer) {
@@ -1666,7 +1667,7 @@ export class App implements OnInit, OnDestroy {
           this.tryLoadRealPlayerData();
         }
       }, 5000);
-      
+
       this.handleLCUDataFailure(new Error('LCU not connected'));
     }
   }
@@ -1680,14 +1681,15 @@ export class App implements OnInit, OnDestroy {
     }
 
     // Try fallback options
-    this.tryLoadFromLocalStorage();  }
+    this.tryLoadFromLocalStorage();
+  }
 
   private fallbackToStorageOrMock(): void {
     // If no real data available and no stored data, create mock data for testing
     if (!this.currentPlayer) {
       this.createMockPlayer();
     }
-  }  private mapRealDataToPlayer(realData: any): Player {
+  } private mapRealDataToPlayer(realData: any): Player {
     // Handle the new data structure from current-details endpoint
     const lcuData = realData.lcuData || realData.lcu || realData;
     const riotData = realData.riotData || realData.riotApi || {};
@@ -1924,25 +1926,25 @@ export class App implements OnInit, OnDestroy {
 
   private startLCUStatusCheck(): void {
     console.log('🔄 Iniciando verificação de status do LCU...');
-    
+
     // Verificar status inicial
     this.checkLCUStatus();
-    
+
     // Verificar a cada 60 segundos (reduzido de 30 para 60)
     setInterval(() => {
       this.checkLCUStatus();
     }, 60000);
   }
-  
+
   private checkLCUStatus(): void {
     this.apiService.getLCUStatus().subscribe({
       next: (status) => {
         const wasConnected = this.lcuStatus.isConnected;
         this.lcuStatus = status;
-        
+
         if (status.isConnected) {
           console.log('✅ LCU conectado:', status.isConnected);
-          
+
           // Se acabou de conectar e não temos dados do jogador, carregar
           if (!wasConnected && !this.currentPlayer) {
             console.log('🎯 LCU acabou de conectar, carregando dados do jogador...');
@@ -1963,15 +1965,15 @@ export class App implements OnInit, OnDestroy {
 
   private startQueueStatusCheck(): void {
     console.log('🔄 Iniciando verificação de status da fila via WebSocket...');
-    
+
     // Verificar apenas conexão inicial do backend (sem polling)
     this.checkBackendConnection();
-    
+
     // NÃO fazer polling de status da fila - WebSocket já fornece atualizações em tempo real
     // Removido setInterval que fazia requisições HTTP desnecessárias
     console.log('✅ Status da fila será atualizado via WebSocket em tempo real');
   }
-  
+
   private checkBackendConnection(): void {
     this.apiService.checkHealth().subscribe({
       next: (response) => {
@@ -2031,7 +2033,7 @@ export class App implements OnInit, OnDestroy {
   }
   updateDiscordBotToken(): void {
     const token = this.settingsForm.discordBotToken?.trim();
-    
+
     if (!token) {
       this.addNotification('error', 'Token Vazio', 'Por favor, insira um token do Discord Bot');
       return;
@@ -2040,23 +2042,23 @@ export class App implements OnInit, OnDestroy {
     // Validar formato do token do Discord Bot
     const tokenRegex = /^[A-Za-z0-9_-]{23,28}\.[A-Za-z0-9_-]{6,7}\.[A-Za-z0-9_-]{27,}$/;
     if (!tokenRegex.test(token)) {
-      this.addNotification('error', 'Token Inválido', 
+      this.addNotification('error', 'Token Inválido',
         'Formato de token incorreto. Verifique se você copiou o token correto do Discord Developer Portal.');
       return;
     }
 
     console.log('🤖 Salvando token do Discord Bot...');
-    
+
     this.apiService.setDiscordBotToken(token).subscribe({
       next: (response) => {
         console.log('✅ Token do Discord salvo:', response);
-        
+
         if (response.success) {
           this.addNotification('success', 'Token Salvo', 'Token do Discord Bot salvo com sucesso!');
-          
+
           // Atualizar status do Discord
           this.checkDiscordStatus();
-          
+
           // Limpar campo após salvar
           this.settingsForm.discordBotToken = '';
         } else {
@@ -2065,14 +2067,14 @@ export class App implements OnInit, OnDestroy {
       },
       error: (error) => {
         console.error('❌ Erro ao salvar token do Discord:', error);
-        
+
         let errorMessage = 'Erro ao salvar token';
         if (error.message?.includes('TokenInvalid')) {
           errorMessage = 'Token inválido. Verifique se você copiou o token correto do Discord Developer Portal.';
         } else if (error.message?.includes('DisallowedIntents')) {
           errorMessage = 'Bot sem permissões. Ative "Server Members Intent" no Discord Developer Portal.';
         }
-        
+
         this.addNotification('error', 'Erro do Discord', errorMessage);
       }
     });
@@ -2080,11 +2082,11 @@ export class App implements OnInit, OnDestroy {
 
   checkDiscordStatus(): void {
     console.log('🔍 [App] Verificando status do Discord via API HTTP...');
-    
+
     this.apiService.getDiscordStatus().subscribe({
       next: (response) => {
         console.log('📡 [App] Status do Discord recebido via API:', response);
-        
+
         const newStatus = {
           isConnected: response.isConnected || false,
           botUsername: response.botUsername || 'Não conectado',
@@ -2092,49 +2094,49 @@ export class App implements OnInit, OnDestroy {
           activeMatches: response.activeMatches || 0,
           inChannel: response.inChannel || false
         };
-        
+
         // Verificar se houve mudança significativa
-        const statusChanged = 
+        const statusChanged =
           this.discordStatus.isConnected !== newStatus.isConnected ||
           this.discordStatus.botUsername !== newStatus.botUsername;
-        
+
         if (statusChanged) {
           console.log('🔄 [App] Status Discord mudou:', {
             old: this.discordStatus,
             new: newStatus
           });
         }
-        
+
         this.discordStatus = newStatus;
         console.log('✅ [App] Status Discord atualizado:', this.discordStatus);
 
         // Dar feedback específico baseado no status
         if (this.discordStatus.isConnected) {
           console.log('✅ [App] Discord conectado:', this.discordStatus.botUsername);
-          
+
           if (this.discordStatus.inChannel) {
-            this.addNotification('success', 'Discord Pronto', 
+            this.addNotification('success', 'Discord Pronto',
               `Bot conectado como ${this.discordStatus.botUsername}. Entre no canal #lol-matchmaking para usar a fila!`);
           } else {
-            this.addNotification('info', 'Discord Conectado', 
+            this.addNotification('info', 'Discord Conectado',
               `Bot conectado como ${this.discordStatus.botUsername}. Entre no canal #lol-matchmaking para ativar a funcionalidade.`);
           }
         } else {
           console.log('❌ [App] Discord não conectado');
-          
+
           // Verificar se há token salvo
           this.apiService.getConfigSettings().subscribe({
             next: (config) => {
               if (config.discordBotToken) {
-                this.addNotification('warning', 'Discord Desconectado', 
+                this.addNotification('warning', 'Discord Desconectado',
                   'Bot configurado mas não conectado. Verifique se o token está correto e se o bot tem as permissões necessárias.');
               } else {
-                this.addNotification('info', 'Discord Não Configurado', 
+                this.addNotification('info', 'Discord Não Configurado',
                   'Configure o token do Discord Bot nas configurações para usar a funcionalidade Discord.');
               }
             },
             error: () => {
-              this.addNotification('info', 'Discord Não Configurado', 
+              this.addNotification('info', 'Discord Não Configurado',
                 'Configure o token do Discord Bot nas configurações para usar a funcionalidade Discord.');
             }
           });
@@ -2142,7 +2144,7 @@ export class App implements OnInit, OnDestroy {
       },
       error: (error) => {
         console.error('❌ [App] Erro ao verificar status do Discord:', error);
-        
+
         this.discordStatus = {
           isConnected: false,
           botUsername: 'Erro de conexão',
@@ -2157,7 +2159,7 @@ export class App implements OnInit, OnDestroy {
         } else if (error.message?.includes('DisallowedIntents')) {
           errorMessage = 'Bot sem permissões. Ative "Server Members Intent" no Discord Developer Portal.';
         }
-        
+
         this.addNotification('error', 'Erro do Discord', errorMessage);
       }
     });
@@ -2166,23 +2168,23 @@ export class App implements OnInit, OnDestroy {
   // Adicionar listener para atualizações automáticas do Discord
   private setupDiscordStatusListener(): void {
     console.log('🔧 [APP] Configurando listener do Discord...');
-    
+
     // Verificação inicial do status do Discord via API HTTP (apenas uma vez)
     this.checkDiscordStatus();
-    
+
     // Verificação periódica do status (a cada 120 segundos) via API HTTP (reduzido para evitar conflitos)
     setInterval(() => {
       console.log('🔄 [App] Verificação periódica do status do Discord...');
       this.checkDiscordStatus();
     }, 120000); // 2 minutos em vez de 1 minuto
-    
+
     // Listener para mudanças via WebSocket (principal fonte de atualizações)
     this.discordService.onConnectionChange().subscribe(isConnected => {
       console.log('🔗 [App] Status Discord alterado via WebSocket:', isConnected);
-      
+
       // Atualizar status local baseado no WebSocket (mais confiável para mudanças em tempo real)
       this.discordStatus.isConnected = isConnected;
-      
+
       // Só fazer verificação HTTP se houver mudança significativa
       if (this.discordStatus.isConnected !== isConnected) {
         console.log('🔄 [App] Mudança detectada via WebSocket, verificando via API HTTP...');
@@ -2196,7 +2198,7 @@ export class App implements OnInit, OnDestroy {
     // NOVO: Listener para atualizações da fila em tempo real
     this.discordService.onQueueUpdate().subscribe(queueData => {
       console.log('🎯 [App] Fila atualizada via WebSocket:', queueData?.playersInQueue || 0, 'jogadores');
-      
+
       if (queueData) {
         // Atualizar estado da fila em tempo real
         this.queueStatus = {
@@ -2209,7 +2211,7 @@ export class App implements OnInit, OnDestroy {
           estimatedMatchTime: queueData.estimatedMatchTime || 0,
           isActive: queueData.isActive !== undefined ? queueData.isActive : this.queueStatus.isActive
         };
-        
+
         console.log('✅ [App] Estado da fila atualizado em tempo real:', {
           playersInQueue: this.queueStatus.playersInQueue,
           playersList: this.queueStatus.playersInQueueList?.map(p => p.summonerName),
@@ -2365,12 +2367,12 @@ export class App implements OnInit, OnDestroy {
   // Novo método para carregar configurações do banco de dados
   private loadConfigFromDatabase(): void {
     console.log('🔍 Carregando configurações do banco de dados...');
-    
+
     this.apiService.getConfigSettings().subscribe({
       next: (response) => {
         if (response.success && response.settings) {
           console.log('✅ Configurações carregadas do banco de dados');
-          
+
           // Configurar Riot API Key se existir no banco
           if (response.settings.riotApiKey && response.settings.riotApiKey.trim() !== '') {
             this.settingsForm.riotApiKey = response.settings.riotApiKey;
@@ -2465,6 +2467,6 @@ export class App implements OnInit, OnDestroy {
     // Verificar se é usuário especial (desenvolvedor, admin, etc.)
     const specialUsers = ['wcaco', 'admin', 'dev', 'popcorn seller'];
     return specialUsers.includes(this.currentPlayer?.gameName?.toLowerCase() || '') ||
-           specialUsers.includes(this.currentPlayer?.summonerName?.toLowerCase() || '');
+      specialUsers.includes(this.currentPlayer?.summonerName?.toLowerCase() || '');
   }
 }

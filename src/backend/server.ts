@@ -35,8 +35,8 @@ const server = createServer(app);
 server.keepAliveTimeout = 65000; // 65 segundos
 server.headersTimeout = 66000; // 66 segundos (sempre maior que keepAliveTimeout)
 
-const wss = new WebSocketServer({ 
-  server, 
+const wss = new WebSocketServer({
+  server,
   path: '/ws',
   // Configurações para melhorar performance
   perMessageDeflate: false, // Desabilitar compressão para reduzir latência
@@ -76,10 +76,10 @@ app.use(cors({
       }
     } else {
       // Em produção (Electron), permitir qualquer origem local ou file://
-      if (!origin || 
-          origin.startsWith('file://') || 
-          origin.startsWith('http://localhost') || 
-          origin.startsWith('http://127.0.0.1')) {
+      if (!origin ||
+        origin.startsWith('file://') ||
+        origin.startsWith('http://localhost') ||
+        origin.startsWith('http://127.0.0.1')) {
         callback(null, true);
       } else {
         callback(new Error('Not allowed by CORS'));
@@ -98,12 +98,12 @@ const limiter = rateLimit({
     // Pular rate limiting para requests locais (frontend e LCU)
     const isLocalhost = req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1';
     const isLocalRequest = req.get('host')?.includes('localhost') || req.get('host')?.includes('127.0.0.1');
-    
+
     // Pular para requests do LCU e do frontend local
     if (isLocalhost || isLocalRequest) {
       return true;
     }
-    
+
     return false;
   }
 });
@@ -129,7 +129,7 @@ const discordService = new DiscordService(dbManager);
 // WebSocket para comunicação em tempo real
 wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
   console.log('Cliente conectado via WebSocket');
-  
+
   ws.on('message', async (message: Buffer) => {
     try {
       const data = JSON.parse(message.toString());
@@ -150,23 +150,23 @@ wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
 async function handleWebSocketMessage(ws: WebSocket, data: any) {
   console.log(`📥 [WebSocket] Mensagem recebida: ${data.type}`);
   console.log(`📥 [WebSocket] Dados completos:`, JSON.stringify(data, null, 2));
-  
+
   switch (data.type) {
     case 'join_queue':
       await matchmakingService.addPlayerToQueue(ws, data.data);
       break;
     case 'join_discord_queue':
       console.log('🎮 Recebida mensagem join_discord_queue com dados completos:', data.data);
-      
+
       // Extrair dados do LCU se disponíveis
       const lcuData = data.data.lcuData;
-      
+
       if (lcuData) {
         console.log('🎯 Dados do LCU detectados:', lcuData);
       } else {
         console.log('⚠️ Dados do LCU não encontrados na mensagem');
       }
-      
+
       // Usar a mesma lógica da fila centralizada, mas marcar como Discord
       await matchmakingService.addPlayerToDiscordQueue(ws, {
         ...data.data,
@@ -183,10 +183,10 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
       break;
     case 'get_discord_status':
       console.log('🎮 Solicitando status do Discord...');
-      
+
       // Buscar informações do usuário atual no canal
       const currentUser = await discordService.getCurrentUserInfo();
-      
+
       // Enviar status do Discord para o frontend
       const discordStatus = {
         type: 'discord_status',
@@ -198,7 +198,7 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
         currentUser: currentUser
       };
       ws.send(JSON.stringify(discordStatus));
-      
+
       // Remover o broadcast automático - será feito apenas quando solicitado explicitamente
       // await discordService.broadcastUsersInChannel();
       break;
@@ -268,15 +268,15 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
           data.data.matchId,
           data.data.summonerName
         );
-        ws.send(JSON.stringify({ 
-          type: 'match_accepted', 
-          data: { matchId: data.data.matchId } 
+        ws.send(JSON.stringify({
+          type: 'match_accepted',
+          data: { matchId: data.data.matchId }
         }));
       } catch (error: any) {
         console.error('❌ Erro ao aceitar partida:', error);
-        ws.send(JSON.stringify({ 
-          type: 'error', 
-          message: 'Erro ao aceitar partida: ' + error.message 
+        ws.send(JSON.stringify({
+          type: 'error',
+          message: 'Erro ao aceitar partida: ' + error.message
         }));
       }
       break;
@@ -288,15 +288,15 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
           data.data.matchId,
           data.data.summonerName
         );
-        ws.send(JSON.stringify({ 
-          type: 'match_declined', 
-          data: { matchId: data.data.matchId } 
+        ws.send(JSON.stringify({
+          type: 'match_declined',
+          data: { matchId: data.data.matchId }
         }));
       } catch (error: any) {
         console.error('❌ Erro ao recusar partida:', error);
-        ws.send(JSON.stringify({ 
-          type: 'error', 
-          message: 'Erro ao recusar partida: ' + error.message 
+        ws.send(JSON.stringify({
+          type: 'error',
+          message: 'Erro ao recusar partida: ' + error.message
         }));
       }
       break;
@@ -307,15 +307,15 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
           data.data.matchId,
           data.data.reason || 'Draft cancelado pelo usuário'
         );
-        ws.send(JSON.stringify({ 
-          type: 'draft_cancelled', 
-          data: { matchId: data.data.matchId } 
+        ws.send(JSON.stringify({
+          type: 'draft_cancelled',
+          data: { matchId: data.data.matchId }
         }));
       } catch (error: any) {
         console.error('❌ Erro ao cancelar draft:', error);
-        ws.send(JSON.stringify({ 
-          type: 'error', 
-          message: 'Erro ao cancelar draft: ' + error.message 
+        ws.send(JSON.stringify({
+          type: 'error',
+          message: 'Erro ao cancelar draft: ' + error.message
         }));
       }
       break;
@@ -393,7 +393,7 @@ io.on('connection', (socket) => {
       p2pPeers.delete(peerId);
       socketToPeer.delete(socket.id);
       console.log(`👤 P2P Peer desconectado: ${peerId}`);
-      
+
       // Notificar outros peers sobre a desconexão
       socket.broadcast.emit('peer-left', { peerId });
     }
@@ -403,15 +403,15 @@ io.on('connection', (socket) => {
 // Configuração de arquivos estáticos em produção
 if (!isDev) {
   console.log('Configurando servir arquivos estáticos em produção...');
-    // Determinar o caminho para os arquivos do frontend
+  // Determinar o caminho para os arquivos do frontend
   let frontendPath: string;
-  
+
   // Em produção, os arquivos estão diretamente em resources/
   frontendPath = path.join(__dirname, '..', 'frontend', 'dist', 'lol-matchmaking', 'browser');
-  
+
   console.log('Caminho do frontend:', frontendPath);
   console.log('Frontend exists:', fs.existsSync(frontendPath));
-  
+
   // Verificar se o diretório existe
   if (fs.existsSync(frontendPath)) {
     // Servir arquivos estáticos do Angular
@@ -420,18 +420,18 @@ if (!isDev) {
       etag: true,
       lastModified: true
     }));
-    
+
     console.log('✅ Arquivos estáticos configurados em:', frontendPath);
   } else {
     console.error('❌ Diretório do frontend não encontrado:', frontendPath);
-    
+
     // Tentar caminhos alternativos baseados na estrutura do Electron
     const altPaths = [
       path.join(process.cwd(), 'frontend', 'dist', 'lol-matchmaking', 'browser'),
       path.join(__dirname, '..', '..', 'frontend', 'dist', 'lol-matchmaking', 'browser'),
       path.join(__dirname, 'frontend', 'dist', 'lol-matchmaking', 'browser')
     ];
-    
+
     for (const altPath of altPaths) {
       console.log('Testando caminho alternativo:', altPath);
       if (fs.existsSync(altPath)) {
@@ -452,11 +452,11 @@ app.get('/api/health', (req: Request, res: Response) => {
 app.post('/api/player/register', (async (req: Request, res: Response) => {
   try {
     const { riotId, region } = req.body;
-    
+
     if (!riotId || !riotId.includes('#')) {
       return res.status(400).json({ error: 'Riot ID inválido. Use formato: gameName#tagLine' });
     }
-    
+
     // Use the refresh endpoint logic to register/get player data
     const playerData = await playerService.getPlayerBySummonerNameWithDetails(riotId, region || 'br1');
     res.json({ success: true, player: playerData });
@@ -470,7 +470,7 @@ app.post('/api/player/register', (async (req: Request, res: Response) => {
 app.get('/api/player/current-details', (async (req: Request, res: Response) => {
   try {
     console.log('[CURRENT DETAILS] Endpoint called');
-    
+
     if (!lcuService.isClientConnected()) {
       console.log('[CURRENT DETAILS] LCU client not connected');
       return res.status(503).json({ error: 'Cliente do LoL não conectado' });
@@ -500,11 +500,11 @@ app.get('/api/player/current-details', (async (req: Request, res: Response) => {
 
     const riotId = `${(lcuSummoner as any).gameName}#${(lcuSummoner as any).tagLine}`;
     const region = 'br1';
-    
+
     console.log('[CURRENT DETAILS] Using Riot ID from LCU:', riotId);    // Prepare base data with LCU information
     const baseData = {
       lcu: lcuSummoner,
-      riotAccount: { 
+      riotAccount: {
         gameName: (lcuSummoner as any).gameName,
         tagLine: (lcuSummoner as any).tagLine,
         puuid: lcuSummoner.puuid
@@ -529,8 +529,8 @@ app.get('/api/player/current-details', (async (req: Request, res: Response) => {
     baseData.partialData = true;
 
     console.log('[CURRENT DETAILS] Returning data, partialData:', baseData.partialData);
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       data: baseData,
       message: baseData.partialData ? 'Dados carregados apenas do LCU (Riot API indisponível)' : 'Dados completos carregados'
     });
@@ -578,9 +578,9 @@ app.get('/api/stats/leaderboard', (async (req: Request, res: Response) => {
 app.get('/api/stats/participants-leaderboard', (async (req: Request, res: Response) => {
   try {
     const limit = parseInt(req.query.limit as string) || 100;
-    
+
     console.log('🏆 [GET /api/stats/participants-leaderboard] Iniciando busca do leaderboard');
-    
+
     // Atualizar dados dos jogadores antes de retornar o leaderboard
     try {
       await dbManager.refreshPlayersFromCustomMatches();
@@ -589,22 +589,22 @@ app.get('/api/stats/participants-leaderboard', (async (req: Request, res: Respon
       console.warn('⚠️ [GET /api/stats/participants-leaderboard] Erro ao atualizar jogadores:', refreshError.message);
       // Continuar mesmo se falhar a atualização
     }
-    
+
     const leaderboard = await dbManager.getParticipantsLeaderboard(limit);
     console.log('📊 [GET /api/stats/participants-leaderboard] Leaderboard encontrado:', leaderboard.length, 'jogadores');
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       data: leaderboard,
       total: leaderboard.length,
       message: leaderboard.length === 0 ? 'Nenhum jogador encontrado. Complete algumas partidas customizadas para ver o leaderboard.' : null
     });
   } catch (error: any) {
     console.error('❌ [GET /api/stats/participants-leaderboard] Erro:', error);
-    
+
     // Em vez de retornar erro 500, retornar array vazio
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       data: [],
       total: 0,
       message: 'Nenhum jogador encontrado. Complete algumas partidas customizadas para ver o leaderboard.',
@@ -617,43 +617,43 @@ app.get('/api/stats/participants-leaderboard', (async (req: Request, res: Respon
 app.get('/api/summoner/:riotId', (async (req: Request, res: Response) => {
   try {
     const { riotId } = req.params;
-    
+
     if (!riotId || !riotId.includes('#')) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Riot ID inválido. Use formato: gameName#tagLine' 
+      return res.status(400).json({
+        success: false,
+        error: 'Riot ID inválido. Use formato: gameName#tagLine'
       });
     }
 
     const [gameName, tagLine] = riotId.split('#');
-    
+
     // Verificar se o LCU está conectado
     if (!lcuService.isClientConnected()) {
-      return res.status(503).json({ 
-        success: false, 
-        error: 'Cliente do LoL não conectado' 
+      return res.status(503).json({
+        success: false,
+        error: 'Cliente do LoL não conectado'
       });
     }
 
     // Buscar dados do summoner usando o LCU
     const currentSummoner = await lcuService.getCurrentSummoner();
-    
+
     if (!currentSummoner) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Não foi possível obter dados do summoner do LCU' 
+      return res.status(404).json({
+        success: false,
+        error: 'Não foi possível obter dados do summoner do LCU'
       });
     }
 
     // Verificar se é o summoner que estamos procurando
     const currentGameName = (currentSummoner as any).gameName;
     const currentTagLine = (currentSummoner as any).tagLine;
-    
+
     // Se não é o summoner atual conectado, retornar erro
     if (currentGameName !== gameName || currentTagLine !== tagLine) {
-      return res.status(404).json({ 
-        success: false, 
-        error: `Summoner ${riotId} não é o jogador atualmente conectado no cliente` 
+      return res.status(404).json({
+        success: false,
+        error: `Summoner ${riotId} não é o jogador atualmente conectado no cliente`
       });
     }
 
@@ -672,9 +672,9 @@ app.get('/api/summoner/:riotId', (async (req: Request, res: Response) => {
 
   } catch (error) {
     console.error('❌ Erro ao buscar dados do summoner via LCU:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Erro interno do servidor' 
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno do servidor'
     });
   }
 }) as RequestHandler);
@@ -684,31 +684,31 @@ app.get('/api/summoner/:riotId', (async (req: Request, res: Response) => {
 app.get('/api/summoner/profile-icon/:riotId', (async (req: Request, res: Response) => {
   try {
     const { riotId } = req.params;
-    
+
     if (!riotId || !riotId.includes('#')) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Riot ID inválido. Use formato: gameName#tagLine' 
+      return res.status(400).json({
+        success: false,
+        error: 'Riot ID inválido. Use formato: gameName#tagLine'
       });
     }
 
     const [gameName, tagLine] = riotId.split('#');
-    
+
     // Verificar se o LCU está conectado
     if (!lcuService.isClientConnected()) {
-      return res.status(503).json({ 
-        success: false, 
-        error: 'Cliente do LoL não conectado' 
+      return res.status(503).json({
+        success: false,
+        error: 'Cliente do LoL não conectado'
       });
     }
 
     // Primeiro, verificar se é o summoner atual
     const currentSummoner = await lcuService.getCurrentSummoner();
-    
+
     if (currentSummoner) {
       const currentGameName = (currentSummoner as any).gameName;
       const currentTagLine = (currentSummoner as any).tagLine;
-      
+
       if (currentGameName === gameName && currentTagLine === tagLine) {
         return res.json({
           success: true,
@@ -725,7 +725,7 @@ app.get('/api/summoner/profile-icon/:riotId', (async (req: Request, res: Respons
     // Se não é o summoner atual, buscar no histórico de partidas
     try {
       const matchHistory = await lcuService.getMatchHistory(0, 50); // Buscar últimas 50 partidas
-      
+
       for (const match of matchHistory) {
         // Verificar se esta partida tem dados de participantes
         if (match.participantIdentities) {
@@ -734,12 +734,12 @@ app.get('/api/summoner/profile-icon/:riotId', (async (req: Request, res: Respons
             if (player && player.gameName === gameName && player.tagLine === tagLine) {
               // Encontrou o jogador no histórico! Buscar dados detalhados da partida
               const detailedMatch = await lcuService.getMatchDetails(match.gameId);
-              
+
               if (detailedMatch && detailedMatch.participantIdentities) {
                 const detailedParticipant = detailedMatch.participantIdentities.find(
                   (p: any) => p.player.gameName === gameName && p.player.tagLine === tagLine
                 );
-                
+
                 if (detailedParticipant && detailedParticipant.player.profileIcon !== undefined) {
                   return res.json({
                     success: true,
@@ -756,26 +756,26 @@ app.get('/api/summoner/profile-icon/:riotId', (async (req: Request, res: Respons
           }
         }
       }
-      
+
       // Se chegou até aqui, não encontrou o jogador no histórico
-      return res.status(404).json({ 
-        success: false, 
-        error: `Jogador ${riotId} não encontrado no histórico de partidas do LCU` 
+      return res.status(404).json({
+        success: false,
+        error: `Jogador ${riotId} não encontrado no histórico de partidas do LCU`
       });
-      
+
     } catch (historyError) {
       console.error('❌ Erro ao buscar histórico LCU:', historyError);
-      return res.status(500).json({ 
-        success: false, 
-        error: 'Erro ao acessar histórico de partidas do LCU' 
+      return res.status(500).json({
+        success: false,
+        error: 'Erro ao acessar histórico de partidas do LCU'
       });
     }
 
   } catch (error) {
     console.error('❌ Erro ao buscar profile icon via LCU:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Erro interno do servidor' 
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno do servidor'
     });
   }
 }) as RequestHandler);
@@ -800,19 +800,19 @@ app.post('/api/player/refresh-by-riot-id', (async (req: Request, res: Response) 
     // Primeiro, tentar obter dados do LCU se estiver conectado
     let combinedData: any = null;
     let dataSource = 'none';
-    
+
     if (lcuService.isClientConnected()) {
       try {
         const lcuSummoner = await lcuService.getCurrentSummoner();
-        
-        if (lcuSummoner && 
-            (lcuSummoner as any).gameName === gameName && 
-            (lcuSummoner as any).tagLine === tagLine) {
-          
+
+        if (lcuSummoner &&
+          (lcuSummoner as any).gameName === gameName &&
+          (lcuSummoner as any).tagLine === tagLine) {
+
           // É o jogador atual do LCU, usar esses dados como base
           combinedData = {
             lcu: lcuSummoner,
-            riotAccount: { 
+            riotAccount: {
               gameName: (lcuSummoner as any).gameName,
               tagLine: (lcuSummoner as any).tagLine,
               puuid: lcuSummoner.puuid
@@ -848,7 +848,7 @@ app.post('/api/player/refresh-by-riot-id', (async (req: Request, res: Response) 
           console.log('[REFRESH] Dados obtidos da Riot API');
         } catch (riotError: any) {
           console.log('[REFRESH] Erro na Riot API:', riotError.message);
-          
+
           // Se falhou na Riot API, retornar erro específico
           if (riotError.message.includes('não encontrado')) {
             return res.status(404).json({ error: riotError.message });
@@ -859,21 +859,21 @@ app.post('/api/player/refresh-by-riot-id', (async (req: Request, res: Response) 
           }
         }
       } else {
-        return res.status(503).json({ 
-          error: 'Não foi possível atualizar dados: LCU não está conectado ao jogador solicitado e Riot API não está configurada.' 
+        return res.status(503).json({
+          error: 'Não foi possível atualizar dados: LCU não está conectado ao jogador solicitado e Riot API não está configurada.'
         });
       }
     }
 
     // Se chegou até aqui, tem dados para retornar
     if (combinedData) {
-      const message = dataSource === 'lcu' 
-        ? 'Dados atualizados via LCU (cliente do LoL)' 
+      const message = dataSource === 'lcu'
+        ? 'Dados atualizados via LCU (cliente do LoL)'
         : 'Dados atualizados via Riot API';
-        
-      res.json({ 
-        success: true, 
-        data: combinedData, 
+
+      res.json({
+        success: true,
+        data: combinedData,
         message,
         source: dataSource
       });
@@ -933,7 +933,8 @@ app.get('/api/player/puuid/:puuid', (async (req: Request, res: Response) => {
       res.json(playerData);
     } else {
       res.status(404).json({ error: 'Jogador não encontrado' });
-    }  } catch (error: any) {
+    }
+  } catch (error: any) {
     console.error(`Erro ao buscar jogador por PUUID (${puuid}):`, error.message);
     if (error.message.includes('não encontrado')) {
       res.status(404).json({ error: error.message });
@@ -988,11 +989,11 @@ app.get('/api/queue/status', async (req: Request, res: Response) => {
 app.post('/api/queue/join', (async (req: Request, res: Response) => {
   try {
     const { player, preferences } = req.body;
-    
+
     if (!player) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Dados do jogador são obrigatórios' 
+      return res.status(400).json({
+        success: false,
+        error: 'Dados do jogador são obrigatórios'
       });
     }
 
@@ -1007,17 +1008,17 @@ app.post('/api/queue/join', (async (req: Request, res: Response) => {
 
     // Usar o método existente do MatchmakingService
     await matchmakingService.addPlayerToQueue(mockWebSocket, { player, preferences });
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       message: 'Jogador adicionado à fila com sucesso',
       queueStatus: await matchmakingService.getQueueStatus()
     });
   } catch (error: any) {
     console.error('Erro ao adicionar jogador à fila:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 }) as RequestHandler);
@@ -1027,12 +1028,12 @@ app.post('/api/queue/leave', (async (req: Request, res: Response) => {
   try {
     console.log('🔍 [API] Recebida requisição para sair da fila:', req.body);
     const { playerId, summonerName } = req.body;
-    
+
     if (!playerId && !summonerName) {
       console.log('❌ [API] Erro: playerId ou summonerName é obrigatório');
-      return res.status(400).json({ 
-        success: false, 
-        error: 'playerId ou summonerName é obrigatório' 
+      return res.status(400).json({
+        success: false,
+        error: 'playerId ou summonerName é obrigatório'
       });
     }
 
@@ -1041,30 +1042,30 @@ app.post('/api/queue/leave', (async (req: Request, res: Response) => {
 
     // Usar o método público do MatchmakingService
     const removed = matchmakingService.removePlayerFromQueueById(playerId, summonerName);
-    
+
     console.log('🔍 [API] Resultado da remoção:', removed);
-    
+
     if (removed) {
       const queueStatus = await matchmakingService.getQueueStatus();
       console.log('✅ [API] Jogador removido com sucesso. Nova fila:', queueStatus.playersInQueue, 'jogadores');
-      
-      res.json({ 
-        success: true, 
+
+      res.json({
+        success: true,
         message: 'Jogador removido da fila com sucesso',
         queueStatus: queueStatus
       });
     } else {
       console.log('❌ [API] Jogador não encontrado na fila');
-      res.status(404).json({ 
-        success: false, 
-        error: 'Jogador não encontrado na fila' 
+      res.status(404).json({
+        success: false,
+        error: 'Jogador não encontrado na fila'
       });
     }
   } catch (error: any) {
     console.error('❌ [API] Erro ao remover jogador da fila:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 }) as RequestHandler);
@@ -1073,20 +1074,20 @@ app.post('/api/queue/leave', (async (req: Request, res: Response) => {
 app.post('/api/queue/join-legacy', (async (req: Request, res: Response) => {
   try {
     const { playerId, mmr, role } = req.body;
-    
+
     if (!playerId || !mmr || !role) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'playerId, mmr e role são obrigatórios' 
+      return res.status(400).json({
+        success: false,
+        error: 'playerId, mmr e role são obrigatórios'
       });
     }
 
     // Buscar jogador no banco
     const player = await dbManager.getPlayer(playerId);
     if (!player) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Jogador não encontrado' 
+      return res.status(404).json({
+        success: false,
+        error: 'Jogador não encontrado'
       });
     }
 
@@ -1111,17 +1112,17 @@ app.post('/api/queue/join-legacy', (async (req: Request, res: Response) => {
         secondaryLane: role
       }
     });
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       message: 'Jogador adicionado à fila legacy com sucesso',
       queueStatus: await matchmakingService.getQueueStatus()
     });
   } catch (error: any) {
     console.error('Erro ao adicionar jogador à fila legacy:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 }) as RequestHandler);
@@ -1129,34 +1130,34 @@ app.post('/api/queue/join-legacy', (async (req: Request, res: Response) => {
 app.post('/api/queue/leave-legacy', (async (req: Request, res: Response) => {
   try {
     const { playerId } = req.body;
-    
+
     if (!playerId) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'playerId é obrigatório' 
+      return res.status(400).json({
+        success: false,
+        error: 'playerId é obrigatório'
       });
     }
 
     // Usar o método público do MatchmakingService
     const removed = matchmakingService.removePlayerFromQueueById(playerId);
-    
+
     if (removed) {
-      res.json({ 
-        success: true, 
+      res.json({
+        success: true,
         message: 'Jogador removido da fila legacy com sucesso',
         queueStatus: await matchmakingService.getQueueStatus()
       });
     } else {
-      res.status(404).json({ 
-        success: false, 
-        error: 'Jogador não encontrado na fila' 
+      res.status(404).json({
+        success: false,
+        error: 'Jogador não encontrado na fila'
       });
     }
   } catch (error: any) {
     console.error('Erro ao remover jogador da fila legacy:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 }) as RequestHandler);
@@ -1165,14 +1166,15 @@ app.post('/api/queue/leave-legacy', (async (req: Request, res: Response) => {
 app.post('/api/queue/add-bot', async (req: Request, res: Response) => {
   try {
     await matchmakingService.addBotToQueue();
-    res.json({ 
-      success: true, 
-      message: 'Bot adicionado à fila com sucesso' 
-    });  } catch (error: any) {
+    res.json({
+      success: true,
+      message: 'Bot adicionado à fila com sucesso'
+    });
+  } catch (error: any) {
     console.error('Erro ao adicionar bot:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 });
@@ -1181,24 +1183,24 @@ app.post('/api/queue/add-bot', async (req: Request, res: Response) => {
 app.post('/api/match/accept', (async (req: Request, res: Response) => {
   try {
     const { playerId, matchId, summonerName } = req.body;
-    
+
     if ((!playerId && !summonerName) || !matchId) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'playerId ou summonerName e matchId são obrigatórios' 
+      return res.status(400).json({
+        success: false,
+        error: 'playerId ou summonerName e matchId são obrigatórios'
       });
     }
 
     await matchmakingService.acceptMatch(playerId || 0, matchId, summonerName);
-    res.json({ 
-      success: true, 
-      message: 'Partida aceita com sucesso' 
+    res.json({
+      success: true,
+      message: 'Partida aceita com sucesso'
     });
   } catch (error: any) {
     console.error('Erro ao aceitar partida:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 }) as RequestHandler);
@@ -1206,24 +1208,24 @@ app.post('/api/match/accept', (async (req: Request, res: Response) => {
 app.post('/api/match/decline', (async (req: Request, res: Response) => {
   try {
     const { playerId, matchId, summonerName } = req.body;
-    
+
     if ((!playerId && !summonerName) || !matchId) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'playerId ou summonerName e matchId são obrigatórios' 
+      return res.status(400).json({
+        success: false,
+        error: 'playerId ou summonerName e matchId são obrigatórios'
       });
     }
 
     await matchmakingService.declineMatch(playerId || 0, matchId, summonerName);
-    res.json({ 
-      success: true, 
-      message: 'Partida recusada com sucesso' 
+    res.json({
+      success: true,
+      message: 'Partida recusada com sucesso'
     });
   } catch (error: any) {
     console.error('Erro ao recusar partida:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 }) as RequestHandler);
@@ -1231,24 +1233,24 @@ app.post('/api/match/decline', (async (req: Request, res: Response) => {
 app.post('/api/match/draft-action', (async (req: Request, res: Response) => {
   try {
     const { matchId, playerId, championId, action } = req.body;
-    
+
     if (!matchId || !playerId || !championId || !action) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Todos os parâmetros são obrigatórios' 
+      return res.status(400).json({
+        success: false,
+        error: 'Todos os parâmetros são obrigatórios'
       });
     }
 
     await matchmakingService.processDraftAction(matchId, playerId, championId, action);
-    res.json({ 
-      success: true, 
-      message: 'Ação do draft processada com sucesso' 
+    res.json({
+      success: true,
+      message: 'Ação do draft processada com sucesso'
     });
   } catch (error: any) {
     console.error('Erro ao processar ação do draft:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 }) as RequestHandler);
@@ -1310,12 +1312,12 @@ app.get('/api/lcu/status', async (req: Request, res: Response) => {
 app.get('/api/discord/status', async (req: Request, res: Response) => {
   try {
     console.log('🔍 [API] Verificando status do Discord Bot...');
-    
+
     const isConnected = discordService.isDiscordConnected();
     const botUsername = discordService.getBotUsername();
     const queueSize = discordService.getQueueSize();
     const activeMatches = discordService.getActiveMatches();
-    
+
     const status = {
       isConnected,
       botUsername,
@@ -1323,15 +1325,15 @@ app.get('/api/discord/status', async (req: Request, res: Response) => {
       activeMatches,
       inChannel: false // Será atualizado pelo frontend quando necessário
     };
-    
+
     console.log('📡 [API] Status do Discord retornado:', status);
-    
+
     res.json(status);
   } catch (error: any) {
     console.error('❌ [API] Erro ao verificar status do Discord:', error);
-    res.status(503).json({ 
+    res.status(503).json({
       error: 'Discord Bot não está disponível',
-      details: error.message 
+      details: error.message
     });
   }
 });
@@ -1359,7 +1361,7 @@ app.get('/api/lcu/match-history-all', (async (req: Request, res: Response) => {
     }
 
     const matches = await lcuService.getMatchHistory(startIndex, count);
-      // Filtrar apenas partidas customizadas se solicitado
+    // Filtrar apenas partidas customizadas se solicitado
     let filteredMatches = matches;
     if (customOnly) {
       filteredMatches = matches.filter((match: any) => {
@@ -1367,17 +1369,17 @@ app.get('/api/lcu/match-history-all', (async (req: Request, res: Response) => {
         const queueId = match.queueId || 0;
         const gameMode = match.gameMode || '';
         const gameType = match.gameType || '';
-        
+
         // Apenas partidas customizadas REAIS
         // queueId 0 = Custom games
         // Verificar explicitamente por CUSTOM_GAME no gameType
-        const isCustomGame = queueId === 0 || 
-                           gameType === 'CUSTOM_GAME' || 
-                           gameMode === 'CUSTOM' ||
-                           (gameMode === 'CLASSIC' && gameType === 'CUSTOM_GAME');
-        
+        const isCustomGame = queueId === 0 ||
+          gameType === 'CUSTOM_GAME' ||
+          gameMode === 'CUSTOM' ||
+          (gameMode === 'CLASSIC' && gameType === 'CUSTOM_GAME');
+
         console.log(`🔍 Verificando partida - queueId: ${queueId}, gameMode: ${gameMode}, gameType: ${gameType}, isCustom: ${isCustomGame}`);
-        
+
         return isCustomGame;
       });
     }
@@ -1406,19 +1408,19 @@ app.get('/api/lcu/match-history-all', (async (req: Request, res: Response) => {
 app.get('/api/lcu/current-match-details', (async (req: Request, res: Response) => {
   try {
     if (!lcuService.isClientConnected()) {
-      return res.json({ 
-        success: false, 
+      return res.json({
+        success: false,
         error: 'Cliente do LoL não conectado',
         message: 'Nenhuma partida ativa encontrada'
       });
     }
-    
+
     // Tentar obter dados da partida atual usando método mais robusto
     const currentMatchDetails = await lcuService.getCurrentMatchDetails();
-    
+
     if (!currentMatchDetails || !currentMatchDetails.details) {
-      return res.json({ 
-        success: false, 
+      return res.json({
+        success: false,
         error: 'Nenhuma partida ativa encontrada',
         message: 'Nenhuma partida ativa encontrada'
       });
@@ -1431,8 +1433,8 @@ app.get('/api/lcu/current-match-details', (async (req: Request, res: Response) =
 
   } catch (error: any) {
     console.error('💥 [LCU Current Match] Erro:', error);
-    res.json({ 
-      success: false, 
+    res.json({
+      success: false,
       error: 'Erro ao buscar partida atual do LCU: ' + error.message,
       message: 'Nenhuma partida ativa encontrada'
     });
@@ -1446,241 +1448,242 @@ app.post('/api/lcu/fetch-and-save-match/:gameId', (req: Request, res: Response) 
       const gameId = parseInt(req.params.gameId);
       const { playerIdentifier } = req.body;
 
-    if (!gameId || isNaN(gameId)) {
-      return res.status(400).json({ error: 'Game ID inválido' });
-    }
+      if (!gameId || isNaN(gameId)) {
+        return res.status(400).json({ error: 'Game ID inválido' });
+      }
 
-    if (!playerIdentifier) {
-      return res.status(400).json({ error: 'Player identifier é obrigatório' });
-    }
+      if (!playerIdentifier) {
+        return res.status(400).json({ error: 'Player identifier é obrigatório' });
+      }
 
-    console.log(`🎮 [FETCH-SAVE-MATCH] Buscando partida ${gameId} do LCU para jogador ${playerIdentifier}...`);
+      console.log(`🎮 [FETCH-SAVE-MATCH] Buscando partida ${gameId} do LCU para jogador ${playerIdentifier}...`);
 
-    if (!lcuService.isClientConnected()) {
-      return res.status(503).json({ error: 'Cliente do LoL não conectado' });
-    }
+      if (!lcuService.isClientConnected()) {
+        return res.status(503).json({ error: 'Cliente do LoL não conectado' });
+      }
 
-    // Buscar dados completos da partida
-    const matchData = await lcuService.getMatchDetails(gameId);
-    
-    if (!matchData) {
-      return res.status(404).json({ error: `Partida ${gameId} não encontrada no LCU` });
-    }
+      // Buscar dados completos da partida
+      const matchData = await lcuService.getMatchDetails(gameId);
 
-    if (!matchData.participants || matchData.participants.length === 0) {
-      return res.status(400).json({ error: `Partida ${gameId} não possui dados de participantes` });
-    }
+      if (!matchData) {
+        return res.status(404).json({ error: `Partida ${gameId} não encontrada no LCU` });
+      }
 
-    console.log(`✅ [FETCH-SAVE-MATCH] Dados obtidos: ${matchData.participants.length} participantes`);
+      if (!matchData.participants || matchData.participants.length === 0) {
+        return res.status(400).json({ error: `Partida ${gameId} não possui dados de participantes` });
+      }
 
-    // Processar dados da partida
-    const participants = matchData.participants || [];
-    const participantIdentities = matchData.participantIdentities || [];
-    const team1Players: string[] = [];
-    const team2Players: string[] = [];
-    const team1Picks: any[] = [];
-    const team2Picks: any[] = [];
-    const participantsData: any[] = [];
-    
-    participants.forEach((participant: any, index: number) => {
-      // Buscar dados do jogador correspondente
-      const participantIdentity = participantIdentities.find(
-        (identity: any) => identity.participantId === participant.participantId
-      );
+      console.log(`✅ [FETCH-SAVE-MATCH] Dados obtidos: ${matchData.participants.length} participantes`);
 
-      let playerName = '';
-      
-      if (participantIdentity && participantIdentity.player) {
-        const player = participantIdentity.player;
-        
-        if (player.gameName && player.tagLine) {
-          playerName = `${player.gameName}#${player.tagLine}`;
-        } else if (player.summonerName) {
-          playerName = player.summonerName;
-        } else if (player.gameName) {
-          playerName = player.gameName;
+      // Processar dados da partida
+      const participants = matchData.participants || [];
+      const participantIdentities = matchData.participantIdentities || [];
+      const team1Players: string[] = [];
+      const team2Players: string[] = [];
+      const team1Picks: any[] = [];
+      const team2Picks: any[] = [];
+      const participantsData: any[] = [];
+
+      participants.forEach((participant: any, index: number) => {
+        // Buscar dados do jogador correspondente
+        const participantIdentity = participantIdentities.find(
+          (identity: any) => identity.participantId === participant.participantId
+        );
+
+        let playerName = '';
+
+        if (participantIdentity && participantIdentity.player) {
+          const player = participantIdentity.player;
+
+          if (player.gameName && player.tagLine) {
+            playerName = `${player.gameName}#${player.tagLine}`;
+          } else if (player.summonerName) {
+            playerName = player.summonerName;
+          } else if (player.gameName) {
+            playerName = player.gameName;
+          }
         }
+
+        if (!playerName) {
+          playerName = `Player${index + 1}`;
+        }
+
+        const championId = participant.championId || participant.champion || 0;
+        const championName = participant.championName || `Champion${championId}`;
+        const lane = participant.lane || participant.teamPosition || participant.individualPosition || 'UNKNOWN';
+
+        // Extrair dados completos do participante
+        const stats = participant.stats || {};
+
+        const participantData = {
+          participantId: participant.participantId,
+          teamId: participant.teamId,
+          championId: championId,
+          championName: championName,
+          summonerName: playerName,
+          riotIdGameName: participantIdentity?.player?.gameName || '',
+          riotIdTagline: participantIdentity?.player?.tagLine || '',
+          lane: lane,
+          kills: stats.kills || 0,
+          deaths: stats.deaths || 0,
+          assists: stats.assists || 0,
+          champLevel: stats.champLevel || 1,
+          goldEarned: stats.goldEarned || 0,
+          totalMinionsKilled: stats.totalMinionsKilled || 0,
+          neutralMinionsKilled: stats.neutralMinionsKilled || 0,
+          totalDamageDealt: stats.totalDamageDealt || 0,
+          totalDamageDealtToChampions: stats.totalDamageDealtToChampions || 0,
+          totalDamageTaken: stats.totalDamageTaken || 0,
+          wardsPlaced: stats.wardsPlaced || 0,
+          wardsKilled: stats.wardsKilled || 0,
+          visionScore: stats.visionScore || 0,
+          firstBloodKill: stats.firstBloodKill || false,
+          doubleKills: stats.doubleKills || 0,
+          tripleKills: stats.tripleKills || 0,
+          quadraKills: stats.quadraKills || 0,
+          pentaKills: stats.pentaKills || 0,
+          item0: stats.item0 || 0,
+          item1: stats.item1 || 0,
+          item2: stats.item2 || 0,
+          item3: stats.item3 || 0,
+          item4: stats.item4 || 0,
+          item5: stats.item5 || 0,
+          item6: stats.item6 || 0,
+          summoner1Id: participant.spell1Id || 0,
+          summoner2Id: participant.spell2Id || 0,
+          win: stats.win || false
+        };
+
+        participantsData.push(participantData);
+
+        if (participant.teamId === 100) {
+          team1Players.push(playerName);
+          team1Picks.push({
+            champion: championName,
+            player: playerName,
+            lane: lane,
+            championId: championId
+          });
+        } else if (participant.teamId === 200) {
+          team2Players.push(playerName);
+          team2Picks.push({
+            champion: championName,
+            player: playerName,
+            lane: lane,
+            championId: championId
+          });
+        }
+      });
+
+      // Garantir que o player identifier está nos times
+      if (
+        playerIdentifier &&
+        !team1Players.includes(playerIdentifier) &&
+        !team2Players.includes(playerIdentifier) &&
+        typeof playerIdentifier === 'string' &&
+        playerIdentifier.includes('#')
+      ) {
+        team1Players.push(playerIdentifier);
       }
 
-      if (!playerName) {
-        playerName = `Player${index + 1}`;
-      }
-
-      const championId = participant.championId || participant.champion || 0;
-      const championName = participant.championName || `Champion${championId}`;
-      const lane = participant.lane || participant.teamPosition || participant.individualPosition || 'UNKNOWN';
-
-      // Extrair dados completos do participante
-      const stats = participant.stats || {};
-      
-      const participantData = {
-        participantId: participant.participantId,
-        teamId: participant.teamId,
-        championId: championId,
-        championName: championName,
-        summonerName: playerName,
-        riotIdGameName: participantIdentity?.player?.gameName || '',
-        riotIdTagline: participantIdentity?.player?.tagLine || '',
-        lane: lane,
-        kills: stats.kills || 0,
-        deaths: stats.deaths || 0,
-        assists: stats.assists || 0,
-        champLevel: stats.champLevel || 1,
-        goldEarned: stats.goldEarned || 0,
-        totalMinionsKilled: stats.totalMinionsKilled || 0,
-        neutralMinionsKilled: stats.neutralMinionsKilled || 0,
-        totalDamageDealt: stats.totalDamageDealt || 0,
-        totalDamageDealtToChampions: stats.totalDamageDealtToChampions || 0,
-        totalDamageTaken: stats.totalDamageTaken || 0,
-        wardsPlaced: stats.wardsPlaced || 0,
-        wardsKilled: stats.wardsKilled || 0,
-        visionScore: stats.visionScore || 0,
-        firstBloodKill: stats.firstBloodKill || false,
-        doubleKills: stats.doubleKills || 0,
-        tripleKills: stats.tripleKills || 0,
-        quadraKills: stats.quadraKills || 0,
-        pentaKills: stats.pentaKills || 0,
-        item0: stats.item0 || 0,
-        item1: stats.item1 || 0,
-        item2: stats.item2 || 0,
-        item3: stats.item3 || 0,
-        item4: stats.item4 || 0,
-        item5: stats.item5 || 0,
-        item6: stats.item6 || 0,
-        summoner1Id: participant.spell1Id || 0,
-        summoner2Id: participant.spell2Id || 0,
-        win: stats.win || false
+      // Criar dados de pick/ban
+      const pickBanData = {
+        team1Picks: team1Picks,
+        team2Picks: team2Picks,
+        team1Bans: [],
+        team2Bans: [],
+        isReal: true,
+        source: 'LCU_MATCH_HISTORY'
       };
-      
-      participantsData.push(participantData);
 
-      if (participant.teamId === 100) {
-        team1Players.push(playerName);
-        team1Picks.push({
-          champion: championName,
-          player: playerName,
-          lane: lane,
-          championId: championId
-        });
-      } else if (participant.teamId === 200) {
-        team2Players.push(playerName);
-        team2Picks.push({
-          champion: championName,
-          player: playerName,
-          lane: lane,
-          championId: championId
-        });
+      // Buscar o jogador para pegar o nome
+      let player: any = null;
+      try {
+        if (playerIdentifier.length > 10) {
+          player = await dbManager.getPlayerBySummonerName(playerIdentifier);
+        } else {
+          const numericId = parseInt(playerIdentifier);
+          if (!isNaN(numericId)) {
+            player = await dbManager.getPlayer(numericId);
+          }
+        }
+      } catch (error) {
+        console.log('⚠️ Player não encontrado no banco, usando identificador fornecido');
       }
-    });
 
-    // Garantir que o player identifier está nos times
-    if (
-      playerIdentifier &&
-      !team1Players.includes(playerIdentifier) &&
-      !team2Players.includes(playerIdentifier) &&
-      typeof playerIdentifier === 'string' &&
-      playerIdentifier.includes('#')
-    ) {
-      team1Players.push(playerIdentifier);
-    }
+      const createdBy = player?.summoner_name || playerIdentifier || 'Sistema';
 
-    // Criar dados de pick/ban
-    const pickBanData = {
-      team1Picks: team1Picks,
-      team2Picks: team2Picks,
-      team1Bans: [],
-      team2Bans: [],
-      isReal: true,
-      source: 'LCU_MATCH_HISTORY'
-    };
+      // Criar partida personalizada
+      const matchData_create = {
+        title: `Partida LCU ${gameId}`,
+        description: `Partida baseada em dados reais do LCU - Game ID: ${gameId}`,
+        team1Players: team1Players,
+        team2Players: team2Players,
+        createdBy: createdBy,
+        gameMode: matchData.gameMode || 'CLASSIC'
+      };
 
-    // Buscar o jogador para pegar o nome
-    let player: any = null;
-    try {
-      if (playerIdentifier.length > 10) {
-        player = await dbManager.getPlayerBySummonerName(playerIdentifier);
-      } else {
-        const numericId = parseInt(playerIdentifier);
-        if (!isNaN(numericId)) {
-          player = await dbManager.getPlayer(numericId);
+      const matchId = await dbManager.createCustomMatch(matchData_create);
+
+      // Salvar dados completos da partida
+      const duration = Math.floor((matchData.gameDuration || 0) / 60);
+
+      await dbManager.updateCustomMatchWithRealData(matchId, {
+        duration: duration,
+        pickBanData: pickBanData,
+        participantsData: participantsData,
+        detectedByLCU: true,
+        riotGameId: gameId.toString(),
+        notes: `Partida real do LCU - Game ID: ${gameId}`,
+        gameMode: matchData.gameMode || 'CLASSIC'
+      });
+
+      // Se a partida já terminou, marcar como completa
+      if (matchData.endOfGameResult === 'GameComplete' && matchData.teams) {
+        let winner = null;
+        if (matchData.teams.length >= 2) {
+          const team1Won = matchData.teams[0]?.win === "Win" || matchData.teams[0]?.win === true;
+          const team2Won = matchData.teams[1]?.win === "Win" || matchData.teams[1]?.win === true;
+          winner = team1Won ? 1 : (team2Won ? 2 : null);
+        }
+
+        if (winner) {
+          await dbManager.completeCustomMatch(matchId, winner, {
+            duration: duration,
+            pickBanData: pickBanData,
+            participantsData: participantsData,
+            detectedByLCU: true,
+            riotGameId: gameId.toString(),
+            notes: `Partida real finalizada via LCU - ${matchData.endOfGameResult}`
+          });
         }
       }
-    } catch (error) {
-      console.log('⚠️ Player não encontrado no banco, usando identificador fornecido');
+
+      console.log('✅ [FETCH-SAVE-MATCH] Partida salva com sucesso:', matchId); res.json({
+        success: true,
+        message: 'Partida do LCU salva com sucesso',
+        matchId: matchId,
+        gameId: gameId,
+        hasRealData: true,
+        pickBanData: pickBanData,
+        participantsCount: participantsData.length
+      });
+    } catch (error: any) {
+      console.error('💥 [FETCH-SAVE-MATCH] Erro ao buscar e salvar partida:', error);
+      res.status(500).json({ error: error.message });
     }
-
-    const createdBy = player?.summoner_name || playerIdentifier || 'Sistema';
-
-    // Criar partida personalizada
-    const matchData_create = {
-      title: `Partida LCU ${gameId}`,
-      description: `Partida baseada em dados reais do LCU - Game ID: ${gameId}`,
-      team1Players: team1Players,
-      team2Players: team2Players,
-      createdBy: createdBy,
-      gameMode: matchData.gameMode || 'CLASSIC'
-    };
-
-    const matchId = await dbManager.createCustomMatch(matchData_create);
-    
-    // Salvar dados completos da partida
-    const duration = Math.floor((matchData.gameDuration || 0) / 60);
-    
-    await dbManager.updateCustomMatchWithRealData(matchId, {
-      duration: duration,
-      pickBanData: pickBanData,
-      participantsData: participantsData,
-      detectedByLCU: true,
-      riotGameId: gameId.toString(),
-      notes: `Partida real do LCU - Game ID: ${gameId}`,
-      gameMode: matchData.gameMode || 'CLASSIC'
-    });
-
-    // Se a partida já terminou, marcar como completa
-    if (matchData.endOfGameResult === 'GameComplete' && matchData.teams) {
-      let winner = null;
-      if (matchData.teams.length >= 2) {
-        const team1Won = matchData.teams[0]?.win === "Win" || matchData.teams[0]?.win === true;
-        const team2Won = matchData.teams[1]?.win === "Win" || matchData.teams[1]?.win === true;
-        winner = team1Won ? 1 : (team2Won ? 2 : null);
-      }
-
-      if (winner) {
-        await dbManager.completeCustomMatch(matchId, winner, {
-          duration: duration,
-          pickBanData: pickBanData,
-          participantsData: participantsData,
-          detectedByLCU: true,
-          riotGameId: gameId.toString(),
-          notes: `Partida real finalizada via LCU - ${matchData.endOfGameResult}`
-        });
-      }
-    }
-
-    console.log('✅ [FETCH-SAVE-MATCH] Partida salva com sucesso:', matchId);    res.json({
-      success: true,
-      message: 'Partida do LCU salva com sucesso',
-      matchId: matchId,
-      gameId: gameId,
-      hasRealData: true,
-      pickBanData: pickBanData,
-      participantsCount: participantsData.length
-    });} catch (error: any) {
-    console.error('💥 [FETCH-SAVE-MATCH] Erro ao buscar e salvar partida:', error);
-    res.status(500).json({ error: error.message });
-  }
   })();
 });
 
 // Custom matches routes
 app.post('/api/matches/custom', (async (req: Request, res: Response) => {
   try {
-    const { 
-      title, 
-      description, 
-      team1Players, 
-      team2Players, 
-      createdBy, 
+    const {
+      title,
+      description,
+      team1Players,
+      team2Players,
+      createdBy,
       gameMode,
       winnerTeam,
       duration,
@@ -1689,7 +1692,7 @@ app.post('/api/matches/custom', (async (req: Request, res: Response) => {
       detectedByLCU,
       status
     } = req.body;
-    
+
     console.log('💾 [POST /api/matches/custom] Recebendo dados:', {
       title,
       team1Count: team1Players?.length,
@@ -1702,10 +1705,10 @@ app.post('/api/matches/custom', (async (req: Request, res: Response) => {
       detectedByLCU,
       status
     });
-    
+
     if (!team1Players || !team2Players || !createdBy) {
-      return res.status(400).json({ 
-        error: 'team1Players, team2Players e createdBy são obrigatórios' 
+      return res.status(400).json({
+        error: 'team1Players, team2Players e createdBy são obrigatórios'
       });
     }
 
@@ -1722,7 +1725,7 @@ app.post('/api/matches/custom', (async (req: Request, res: Response) => {
     // Se a partida já está finalizada, atualizá-la com o resultado
     if (status === 'completed' && winnerTeam) {
       console.log('🏆 Completando partida imediatamente com vencedor:', winnerTeam);
-      
+
       await dbManager.completeCustomMatch(matchId, winnerTeam, {
         duration,
         pickBanData,
@@ -1747,12 +1750,12 @@ app.post('/api/matches/custom', (async (req: Request, res: Response) => {
 // Rota alternativa para compatibilidade com frontend antigo
 app.post('/api/custom_matches', (async (req: Request, res: Response) => {
   try {
-    const { 
-      title, 
-      description, 
-      team1Players, 
-      team2Players, 
-      createdBy, 
+    const {
+      title,
+      description,
+      team1Players,
+      team2Players,
+      createdBy,
       gameMode,
       winnerTeam,
       duration,
@@ -1761,7 +1764,7 @@ app.post('/api/custom_matches', (async (req: Request, res: Response) => {
       detectedByLCU,
       status
     } = req.body;
-    
+
     console.log('💾 [POST /api/custom_matches] Recebendo dados (rota de compatibilidade):', {
       title,
       team1Count: team1Players?.length,
@@ -1774,10 +1777,10 @@ app.post('/api/custom_matches', (async (req: Request, res: Response) => {
       detectedByLCU,
       status
     });
-    
+
     if (!team1Players || !team2Players || !createdBy) {
-      return res.status(400).json({ 
-        error: 'team1Players, team2Players e createdBy são obrigatórios' 
+      return res.status(400).json({
+        error: 'team1Players, team2Players e createdBy são obrigatórios'
       });
     }
 
@@ -1792,7 +1795,7 @@ app.post('/api/custom_matches', (async (req: Request, res: Response) => {
 
     if (status === 'completed' && winnerTeam) {
       console.log('🏆 Completando partida imediatamente com vencedor:', winnerTeam);
-      
+
       await dbManager.completeCustomMatch(matchId, winnerTeam, {
         duration,
         pickBanData,
@@ -1818,18 +1821,18 @@ app.get('/api/matches/custom/:playerId', (req: Request, res: Response) => {
   (async () => {
     try {
       const playerIdParam = decodeURIComponent(req.params.playerId);
-      
+
       // Validar e converter offset e limit para números
       let offset = 0;
       let limit = 10;
-      
+
       if (req.query.offset !== undefined) {
         const offsetValue = parseInt(req.query.offset as string);
         if (!isNaN(offsetValue) && offsetValue >= 0) {
           offset = offsetValue;
         }
       }
-      
+
       if (req.query.limit !== undefined) {
         const limitValue = parseInt(req.query.limit as string);
         if (!isNaN(limitValue) && limitValue > 0 && limitValue <= 100) {
@@ -1857,7 +1860,7 @@ app.get('/api/matches/custom/:playerId', (req: Request, res: Response) => {
       console.log('🎯 [GET /api/matches/custom] Buscando partidas personalizadas para:', playerIdentifier);
       const matches = await dbManager.getPlayerCustomMatches(playerIdentifier, limit);
       console.log('📊 [GET /api/matches/custom] Partidas personalizadas encontradas:', matches.length);
-      
+
       res.json({
         success: true,
         matches,
@@ -1893,7 +1896,7 @@ app.get('/api/matches/custom/:playerId/count', (req: Request, res: Response) => 
       console.log('🎯 [GET /api/matches/custom/count] Contando partidas personalizadas para:', playerIdentifier);
       const count = await dbManager.getPlayerCustomMatchesCount(playerIdentifier);
       console.log('📊 [GET /api/matches/custom/count] Total de partidas personalizadas:', count);
-      
+
       res.json({
         success: true,
         count,
@@ -1911,15 +1914,15 @@ app.delete('/api/matches/cleanup-test-matches', (req: Request, res: Response) =>
   (async () => {
     try {
       console.log('🧹 [DELETE /api/matches/cleanup-test-matches] Iniciando limpeza COMPLETA da tabela custom_matches');
-      
+
       // Executar limpeza completa
       const result = await dbManager.cleanupTestMatches();
-      
+
       console.log('✅ [DELETE /api/matches/cleanup-test-matches] Limpeza completa concluída:', {
         deletedCount: result.deletedCount,
         remainingMatches: result.remainingMatches
       });
-      
+
       res.json({
         success: true,
         deletedCount: result.deletedCount,
@@ -1927,12 +1930,12 @@ app.delete('/api/matches/cleanup-test-matches', (req: Request, res: Response) =>
         deletedMatches: result.deletedMatches,
         message: `${result.deletedCount} partidas removidas. Tabela custom_matches completamente limpa! Restaram ${result.remainingMatches} partidas.`
       });
-      
+
     } catch (error: any) {
       console.error('💥 [DELETE /api/matches/cleanup-test-matches] Erro:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         success: false,
-        error: error.message 
+        error: error.message
       });
     }
   })();
@@ -1943,22 +1946,22 @@ app.delete('/api/matches/clear-all-custom-matches', (req: Request, res: Response
   (async () => {
     try {
       console.log('🧹 [DELETE /api/matches/clear-all-custom-matches] Iniciando limpeza COMPLETA da tabela custom_matches');
-      
+
       // Contar total antes da limpeza
       const totalBefore = await dbManager.getCustomMatchesCount();
-      
+
       // Executar limpeza completa
       const deletedCount = await dbManager.clearAllCustomMatches();
-      
+
       // Contar total depois da limpeza
       const totalAfter = await dbManager.getCustomMatchesCount();
-      
+
       console.log('✅ [DELETE /api/matches/clear-all-custom-matches] Limpeza completa concluída:', {
         deletedCount,
         totalBefore,
         totalAfter
       });
-      
+
       res.json({
         success: true,
         deletedCount,
@@ -1966,12 +1969,12 @@ app.delete('/api/matches/clear-all-custom-matches', (req: Request, res: Response
         totalAfter,
         message: `${deletedCount} partidas removidas. Tabela custom_matches completamente limpa!`
       });
-      
+
     } catch (error: any) {
       console.error('💥 [DELETE /api/matches/clear-all-custom-matches] Erro:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         success: false,
-        error: error.message 
+        error: error.message
       });
     }
   })();
@@ -1998,22 +2001,22 @@ app.post('/api/players/update-nickname', (req: Request, res: Response) => {
 app.post('/api/stats/refresh-rebuild-players', async (req: Request, res: Response) => {
   try {
     console.log('🔄 [POST /api/stats/refresh-rebuild-players] Iniciando rebuild completo da tabela players...');
-    
+
     // Limpar todos os jogadores
     await dbManager.clearAllPlayers();
     console.log('✅ [POST /api/stats/refresh-rebuild-players] Tabela players limpa');
-    
+
     // Recalcular todos os agregados a partir das partidas customizadas
     await dbManager.refreshPlayersFromCustomMatches();
     console.log('✅ [POST /api/stats/refresh-rebuild-players] Jogadores recriados das partidas customizadas');
-    
+
     // Verificar quantos jogadores foram criados
     const count = await dbManager.getPlayersCount();
-    
+
     console.log(`✅ [POST /api/stats/refresh-rebuild-players] Rebuild concluído. Total de jogadores: ${count}`);
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       message: `Tabela players limpa e reconstruída com sucesso. Total de jogadores: ${count}`,
       playerCount: count
     });
@@ -2027,11 +2030,11 @@ app.post('/api/stats/refresh-rebuild-players', async (req: Request, res: Respons
 app.get('/api/debug/tables', async (req: Request, res: Response) => {
   try {
     console.log('🔍 [GET /api/debug/tables] Verificando dados das tabelas...');
-    
+
     const debugData = await dbManager.getTablesStats();
-    
+
     console.log('✅ [GET /api/debug/tables] Dados das tabelas:', debugData);
-    
+
     res.json({
       success: true,
       data: debugData
@@ -2051,19 +2054,19 @@ app.post('/api/config/discord-token', (async (req: Request, res: Response) => {
   console.log('📦 Body:', req.body);
   console.log('📦 Body type:', typeof req.body);
   console.log('📦 Body keys:', Object.keys(req.body || {}));
-  
+
   try {
     const { token } = req.body;
-    
+
     console.log('🔑 Token recebido:', token ? `${token.substring(0, 10)}...` : 'null/undefined');
     console.log('🔑 Token type:', typeof token);
     console.log('🔑 Token length:', token ? token.length : 0);
-    
+
     if (!token || typeof token !== 'string' || token.trim() === '') {
       console.log('❌ Token inválido ou vazio');
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Token do Discord é obrigatório' 
+      return res.status(400).json({
+        success: false,
+        error: 'Token do Discord é obrigatório'
       });
     }
 
@@ -2071,16 +2074,16 @@ app.post('/api/config/discord-token', (async (req: Request, res: Response) => {
     // Salvar no banco de dados PRIMEIRO
     await dbManager.setSetting('discord_bot_token', token.trim());
     console.log('✅ Token salvo no banco');
-    
+
     console.log('🤖 Tentando inicializar Discord Bot...');
     // Tentar inicializar o Discord Bot com o novo token
     const discordInitialized = await discordService.initialize(token.trim());
-    
+
     if (discordInitialized) {
       console.log('✅ Discord Bot inicializado com sucesso');
       // Conectar ao WebSocket se inicializou com sucesso
       discordService.setWebSocketServer(wss);
-      
+
       res.json({
         success: true,
         message: 'Discord Bot configurado e conectado com sucesso!',
@@ -2096,12 +2099,12 @@ app.post('/api/config/discord-token', (async (req: Request, res: Response) => {
         warning: 'Token pode ser inválido ou Discord pode estar offline'
       });
     }
-    
+
   } catch (error: any) {
     console.error('❌ Erro ao configurar Discord Bot:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 }) as RequestHandler);
@@ -2110,11 +2113,11 @@ app.post('/api/config/discord-token', (async (req: Request, res: Response) => {
 app.post('/api/config/riot-api-key', (async (req: Request, res: Response) => {
   try {
     const { apiKey } = req.body;
-    
+
     if (!apiKey || typeof apiKey !== 'string' || apiKey.trim() === '') {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'API Key do Riot é obrigatória' 
+      return res.status(400).json({
+        success: false,
+        error: 'API Key do Riot é obrigatória'
       });
     }
 
@@ -2122,27 +2125,27 @@ app.post('/api/config/riot-api-key', (async (req: Request, res: Response) => {
     try {
       globalRiotAPI.setApiKey(apiKey.trim());
       await globalRiotAPI.validateApiKey('br1'); // Usar região padrão para validação
-      
+
       // Se chegou aqui, a API key é válida
       await dbManager.setSetting('riot_api_key', apiKey.trim());
-      
+
       res.json({
         success: true,
         message: 'Riot API Key configurada e validada com sucesso!'
       });
-      
+
     } catch (validationError: any) {
       res.status(400).json({
         success: false,
         error: `API Key inválida: ${validationError.message}`
       });
     }
-    
+
   } catch (error: any) {
     console.error('❌ Erro ao configurar Riot API:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 }) as RequestHandler);
@@ -2152,7 +2155,7 @@ app.get('/api/config/status', (async (req: Request, res: Response) => {
   try {
     const riotApiKey = await dbManager.getSetting('riot_api_key');
     const discordToken = await dbManager.getSetting('discord_bot_token');
-    
+
     res.json({
       success: true,
       config: {
@@ -2168,12 +2171,12 @@ app.get('/api/config/status', (async (req: Request, res: Response) => {
         }
       }
     });
-    
+
   } catch (error: any) {
     console.error('❌ Erro ao obter status das configurações:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 }) as RequestHandler);
@@ -2183,7 +2186,7 @@ app.get('/api/config/settings', (async (req: Request, res: Response) => {
   try {
     const riotApiKey = await dbManager.getSetting('riot_api_key');
     const discordToken = await dbManager.getSetting('discord_bot_token');
-    
+
     res.json({
       success: true,
       settings: {
@@ -2191,12 +2194,12 @@ app.get('/api/config/settings', (async (req: Request, res: Response) => {
         discordBotToken: discordToken || ''
       }
     });
-    
+
   } catch (error: any) {
     console.error('❌ Erro ao obter configurações do banco:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 }) as RequestHandler);
@@ -2207,11 +2210,11 @@ app.get('/api/config/settings', (async (req: Request, res: Response) => {
 app.post('/api/debug/fix-match-status', async (req: Request, res: Response) => {
   try {
     console.log('🔧 [POST /api/debug/fix-match-status] Corrigindo status das partidas antigas...');
-    
+
     const result = await dbManager.fixMatchStatus();
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       message: `${result.affectedMatches} partidas corrigidas e ${result.playerCount} jogadores criados`,
       affectedMatches: result.affectedMatches,
       playerCount: result.playerCount
@@ -2226,11 +2229,11 @@ app.post('/api/debug/fix-match-status', async (req: Request, res: Response) => {
 app.post('/api/admin/recalculate-custom-lp', async (req: Request, res: Response) => {
   try {
     console.log('🔄 [POST /api/admin/recalculate-custom-lp] Recalculando LP de partidas customizadas...');
-    
+
     const result = await dbManager.recalculateCustomLP();
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       message: `LP recalculado para ${result.affectedMatches} partidas e ${result.affectedPlayers} jogadores`,
       affectedMatches: result.affectedMatches,
       affectedPlayers: result.affectedPlayers,
@@ -2253,10 +2256,10 @@ app.use((req: Request, res: Response) => {  // Em produção, para rotas não AP
   if (!isDev && !req.path.startsWith('/api/')) {
     // Determinar o caminho para o index.html
     let indexPath: string;
-    
+
     // Em produção, os arquivos estão diretamente em resources/
     indexPath = path.join(__dirname, '..', 'frontend', 'dist', 'lol-matchmaking', 'browser', 'index.html');
-    
+
     // Verificar se o arquivo existe
     if (fs.existsSync(indexPath)) {
       return res.sendFile(indexPath);
@@ -2267,7 +2270,7 @@ app.use((req: Request, res: Response) => {  // Em produção, para rotas não AP
         path.join(__dirname, '..', '..', 'frontend', 'dist', 'lol-matchmaking', 'browser', 'index.html'),
         path.join(__dirname, 'frontend', 'dist', 'lol-matchmaking', 'browser', 'index.html')
       ];
-      
+
       for (const altPath of altPaths) {
         if (fs.existsSync(altPath)) {
           return res.sendFile(altPath);
@@ -2275,7 +2278,7 @@ app.use((req: Request, res: Response) => {  // Em produção, para rotas não AP
       }
     }
   }
-  
+
   // Fallback para 404
   res.status(404).json({ error: 'Rota não encontrada' });
 });
@@ -2288,7 +2291,7 @@ async function startServer() {
     server.listen(PORT as number, '0.0.0.0', () => {
       console.log(`🚀 Servidor rodando na porta ${PORT}`);
       console.log(`🌐 WebSocket disponível em ws://localhost:${PORT}`);
-      
+
       if (isDev) {
         console.log(`📱 Frontend Angular: http://localhost:4200`);
         console.log(`🔧 API Base URL: http://localhost:${PORT}/api`);
@@ -2341,14 +2344,14 @@ async function initializeServices() {
     await matchmakingService.initialize();
     console.log('✅ Serviço de matchmaking inicializado');    // LCU
     await lcuService.initialize();
-    
+
     // Conectar dependências aos serviços
     lcuService.setDatabaseManager(dbManager);
     lcuService.setMatchHistoryService(matchHistoryService);
-    
+
     // Iniciar monitoramento de partidas
     await lcuService.startGameMonitoring();
-    
+
     console.log('✅ Conectado ao cliente do League of Legends');
 
     // Discord Bot
@@ -2356,7 +2359,7 @@ async function initializeServices() {
     if (savedDiscordToken && savedDiscordToken.trim() !== '') {
       console.log('🤖 [Server] Token do Discord Bot encontrado no banco de dados');
       console.log('🤖 [Server] Tentando inicializar Discord Bot...');
-      
+
       const discordInitialized = await discordService.initialize(savedDiscordToken);
       if (discordInitialized) {
         console.log('✅ [Server] Discord Bot inicializado com sucesso');
@@ -2374,7 +2377,7 @@ async function initializeServices() {
       if (envDiscordToken && envDiscordToken.trim() !== '') {
         console.log('🤖 [Server] Token do Discord Bot encontrado no .env (fallback)');
         console.log('🤖 [Server] Tentando inicializar Discord Bot com token do .env...');
-        
+
         const discordInitialized = await discordService.initialize(envDiscordToken);
         if (discordInitialized) {
           console.log('✅ [Server] Discord Bot inicializado com token do .env como fallback');
@@ -2394,7 +2397,7 @@ async function initializeServices() {
         console.log('🔗 [Server] DiscordService conectado ao WebSocket (modo desconectado)');
       }
     }
-    
+
     // Log final do status do Discord Bot
     console.log('🔍 [Server] Status final do Discord Bot após inicialização:', {
       isConnected: discordService.isDiscordConnected(),
@@ -2410,11 +2413,11 @@ async function initializeServices() {
 // Tratamento de sinais para shutdown graceful
 process.on('SIGINT', async () => {
   console.log('\n🛑 Encerrando servidor...');
-    // Fechar conexões WebSocket
+  // Fechar conexões WebSocket
   wss.clients.forEach((client: WebSocket) => {
     client.close();
   });
-  
+
   // Fechar servidor HTTP
   server.close(() => {
     console.log('✅ Servidor encerrado');
@@ -2438,11 +2441,11 @@ app.post('/api/matches/:matchId/draft-completed', (async (req: Request, res: Res
   try {
     const matchId = parseInt(req.params.matchId);
     const { draftData } = req.body;
-    
+
     console.log(`🎯 [Draft] Atualizando partida ${matchId} após draft completado`);
-    
+
     await matchmakingService.updateMatchAfterDraft(matchId, draftData);
-    
+
     res.json({
       success: true,
       message: 'Partida atualizada após draft',
@@ -2459,15 +2462,15 @@ app.post('/api/matches/:matchId/game-completed', (async (req: Request, res: Resp
   try {
     const matchId = parseInt(req.params.matchId);
     const { winnerTeam, gameData } = req.body;
-    
+
     console.log(`🏁 [Game] Finalizando partida ${matchId} após jogo - Vencedor: Time ${winnerTeam}`);
-    
+
     if (!winnerTeam || (winnerTeam !== 1 && winnerTeam !== 2)) {
       return res.status(400).json({ error: 'winnerTeam deve ser 1 ou 2' });
     }
-    
+
     await matchmakingService.completeMatchAfterGame(matchId, winnerTeam, gameData || {});
-    
+
     res.json({
       success: true,
       message: 'Partida finalizada com sucesso',

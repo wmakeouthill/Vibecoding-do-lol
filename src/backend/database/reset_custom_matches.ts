@@ -5,7 +5,7 @@ import * as path from 'path';
 
 async function resetCustomMatches() {
   // Caminho igual ao usado no DatabaseManager
-  const userDataPath = process.env.NODE_ENV === 'development' 
+  const userDataPath = process.env.NODE_ENV === 'development'
     ? path.join(process.cwd(), 'data')
     : path.join(process.env.APPDATA || process.env.HOME || '.', 'lol-matchmaking');
   const dbPath = path.join(userDataPath, 'matchmaking.db');

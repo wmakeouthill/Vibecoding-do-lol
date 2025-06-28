@@ -55,7 +55,7 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
   private timer: any = null;
   private botPickTimer: any = null;
 
-  constructor(private championService: ChampionService) {}
+  constructor(private championService: ChampionService) { }
   ngOnInit() {
     console.log('🔥 CustomPickBanComponent ngOnInit iniciado');
     console.log('📊 matchData recebido:', this.matchData);
@@ -156,9 +156,9 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
       blueTeam: this.session.blueTeam.map(p => ({ id: p.id, name: p.summonerName })),
       redTeam: this.session.redTeam.map(p => ({ id: p.id, name: p.summonerName }))
     });
-    
+
     this.updateCurrentTurn();
-  }  updateCurrentTurn() {
+  } updateCurrentTurn() {
     if (!this.session || this.session.currentAction >= this.session.phases.length) {
       this.completePickBan();
       return;
@@ -228,7 +228,7 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
         console.log(`🤖 [Bot] Executando ação automática para ${currentPlayer.summonerName}`);
         this.performBotAction(phase);
       }, 2000);
-      
+
       console.log('⏰ [Bot] Timer de 2 segundos iniciado para ação automática');
     } else {
       console.log('👤 [Bot] Não é vez de um bot:', {
@@ -285,41 +285,41 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
       console.log(`🤖 [Bot] Player é null/undefined`);
       return false;
     }
-    
+
     const name = player.summonerName || player.name || '';
     const id = player.id;
-    
+
     console.log(`🔍 [Bot] Verificando se é bot:`, { id, name, summonerName: player.summonerName });
-    
+
     // Verificar por ID negativo (padrão do backend)
     if (id < 0) {
       console.log(`🤖 [Bot] Bot identificado por ID negativo: ${id} (${name})`);
       return true;
     }
-    
+
     // Verificar por nome
-    const isBotByName = name.toLowerCase().startsWith('bot') || 
-                       name.toLowerCase().includes('bot') ||
-                       name.toLowerCase().startsWith('bot');
-    
+    const isBotByName = name.toLowerCase().startsWith('bot') ||
+      name.toLowerCase().includes('bot') ||
+      name.toLowerCase().startsWith('bot');
+
     if (isBotByName) {
       console.log(`🤖 [Bot] Bot identificado por nome: ${name} (ID: ${id})`);
       return true;
     }
-    
+
     // Verificar se o nome contém "Bot" (case insensitive)
     if (name.toLowerCase().includes('bot')) {
       console.log(`🤖 [Bot] Bot identificado por nome contendo 'bot': ${name} (ID: ${id})`);
       return true;
     }
-    
+
     console.log(`🤖 [Bot] Player não é bot: ${name} (ID: ${id})`);
     return false;
   }
 
   private performBotAction(phase: PickBanPhase) {
     console.log(`🤖 [Bot] performBotAction iniciado para fase:`, phase);
-    
+
     if (!this.session || phase.locked) {
       console.log(`❌ [Bot] Sessão não disponível ou fase bloqueada`);
       return;
@@ -327,7 +327,7 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
 
     const availableChampions = this.getFilteredChampions();
     console.log(`🤖 [Bot] Campeões disponíveis: ${availableChampions.length}`);
-    
+
     if (availableChampions.length === 0) {
       console.log(`❌ [Bot] Nenhum campeão disponível`);
       return;
@@ -380,7 +380,7 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     if (!this.currentPlayer || !this.session) return;
 
     const currentPlayer = this.getCurrentPlayer();
-    
+
     console.log(`🔍 [Turn] Verificando vez:`, {
       currentPlayerFromSession: currentPlayer?.summonerName,
       currentPlayerFromInput: this.currentPlayer?.summonerName,
@@ -391,11 +391,11 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
 
     // It's my turn if I'm the current player for this action
     this.isMyTurn = currentPlayer &&
-                   (currentPlayer.id === this.currentPlayer.id ||
-                    currentPlayer.summonerName === this.currentPlayer.summonerName ||
-                    (currentPlayer.summonerName && this.currentPlayer.summonerName && 
-                     currentPlayer.summonerName.includes(this.currentPlayer.summonerName.split('#')[0]))) &&
-                   !phase.locked;
+      (currentPlayer.id === this.currentPlayer.id ||
+        currentPlayer.summonerName === this.currentPlayer.summonerName ||
+        (currentPlayer.summonerName && this.currentPlayer.summonerName &&
+          currentPlayer.summonerName.includes(this.currentPlayer.summonerName.split('#')[0]))) &&
+      !phase.locked;
 
     console.log(`🎯 Vez de: ${currentPlayer?.summonerName || 'Unknown'}, É minha vez: ${this.isMyTurn}`);
   }
@@ -405,7 +405,7 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
 
     const isInBlueTeam = this.session.blueTeam.some(p => p.id === this.currentPlayer.id);
     return isInBlueTeam ? 'blue' : 'red';
-  }  getFilteredChampions(): Champion[] {
+  } getFilteredChampions(): Champion[] {
     let champions = this.selectedRole === 'all' ?
       this.champions :
       (this.championsByRole[this.selectedRole] || []);
@@ -443,7 +443,7 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     if (!this.isMyTurn) return;
 
     this.selectedChampion = champion;
-  }  confirmSelection() {
+  } confirmSelection() {
     if (!this.selectedChampion || !this.session) return;    // Clear bot timer if active
     if (this.botPickTimer) {
       clearTimeout(this.botPickTimer);

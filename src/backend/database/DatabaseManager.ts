@@ -94,10 +94,10 @@ export class DatabaseManager {
 
       // Criar tabelas se não existirem
       await this.createTables();
-      
+
       // Verificar especificamente a tabela custom_matches
       await this.ensureCustomMatchesTable();
-      
+
       await this.insertDefaultSettings();
 
       console.log('📁 Banco de dados MySQL inicializado com sucesso');
@@ -269,7 +269,7 @@ export class DatabaseManager {
   // Métodos de Player
   async getPlayer(playerId: number): Promise<Player | null> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       const [rows] = await this.pool.execute('SELECT * FROM players WHERE id = ?', [playerId]);
       const results = rows as any[];
@@ -282,7 +282,7 @@ export class DatabaseManager {
 
   async getPlayerBySummonerName(summonerName: string): Promise<Player | null> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       const [rows] = await this.pool.execute('SELECT * FROM players WHERE summoner_name = ?', [summonerName]);
       const results = rows as any[];
@@ -295,7 +295,7 @@ export class DatabaseManager {
 
   async createPlayer(playerData: Omit<Player, 'id'>): Promise<number> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       const [result] = await this.pool.execute(
         `INSERT INTO players (
@@ -304,15 +304,15 @@ export class DatabaseManager {
           custom_games_played, custom_wins, custom_losses, custom_win_streak, custom_lp
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-      playerData.summoner_name,
+          playerData.summoner_name,
           playerData.summoner_id || null,
           playerData.puuid || null,
-      playerData.region,
-      playerData.current_mmr,
-      playerData.peak_mmr,
-      playerData.games_played,
-      playerData.wins,
-      playerData.losses,
+          playerData.region,
+          playerData.current_mmr,
+          playerData.peak_mmr,
+          playerData.games_played,
+          playerData.wins,
+          playerData.losses,
           playerData.win_streak,
           playerData.custom_mmr || 1000,
           playerData.custom_peak_mmr || 1000,
@@ -333,7 +333,7 @@ export class DatabaseManager {
 
   async updatePlayerMMR(playerId: number, mmrChange: number): Promise<void> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       await this.pool.execute(
         `UPDATE players SET 
@@ -351,27 +351,27 @@ export class DatabaseManager {
 
   // Métodos de Match
   async createMatch(
-    team1Players: any[], 
-    team2Players: any[], 
-    avgMMR1: number, 
+    team1Players: any[],
+    team2Players: any[],
+    avgMMR1: number,
     avgMMR2: number,
     extraData: any = {}
   ): Promise<number> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
-    const matchId = `match_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+      const matchId = `match_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
       const [result] = await this.pool.execute(
         `INSERT INTO matches (
           match_id, team1_players, team2_players, average_mmr_team1, average_mmr_team2,
           status, created_at
         ) VALUES (?, ?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP)`,
         [
-      matchId,
-      JSON.stringify(team1Players),
-      JSON.stringify(team2Players),
-      avgMMR1,
+          matchId,
+          JSON.stringify(team1Players),
+          JSON.stringify(team2Players),
+          avgMMR1,
           avgMMR2
         ]
       );
@@ -385,15 +385,15 @@ export class DatabaseManager {
 
   async getPlayerMatches(playerId: number, limit: number = 30, offset: number = 0): Promise<Match[]> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       const [rows] = await this.pool.execute(
         `SELECT * FROM matches 
       WHERE team1_players LIKE ? OR team2_players LIKE ?
          ORDER BY created_at DESC LIMIT ? OFFSET ?`,
-        [`%${playerId}%`, `%${playerId}%`, limit, offset]
+        [`${playerId}`, `${playerId}`, limit, offset]
       );
-      
+
       return rows as Match[];
     } catch (error) {
       console.error('Erro ao buscar partidas do jogador:', error);
@@ -403,16 +403,16 @@ export class DatabaseManager {
 
   async getRecentMatches(limit: number = 20): Promise<Match[]> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       // Garantir que a tabela existe antes de consultar
       await this.ensureCustomMatchesTable();
-      
+
       const [rows] = await this.pool.execute(
         'SELECT * FROM custom_matches ORDER BY created_at DESC LIMIT ?',
         [limit]
       );
-      
+
       return rows as Match[];
     } catch (error) {
       console.error('Erro ao buscar partidas recentes:', error);
@@ -430,11 +430,11 @@ export class DatabaseManager {
     gameMode?: string;
   }): Promise<number> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       // Garantir que a tabela existe antes de inserir
       await this.ensureCustomMatchesTable();
-      
+
       const [result] = await this.pool.execute(
         `INSERT INTO custom_matches (
           title, description, team1_players, team2_players, created_by, game_mode
@@ -458,16 +458,16 @@ export class DatabaseManager {
 
   async getCustomMatches(limit: number = 20, offset: number = 0): Promise<any[]> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       // Garantir que a tabela existe antes de consultar
       await this.ensureCustomMatchesTable();
-      
+
       const [rows] = await this.pool.execute(
         'SELECT * FROM custom_matches ORDER BY created_at DESC LIMIT ? OFFSET ?',
         [limit, offset]
       );
-      
+
       return rows as any[];
     } catch (error) {
       console.error('Erro ao buscar partidas customizadas:', error);
@@ -477,16 +477,16 @@ export class DatabaseManager {
 
   async getCustomMatchById(matchId: number): Promise<any | null> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       // Garantir que a tabela existe antes de consultar
       await this.ensureCustomMatchesTable();
-      
+
       const [rows] = await this.pool.execute(
         'SELECT * FROM custom_matches WHERE id = ?',
         [matchId]
       );
-      
+
       const results = rows as any[];
       return results.length > 0 ? results[0] : null;
     } catch (error) {
@@ -497,11 +497,11 @@ export class DatabaseManager {
 
   async updateCustomMatchStatus(matchId: number, status: string): Promise<void> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       // Garantir que a tabela existe antes de atualizar
       await this.ensureCustomMatchesTable();
-      
+
       await this.pool.execute(
         'UPDATE custom_matches SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
         [status, matchId]
@@ -515,26 +515,26 @@ export class DatabaseManager {
   // Método genérico para atualizar partida customizada
   async updateCustomMatch(matchId: number, updateData: any): Promise<void> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       // Garantir que a tabela existe antes de atualizar
       await this.ensureCustomMatchesTable();
-      
+
       // Construir query dinamicamente baseada nos campos fornecidos
       const fields: string[] = [];
       const values: any[] = [];
-      
+
       // Campos permitidos para atualização
       const allowedFields = [
         'title', 'description', 'status', 'winner_team', 'duration',
         'pick_ban_data', 'participants_data', 'riot_game_id', 'detected_by_lcu',
         'notes', 'draft_data', 'game_data', 'game_mode'
       ];
-      
+
       for (const [key, value] of Object.entries(updateData)) {
         if (allowedFields.includes(key)) {
           fields.push(`${key} = ?`);
-          
+
           // Converter objetos para JSON se necessário
           if (typeof value === 'object' && value !== null) {
             values.push(JSON.stringify(value));
@@ -543,22 +543,22 @@ export class DatabaseManager {
           }
         }
       }
-      
+
       // Sempre adicionar updated_at
       fields.push('updated_at = CURRENT_TIMESTAMP');
-      
+
       // Adicionar matchId no final
       values.push(matchId);
-      
+
       const query = `UPDATE custom_matches SET ${fields.join(', ')} WHERE id = ?`;
-      
+
       console.log(`🔄 [updateCustomMatch] Atualizando partida ${matchId}:`, {
         fields: fields.length,
         updateData: Object.keys(updateData)
       });
-      
+
       await this.pool.execute(query, values);
-      
+
       console.log(`✅ [updateCustomMatch] Partida ${matchId} atualizada com sucesso`);
     } catch (error) {
       console.error(`❌ [updateCustomMatch] Erro ao atualizar partida ${matchId}:`, error);
@@ -568,11 +568,11 @@ export class DatabaseManager {
 
   async updateCustomMatchWithRealData(matchId: number, realMatchData: any): Promise<void> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       // Garantir que a tabela existe antes de atualizar
       await this.ensureCustomMatchesTable();
-      
+
       await this.pool.execute(
         `UPDATE custom_matches SET 
           riot_game_id = ?,
@@ -602,7 +602,7 @@ export class DatabaseManager {
   // Métodos de Settings
   async getSetting(key: string): Promise<string | null> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       const [rows] = await this.pool.execute('SELECT value FROM settings WHERE `key` = ?', [key]);
       const results = rows as any[];
@@ -615,7 +615,7 @@ export class DatabaseManager {
 
   async setSetting(key: string, value: string): Promise<void> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       await this.pool.execute(
         'INSERT INTO settings (`key`, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = ?, updated_at = CURRENT_TIMESTAMP',
@@ -630,7 +630,7 @@ export class DatabaseManager {
   // Métodos de Queue
   async addPlayerToQueue(playerId: number, summonerName: string, region: string, customLp: number, preferences: any): Promise<void> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       await this.pool.execute(
         `INSERT INTO queue_players (
@@ -653,7 +653,7 @@ export class DatabaseManager {
 
   async removePlayerFromQueue(playerId: number): Promise<void> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       await this.pool.execute(
         'UPDATE queue_players SET is_active = 0 WHERE player_id = ?',
@@ -667,12 +667,12 @@ export class DatabaseManager {
 
   async getActiveQueuePlayers(): Promise<any[]> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       const [rows] = await this.pool.execute(
         'SELECT * FROM queue_players WHERE is_active = 1 ORDER BY join_time ASC'
       );
-      
+
       return rows as any[];
     } catch (error) {
       console.error('Erro ao buscar jogadores ativos na fila:', error);
@@ -682,7 +682,7 @@ export class DatabaseManager {
 
   async clearQueue(): Promise<void> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       await this.pool.execute('UPDATE queue_players SET is_active = 0');
     } catch (error) {
@@ -693,7 +693,7 @@ export class DatabaseManager {
 
   async clearAllPlayers(): Promise<void> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       await this.pool.execute('DELETE FROM players');
     } catch (error) {
@@ -709,12 +709,12 @@ export class DatabaseManager {
         // Não precisamos chamar release() pois o pool gerencia as conexões automaticamente
         this.connection = null;
       }
-      
+
       if (this.pool) {
         await this.pool.end();
         this.pool = null;
       }
-      
+
       console.log('🔌 Conexões MySQL fechadas');
     } catch (error) {
       console.error('Erro ao fechar conexões MySQL:', error);
@@ -730,7 +730,7 @@ export class DatabaseManager {
 
   async updateMatchStatus(matchId: number, status: string): Promise<void> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       await this.pool.execute(
         'UPDATE matches SET status = ? WHERE id = ?',
@@ -744,13 +744,13 @@ export class DatabaseManager {
 
   async getRiotMatchByGameId(gameId: string): Promise<any | null> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       const [rows] = await this.pool.execute(
         'SELECT * FROM matches WHERE riot_game_id = ?',
         [gameId]
       );
-      
+
       const results = rows as any[];
       return results.length > 0 ? results[0] : null;
     } catch (error) {
@@ -761,7 +761,7 @@ export class DatabaseManager {
 
   async saveRiotMatch(matchData: any): Promise<void> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       await this.pool.execute(
         `INSERT INTO matches (
@@ -782,7 +782,7 @@ export class DatabaseManager {
 
   async getPlayerByPuuid(puuid: string): Promise<Player | null> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       const [rows] = await this.pool.execute('SELECT * FROM players WHERE puuid = ?', [puuid]);
       const results = rows as any[];
@@ -795,15 +795,15 @@ export class DatabaseManager {
 
   async getPlayerRiotMatches(playerId: number, limit: number = 20): Promise<any[]> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       const [rows] = await this.pool.execute(
         `SELECT * FROM matches 
          WHERE team1_players LIKE ? OR team2_players LIKE ?
          ORDER BY created_at DESC LIMIT ?`,
-        [`%${playerId}%`, `%${playerId}%`, limit]
+        [`${playerId}`, `${playerId}`, limit]
       );
-      
+
       return rows as any[];
     } catch (error) {
       console.error('Erro ao buscar partidas Riot do jogador:', error);
@@ -814,7 +814,7 @@ export class DatabaseManager {
   // Métodos de Discord Links
   async createDiscordLink(discordId: string, discordUsername: string, gameName: string, tagLine: string): Promise<number> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       const [result] = await this.pool.execute(
         `INSERT INTO discord_lol_links (
@@ -832,13 +832,13 @@ export class DatabaseManager {
 
   async getDiscordLink(discordId: string): Promise<any | null> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       const [rows] = await this.pool.execute(
         'SELECT * FROM discord_lol_links WHERE discord_id = ?',
         [discordId]
       );
-      
+
       const results = rows as any[];
       return results.length > 0 ? results[0] : null;
     } catch (error) {
@@ -849,13 +849,13 @@ export class DatabaseManager {
 
   async getDiscordLinkByGameName(gameName: string, tagLine: string): Promise<any | null> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       const [rows] = await this.pool.execute(
         'SELECT * FROM discord_lol_links WHERE game_name = ? AND tag_line = ?',
         [gameName, tagLine]
       );
-      
+
       const results = rows as any[];
       return results.length > 0 ? results[0] : null;
     } catch (error) {
@@ -866,7 +866,7 @@ export class DatabaseManager {
 
   async updateDiscordLinkLastUsed(discordId: string): Promise<void> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       await this.pool.execute(
         'UPDATE discord_lol_links SET last_used = CURRENT_TIMESTAMP WHERE discord_id = ?',
@@ -880,7 +880,7 @@ export class DatabaseManager {
 
   async deleteDiscordLink(discordId: string): Promise<void> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       await this.pool.execute(
         'DELETE FROM discord_lol_links WHERE discord_id = ?',
@@ -894,12 +894,12 @@ export class DatabaseManager {
 
   async getAllDiscordLinks(): Promise<any[]> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       const [rows] = await this.pool.execute(
         'SELECT * FROM discord_lol_links ORDER BY created_at DESC'
       );
-      
+
       return rows as any[];
     } catch (error) {
       console.error('Erro ao buscar todos os links Discord:', error);
@@ -909,22 +909,22 @@ export class DatabaseManager {
 
   async verifyDiscordLink(discordId: string, gameName: string, tagLine: string): Promise<boolean> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       console.log('🔍 [Database] Verificando link Discord:', { discordId, gameName, tagLine });
-      
+
       // Buscar o link primeiro
       const [rows] = await this.pool.execute(
         'SELECT * FROM discord_lol_links WHERE discord_id = ?',
         [discordId]
       );
-      
+
       const results = rows as any[];
       if (results.length === 0) {
         console.log('❌ [Database] Link Discord não encontrado para ID:', discordId);
         return false;
       }
-      
+
       const link = results[0];
       console.log('🔍 [Database] Link encontrado:', {
         linkGameName: link.game_name,
@@ -932,22 +932,22 @@ export class DatabaseManager {
         requestGameName: gameName,
         requestTagLine: tagLine
       });
-      
+
       // Comparar gameName (case insensitive)
       const gameNameMatch = link.game_name.toLowerCase() === gameName.toLowerCase();
-      
+
       // Comparar tagLine (remover # se presente)
       const cleanLinkTagLine = link.tag_line.replace('#', '');
       const cleanRequestTagLine = tagLine.replace('#', '');
       const tagLineMatch = cleanLinkTagLine.toLowerCase() === cleanRequestTagLine.toLowerCase();
-      
+
       console.log('🔍 [Database] Comparação:', {
         gameNameMatch,
         tagLineMatch,
         cleanLinkTagLine,
         cleanRequestTagLine
       });
-      
+
       return gameNameMatch && tagLineMatch;
     } catch (error) {
       console.error('❌ [Database] Erro ao verificar link Discord:', error);
@@ -957,7 +957,7 @@ export class DatabaseManager {
 
   async getDiscordLinksCount(): Promise<number> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       const [rows] = await this.pool.execute('SELECT COUNT(*) as count FROM discord_lol_links');
       const results = rows as any[];
@@ -971,11 +971,11 @@ export class DatabaseManager {
   // Métodos para partidas customizadas
   async completeCustomMatch(matchId: number, winnerTeam: number, extraData: any = {}): Promise<void> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       // Garantir que a tabela existe antes de operar
       await this.ensureCustomMatchesTable();
-      
+
       // Buscar dados da partida
       const match = await this.getCustomMatchById(matchId);
       if (!match) {
@@ -986,46 +986,46 @@ export class DatabaseManager {
       let lpChanges = extraData.lpChanges;
       if (!lpChanges) {
         console.log('🔄 Calculando lpChanges com novo sistema MMR para partida', matchId);
-        
+
         const team1Players = JSON.parse(match.team1_players);
         const team2Players = JSON.parse(match.team2_players);
-        
+
         lpChanges = {};
-        
+
         // Calcular MMR médio dos times
         const team1AverageMMR = await this.calculateTeamAverageMMRWithRealData(team1Players);
         const team2AverageMMR = await this.calculateTeamAverageMMRWithRealData(team2Players);
-        
+
         console.log(`📊 MMR médio - Time 1: ${team1AverageMMR}, Time 2: ${team2AverageMMR}`);
-        
+
         // Processar time 1
         for (const playerString of team1Players) {
           if (playerString && typeof playerString === 'string') {
             const playerMMR = await this.getPlayerCurrentMMR(playerString);
             const isWin = winnerTeam === 1;
             const opponentMMR = team2AverageMMR;
-            
+
             const lpChange = this.calculateLPChange(playerMMR, opponentMMR, isWin);
             lpChanges[playerString] = lpChange;
-            
+
             console.log(`👤 ${playerString} (MMR: ${playerMMR}) vs Time 2 (MMR: ${opponentMMR}) - ${isWin ? 'VITÓRIA' : 'DERROTA'}: ${lpChange > 0 ? '+' : ''}${lpChange} LP`);
           }
         }
-        
+
         // Processar time 2
         for (const playerString of team2Players) {
           if (playerString && typeof playerString === 'string') {
             const playerMMR = await this.getPlayerCurrentMMR(playerString);
             const isWin = winnerTeam === 2;
             const opponentMMR = team1AverageMMR;
-            
+
             const lpChange = this.calculateLPChange(playerMMR, opponentMMR, isWin);
             lpChanges[playerString] = lpChange;
-            
+
             console.log(`👤 ${playerString} (MMR: ${playerMMR}) vs Time 1 (MMR: ${opponentMMR}) - ${isWin ? 'VITÓRIA' : 'DERROTA'}: ${lpChange > 0 ? '+' : ''}${lpChange} LP`);
           }
         }
-        
+
         console.log('📊 lpChanges calculados com novo sistema:', lpChanges);
       }
 
@@ -1063,16 +1063,16 @@ export class DatabaseManager {
       if (lpChanges) {
         for (const [playerString, lpChange] of Object.entries(lpChanges)) {
           const lpChangeValue = Number(lpChange);
-          
+
           // Buscar o jogador pelo summoner_name (Riot ID completo)
           const [playerRows] = await this.pool.execute(
             'SELECT id FROM players WHERE summoner_name = ?',
             [playerString]
           );
-          
+
           if ((playerRows as any[]).length > 0) {
             const playerId = (playerRows as any[])[0].id;
-            
+
             await this.pool.execute(
               `UPDATE players SET 
                 custom_lp = custom_lp + ?,
@@ -1083,7 +1083,7 @@ export class DatabaseManager {
                WHERE id = ?`,
               [lpChangeValue, lpChangeValue, playerId]
             );
-            
+
             console.log(`✅ Jogador ${playerString} atualizado: LP +${lpChangeValue}, ID: ${playerId}`);
           } else {
             console.warn(`⚠️ Jogador ${playerString} não encontrado na tabela players`);
@@ -1100,17 +1100,17 @@ export class DatabaseManager {
 
   async getPlayerCustomMatches(playerIdentifier: string, limit: number = 20): Promise<any[]> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       // Garantir que a tabela existe antes de consultar
       await this.ensureCustomMatchesTable();
-      
+
       // Validar e sanitizar parâmetros
       if (!playerIdentifier || typeof playerIdentifier !== 'string') {
         console.warn('getPlayerCustomMatches: playerIdentifier inválido:', playerIdentifier);
         return [];
       }
-      
+
       // Garantir que limit seja um número válido
       let limitValue = 20;
       if (typeof limit === 'number' && !isNaN(limit) && limit > 0) {
@@ -1121,9 +1121,9 @@ export class DatabaseManager {
           limitValue = Math.min(100, Math.max(1, parsedLimit));
         }
       }
-      
+
       const searchTerm = `%${playerIdentifier.trim()}%`;
-      
+
       console.log('🔍 [getPlayerCustomMatches] Parâmetros sanitizados:', {
         originalPlayerIdentifier: playerIdentifier,
         searchTerm,
@@ -1131,7 +1131,7 @@ export class DatabaseManager {
         limitType: typeof limitValue,
         originalLimit: limit
       });
-      
+
       // Query simplificada sem LIMIT para evitar problemas com parâmetros
       const query = `
       SELECT 
@@ -1158,12 +1158,12 @@ export class DatabaseManager {
         WHERE team1_players LIKE ? OR team2_players LIKE ?
         ORDER BY created_at DESC
       `;
-      
+
       const params = [searchTerm, searchTerm];
-      
+
       console.log('🔍 [getPlayerCustomMatches] Query simplificada:', query);
       console.log('🔍 [getPlayerCustomMatches] Params:', params);
-      
+
       let rows;
       try {
         [rows] = await this.pool.execute(query, params);
@@ -1172,10 +1172,10 @@ export class DatabaseManager {
         console.error('❌ Erro na query simplificada:', executeError);
         throw executeError;
       }
-      
+
       // Aplicar LIMIT manualmente no JavaScript
       const limitedRows = (rows as any[]).slice(0, limitValue);
-      
+
       // Retornar dados brutos para o frontend processar (como esperado)
       const rawRows = limitedRows.map(row => {
         // Processar lp_changes para calcular o LP change do jogador específico
@@ -1183,20 +1183,20 @@ export class DatabaseManager {
         let playerMmrChange = 0;
         let playerTeam = null;
         let playerWon = false;
-        
+
         if (row.lp_changes) {
           try {
             const lpChanges = JSON.parse(row.lp_changes);
             const playerLpChangeValue = lpChanges[playerIdentifier];
-            
+
             if (playerLpChangeValue !== undefined) {
               playerLpChange = Number(playerLpChangeValue);
               playerMmrChange = playerLpChange; // Para partidas customizadas, MMR = LP
-              
+
               // Determinar time e resultado
               const team1Players = JSON.parse(row.team1_players);
               const team2Players = JSON.parse(row.team2_players);
-              
+
               if (team1Players.includes(playerIdentifier)) {
                 playerTeam = 1;
                 playerWon = row.winner_team === 1;
@@ -1209,7 +1209,7 @@ export class DatabaseManager {
             console.warn('⚠️ Erro ao processar lp_changes:', parseError);
           }
         }
-        
+
         return {
           ...row,
           // Garantir que custom_lp seja um número
@@ -1221,9 +1221,9 @@ export class DatabaseManager {
           player_won: playerWon
         };
       });
-      
+
       console.log('✅ [getPlayerCustomMatches] Resultado final:', rawRows.length, 'registros brutos');
-      
+
       return rawRows;
     } catch (error: any) {
       console.error('❌ Erro ao buscar partidas customizadas do jogador:', error);
@@ -1235,35 +1235,35 @@ export class DatabaseManager {
 
   async getPlayerCustomMatchesCount(playerIdentifier: string): Promise<number> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       // Garantir que a tabela existe antes de consultar
       await this.ensureCustomMatchesTable();
-      
+
       // Validar parâmetro
       if (!playerIdentifier || typeof playerIdentifier !== 'string') {
         console.warn('getPlayerCustomMatchesCount: playerIdentifier inválido:', playerIdentifier);
         return 0;
       }
-      
+
       const searchTerm = `%${playerIdentifier.trim()}%`;
-      
+
       console.log('🔍 [getPlayerCustomMatchesCount] Parâmetros sanitizados:', {
         originalPlayerIdentifier: playerIdentifier,
         searchTerm
       });
-      
+
       // Usar query simples
       const query = `
         SELECT COUNT(*) as count FROM custom_matches 
         WHERE team1_players LIKE ? OR team2_players LIKE ?
       `;
-      
+
       const params = [searchTerm, searchTerm];
-      
+
       console.log('🔍 [getPlayerCustomMatchesCount] Query:', query);
       console.log('🔍 [getPlayerCustomMatchesCount] Params:', params);
-      
+
       let rows;
       try {
         [rows] = await this.pool.execute(query, params);
@@ -1272,12 +1272,12 @@ export class DatabaseManager {
         console.error('❌ Erro na query count:', executeError);
         throw executeError;
       }
-      
+
       const results = rows as any[];
       const count = results[0]?.count || 0;
-      
+
       console.log('✅ [getPlayerCustomMatchesCount] Resultado:', count);
-      
+
       return count;
     } catch (error: any) {
       console.error('❌ Erro ao contar partidas customizadas do jogador:', error);
@@ -1289,27 +1289,27 @@ export class DatabaseManager {
 
   async deleteCustomMatch(matchId: number): Promise<void> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     console.log(`🗑️ [Database] Tentando deletar partida customizada ID: ${matchId}`);
-    
+
     try {
       // Garantir que a tabela existe antes de deletar
       await this.ensureCustomMatchesTable();
-      
+
       // Verificar se a partida existe antes de deletar
       const [checkResult] = await this.pool.execute('SELECT id FROM custom_matches WHERE id = ?', [matchId]);
       const exists = (checkResult as any[]).length > 0;
-      
+
       console.log(`🔍 [Database] Partida ${matchId} existe no banco: ${exists}`);
-      
+
       if (!exists) {
         console.log(`⚠️ [Database] Partida ${matchId} não encontrada no banco para deletar`);
         return;
       }
-      
+
       const [deleteResult] = await this.pool.execute('DELETE FROM custom_matches WHERE id = ?', [matchId]);
       const affectedRows = (deleteResult as any).affectedRows;
-      
+
       console.log(`✅ [Database] Partida ${matchId} deletada com sucesso. Linhas afetadas: ${affectedRows}`);
     } catch (error) {
       console.error(`❌ [Database] Erro ao deletar partida customizada ${matchId}:`, error);
@@ -1319,15 +1319,15 @@ export class DatabaseManager {
 
   async getCustomMatchStats(): Promise<any> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       // Garantir que a tabela existe antes de consultar
       await this.ensureCustomMatchesTable();
-      
+
       const [totalMatches] = await this.pool.execute('SELECT COUNT(*) as count FROM custom_matches');
       const [completedMatches] = await this.pool.execute("SELECT COUNT(*) as count FROM custom_matches WHERE status = 'completed'");
       const [pendingMatches] = await this.pool.execute("SELECT COUNT(*) as count FROM custom_matches WHERE status = 'pending'");
-      
+
       return {
         total: (totalMatches as any[])[0].count,
         completed: (completedMatches as any[])[0].count,
@@ -1341,23 +1341,23 @@ export class DatabaseManager {
 
   async cleanupTestMatches(): Promise<{ deletedCount: number, remainingMatches: number, deletedMatches: any[] }> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       console.log('🧹 [cleanupTestMatches] Iniciando limpeza COMPLETA da tabela custom_matches...');
-      
+
       // Garantir que a tabela existe antes de limpar
       await this.ensureCustomMatchesTable();
-      
+
       // Buscar todas as partidas antes de deletar para mostrar detalhes
       const [allMatches] = await this.pool.execute(`
         SELECT id, title, description, team1_players, team2_players, created_by, status, created_at, winner_team, custom_lp
         FROM custom_matches
         ORDER BY created_at DESC
       `);
-      
+
       const matchesToDelete = allMatches as any[];
       console.log(`🔍 [cleanupTestMatches] Encontradas ${matchesToDelete.length} partidas para remoção completa`);
-      
+
       if (matchesToDelete.length === 0) {
         console.log('✅ [cleanupTestMatches] Nenhuma partida encontrada para remoção');
         return {
@@ -1366,13 +1366,13 @@ export class DatabaseManager {
           deletedMatches: []
         };
       }
-      
+
       // Deletar TODAS as partidas da tabela
       const [deleteResult] = await this.pool.execute('DELETE FROM custom_matches');
-      
+
       const deletedCount = (deleteResult as any).affectedRows;
       const remainingMatches = await this.getCustomMatchesCount();
-      
+
       // Preparar detalhes das partidas deletadas
       const deletedMatches = matchesToDelete.map(match => ({
         id: match.id,
@@ -1385,15 +1385,15 @@ export class DatabaseManager {
         custom_lp: match.custom_lp,
         reasons: ['Limpeza completa da tabela']
       }));
-      
+
       console.log(`✅ [cleanupTestMatches] Limpeza COMPLETA concluída: ${deletedCount} partidas removidas, ${remainingMatches} restantes`);
-      
+
       return {
         deletedCount,
         remainingMatches,
         deletedMatches
       };
-      
+
     } catch (error) {
       console.error('❌ [cleanupTestMatches] Erro ao limpar partidas:', error);
       throw error;
@@ -1405,48 +1405,48 @@ export class DatabaseManager {
    */
   private getDeletionReasons(match: any): string[] {
     const reasons: string[] = [];
-    
+
     if (match.title?.toLowerCase().includes('test')) reasons.push('Título contém "test"');
     if (match.description?.toLowerCase().includes('test')) reasons.push('Descrição contém "test"');
     if (match.created_by?.toLowerCase().includes('test')) reasons.push('Criador contém "test"');
     if (match.created_by?.toLowerCase().includes('bot')) reasons.push('Criador contém "bot"');
     if (match.created_by?.toLowerCase().includes('fake')) reasons.push('Criador contém "fake"');
-    
+
     if (match.team1_players?.toLowerCase().includes('bot')) reasons.push('Time 1 contém "bot"');
     if (match.team2_players?.toLowerCase().includes('bot')) reasons.push('Time 2 contém "bot"');
     if (match.team1_players?.toLowerCase().includes('test')) reasons.push('Time 1 contém "test"');
     if (match.team2_players?.toLowerCase().includes('test')) reasons.push('Time 2 contém "test"');
-    
+
     if (['cancelled', 'abandoned', 'error'].includes(match.status)) {
       reasons.push(`Status suspeito: ${match.status}`);
     }
-    
+
     if (match.team1_players === '[]' || match.team2_players === '[]') {
       reasons.push('Time vazio');
     }
-    
+
     if (!match.winner_team && match.custom_lp === 0) {
       reasons.push('Partida sem resultado e sem LP');
     }
-    
+
     return reasons;
   }
 
   async clearAllCustomMatches(): Promise<number> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       // Garantir que a tabela existe antes de limpar
       await this.ensureCustomMatchesTable();
-      
+
       console.log('🧹 [clearAllCustomMatches] Iniciando limpeza COMPLETA da tabela custom_matches');
-      
+
       const [result] = await this.pool.execute("DELETE FROM custom_matches");
-      
+
       const deletedCount = (result as any).affectedRows;
-      
+
       console.log(`✅ [clearAllCustomMatches] Limpeza concluída: ${deletedCount} partidas removidas`);
-      
+
       return deletedCount;
     } catch (error) {
       console.error('❌ Erro ao limpar todas as partidas customizadas:', error);
@@ -1456,11 +1456,11 @@ export class DatabaseManager {
 
   async getCustomMatchesCount(): Promise<number> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       // Garantir que a tabela existe antes de consultar
       await this.ensureCustomMatchesTable();
-      
+
       const [rows] = await this.pool.execute('SELECT COUNT(*) as count FROM custom_matches');
       const results = rows as any[];
       return results[0]?.count || 0;
@@ -1472,11 +1472,11 @@ export class DatabaseManager {
 
   async getParticipantsLeaderboard(limit: number | string = 100): Promise<any[]> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       // Garantir que limit seja um número válido
       let limitValue = 100;
-      
+
       if (typeof limit === 'number' && !isNaN(limit) && limit > 0) {
         limitValue = Math.min(500, Math.max(1, limit));
       } else if (typeof limit === 'string') {
@@ -1485,24 +1485,24 @@ export class DatabaseManager {
           limitValue = Math.min(500, Math.max(1, parsedLimit));
         }
       }
-      
+
       console.log('🔍 [getParticipantsLeaderboard] Parâmetros:', {
         originalLimit: limit,
         limitValue,
         limitType: typeof limitValue
       });
-      
+
       // Verificar se a tabela players existe
       const [tableCheck] = await this.pool.execute(
         `SELECT COUNT(*) as count FROM information_schema.tables 
          WHERE table_name = 'players' AND table_schema = DATABASE()`
       );
-      
+
       if ((tableCheck as any[])[0].count === 0) {
         console.warn('⚠️ Tabela players não encontrada, retornando array vazio');
         return [];
       }
-      
+
       // Query melhorada para incluir MMR total e estatísticas detalhadas
       const query = `
         SELECT 
@@ -1521,11 +1521,11 @@ export class DatabaseManager {
         ORDER BY custom_lp DESC, win_rate DESC
         LIMIT ${limitValue}
       `;
-      
+
       const [rows] = await this.pool.execute(query);
-      
+
       console.log('✅ [getParticipantsLeaderboard] Resultado base:', (rows as any[]).length, 'registros');
-      
+
       // Para cada jogador, buscar estatísticas detalhadas das partidas
       const detailedPlayers = await Promise.all((rows as any[]).map(async (player) => {
         try {
@@ -1536,7 +1536,7 @@ export class DatabaseManager {
              AND status IN ('finished', 'completed')`,
             [`%${player.summoner_name}%`, `%${player.summoner_name}%`]
           );
-          
+
           let totalKills = 0;
           let totalDeaths = 0;
           let totalAssists = 0;
@@ -1548,19 +1548,19 @@ export class DatabaseManager {
           let maxDamage = 0;
           let championStats: { [key: string]: number } = {};
           let gamesCounted = 0;
-          
+
           // Processar cada partida
           for (const match of matches as any[]) {
             if (match.participants_data) {
               try {
                 const participants = JSON.parse(match.participants_data);
-                
+
                 // Encontrar o participante que corresponde ao jogador
                 const participant = participants.find((p: any) => {
                   const participantName = p.summonerName || `${p.riotIdGameName}#${p.riotIdTagline}`;
                   return participantName.includes(player.summoner_name);
                 });
-                
+
                 if (participant) {
                   gamesCounted++;
                   totalKills += participant.kills || 0;
@@ -1570,10 +1570,10 @@ export class DatabaseManager {
                   totalDamage += participant.totalDamageDealtToChampions || 0;
                   totalCS += (participant.totalMinionsKilled || 0) + (participant.neutralMinionsKilled || 0);
                   totalVision += participant.visionScore || 0;
-                  
+
                   maxKills = Math.max(maxKills, participant.kills || 0);
                   maxDamage = Math.max(maxDamage, participant.totalDamageDealtToChampions || 0);
-                  
+
                   // Contar campeões
                   const championName = participant.championName || `Champion${participant.championId}`;
                   championStats[championName] = (championStats[championName] || 0) + 1;
@@ -1583,7 +1583,7 @@ export class DatabaseManager {
               }
             }
           }
-          
+
           // Calcular médias
           const avgKills = gamesCounted > 0 ? totalKills / gamesCounted : 0;
           const avgDeaths = gamesCounted > 0 ? totalDeaths / gamesCounted : 0;
@@ -1592,14 +1592,14 @@ export class DatabaseManager {
           const avgDamage = gamesCounted > 0 ? totalDamage / gamesCounted : 0;
           const avgCS = gamesCounted > 0 ? totalCS / gamesCounted : 0;
           const avgVision = gamesCounted > 0 ? totalVision / gamesCounted : 0;
-          
+
           // Calcular KDA ratio
           const kdaRatio = avgDeaths > 0 ? (avgKills + avgAssists) / avgDeaths : (avgKills + avgAssists);
-          
+
           // Encontrar campeão favorito
           let favoriteChampion = null;
           if (Object.keys(championStats).length > 0) {
-            const favoriteChampionName = Object.keys(championStats).reduce((a, b) => 
+            const favoriteChampionName = Object.keys(championStats).reduce((a, b) =>
               championStats[a] > championStats[b] ? a : b
             );
             favoriteChampion = {
@@ -1608,7 +1608,7 @@ export class DatabaseManager {
               games: championStats[favoriteChampionName]
             };
           }
-          
+
           return {
             ...player,
             // Estatísticas detalhadas
@@ -1632,7 +1632,7 @@ export class DatabaseManager {
             riot_id_game_name: player.summoner_name.includes('#') ? player.summoner_name.split('#')[0] : player.summoner_name,
             riot_id_tagline: player.summoner_name.includes('#') ? player.summoner_name.split('#')[1] : undefined
           };
-          
+
         } catch (error) {
           console.error(`❌ Erro ao processar estatísticas detalhadas para ${player.summoner_name}:`, error);
           return {
@@ -1658,9 +1658,9 @@ export class DatabaseManager {
           };
         }
       }));
-      
+
       console.log('✅ [getParticipantsLeaderboard] Estatísticas detalhadas calculadas para', detailedPlayers.length, 'jogadores');
-      
+
       return detailedPlayers;
     } catch (error: any) {
       console.error('❌ Erro ao buscar leaderboard de participantes:', error);
@@ -1672,22 +1672,22 @@ export class DatabaseManager {
 
   async refreshPlayersFromCustomMatches(): Promise<void> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       // Garantir que a tabela existe antes de consultar
       await this.ensureCustomMatchesTable();
-      
+
       console.log('🔄 [refreshPlayersFromCustomMatches] Iniciando atualização de jogadores...');
-      
+
       // Buscar todas as partidas customizadas com dados completos
       const [matches] = await this.pool.execute(
         "SELECT team1_players, team2_players, winner_team, lp_changes, custom_lp FROM custom_matches WHERE status IN ('finished', 'completed')"
       );
-      
+
       console.log(`📊 [refreshPlayersFromCustomMatches] Encontradas ${(matches as any[]).length} partidas`);
-      
+
       const allPlayers = new Set<string>();
-      
+
       // Map para contar jogos, vitórias, derrotas e MMR total
       const playerStats: Record<string, { games: number, wins: number, losses: number, totalMMR: number }> = {};
 
@@ -1704,11 +1704,11 @@ export class DatabaseManager {
               allPlayers.add(playerString);
               if (!playerStats[playerString]) playerStats[playerString] = { games: 0, wins: 0, losses: 0, totalMMR: 0 };
               playerStats[playerString].games++;
-              
+
               // Calcular vitória/derrota
               if (winnerTeam == 1) playerStats[playerString].wins++;
               else if (winnerTeam == 2) playerStats[playerString].losses++;
-              
+
               // Somar MMR da partida
               const playerMMR = lpChanges[playerString] || 0;
               playerStats[playerString].totalMMR += playerMMR;
@@ -1721,11 +1721,11 @@ export class DatabaseManager {
               allPlayers.add(playerString);
               if (!playerStats[playerString]) playerStats[playerString] = { games: 0, wins: 0, losses: 0, totalMMR: 0 };
               playerStats[playerString].games++;
-              
+
               // Calcular vitória/derrota
               if (winnerTeam == 2) playerStats[playerString].wins++;
               else if (winnerTeam == 1) playerStats[playerString].losses++;
-              
+
               // Somar MMR da partida
               const playerMMR = lpChanges[playerString] || 0;
               playerStats[playerString].totalMMR += playerMMR;
@@ -1741,7 +1741,7 @@ export class DatabaseManager {
         try {
           const existingPlayer = await this.getPlayerBySummonerName(summonerName);
           const stats = playerStats[summonerName] || { games: 0, wins: 0, losses: 0, totalMMR: 0 };
-          
+
           if (!existingPlayer) {
             console.log(`➕ [refreshPlayersFromCustomMatches] Criando jogador: ${summonerName}`);
             await this.createPlayer({
@@ -1771,7 +1771,7 @@ export class DatabaseManager {
           console.error(`❌ [refreshPlayersFromCustomMatches] Erro ao criar/verificar jogador ${summonerName}:`, error);
         }
       }
-      
+
       console.log('✅ [refreshPlayersFromCustomMatches] Atualização de jogadores concluída');
     } catch (error) {
       console.error('❌ [refreshPlayersFromCustomMatches] Erro ao atualizar jogadores das partidas customizadas:', error);
@@ -1781,12 +1781,12 @@ export class DatabaseManager {
 
   async updatePlayerNickname(oldName: string, newName: string): Promise<void> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       await this.pool.execute(
         'UPDATE players SET summoner_name = ?, updated_at = CURRENT_TIMESTAMP WHERE summoner_name = ?',
-      [newName, oldName]
-    );
+        [newName, oldName]
+      );
     } catch (error) {
       console.error('Erro ao atualizar nickname do jogador:', error);
       throw error;
@@ -1796,7 +1796,7 @@ export class DatabaseManager {
   // Métodos para compatibilidade com o sistema existente
   async completeMatch(matchId: number, winnerTeam: number, extraData: any = {}): Promise<void> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       await this.pool.execute(
         `UPDATE matches SET 
@@ -1815,7 +1815,7 @@ export class DatabaseManager {
 
   async deleteMatch(matchId: number): Promise<void> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       await this.pool.execute('DELETE FROM matches WHERE id = ?', [matchId]);
     } catch (error) {
@@ -1854,19 +1854,19 @@ export class DatabaseManager {
 
   private async calculatePlayerDetailedStats(summonerName: string): Promise<any> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     // Buscar estatísticas do jogador
     const [playerRows] = await this.pool.execute(
       'SELECT * FROM players WHERE summoner_name = ?',
       [summonerName]
     );
-    
+
     const player = (playerRows as any[])[0];
     if (!player) return null;
-    
+
     // Buscar partidas customizadas do jogador
     const customMatches = await this.getPlayerCustomMatches(summonerName, 50);
-    
+
     // Calcular estatísticas detalhadas
     const stats = {
       summonerName: player.summoner_name,
@@ -1874,7 +1874,7 @@ export class DatabaseManager {
       customGamesPlayed: player.custom_games_played || 0,
       customWins: player.custom_wins || 0,
       customLosses: player.custom_losses || 0,
-      customWinRate: player.custom_games_played > 0 ? 
+      customWinRate: player.custom_games_played > 0 ?
         Math.round((player.custom_wins * 100) / player.custom_games_played) : 0,
       customWinStreak: player.custom_win_streak || 0,
       recentMatches: customMatches.slice(0, 10).map((match: any) => ({
@@ -1883,25 +1883,25 @@ export class DatabaseManager {
         status: match.status,
         winnerTeam: match.winner_team,
         createdAt: match.created_at,
-        isWinner: match.winner_team === 1 ? 
+        isWinner: match.winner_team === 1 ?
           JSON.parse(match.team1_players).some((p: any) => p.summonerName === summonerName) :
           JSON.parse(match.team2_players).some((p: any) => p.summonerName === summonerName)
       }))
     };
-    
+
     return stats;
   }
 
   // Método para verificar se a tabela custom_matches existe
   private async ensureCustomMatchesTable(): Promise<void> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       // Verificar se a tabela existe
       const [tables] = await this.pool.execute(
         "SHOW TABLES LIKE 'custom_matches'"
       );
-      
+
       if ((tables as any[]).length === 0) {
         console.log('📋 Tabela custom_matches não encontrada, criando...');
         await this.pool.execute(`
@@ -1942,7 +1942,7 @@ export class DatabaseManager {
           "SHOW COLUMNS FROM custom_matches"
         );
         const columnNames = (columns as any[]).map(col => col.Field);
-        
+
         // Adicionar campos que podem estar faltando
         if (!columnNames.includes('duration')) {
           console.log('📋 Adicionando campo duration...');
@@ -1950,28 +1950,28 @@ export class DatabaseManager {
             'ALTER TABLE custom_matches ADD COLUMN duration INT AFTER game_mode'
           );
         }
-        
+
         if (!columnNames.includes('custom_lp')) {
           console.log('📋 Adicionando campo custom_lp...');
           await this.pool.execute(
             'ALTER TABLE custom_matches ADD COLUMN custom_lp INT DEFAULT 0 AFTER notes'
           );
         }
-        
+
         if (!columnNames.includes('draft_data')) {
           console.log('📋 Adicionando campo draft_data...');
           await this.pool.execute(
             'ALTER TABLE custom_matches ADD COLUMN draft_data TEXT AFTER pick_ban_data'
           );
         }
-        
+
         if (!columnNames.includes('game_data')) {
           console.log('📋 Adicionando campo game_data...');
           await this.pool.execute(
             'ALTER TABLE custom_matches ADD COLUMN game_data TEXT AFTER draft_data'
           );
         }
-        
+
         console.log('✅ Tabela custom_matches verificada e atualizada');
       }
     } catch (error) {
@@ -1983,18 +1983,18 @@ export class DatabaseManager {
   // Método para obter estatísticas das tabelas (para debug)
   async getTablesStats(): Promise<any> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       // Verificar custom_matches
       const [customMatchesCount] = await this.pool.execute('SELECT COUNT(*) as count FROM custom_matches');
-      
+
       // Verificar estrutura da tabela custom_matches
       const [tableStructure] = await this.pool.execute('DESCRIBE custom_matches');
-      
+
       // Verificar valores únicos na coluna status (se existir)
       let statusValues: any[] = [];
       let hasStatusColumn = false;
-      
+
       try {
         const [statusCheck] = await this.pool.execute('SELECT DISTINCT status FROM custom_matches');
         statusValues = statusCheck as any[];
@@ -2003,7 +2003,7 @@ export class DatabaseManager {
         console.warn('⚠️ Coluna status não encontrada na tabela custom_matches');
         hasStatusColumn = false;
       }
-      
+
       // Tentar diferentes status possíveis
       let finishedMatchesCount = 0;
       if (hasStatusColumn) {
@@ -2019,16 +2019,16 @@ export class DatabaseManager {
           }
         }
       }
-      
+
       const [playersCount] = await this.pool.execute('SELECT COUNT(*) as count FROM players');
       const [playersWithCustomData] = await this.pool.execute('SELECT COUNT(*) as count FROM players WHERE custom_games_played > 0');
-      
+
       // Buscar algumas partidas de exemplo
       const [sampleMatches] = await this.pool.execute('SELECT id, title, created_at FROM custom_matches ORDER BY created_at DESC LIMIT 5');
-      
+
       // Buscar alguns jogadores de exemplo
       const [samplePlayers] = await this.pool.execute('SELECT summoner_name, custom_games_played, custom_lp FROM players ORDER BY custom_lp DESC LIMIT 5');
-      
+
       return {
         customMatches: {
           total: (customMatchesCount as any[])[0].count,
@@ -2053,7 +2053,7 @@ export class DatabaseManager {
   // Método para obter contagem de jogadores
   async getPlayersCount(): Promise<number> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       const [playerCount] = await this.pool.execute('SELECT COUNT(*) as count FROM players');
       return (playerCount as any[])[0].count;
@@ -2066,28 +2066,28 @@ export class DatabaseManager {
   // Método para corrigir status das partidas antigas
   async fixMatchStatus(): Promise<{ affectedMatches: number, playerCount: number }> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       console.log('🔧 [fixMatchStatus] Corrigindo status das partidas antigas...');
-      
+
       // Atualizar partidas com status 'completed' para 'finished'
       const [updateResult] = await this.pool.execute(
         'UPDATE custom_matches SET status = ? WHERE status = ?',
         ['finished', 'completed']
       );
-      
+
       const affectedRows = (updateResult as any).affectedRows;
-      
+
       console.log(`✅ [fixMatchStatus] ${affectedRows} partidas atualizadas de 'completed' para 'finished'`);
-      
+
       // Agora rodar o rebuild dos jogadores
       await this.refreshPlayersFromCustomMatches();
-      
+
       // Verificar quantos jogadores foram criados
       const playerCount = await this.getPlayersCount();
-      
+
       console.log(`✅ [fixMatchStatus] Rebuild concluído. Total de jogadores: ${playerCount}`);
-      
+
       return {
         affectedMatches: affectedRows,
         playerCount: playerCount
@@ -2108,19 +2108,19 @@ export class DatabaseManager {
     // LP base: +15 para vitória, -18 para derrota (mais balanceado)
     const baseLpWin = 15;
     const baseLpLoss = -18;
-    
+
     // Calcular diferença de MMR
     const mmrDifference = opponentMMR - playerMMR;
-    
+
     // Ajuste por diferença de MMR: ±6 LP para cada 100 pontos de diferença (reduzido de 8)
     const mmrAdjustment = (mmrDifference / 100) * 6;
-    
+
     // LP inicial baseado no resultado
     let lpChange = isWin ? baseLpWin : baseLpLoss;
-    
+
     // Aplicar ajuste por diferença de MMR
     lpChange += mmrAdjustment;
-    
+
     // Ajustes por MMR atual do jogador (reduzidos)
     if (playerMMR < 1200) {
       // Jogadores com MMR baixo (< 1200)
@@ -2143,14 +2143,14 @@ export class DatabaseManager {
         lpChange -= Math.floor(mmrAbove1800 / 100) * 0.5;
       }
     }
-    
+
     // Aplicar limites mais restritivos
     if (isWin) {
       lpChange = Math.max(5, Math.min(25, lpChange)); // Reduzido de 8-35 para 5-25
     } else {
       lpChange = Math.max(-30, Math.min(-5, lpChange)); // Aumentado de -25 a -8 para -30 a -5
     }
-    
+
     return Math.round(lpChange);
   }
 
@@ -2159,16 +2159,16 @@ export class DatabaseManager {
    */
   private calculateMMRChange(playerMMR: number, opponentMMR: number, isWin: boolean): number {
     const K_FACTOR = 16; // Fator K mais conservador (metade do padrão)
-    
+
     // Calcular score esperado usando fórmula Elo
     const expectedScore = 1 / (1 + Math.pow(10, (opponentMMR - playerMMR) / 400));
-    
+
     // Score atual (1 para vitória, 0 para derrota)
     const actualScore = isWin ? 1 : 0;
-    
+
     // Calcular mudança de MMR
     const mmrChange = Math.round(K_FACTOR * (actualScore - expectedScore));
-    
+
     return mmrChange;
   }
 
@@ -2177,10 +2177,10 @@ export class DatabaseManager {
    */
   private calculateTeamAverageMMR(teamPlayers: string[]): number {
     if (!teamPlayers || teamPlayers.length === 0) return 0; // MMR inicial 0
-    
+
     let totalMMR = 0;
     let validPlayers = 0;
-    
+
     for (const playerString of teamPlayers) {
       if (playerString && typeof playerString === 'string') {
         // Buscar MMR do jogador no banco
@@ -2190,7 +2190,7 @@ export class DatabaseManager {
         validPlayers++;
       }
     }
-    
+
     return validPlayers > 0 ? Math.round(totalMMR / validPlayers) : 0;
   }
 
@@ -2203,11 +2203,11 @@ export class DatabaseManager {
         'SELECT custom_lp FROM players WHERE summoner_name = ?',
         [playerString]
       );
-      
+
       if ((rows as any[]).length > 0) {
         return (rows as any[])[0].custom_lp || 0; // MMR inicial 0
       }
-      
+
       return 0; // MMR padrão para novos jogadores
     } catch (error) {
       console.warn(`⚠️ Erro ao buscar MMR do jogador ${playerString}:`, error);
@@ -2220,10 +2220,10 @@ export class DatabaseManager {
    */
   private async calculateTeamAverageMMRWithRealData(teamPlayers: string[]): Promise<number> {
     if (!teamPlayers || teamPlayers.length === 0) return 0; // MMR inicial 0
-    
+
     let totalMMR = 0;
     let validPlayers = 0;
-    
+
     for (const playerString of teamPlayers) {
       if (playerString && typeof playerString === 'string') {
         const playerMMR = await this.getPlayerCurrentMMR(playerString);
@@ -2231,7 +2231,7 @@ export class DatabaseManager {
         validPlayers++;
       }
     }
-    
+
     return validPlayers > 0 ? Math.round(totalMMR / validPlayers) : 0;
   }
 
@@ -2240,66 +2240,66 @@ export class DatabaseManager {
    */
   async recalculateCustomLP(): Promise<{ affectedMatches: number, affectedPlayers: number, details: any[] }> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       console.log('🔄 Iniciando recálculo de LP para partidas customizadas...');
-      
+
       // Buscar todas as partidas customizadas finalizadas
       const [matches] = await this.pool.execute(
         'SELECT id, team1_players, team2_players, winner_team, lp_changes FROM custom_matches WHERE status = "finished" AND winner_team IS NOT NULL'
       );
-      
+
       const matchRows = matches as any[];
       let affectedMatches = 0;
       let affectedPlayers = 0;
       const details: any[] = [];
-      
+
       console.log(`📊 Encontradas ${matchRows.length} partidas para recálculo`);
-      
+
       for (const match of matchRows) {
         try {
           const team1Players = JSON.parse(match.team1_players);
           const team2Players = JSON.parse(match.team2_players);
           const winnerTeam = match.winner_team;
-          
+
           // Calcular MMR médio dos times
           const team1AverageMMR = await this.calculateTeamAverageMMRWithRealData(team1Players);
           const team2AverageMMR = await this.calculateTeamAverageMMRWithRealData(team2Players);
-          
+
           const newLpChanges: any = {};
           let matchAffectedPlayers = 0;
-          
+
           // Processar time 1
           for (const playerString of team1Players) {
             if (playerString && typeof playerString === 'string') {
               const playerMMR = await this.getPlayerCurrentMMR(playerString);
               const isWin = winnerTeam === 1;
               const opponentMMR = team2AverageMMR;
-              
+
               const newLpChange = this.calculateLPChange(playerMMR, opponentMMR, isWin);
               newLpChanges[playerString] = newLpChange;
               matchAffectedPlayers++;
             }
           }
-          
+
           // Processar time 2
           for (const playerString of team2Players) {
             if (playerString && typeof playerString === 'string') {
               const playerMMR = await this.getPlayerCurrentMMR(playerString);
               const isWin = winnerTeam === 2;
               const opponentMMR = team1AverageMMR;
-              
+
               const newLpChange = this.calculateLPChange(playerMMR, opponentMMR, isWin);
               newLpChanges[playerString] = newLpChange;
               matchAffectedPlayers++;
             }
           }
-          
+
           // Calcular LP total da partida
           const totalLp = Object.values(newLpChanges).reduce((sum: number, lpChange: any) => {
             return sum + Math.abs(Number(lpChange));
           }, 0);
-          
+
           // Atualizar partida com novos LP changes
           if (this.pool) {
             await this.pool.execute(
@@ -2307,31 +2307,31 @@ export class DatabaseManager {
               [JSON.stringify(newLpChanges), totalLp, match.id]
             );
           }
-          
+
           // Recalcular estatísticas dos jogadores
           for (const [playerString, lpChange] of Object.entries(newLpChanges)) {
             const lpChangeValue = Number(lpChange);
-            
+
             // Buscar o jogador
             if (this.pool) {
               const [playerRows] = await this.pool.execute(
                 'SELECT id, custom_lp, custom_games_played, custom_wins, custom_losses FROM players WHERE summoner_name = ?',
                 [playerString]
               );
-              
+
               if ((playerRows as any[]).length > 0) {
                 const player = (playerRows as any[])[0];
                 const playerId = player.id;
-                
+
                 // Recalcular estatísticas do zero para este jogador
                 await this.recalculatePlayerStats(playerId, playerString);
               }
             }
           }
-          
+
           affectedMatches++;
           affectedPlayers += matchAffectedPlayers;
-          
+
           details.push({
             matchId: match.id,
             team1MMR: team1AverageMMR,
@@ -2340,22 +2340,22 @@ export class DatabaseManager {
             affectedPlayers: matchAffectedPlayers,
             newLpChanges
           });
-          
+
           console.log(`✅ Partida ${match.id} recalculada - Time 1 MMR: ${team1AverageMMR}, Time 2 MMR: ${team2AverageMMR}, Vencedor: ${winnerTeam}`);
-          
+
         } catch (matchError) {
           console.error(`❌ Erro ao recalcular partida ${match.id}:`, matchError);
         }
       }
-      
+
       console.log(`✅ Recálculo concluído: ${affectedMatches} partidas e ${affectedPlayers} jogadores afetados`);
-      
+
       return {
         affectedMatches,
         affectedPlayers,
         details
       };
-      
+
     } catch (error) {
       console.error('❌ Erro no recálculo de LP:', error);
       throw error;
@@ -2367,28 +2367,28 @@ export class DatabaseManager {
    */
   private async recalculatePlayerStats(playerId: number, playerString: string): Promise<void> {
     if (!this.pool) return;
-    
+
     try {
       // Buscar todas as partidas do jogador
       const [matches] = await this.pool.execute(
         'SELECT lp_changes, winner_team, team1_players, team2_players FROM custom_matches WHERE status = "finished" AND (team1_players LIKE ? OR team2_players LIKE ?)',
         [`%${playerString}%`, `%${playerString}%`]
       );
-      
+
       let totalLp = 0;
       let gamesPlayed = 0;
       let wins = 0;
       let losses = 0;
-      
+
       for (const match of matches as any[]) {
         if (match.lp_changes) {
           const lpChanges = JSON.parse(match.lp_changes);
           const playerLpChange = lpChanges[playerString];
-          
+
           if (playerLpChange !== undefined) {
             totalLp += Number(playerLpChange);
             gamesPlayed++;
-            
+
             if (Number(playerLpChange) > 0) {
               wins++;
             } else {
@@ -2397,7 +2397,7 @@ export class DatabaseManager {
           }
         }
       }
-      
+
       // Atualizar estatísticas do jogador
       if (this.pool) {
         await this.pool.execute(
@@ -2412,9 +2412,9 @@ export class DatabaseManager {
           [totalLp, gamesPlayed, wins, losses, totalLp, playerId]
         );
       }
-      
+
       console.log(`✅ Estatísticas recalculadas para ${playerString}: LP ${totalLp}, Jogos ${gamesPlayed}, Vitórias ${wins}, Derrotas ${losses}`);
-      
+
     } catch (error) {
       console.error(`❌ Erro ao recalcular estatísticas do jogador ${playerString}:`, error);
     }
@@ -2438,42 +2438,42 @@ export class DatabaseManager {
   // Método para verificar e adicionar colunas faltantes na tabela custom_matches
   private async ensureCustomMatchesColumns(): Promise<void> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       console.log('🔍 Verificando colunas da tabela custom_matches...');
-      
+
       const [columns] = await this.pool.execute(
         "SHOW COLUMNS FROM custom_matches"
       );
       const columnNames = (columns as any[]).map(col => col.Field);
-      
+
       const missingColumns = [];
-      
+
       // Verificar colunas que podem estar faltando
       if (!columnNames.includes('pick_ban_data')) {
         missingColumns.push('pick_ban_data TEXT');
       }
-      
+
       if (!columnNames.includes('linked_results')) {
         missingColumns.push('linked_results TEXT');
       }
-      
+
       if (!columnNames.includes('actual_winner')) {
         missingColumns.push('actual_winner INT');
       }
-      
+
       if (!columnNames.includes('actual_duration')) {
         missingColumns.push('actual_duration INT');
       }
-      
+
       if (!columnNames.includes('riot_id')) {
         missingColumns.push('riot_id VARCHAR(255)');
       }
-      
+
       if (!columnNames.includes('mmr_changes')) {
         missingColumns.push('mmr_changes TEXT');
       }
-      
+
       // Adicionar colunas faltantes
       for (const columnDef of missingColumns) {
         const columnName = columnDef.split(' ')[0];
@@ -2482,7 +2482,7 @@ export class DatabaseManager {
           `ALTER TABLE custom_matches ADD COLUMN ${columnDef}`
         );
       }
-      
+
       if (missingColumns.length > 0) {
         console.log(`✅ ${missingColumns.length} colunas adicionadas à tabela custom_matches`);
       } else {
@@ -2497,7 +2497,7 @@ export class DatabaseManager {
   // NOVO: Método para atualizar posição de um jogador na fila
   async updateQueuePosition(playerId: number, position: number): Promise<void> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
-    
+
     try {
       await this.pool.execute(
         'UPDATE queue_players SET queue_position = ? WHERE player_id = ? AND is_active = 1',
