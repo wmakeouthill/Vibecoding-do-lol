@@ -59,6 +59,14 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
   modalSelectedChampion: Champion | null = null;
   isConfirming: boolean = false;
 
+  // NOVAS PROPRIEDADES PARA MELHORIAS
+  showFinalConfirmation: boolean = false;
+  finalConfirmationData: any = null;
+  modalTimeRemaining: number = 30;
+  modalTimer: any = null;
+  editingPlayerId: string | null = null; // ID do jogador que está editando
+  isEditingMode: boolean = false; // Se está em modo de edição
+
   private timer: any = null;
   private botPickTimer: any = null;
 
@@ -85,6 +93,9 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     }
     if (this.botPickTimer) {
       clearInterval(this.botPickTimer);
+    }
+    if (this.modalTimer) {
+      clearInterval(this.modalTimer);
     }
   }
   initializePickBanSession() {
@@ -393,17 +404,28 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
       currentPlayerFromInput: this.currentPlayer?.summonerName,
       currentPlayerFromSessionId: currentPlayer?.id,
       currentPlayerFromInputId: this.currentPlayer?.id,
-      phaseLocked: phase.locked
+      phaseLocked: phase.locked,
+      isEditingMode: this.isEditingMode,
+      editingPlayerId: this.editingPlayerId
     });
 
     // It's my turn if I'm the current player for this action
     const wasMyTurn = this.isMyTurn;
-    this.isMyTurn = currentPlayer &&
+    
+    // Verificar se é minha vez (considerando modo de edição)
+    let isMyTurnNow = currentPlayer &&
       (currentPlayer.id === this.currentPlayer.id ||
         currentPlayer.summonerName === this.currentPlayer.summonerName ||
         (currentPlayer.summonerName && this.currentPlayer.summonerName &&
           currentPlayer.summonerName.includes(this.currentPlayer.summonerName.split('#')[0]))) &&
       !phase.locked;
+
+    // Se está em modo de edição, verificar se sou o jogador que está editando
+    if (this.isEditingMode && this.editingPlayerId) {
+      isMyTurnNow = isMyTurnNow && this.canCurrentPlayerEdit();
+    }
+
+    this.isMyTurn = isMyTurnNow;
 
     console.log(`🎯 Vez de: ${currentPlayer?.summonerName || 'Unknown'}, É minha vez: ${this.isMyTurn}`);
 
@@ -460,7 +482,9 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
 
     this.selectedChampion = champion;
   } confirmSelection() {
-    if (!this.selectedChampion || !this.session) return;    // Clear bot timer if active
+    if (!this.selectedChampion || !this.session) return;
+
+    // Clear bot timer if active
     if (this.botPickTimer) {
       clearTimeout(this.botPickTimer);
       this.botPickTimer = null;
@@ -494,6 +518,13 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
 
     // Reset timer for next player
     this.timeRemaining = 30;
+
+    // Reset modo de edição se estava editando
+    if (this.isEditingMode) {
+      this.isEditingMode = false;
+      this.editingPlayerId = null;
+      console.log('✏️ [Edição] Modo de edição finalizado');
+    }
 
     this.updateCurrentTurn();
   }
@@ -534,6 +565,13 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
   completePickBan() {
     if (!this.session) return;
 
+    // Se não está na confirmação final, mostrar diálogo de confirmação
+    if (!this.showFinalConfirmation) {
+      this.showFinalConfirmationDialog();
+      return;
+    }
+
+    // Se já está na confirmação final, completar normalmente
     this.session.phase = 'completed';
 
     if (this.timer) {
@@ -652,6 +690,9 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     this.modalSelectedChampion = null;
     this.isConfirming = false;
     
+    // Iniciar timer do modal
+    this.startModalTimer();
+    
     // Focar no campo de busca automaticamente
     setTimeout(() => {
       const searchInput = document.getElementById('modal-champion-search') as HTMLInputElement;
@@ -670,6 +711,9 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     this.modalSelectedRole = 'all';
     this.modalSelectedChampion = null;
     this.isConfirming = false;
+    
+    // Parar timer do modal
+    this.stopModalTimer();
   }
 
   /**
@@ -730,6 +774,9 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
    */
   confirmModalSelection(): void {
     if (!this.modalSelectedChampion) return;
+
+    // Parar timer do modal
+    this.stopModalTimer();
 
     // Usar a seleção do modal para confirmar
     this.selectedChampion = this.modalSelectedChampion;
@@ -800,5 +847,262 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     if (!currentPhase) return '#ffffff';
     
     return currentPhase.team === 'blue' ? '#5bc0de' : '#d9534f';
+  }
+
+  // ========== MÉTODOS PARA TIMER DO MODAL ==========
+
+  /**
+   * Inicia o timer do modal
+   */
+  startModalTimer(): void {
+    if (this.modalTimer) {
+      clearInterval(this.modalTimer);
+    }
+
+    this.modalTimeRemaining = this.timeRemaining;
+
+    this.modalTimer = setInterval(() => {
+      this.modalTimeRemaining--;
+      
+      if (this.modalTimeRemaining <= 0) {
+        this.handleModalTimeOut();
+      }
+    }, 1000);
+  }
+
+  /**
+   * Para o timer do modal
+   */
+  stopModalTimer(): void {
+    if (this.modalTimer) {
+      clearInterval(this.modalTimer);
+      this.modalTimer = null;
+    }
+  }
+
+  /**
+   * Trata o timeout do modal - seleção automática
+   */
+  handleModalTimeOut(): void {
+    console.log('⏰ Modal timeout - seleção automática');
+    this.stopModalTimer();
+    
+    // Selecionar campeão aleatório disponível
+    const availableChampions = this.getModalFilteredChampions();
+    if (availableChampions.length > 0) {
+      const randomChampion = availableChampions[Math.floor(Math.random() * availableChampions.length)];
+      this.modalSelectedChampion = randomChampion;
+      console.log(`⏰ Seleção automática: ${randomChampion.name}`);
+      this.confirmModalSelection();
+    } else {
+      // Se não há campeões disponíveis, fechar modal
+      this.closeChampionModal();
+    }
+  }
+
+  // ========== MÉTODOS PARA CONFIRMAÇÃO FINAL ==========
+
+  /**
+   * Mostra a confirmação final antes de completar o draft
+   */
+  showFinalConfirmationDialog(): void {
+    if (!this.session) return;
+
+    console.log('🎯 [Confirmação Final] Iniciando preparação dos dados...');
+    console.log('🎯 [Confirmação Final] Session data:', {
+      blueTeam: this.session.blueTeam,
+      redTeam: this.session.redTeam,
+      phases: this.session.phases.filter(p => p.action === 'pick' && p.champion)
+    });
+
+    // Mapear picks com jogadores corretamente
+    const blueTeamPicksWithPlayers = this.mapPicksWithPlayers('blue');
+    const redTeamPicksWithPlayers = this.mapPicksWithPlayers('red');
+
+    // Preparar dados para confirmação
+    this.finalConfirmationData = {
+      blueTeamPicks: blueTeamPicksWithPlayers,
+      redTeamPicks: redTeamPicksWithPlayers,
+      bannedChampions: this.getBannedChampions(),
+      blueTeamPlayers: this.session.blueTeam,
+      redTeamPlayers: this.session.redTeam,
+      allPicks: this.session.phases.filter(p => p.action === 'pick' && p.champion)
+    };
+
+    console.log('🎯 [Confirmação Final] Dados preparados:', this.finalConfirmationData);
+    this.showFinalConfirmation = true;
+  }
+
+  /**
+   * Mapeia picks com jogadores para um time específico
+   */
+  private mapPicksWithPlayers(team: 'blue' | 'red'): any[] {
+    if (!this.session) return [];
+
+    const teamPlayers = team === 'blue' ? this.session.blueTeam : this.session.redTeam;
+    const teamPicks = this.session.phases.filter(p => p.action === 'pick' && p.team === team && p.champion);
+
+    // Criar array com 5 slots (um para cada jogador)
+    const picksWithPlayers = new Array(5).fill(null);
+
+    // Mapear picks existentes para os slots corretos
+    teamPicks.forEach((pick, index) => {
+      if (index < 5) {
+        // Encontrar o jogador correspondente
+        const playerIndex = this.getPlayerIndexForPick(team, index);
+        const player = playerIndex < teamPlayers.length ? teamPlayers[playerIndex] : null;
+
+        picksWithPlayers[index] = {
+          champion: pick.champion,
+          playerId: pick.playerId || (player ? player.id : null),
+          playerName: pick.playerName || (player ? (player.summonerName || player.name) : 'Desconhecido'),
+          phaseIndex: this.session!.phases.indexOf(pick),
+          player: player
+        };
+      }
+    });
+
+    console.log(`🎯 [mapPicksWithPlayers] ${team} team:`, picksWithPlayers);
+    return picksWithPlayers;
+  }
+
+  /**
+   * Confirma o draft final
+   */
+  confirmFinalDraft(): void {
+    this.showFinalConfirmation = false;
+    this.finalConfirmationData = null;
+    this.completePickBan();
+  }
+
+  /**
+   * Cancela o draft final e permite edição
+   */
+  cancelFinalDraft(): void {
+    this.showFinalConfirmation = false;
+    this.finalConfirmationData = null;
+    // Voltar para a última ação para permitir edição
+    this.allowDraftEditing();
+  }
+
+  /**
+   * Permite edição do draft voltando para a última ação
+   */
+  allowDraftEditing(): void {
+    if (!this.session) return;
+
+    // Voltar para a última ação realizada
+    if (this.session.currentAction > 0) {
+      this.session.currentAction--;
+    }
+
+    // Resetar o timer e permitir nova seleção
+    this.timeRemaining = 30;
+    this.isEditingMode = true;
+    this.updateCurrentTurn();
+  }
+
+  /**
+   * Inicia edição de um pick específico
+   */
+  startEditingPick(playerId: string, phaseIndex: number): void {
+    if (!this.session) return;
+
+    console.log(`✏️ [Edição] Iniciando edição para jogador ${playerId} na fase ${phaseIndex}`);
+
+    // Definir o jogador que está editando
+    this.editingPlayerId = playerId;
+    this.isEditingMode = true;
+
+    // Voltar para a fase específica
+    this.session.currentAction = phaseIndex;
+
+    // Resetar o timer
+    this.timeRemaining = 30;
+
+    // Fechar confirmação final
+    this.showFinalConfirmation = false;
+    this.finalConfirmationData = null;
+
+    // Atualizar turno
+    this.updateCurrentTurn();
+
+    // Abrir modal automaticamente após um pequeno delay
+    setTimeout(() => {
+      if (this.isMyTurn && !this.showChampionModal) {
+        console.log('🎯 [Edição] Abrindo modal automaticamente para edição');
+        this.openChampionModal();
+      }
+    }, 1000);
+  }
+
+  /**
+   * Verifica se o jogador atual pode editar
+   */
+  canCurrentPlayerEdit(): boolean {
+    if (!this.currentPlayer || !this.editingPlayerId) return false;
+    
+    return this.currentPlayer.id === this.editingPlayerId || 
+           this.currentPlayer.summonerName === this.editingPlayerId;
+  }
+
+  /**
+   * Verifica se um jogador é bot (método público)
+   */
+  isPlayerBot(player: any): boolean {
+    return this.isBot(player);
+  }
+
+  /**
+   * Obtém o nome do jogador para um pick específico
+   */
+  getPlayerNameForPick(team: 'blue' | 'red', pickIndex: number): string {
+    if (!this.session) return 'Desconhecido';
+
+    const teamPicks = this.session.phases.filter(p => p.action === 'pick' && p.team === team && p.champion);
+    const pick = teamPicks[pickIndex];
+    
+    if (pick && pick.playerName) {
+      return pick.playerName;
+    }
+
+    // Fallback: buscar pelo índice do jogador no time
+    const teamPlayers = team === 'blue' ? this.session.blueTeam : this.session.redTeam;
+    const playerIndex = this.getPlayerIndexForPick(team, pickIndex);
+    
+    if (playerIndex < teamPlayers.length) {
+      return teamPlayers[playerIndex].summonerName || teamPlayers[playerIndex].name || 'Jogador';
+    }
+
+    return 'Desconhecido';
+  }
+
+  /**
+   * Obtém o nome do jogador para um slot específico
+   */
+  getPlayerNameForSlot(team: 'blue' | 'red', slotIndex: number): string {
+    if (!this.session) return 'Desconhecido';
+
+    const teamPlayers = team === 'blue' ? this.session.blueTeam : this.session.redTeam;
+    
+    if (slotIndex < teamPlayers.length) {
+      return teamPlayers[slotIndex].summonerName || teamPlayers[slotIndex].name || 'Jogador';
+    }
+
+    return 'Desconhecido';
+  }
+
+  /**
+   * Calcula o índice do jogador para um pick específico
+   */
+  private getPlayerIndexForPick(team: 'blue' | 'red', pickIndex: number): number {
+    // Lógica baseada na ordem dos picks do LoL
+    if (pickIndex === 0) return 0; // Primeiro pick
+    if (pickIndex === 1) return 1; // Segundo pick
+    if (pickIndex === 2) return 2; // Terceiro pick
+    if (pickIndex === 3) return 3; // Quarto pick
+    if (pickIndex === 4) return 4; // Quinto pick
+    
+    return pickIndex % 5; // Fallback
   }
 }

@@ -35,14 +35,20 @@
         <div class="pick-slot"
              *ngFor="let pick of getTeamPicks('blue'); let i = index">
           <img [src]="pick.image" [alt]="pick.name" class="champion-img">
-          <span class="champion-name">{{ pick.name }}</span>
+          <div class="pick-info">
+            <span class="champion-name">{{ pick.name }}</span>
+            <span class="player-name">{{ getPlayerNameForPick('blue', i) }}</span>
+          </div>
         </div>
 
         <!-- Empty slots -->
         <div class="pick-slot empty"
-             *ngFor="let empty of [1,2,3,4,5].slice(getTeamPicks('blue').length)">
+             *ngFor="let empty of [1,2,3,4,5].slice(getTeamPicks('blue').length); let i = index">
           <div class="champion-placeholder">?</div>
-          <span class="champion-name">Aguardando...</span>
+          <div class="pick-info">
+            <span class="champion-name">Aguardando...</span>
+            <span class="player-name">{{ getPlayerNameForSlot('blue', getTeamPicks('blue').length + i) }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -69,14 +75,20 @@
         <div class="pick-slot"
              *ngFor="let pick of getTeamPicks('red'); let i = index">
           <img [src]="pick.image" [alt]="pick.name" class="champion-img">
-          <span class="champion-name">{{ pick.name }}</span>
+          <div class="pick-info">
+            <span class="champion-name">{{ pick.name }}</span>
+            <span class="player-name">{{ getPlayerNameForPick('red', i) }}</span>
+          </div>
         </div>
 
         <!-- Empty slots -->
         <div class="pick-slot empty"
-             *ngFor="let empty of [1,2,3,4,5].slice(getTeamPicks('red').length)">
+             *ngFor="let empty of [1,2,3,4,5].slice(getTeamPicks('red').length); let i = index">
           <div class="champion-placeholder">?</div>
-          <span class="champion-name">Aguardando...</span>
+          <div class="pick-info">
+            <span class="champion-name">Aguardando...</span>
+            <span class="player-name">{{ getPlayerNameForSlot('red', getTeamPicks('red').length + i) }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -165,6 +177,14 @@
             </p>
           </div>
         </div>
+        
+        <!-- Timer do Modal -->
+        <div class="modal-timer-section">
+          <div class="modal-timer" [class.warning]="modalTimeRemaining <= 10">
+            ⏱️ {{ modalTimeRemaining }}s
+          </div>
+        </div>
+        
         <button class="modal-close-btn" (click)="closeChampionModal()">
           ✕
         </button>
@@ -283,6 +303,98 @@
             {{ getCurrentActionIcon() }} Confirmar {{ getCurrentActionText() }}
           </button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== DIALOGO DE CONFIRMAÇÃO FINAL ========== -->
+  <div class="final-confirmation-overlay" *ngIf="showFinalConfirmation" (click)="cancelFinalDraft()">
+    <div class="final-confirmation-modal" (click)="$event.stopPropagation()">
+      <!-- Header -->
+      <div class="confirmation-header">
+        <div class="confirmation-icon">🎯</div>
+        <h2>Confirmar Seleção Final</h2>
+        <p>Verifique se todos os picks e bans estão corretos antes de continuar</p>
+      </div>
+
+      <!-- Conteúdo -->
+      <div class="confirmation-content">
+        <!-- Times -->
+        <div class="confirmation-teams">
+          <!-- Time Azul -->
+          <div class="confirmation-team blue-team">
+            <h3>🔵 Time Azul</h3>
+            <div class="team-players">
+              <div class="player-pick" *ngFor="let player of finalConfirmationData?.blueTeamPlayers; let i = index">
+                <div class="player-info">
+                  <span class="player-name">{{ player.summonerName }}</span>
+                </div>
+                <div class="champion-pick" *ngIf="finalConfirmationData?.blueTeamPicks[i]?.champion">
+                  <img [src]="finalConfirmationData.blueTeamPicks[i].champion.image" [alt]="finalConfirmationData.blueTeamPicks[i].champion.name" class="pick-img">
+                  <span class="champion-name">{{ finalConfirmationData.blueTeamPicks[i].champion.name }}</span>
+                  <button 
+                    class="edit-pick-btn" 
+                    *ngIf="(currentPlayer?.id === player.id || currentPlayer?.summonerName === player.summonerName) || isPlayerBot(player)"
+                    (click)="startEditingPick(player.id || player.summonerName, finalConfirmationData.blueTeamPicks[i].phaseIndex)">
+                    {{ isPlayerBot(player) ? '🤖 Confirmar' : '✏️ Editar' }}
+                  </button>
+                </div>
+                <div class="no-pick" *ngIf="!finalConfirmationData?.blueTeamPicks[i]?.champion">
+                  <span class="no-pick-text">Sem pick</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Time Vermelho -->
+          <div class="confirmation-team red-team">
+            <h3>🔴 Time Vermelho</h3>
+            <div class="team-players">
+              <div class="player-pick" *ngFor="let player of finalConfirmationData?.redTeamPlayers; let i = index">
+                <div class="player-info">
+                  <span class="player-name">{{ player.summonerName }}</span>
+                </div>
+                <div class="champion-pick" *ngIf="finalConfirmationData?.redTeamPicks[i]?.champion">
+                  <img [src]="finalConfirmationData.redTeamPicks[i].champion.image" [alt]="finalConfirmationData.redTeamPicks[i].champion.name" class="pick-img">
+                  <span class="champion-name">{{ finalConfirmationData.redTeamPicks[i].champion.name }}</span>
+                  <button 
+                    class="edit-pick-btn" 
+                    *ngIf="(currentPlayer?.id === player.id || currentPlayer?.summonerName === player.summonerName) || isPlayerBot(player)"
+                    (click)="startEditingPick(player.id || player.summonerName, finalConfirmationData.redTeamPicks[i].phaseIndex)">
+                    {{ isPlayerBot(player) ? '🤖 Confirmar' : '✏️ Editar' }}
+                  </button>
+                </div>
+                <div class="no-pick" *ngIf="!finalConfirmationData?.redTeamPicks[i]?.champion">
+                  <span class="no-pick-text">Sem pick</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bans -->
+        <div class="confirmation-bans" *ngIf="finalConfirmationData?.bannedChampions?.length > 0">
+          <h3>🚫 Campeões Banidos</h3>
+          <div class="banned-list">
+            <div class="banned-champion" *ngFor="let ban of finalConfirmationData.bannedChampions">
+              <img [src]="ban.image" [alt]="ban.name" class="banned-img">
+              <span class="banned-name">{{ ban.name }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ações -->
+      <div class="confirmation-actions">
+        <button class="btn btn-danger btn-lg" (click)="cancelPickBan()">
+          ❌ Cancelar Partida
+        </button>
+        <button class="btn btn-secondary btn-lg" (click)="cancelFinalDraft()">
+          ✏️ Editar Seleção
+        </button>
+        <button class="btn btn-success btn-lg" (click)="confirmFinalDraft()">
+          ✅ Confirmar e Continuar
+        </button>
       </div>
     </div>
   </div>
