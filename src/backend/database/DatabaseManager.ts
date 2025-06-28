@@ -1232,22 +1232,97 @@ export class DatabaseManager {
     }
   }
 
-  async cleanupTestMatches(): Promise<number> {
+  async cleanupTestMatches(): Promise<{ deletedCount: number, remainingMatches: number, deletedMatches: any[] }> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
     
     try {
+      console.log('🧹 [cleanupTestMatches] Iniciando limpeza COMPLETA da tabela custom_matches...');
+      
       // Garantir que a tabela existe antes de limpar
       await this.ensureCustomMatchesTable();
       
-      const [result] = await this.pool.execute(
-        "DELETE FROM custom_matches WHERE title LIKE '%test%' OR description LIKE '%test%'"
-      );
+      // Buscar todas as partidas antes de deletar para mostrar detalhes
+      const [allMatches] = await this.pool.execute(`
+        SELECT id, title, description, team1_players, team2_players, created_by, status, created_at, winner_team, custom_lp
+        FROM custom_matches
+        ORDER BY created_at DESC
+      `);
       
-      return (result as any).affectedRows;
+      const matchesToDelete = allMatches as any[];
+      console.log(`🔍 [cleanupTestMatches] Encontradas ${matchesToDelete.length} partidas para remoção completa`);
+      
+      if (matchesToDelete.length === 0) {
+        console.log('✅ [cleanupTestMatches] Nenhuma partida encontrada para remoção');
+        return {
+          deletedCount: 0,
+          remainingMatches: 0,
+          deletedMatches: []
+        };
+      }
+      
+      // Deletar TODAS as partidas da tabela
+      const [deleteResult] = await this.pool.execute('DELETE FROM custom_matches');
+      
+      const deletedCount = (deleteResult as any).affectedRows;
+      const remainingMatches = await this.getCustomMatchesCount();
+      
+      // Preparar detalhes das partidas deletadas
+      const deletedMatches = matchesToDelete.map(match => ({
+        id: match.id,
+        title: match.title || 'Sem título',
+        description: match.description || 'Sem descrição',
+        created_by: match.created_by || 'Sistema',
+        status: match.status || 'unknown',
+        created_at: match.created_at,
+        winner_team: match.winner_team,
+        custom_lp: match.custom_lp,
+        reasons: ['Limpeza completa da tabela']
+      }));
+      
+      console.log(`✅ [cleanupTestMatches] Limpeza COMPLETA concluída: ${deletedCount} partidas removidas, ${remainingMatches} restantes`);
+      
+      return {
+        deletedCount,
+        remainingMatches,
+        deletedMatches
+      };
+      
     } catch (error) {
-      console.error('Erro ao limpar partidas de teste:', error);
+      console.error('❌ [cleanupTestMatches] Erro ao limpar partidas:', error);
       throw error;
     }
+  }
+
+  /**
+   * Determina as razões para deletar uma partida
+   */
+  private getDeletionReasons(match: any): string[] {
+    const reasons: string[] = [];
+    
+    if (match.title?.toLowerCase().includes('test')) reasons.push('Título contém "test"');
+    if (match.description?.toLowerCase().includes('test')) reasons.push('Descrição contém "test"');
+    if (match.created_by?.toLowerCase().includes('test')) reasons.push('Criador contém "test"');
+    if (match.created_by?.toLowerCase().includes('bot')) reasons.push('Criador contém "bot"');
+    if (match.created_by?.toLowerCase().includes('fake')) reasons.push('Criador contém "fake"');
+    
+    if (match.team1_players?.toLowerCase().includes('bot')) reasons.push('Time 1 contém "bot"');
+    if (match.team2_players?.toLowerCase().includes('bot')) reasons.push('Time 2 contém "bot"');
+    if (match.team1_players?.toLowerCase().includes('test')) reasons.push('Time 1 contém "test"');
+    if (match.team2_players?.toLowerCase().includes('test')) reasons.push('Time 2 contém "test"');
+    
+    if (['cancelled', 'abandoned', 'error'].includes(match.status)) {
+      reasons.push(`Status suspeito: ${match.status}`);
+    }
+    
+    if (match.team1_players === '[]' || match.team2_players === '[]') {
+      reasons.push('Time vazio');
+    }
+    
+    if (!match.winner_team && match.custom_lp === 0) {
+      reasons.push('Partida sem resultado e sem LP');
+    }
+    
+    return reasons;
   }
 
   async clearAllCustomMatches(): Promise<number> {
@@ -1900,17 +1975,18 @@ export class DatabaseManager {
 
   /**
    * Calcula a mudança de LP baseada no sistema descrito em CUSTOM_MMR_LP_SYSTEM.md
+   * RECALIBRADO para ser mais balanceado
    */
   private calculateLPChange(playerMMR: number, opponentMMR: number, isWin: boolean): number {
-    // LP base: +18 para vitória, -15 para derrota
-    const baseLpWin = 18;
-    const baseLpLoss = -15;
+    // LP base: +15 para vitória, -18 para derrota (mais balanceado)
+    const baseLpWin = 15;
+    const baseLpLoss = -18;
     
     // Calcular diferença de MMR
     const mmrDifference = opponentMMR - playerMMR;
     
-    // Ajuste por diferença de MMR: ±8 LP para cada 100 pontos de diferença
-    const mmrAdjustment = (mmrDifference / 100) * 8;
+    // Ajuste por diferença de MMR: ±6 LP para cada 100 pontos de diferença (reduzido de 8)
+    const mmrAdjustment = (mmrDifference / 100) * 6;
     
     // LP inicial baseado no resultado
     let lpChange = isWin ? baseLpWin : baseLpLoss;
@@ -1918,34 +1994,34 @@ export class DatabaseManager {
     // Aplicar ajuste por diferença de MMR
     lpChange += mmrAdjustment;
     
-    // Ajustes por MMR atual do jogador
+    // Ajustes por MMR atual do jogador (reduzidos)
     if (playerMMR < 1200) {
       // Jogadores com MMR baixo (< 1200)
       const mmrBelow1200 = 1200 - playerMMR;
       if (isWin) {
-        // Vitórias: +1 LP adicional para cada 50 MMR abaixo de 1200
-        lpChange += Math.floor(mmrBelow1200 / 50);
+        // Vitórias: +0.5 LP adicional para cada 100 MMR abaixo de 1200 (reduzido)
+        lpChange += Math.floor(mmrBelow1200 / 100) * 0.5;
       } else {
-        // Derrotas: Perdas reduzidas: +1 LP para cada 100 MMR abaixo de 1200
-        lpChange += Math.floor(mmrBelow1200 / 100);
+        // Derrotas: Perdas reduzidas: +0.5 LP para cada 200 MMR abaixo de 1200 (reduzido)
+        lpChange += Math.floor(mmrBelow1200 / 200) * 0.5;
       }
     } else if (playerMMR > 1800) {
       // Jogadores com MMR alto (> 1800)
       const mmrAbove1800 = playerMMR - 1800;
       if (isWin) {
-        // Vitórias: -1 LP para cada 100 MMR acima de 1800
-        lpChange -= Math.floor(mmrAbove1800 / 100);
+        // Vitórias: -0.5 LP para cada 100 MMR acima de 1800 (reduzido)
+        lpChange -= Math.floor(mmrAbove1800 / 100) * 0.5;
       } else {
-        // Derrotas: Perdas aumentadas: -1 LP adicional para cada 80 MMR acima de 1800
-        lpChange -= Math.floor(mmrAbove1800 / 80);
+        // Derrotas: Perdas aumentadas: -0.5 LP adicional para cada 100 MMR acima de 1800 (reduzido)
+        lpChange -= Math.floor(mmrAbove1800 / 100) * 0.5;
       }
     }
     
-    // Aplicar limites
+    // Aplicar limites mais restritivos
     if (isWin) {
-      lpChange = Math.max(8, Math.min(35, lpChange));
+      lpChange = Math.max(5, Math.min(25, lpChange)); // Reduzido de 8-35 para 5-25
     } else {
-      lpChange = Math.max(-25, Math.min(-8, lpChange));
+      lpChange = Math.max(-30, Math.min(-5, lpChange)); // Aumentado de -25 a -8 para -30 a -5
     }
     
     return Math.round(lpChange);

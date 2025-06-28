@@ -758,38 +758,38 @@ export class App implements OnInit, OnDestroy {
     }
 
     // Confirmação do usuário
-    const confirmed = confirm('⚠️ ATENÇÃO: Esta ação irá deletar TODAS as partidas de teste/simulação do banco de dados.\n\nIsso inclui:\n- Partidas sem Riot ID real\n- Partidas com IDs fictícios\n- Partidas canceladas/incompletas\n\nEsta ação NÃO PODE ser desfeita.\n\nDeseja continuar?');
+    const confirmed = confirm('⚠️ ATENÇÃO: Esta ação irá DELETAR TODAS as partidas da tabela custom_matches.\n\nIsso inclui:\n- TODAS as partidas customizadas\n- Partidas reais e de teste\n- Histórico completo de partidas\n\nEsta ação NÃO PODE ser desfeita.\n\nDeseja continuar?');
 
     if (!confirmed) {
       return;
     }
 
     try {
-      this.addNotification('info', 'Limpando Banco', 'Removendo partidas de teste do banco de dados...');
-      console.log('🧹 Iniciando limpeza de partidas de teste');
+      this.addNotification('info', 'Limpando Banco', 'Removendo TODAS as partidas da tabela custom_matches...');
+      console.log('🧹 Iniciando limpeza COMPLETA da tabela custom_matches');
 
       const response = await this.apiService.cleanupTestMatches().toPromise();
       console.log('✅ Resposta da limpeza:', response);
 
       if (response && response.success) {
         this.addNotification('success', 'Limpeza Concluída',
-          `✅ ${response.deletedCount} partidas de teste removidas! Restaram ${response.remainingMatches} partidas reais.`);
+          `✅ ${response.deletedCount} partidas removidas! Tabela custom_matches completamente limpa.`);
 
-        console.log(`📊 Limpeza concluída: ${response.deletedCount} deletadas, ${response.remainingMatches} restantes`);
+        console.log(`📊 Limpeza completa concluída: ${response.deletedCount} deletadas, ${response.remainingMatches} restantes`);
 
         if (response.deletedMatches && response.deletedMatches.length > 0) {
           console.log('🗑️ Exemplos de partidas deletadas:');
-          response.deletedMatches.forEach((match: any, i: number) => {
-            console.log(`${i + 1}. ID ${match.id} (${match.match_id}): ${match.reasons?.join(', ')}`);
+          response.deletedMatches.slice(0, 5).forEach((match: any, i: number) => {
+            console.log(`${i + 1}. ID ${match.id}: ${match.title || 'Sem título'} - ${match.reasons?.join(', ')}`);
           });
         }
       } else {
-        this.addNotification('warning', 'Limpeza Sem Resultado', 'Nenhuma partida de teste foi encontrada para remoção.');
+        this.addNotification('warning', 'Limpeza Sem Resultado', 'Nenhuma partida foi encontrada para remoção.');
       }
 
     } catch (error) {
-      console.error('❌ Erro ao limpar partidas de teste:', error);
-      this.addNotification('error', 'Erro na Limpeza', 'Erro ao limpar partidas de teste do banco de dados');
+      console.error('❌ Erro ao limpar partidas:', error);
+      this.addNotification('error', 'Erro na Limpeza', 'Erro ao limpar partidas do banco de dados');
     }
   }
 

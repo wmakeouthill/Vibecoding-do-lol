@@ -13,41 +13,41 @@ Este documento descreve a implementação do sistema de MMR (MatchMaking Rating)
 ### 2. Cálculo de LP (League Points)
 
 #### Fórmula Base
-- **Vitória**: +18 LP (base)
-- **Derrota**: -15 LP (base)
+- **Vitória**: +15 LP (base) - RECALIBRADO
+- **Derrota**: -18 LP (base) - RECALIBRADO
 
 #### Ajustes por Diferença de MMR
-- Para cada 100 pontos de diferença de MMR, o LP é ajustado em ±8
+- Para cada 100 pontos de diferença de MMR, o LP é ajustado em ±6 (reduzido de ±8)
 - **Exemplo**: Se seu MMR é 200 e o adversário é 400 (diferença de +200):
-  - Vitória: +18 + (200/100 × 8) = +34 LP
-  - Derrota: -15 + (200/100 × 8) = +1 LP (perdas menores contra adversários mais fortes)
+  - Vitória: +15 + (200/100 × 6) = +27 LP
+  - Derrota: -18 + (200/100 × 6) = -6 LP (perdas menores contra adversários mais fortes)
 
 #### Ajustes por MMR Atual do Jogador
 
 ##### Jogadores com MMR Baixo (< 1200)
-- **Vitórias**: +1 LP adicional para cada 50 MMR abaixo de 1200
-- **Derrotas**: Perdas reduzidas: +1 LP para cada 100 MMR abaixo de 1200
+- **Vitórias**: +0.5 LP adicional para cada 100 MMR abaixo de 1200 (reduzido)
+- **Derrotas**: Perdas reduzidas: +0.5 LP para cada 200 MMR abaixo de 1200 (reduzido)
 
 ##### Jogadores com MMR Alto (> 1800)
-- **Vitórias**: -1 LP para cada 100 MMR acima de 1800
-- **Derrotas**: Perdas aumentadas: -1 LP adicional para cada 80 MMR acima de 1800
+- **Vitórias**: -0.5 LP para cada 100 MMR acima de 1800 (reduzido)
+- **Derrotas**: Perdas aumentadas: -0.5 LP adicional para cada 100 MMR acima de 1800 (reduzido)
 
 #### Limites de LP
-- **Vitória**: Mínimo +8 LP, Máximo +35 LP
-- **Derrota**: Mínimo -25 LP, Máximo -8 LP
+- **Vitória**: Mínimo +5 LP, Máximo +25 LP (reduzido de 8-35)
+- **Derrota**: Mínimo -30 LP, Máximo -5 LP (aumentado de -25 a -8)
 
 ### 3. Exemplos Práticos
 
 #### Jogador Iniciante (MMR 0)
-- Contra adversário MMR 0: +19 LP (vitória) / -14 LP (derrota)
-- Contra adversário MMR 200: +27 LP (vitória) / -6 LP (derrota)
+- Contra adversário MMR 0: +15 LP (vitória) / -18 LP (derrota)
+- Contra adversário MMR 200: +21 LP (vitória) / -12 LP (derrota)
 
 #### Jogador Intermediário (MMR 500)
-- Contra adversário MMR 500: +18 LP (vitória) / -15 LP (derrota)
-- Contra adversário MMR 300: +10 LP (vitória) / -23 LP (derrota)
+- Contra adversário MMR 500: +15 LP (vitória) / -18 LP (derrota)
+- Contra adversário MMR 300: +9 LP (vitória) / -24 LP (derrota)
 
 #### Jogador Avançado (MMR 900)
-- Contra adversário MMR 900: +17 LP (vitória) / -16 LP (derrota)
+- Contra adversário MMR 900: +15 LP (vitória) / -18 LP (derrota)
 - Contra adversário MMR 700: +9 LP (vitória) / -24 LP (derrota)
 
 ## Implementação Técnica

@@ -1783,26 +1783,20 @@ app.delete('/api/matches/cleanup-test-matches', (req: Request, res: Response) =>
     try {
       console.log('🧹 [DELETE /api/matches/cleanup-test-matches] Iniciando limpeza COMPLETA da tabela custom_matches');
       
-      // Contar total antes da limpeza
-      const totalBefore = await dbManager.getCustomMatchesCount();
+      // Executar limpeza completa
+      const result = await dbManager.cleanupTestMatches();
       
-      // Executar limpeza
-      const deletedCount = await dbManager.cleanupTestMatches();
-      
-      // Contar total depois da limpeza
-      const totalAfter = await dbManager.getCustomMatchesCount();
-      const remainingMatches = totalAfter;
-      
-      console.log('✅ [DELETE /api/matches/cleanup-test-matches] Limpeza concluída:', {
-        deletedCount,
-        remainingMatches,
-        totalBefore
+      console.log('✅ [DELETE /api/matches/cleanup-test-matches] Limpeza completa concluída:', {
+        deletedCount: result.deletedCount,
+        remainingMatches: result.remainingMatches
       });
-        res.json({
+      
+      res.json({
         success: true,
-        deletedCount,
-        remainingMatches,
-        message: `${deletedCount} partidas removidas. Tabela custom_matches limpa! Restaram ${remainingMatches} partidas.`
+        deletedCount: result.deletedCount,
+        remainingMatches: result.remainingMatches,
+        deletedMatches: result.deletedMatches,
+        message: `${result.deletedCount} partidas removidas. Tabela custom_matches completamente limpa! Restaram ${result.remainingMatches} partidas.`
       });
       
     } catch (error: any) {
