@@ -242,7 +242,7 @@ export class DatabaseManager {
       { key: 'mmr_gain_base', value: '25' },
       { key: 'mmr_loss_base', value: '25' },
       { key: 'mmr_k_factor', value: '32' },
-      { key: 'queue_timeout_minutes', value: '10' },
+      { key: 'queue_timeout_minutes', value: '180' },
       { key: 'min_players_for_match', value: '10' },
       { key: 'max_mmr_difference', value: '200' },
       { key: 'app_version', value: '1.0.0' },
