@@ -133,6 +133,33 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
     return `${primary} • ${secondary}`;
   }
 
+  /**
+   * Ordena jogadores por lane na ordem: top, jungle, mid, adc, support
+   */
+  getSortedPlayersByLane(players: PlayerInfo[]): PlayerInfo[] {
+    const laneOrder = ['top', 'jungle', 'mid', 'bot', 'support'];
+    
+    return [...players].sort((a, b) => {
+      const laneA = a.assignedLane || a.primaryLane || 'fill';
+      const laneB = b.assignedLane || b.primaryLane || 'fill';
+      
+      const indexA = laneOrder.indexOf(laneA);
+      const indexB = laneOrder.indexOf(laneB);
+      
+      // Se ambos têm lane válida, ordenar pela ordem definida
+      if (indexA !== -1 && indexB !== -1) {
+        return indexA - indexB;
+      }
+      
+      // Se apenas um tem lane válida, priorizar o que tem
+      if (indexA !== -1) return -1;
+      if (indexB !== -1) return 1;
+      
+      // Se nenhum tem lane válida, manter ordem original
+      return 0;
+    });
+  }
+
   getTeamSideName(side: 'blue' | 'red'): string {
     return side === 'blue' ? 'Time Azul' : 'Time Vermelho';
   }

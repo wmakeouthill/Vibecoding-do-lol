@@ -45,7 +45,7 @@
 
         <div class="players-list">
           <div class="player-card"
-               *ngFor="let player of matchData.teammates"
+               *ngFor="let player of getSortedPlayersByLane(matchData.teammates)"
                [class.current-player]="player.summonerName.includes('popcorn seller')">
             <div class="player-avatar">
               <img src="/assets/images/champion-placeholder.svg"
@@ -84,7 +84,7 @@
         </div>
 
         <div class="players-list">
-          <div class="player-card" *ngFor="let player of matchData.enemies">
+          <div class="player-card" *ngFor="let player of getSortedPlayersByLane(matchData.enemies)">
             <div class="player-avatar">
               <img src="/assets/images/champion-placeholder.svg"
                    alt="Avatar"

@@ -198,10 +198,21 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
 
     console.log(`🎯 Ação ${this.session.currentAction}: ${currentPhase.team} - ${currentPhase.action}`);
 
-    // Check if it's the current player's turn
-    this.checkIfMyTurn(currentPhase);
+    // Verificar se é minha vez
+    const wasMyTurn = this.isMyTurn;
+    this.isMyTurn = this.checkIfMyTurn(currentPhase);
 
-    // Check if it's a bot's turn and auto-pick after 3 seconds
+    console.log(`🎯 Vez de: ${this.getCurrentPlayerName()}, É minha vez: ${this.isMyTurn}`);
+
+    // Abrir modal automaticamente se acabou de ser minha vez
+    if (this.isMyTurn && !wasMyTurn && !this.showChampionModal) {
+      console.log('🎯 Abrindo modal automaticamente para minha vez');
+      setTimeout(() => {
+        this.openChampionModal();
+      }, 500); // Pequeno delay para garantir que a interface foi atualizada
+    }
+
+    // Verificar se é um bot e fazer ação automática
     this.checkForBotAutoAction(currentPhase);
   }
   private checkForBotAutoAction(phase: PickBanPhase) {
@@ -396,48 +407,95 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     console.log(`🤖 [Bot] Confirmando seleção...`);
     this.confirmSelection();
   }
-  checkIfMyTurn(phase: PickBanPhase) {
-    if (!this.currentPlayer || !this.session) return;
+  /**
+   * Verifica se é a vez do jogador atual
+   */
+  checkIfMyTurn(phase: PickBanPhase): boolean {
+    if (!this.session || !this.currentPlayer) return false;
 
-    const currentPlayer = this.getCurrentPlayer();
-
-    console.log(`🔍 [Turn] Verificando vez:`, {
-      currentPlayerFromSession: currentPlayer?.summonerName,
-      currentPlayerFromInput: this.currentPlayer?.summonerName,
-      currentPlayerFromSessionId: currentPlayer?.id,
-      currentPlayerFromInputId: this.currentPlayer?.id,
-      phaseLocked: phase.locked,
-      isEditingMode: this.isEditingMode,
-      editingPlayerId: this.editingPlayerId
-    });
-
-    // It's my turn if I'm the current player for this action
-    const wasMyTurn = this.isMyTurn;
-    
-    // Verificar se é minha vez (considerando modo de edição)
-    let isMyTurnNow = currentPlayer &&
-      (currentPlayer.id === this.currentPlayer.id ||
-        currentPlayer.summonerName === this.currentPlayer.summonerName ||
-        (currentPlayer.summonerName && this.currentPlayer.summonerName &&
-          currentPlayer.summonerName.includes(this.currentPlayer.summonerName.split('#')[0]))) &&
-      !phase.locked;
-
-    // Se está em modo de edição, verificar se sou o jogador que está editando
+    // Se está em modo de edição, verificar se o jogador atual é quem está editando
     if (this.isEditingMode && this.editingPlayerId) {
-      isMyTurnNow = isMyTurnNow && this.canCurrentPlayerEdit();
+      // Usar a mesma lógica de comparação do canCurrentPlayerEdit
+      const currentId = this.currentPlayer.id?.toString();
+      const currentName = this.currentPlayer.summonerName || this.currentPlayer.name;
+      const editingId = this.editingPlayerId?.toString();
+      const editingName = this.editingPlayerId;
+      
+      // Verificar por ID
+      if (currentId && editingId && currentId === editingId) {
+        console.log(`🔍 [checkIfMyTurn] Modo edição - Match por ID: ${currentId}`);
+        return true;
+      }
+      
+      // Verificar por nome exato
+      if (currentName && editingName && currentName === editingName) {
+        console.log(`🔍 [checkIfMyTurn] Modo edição - Match por nome exato: ${currentName}`);
+        return true;
+      }
+      
+      // Verificar por nome parcial (sem tagline)
+      if (currentName && editingName && currentName.includes('#')) {
+        const currentGameName = currentName.split('#')[0];
+        if (editingName.includes('#')) {
+          const editingGameName = editingName.split('#')[0];
+          if (currentGameName === editingGameName) {
+            console.log(`🔍 [checkIfMyTurn] Modo edição - Match por gameName: ${currentGameName}`);
+            return true;
+          }
+        } else if (currentGameName === editingName) {
+          console.log(`🔍 [checkIfMyTurn] Modo edição - Match por gameName (sem tagline): ${currentGameName}`);
+          return true;
+        }
+      }
+      
+      // Verificar se editingName é gameName do currentPlayer
+      if (currentName && editingName && currentName.startsWith(editingName + '#')) {
+        console.log(`🔍 [checkIfMyTurn] Modo edição - Match por gameName prefix: ${editingName}`);
+        return true;
+      }
+      
+      console.log(`🔍 [checkIfMyTurn] Modo edição - No match - Current: ${currentId}/${currentName}, Editing: ${editingId}/${editingName}`);
+      return false;
     }
 
-    this.isMyTurn = isMyTurnNow;
+    // Lógica normal para turnos
+    const currentPlayer = this.getCurrentPlayer();
+    if (!currentPlayer) return false;
 
-    console.log(`🎯 Vez de: ${currentPlayer?.summonerName || 'Unknown'}, É minha vez: ${this.isMyTurn}`);
+    const currentPlayerId = currentPlayer.id?.toString();
+    const currentPlayerName = currentPlayer.summonerName || currentPlayer.name;
+    const myId = this.currentPlayer.id?.toString();
+    const myName = this.currentPlayer.summonerName || this.currentPlayer.name;
 
-    // Abrir modal automaticamente se acabou de ser minha vez
-    if (this.isMyTurn && !wasMyTurn && !this.showChampionModal) {
-      console.log('🎯 Abrindo modal automaticamente para minha vez');
-      setTimeout(() => {
-        this.openChampionModal();
-      }, 500); // Pequeno delay para garantir que a interface foi atualizada
+    // Verificar por ID
+    if (currentPlayerId && myId && currentPlayerId === myId) {
+      console.log(`🔍 [checkIfMyTurn] Normal - Match por ID: ${currentPlayerId}`);
+      return true;
     }
+
+    // Verificar por nome exato
+    if (currentPlayerName && myName && currentPlayerName === myName) {
+      console.log(`🔍 [checkIfMyTurn] Normal - Match por nome exato: ${currentPlayerName}`);
+      return true;
+    }
+
+    // Verificar por nome parcial (sem tagline)
+    if (currentPlayerName && myName && currentPlayerName.includes('#')) {
+      const currentGameName = currentPlayerName.split('#')[0];
+      if (myName.includes('#')) {
+        const myGameName = myName.split('#')[0];
+        if (currentGameName === myGameName) {
+          console.log(`🔍 [checkIfMyTurn] Normal - Match por gameName: ${currentGameName}`);
+          return true;
+        }
+      } else if (currentGameName === myName) {
+        console.log(`🔍 [checkIfMyTurn] Normal - Match por gameName (sem tagline): ${currentGameName}`);
+        return true;
+      }
+    }
+
+    console.log(`🔍 [checkIfMyTurn] Normal - No match - Current: ${currentPlayerId}/${currentPlayerName}, Me: ${myId}/${myName}`);
+    return false;
   }
 
   getPlayerTeam(): 'blue' | 'red' {
@@ -818,37 +876,109 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Obtém o nome do jogador atual
+   * Obtém o nome do jogador atual para o modal
    */
   getCurrentPlayerNameForModal(): string {
-    const currentPlayer = this.getCurrentPlayer();
-    if (!currentPlayer) return 'Desconhecido';
+    if (!this.session) return 'Desconhecido';
+
+    // Se está em modo de edição, mostrar o jogador que está editando
+    if (this.isEditingMode && this.editingPlayerId) {
+      const allPlayers = [...this.session.blueTeam, ...this.session.redTeam];
+      const editingPlayer = allPlayers.find(p => 
+        p.id?.toString() === this.editingPlayerId?.toString() ||
+        p.summonerName === this.editingPlayerId ||
+        p.name === this.editingPlayerId
+      );
+      
+      if (editingPlayer) {
+        return editingPlayer.summonerName || editingPlayer.name || 'Jogador';
+      }
+    }
+
+    // Caso contrário, usar a lógica normal
+    const currentPhase = this.session.phases[this.session.currentAction];
+    if (!currentPhase) return 'Desconhecido';
+
+    const team = currentPhase.team === 'blue' ? this.session.blueTeam : this.session.redTeam;
+    const playerIndex = this.getPlayerIndexForPick(currentPhase.team, Math.floor(this.session.currentAction / 2));
     
-    return currentPlayer.summonerName || currentPlayer.name || 'Jogador';
+    if (playerIndex < team.length) {
+      return team[playerIndex].summonerName || team[playerIndex].name || 'Jogador';
+    }
+
+    return 'Desconhecido';
   }
 
   /**
-   * Obtém o time do jogador atual
+   * Obtém o time do jogador atual para o modal
    */
   getCurrentPlayerTeamForModal(): string {
     if (!this.session) return '';
-    
+
+    // Se está em modo de edição, mostrar o time do jogador que está editando
+    if (this.isEditingMode && this.editingPlayerId) {
+      const blueTeamPlayer = this.session.blueTeam.find(p => 
+        p.id?.toString() === this.editingPlayerId?.toString() ||
+        p.summonerName === this.editingPlayerId ||
+        p.name === this.editingPlayerId
+      );
+      
+      if (blueTeamPlayer) {
+        return 'Time Azul';
+      }
+      
+      const redTeamPlayer = this.session.redTeam.find(p => 
+        p.id?.toString() === this.editingPlayerId?.toString() ||
+        p.summonerName === this.editingPlayerId ||
+        p.name === this.editingPlayerId
+      );
+      
+      if (redTeamPlayer) {
+        return 'Time Vermelho';
+      }
+    }
+
+    // Caso contrário, usar a lógica normal
     const currentPhase = this.session.phases[this.session.currentAction];
     if (!currentPhase) return '';
-    
+
     return currentPhase.team === 'blue' ? 'Time Azul' : 'Time Vermelho';
   }
 
   /**
-   * Obtém a cor do time atual
+   * Obtém a cor do time atual para o modal
    */
   getCurrentTeamColor(): string {
-    if (!this.session) return '#ffffff';
-    
+    if (!this.session) return '#3498db';
+
+    // Se está em modo de edição, mostrar a cor do time do jogador que está editando
+    if (this.isEditingMode && this.editingPlayerId) {
+      const blueTeamPlayer = this.session.blueTeam.find(p => 
+        p.id?.toString() === this.editingPlayerId?.toString() ||
+        p.summonerName === this.editingPlayerId ||
+        p.name === this.editingPlayerId
+      );
+      
+      if (blueTeamPlayer) {
+        return '#3498db'; // Azul
+      }
+      
+      const redTeamPlayer = this.session.redTeam.find(p => 
+        p.id?.toString() === this.editingPlayerId?.toString() ||
+        p.summonerName === this.editingPlayerId ||
+        p.name === this.editingPlayerId
+      );
+      
+      if (redTeamPlayer) {
+        return '#e74c3c'; // Vermelho
+      }
+    }
+
+    // Caso contrário, usar a lógica normal
     const currentPhase = this.session.phases[this.session.currentAction];
-    if (!currentPhase) return '#ffffff';
-    
-    return currentPhase.team === 'blue' ? '#5bc0de' : '#d9534f';
+    if (!currentPhase) return '#3498db';
+
+    return currentPhase.team === 'blue' ? '#3498db' : '#e74c3c';
   }
 
   // ========== MÉTODOS PARA TIMER DO MODAL ==========
@@ -908,39 +1038,64 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
    * Organiza o time por lanes fixas (TOP, JUNGLE, MIDDLE, ADC, SUPPORT)
    */
   private organizeTeamByLanes(teamPlayers: any[], teamPicks: any[]): any[] {
-    const lanes = ['TOP', 'JUNGLE', 'MIDDLE', 'ADC', 'SUPPORT'];
-    // Mapear lane para player
+    const laneOrder = ['top', 'jungle', 'mid', 'bot', 'support'];
+    
+    // Ordenar jogadores por lane primeiro
+    const sortedPlayers = [...teamPlayers].sort((a, b) => {
+      const laneA = (a.assignedLane || a.primaryLane || 'fill').toLowerCase();
+      const laneB = (b.assignedLane || b.primaryLane || 'fill').toLowerCase();
+      
+      const indexA = laneOrder.indexOf(laneA);
+      const indexB = laneOrder.indexOf(laneB);
+      
+      // Se ambos têm lane válida, ordenar pela ordem definida
+      if (indexA !== -1 && indexB !== -1) {
+        return indexA - indexB;
+      }
+      
+      // Se apenas um tem lane válida, priorizar o que tem
+      if (indexA !== -1) return -1;
+      if (indexB !== -1) return 1;
+      
+      // Se nenhum tem lane válida, manter ordem original
+      return 0;
+    });
+
+    // Mapear lane para player ordenado
     const laneMap: { [lane: string]: any } = {};
-    // Primeiro, tentar usar assignedLane ou primaryLane
-    teamPlayers.forEach((player, idx) => {
-      const lane = (player.assignedLane || player.primaryLane || player.primary_lane || '').toUpperCase();
-      if (lanes.includes(lane) && !laneMap[lane]) {
+    
+    // Primeira passada: atribuir jogadores ordenados às lanes
+    sortedPlayers.forEach((player, index) => {
+      if (index < laneOrder.length) {
+        const lane = laneOrder[index];
         laneMap[lane] = { player, pick: null };
       }
     });
-    // Fallback: se não tem lane, preencher por ordem
-    let fallbackIdx = 0;
-    lanes.forEach(lane => {
-      if (!laneMap[lane] && teamPlayers[fallbackIdx]) {
-        laneMap[lane] = { player: teamPlayers[fallbackIdx], pick: null };
-        fallbackIdx++;
-      }
-    });
-    // Mapear picks para lanes (por playerId)
+
+    // Segunda passada: mapear picks para lanes (por playerId)
     teamPicks.forEach(pick => {
-      const player = teamPlayers.find(p => (p.id && pick.playerId && p.id == pick.playerId) || (p.summonerName && pick.playerName && p.summonerName == pick.playerName));
-      let lane = (player?.assignedLane || player?.primaryLane || player?.primary_lane || '').toUpperCase();
-      if (!lanes.includes(lane)) {
-        // fallback: por ordem do pick
-        lane = lanes[teamPicks.indexOf(pick)] || 'TOP';
-      }
-      if (laneMap[lane]) {
-        laneMap[lane].pick = pick.champion;
+      const player = sortedPlayers.find(p => 
+        (p.id && pick.playerId && p.id.toString() === pick.playerId.toString()) || 
+        (p.summonerName && pick.playerName && p.summonerName === pick.playerName)
+      );
+      
+      if (player) {
+        let lane = (player.assignedLane || player.primaryLane || 'fill').toLowerCase();
+        if (!laneOrder.includes(lane)) {
+          // fallback: encontrar a lane do jogador na ordem
+          const playerIndex = sortedPlayers.indexOf(player);
+          lane = laneOrder[playerIndex] || 'top';
+        }
+        
+        if (laneMap[lane]) {
+          laneMap[lane].pick = pick.champion;
+        }
       }
     });
+
     // Retornar array ordenado por lanes
-    return lanes.map(lane => ({
-      lane,
+    return laneOrder.map(lane => ({
+      lane: lane.toUpperCase(),
       player: laneMap[lane]?.player || null,
       champion: laneMap[lane]?.pick || null
     }));
@@ -1068,15 +1223,18 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
 
     console.log(`✏️ [Edição] Iniciando edição para jogador ${playerId} na fase ${phaseIndex}`);
 
-    // Verificar se o jogador atual pode editar este pick
-    if (!this.canCurrentPlayerEdit()) {
-      console.log(`❌ [Edição] Jogador atual não pode editar este pick`);
-      return;
-    }
-
-    // Definir o jogador que está editando
+    // Definir o jogador que está editando PRIMEIRO
     this.editingPlayerId = playerId;
     this.isEditingMode = true;
+
+    // AGORA verificar se o jogador atual pode editar este pick
+    if (!this.canCurrentPlayerEdit()) {
+      console.log(`❌ [Edição] Jogador atual não pode editar este pick`);
+      // Resetar se não pode editar
+      this.editingPlayerId = null;
+      this.isEditingMode = false;
+      return;
+    }
 
     // Encontrar a fase correta para edição
     let targetPhaseIndex = phaseIndex;
@@ -1112,13 +1270,9 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     // Atualizar turno
     this.updateCurrentTurn();
 
-    // Abrir modal automaticamente após um pequeno delay
-    setTimeout(() => {
-      if (this.isMyTurn && !this.showChampionModal) {
-        console.log('🎯 [Edição] Abrindo modal automaticamente para edição');
-        this.openChampionModal();
-      }
-    }, 1000);
+    // Abrir modal automaticamente imediatamente
+    console.log('🎯 [Edição] Abrindo modal automaticamente para edição');
+    this.openChampionModal();
   }
 
   /**
@@ -1127,15 +1281,47 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
   canCurrentPlayerEdit(): boolean {
     if (!this.currentPlayer || !this.editingPlayerId) return false;
     
-    // Verificar por ID ou summonerName
-    const canEdit = this.currentPlayer.id === this.editingPlayerId || 
-                   this.currentPlayer.summonerName === this.editingPlayerId ||
-                   (this.currentPlayer.id && this.currentPlayer.id.toString() === this.editingPlayerId.toString()) ||
-                   (this.currentPlayer.summonerName && this.currentPlayer.summonerName === this.editingPlayerId);
+    // Normalizar os valores para comparação
+    const currentId = this.currentPlayer.id?.toString();
+    const currentName = this.currentPlayer.summonerName || this.currentPlayer.name;
+    const editingId = this.editingPlayerId?.toString();
+    const editingName = this.editingPlayerId;
     
-    console.log(`🔍 [canCurrentPlayerEdit] Current: ${this.currentPlayer.id}/${this.currentPlayer.summonerName}, Editing: ${this.editingPlayerId}, CanEdit: ${canEdit}`);
+    // Verificar por ID
+    if (currentId && editingId && currentId === editingId) {
+      console.log(`🔍 [canCurrentPlayerEdit] Match por ID: ${currentId}`);
+      return true;
+    }
     
-    return canEdit;
+    // Verificar por nome exato
+    if (currentName && editingName && currentName === editingName) {
+      console.log(`🔍 [canCurrentPlayerEdit] Match por nome exato: ${currentName}`);
+      return true;
+    }
+    
+    // Verificar por nome parcial (sem tagline)
+    if (currentName && editingName && currentName.includes('#')) {
+      const currentGameName = currentName.split('#')[0];
+      if (editingName.includes('#')) {
+        const editingGameName = editingName.split('#')[0];
+        if (currentGameName === editingGameName) {
+          console.log(`🔍 [canCurrentPlayerEdit] Match por gameName: ${currentGameName}`);
+          return true;
+        }
+      } else if (currentGameName === editingName) {
+        console.log(`🔍 [canCurrentPlayerEdit] Match por gameName (sem tagline): ${currentGameName}`);
+        return true;
+      }
+    }
+    
+    // Verificar se editingName é gameName do currentPlayer
+    if (currentName && editingName && currentName.startsWith(editingName + '#')) {
+      console.log(`🔍 [canCurrentPlayerEdit] Match por gameName prefix: ${editingName}`);
+      return true;
+    }
+    
+    console.log(`🔍 [canCurrentPlayerEdit] No match - Current: ${currentId}/${currentName}, Editing: ${editingId}/${editingName}`);
+    return false;
   }
 
   /**
@@ -1238,5 +1424,84 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
       'fill': '🎲'
     };
     return icons[lane.toLowerCase()] || '❓';
+  }
+
+  /**
+   * Ordena jogadores por lane na ordem: top, jungle, mid, adc, support
+   */
+  getSortedTeamByLane(team: 'blue' | 'red'): any[] {
+    if (!this.session) return [];
+
+    const teamPlayers = team === 'blue' ? this.session.blueTeam : this.session.redTeam;
+    const laneOrder = ['top', 'jungle', 'mid', 'bot', 'support'];
+    
+    return [...teamPlayers].sort((a, b) => {
+      const laneA = a.assignedLane || a.primaryLane || 'fill';
+      const laneB = b.assignedLane || b.primaryLane || 'fill';
+      
+      const indexA = laneOrder.indexOf(laneA);
+      const indexB = laneOrder.indexOf(laneB);
+      
+      // Se ambos têm lane válida, ordenar pela ordem definida
+      if (indexA !== -1 && indexB !== -1) {
+        return indexA - indexB;
+      }
+      
+      // Se apenas um tem lane válida, priorizar o que tem
+      if (indexA !== -1) return -1;
+      if (indexB !== -1) return 1;
+      
+      // Se nenhum tem lane válida, manter ordem original
+      return 0;
+    });
+  }
+
+  /**
+   * Obtém a lane atribuída a um jogador específico (para uso direto com objeto player)
+   */
+  getPlayerLaneDisplayForPlayer(player: any): string {
+    if (!player) return '';
+
+    const assignedLane = player.assignedLane || player.primaryLane || 'fill';
+    const isAutofill = player.isAutofill || false;
+    
+    const laneName = this.getLaneDisplayName(assignedLane.toUpperCase());
+    const laneIcon = this.getLaneIcon(assignedLane);
+    
+    if (isAutofill) {
+      return `${laneIcon} ${laneName} (Auto)`;
+    }
+    return `${laneIcon} ${laneName}`;
+  }
+
+  /**
+   * Confirma o pick de um bot
+   */
+  confirmBotPick(playerId: string, phaseIndex: number): void {
+    if (!this.session) return;
+
+    console.log(`🤖 [Bot] Confirmando pick do bot ${playerId} na fase ${phaseIndex}`);
+
+    // Encontrar a fase do bot
+    let targetPhaseIndex = phaseIndex;
+    if (phaseIndex === undefined || phaseIndex === null) {
+      const teamPicks = this.session.phases.filter(p => p.action === 'pick' && p.champion);
+      const botPick = teamPicks.find(p => 
+        (p.playerId && p.playerId.toString() === playerId.toString()) ||
+        (p.playerName && p.playerName === playerId)
+      );
+      if (botPick) {
+        targetPhaseIndex = this.session.phases.indexOf(botPick);
+      }
+    }
+
+    // Marcar a fase como confirmada
+    if (targetPhaseIndex !== undefined && targetPhaseIndex >= 0 && targetPhaseIndex < this.session.phases.length) {
+      this.session.phases[targetPhaseIndex].locked = true;
+      console.log(`🤖 [Bot] Pick confirmado na fase ${targetPhaseIndex}`);
+    }
+
+    // Voltar para a confirmação final
+    this.showFinalConfirmationDialog();
   }
 }

@@ -42,14 +42,14 @@
           </div>
         </div>
 
-        <!-- Empty slots -->
+        <!-- Empty slots ordenados por lane -->
         <div class="pick-slot empty"
-             *ngFor="let empty of [1,2,3,4,5].slice(getTeamPicks('blue').length); let i = index">
+             *ngFor="let player of getSortedTeamByLane('blue').slice(getTeamPicks('blue').length); let i = index">
           <div class="champion-placeholder">?</div>
           <div class="pick-info">
             <span class="champion-name">Aguardando...</span>
-            <span class="player-name">{{ getPlayerNameForSlot('blue', getTeamPicks('blue').length + i) }}</span>
-            <span class="player-lane">{{ getPlayerLaneDisplay('blue', getTeamPicks('blue').length + i) }}</span>
+            <span class="player-name">{{ player.summonerName || player.name || 'Jogador' }}</span>
+            <span class="player-lane">{{ getPlayerLaneDisplayForPlayer(player) }}</span>
           </div>
         </div>
       </div>
@@ -84,14 +84,14 @@
           </div>
         </div>
 
-        <!-- Empty slots -->
+        <!-- Empty slots ordenados por lane -->
         <div class="pick-slot empty"
-             *ngFor="let empty of [1,2,3,4,5].slice(getTeamPicks('red').length); let i = index">
+             *ngFor="let player of getSortedTeamByLane('red').slice(getTeamPicks('red').length); let i = index">
           <div class="champion-placeholder">?</div>
           <div class="pick-info">
             <span class="champion-name">Aguardando...</span>
-            <span class="player-name">{{ getPlayerNameForSlot('red', getTeamPicks('red').length + i) }}</span>
-            <span class="player-lane">{{ getPlayerLaneDisplay('red', getTeamPicks('red').length + i) }}</span>
+            <span class="player-name">{{ player.summonerName || player.name || 'Jogador' }}</span>
+            <span class="player-lane">{{ getPlayerLaneDisplayForPlayer(player) }}</span>
           </div>
         </div>
       </div>
@@ -324,93 +324,90 @@
       <!-- Conteúdo -->
       <div class="confirmation-content">
         <!-- Times lado a lado, igual à tela principal -->
-        <div class="teams-container-side-by-side">
+        <div class="teams-container">
           <!-- Time Azul -->
-          <div class="team-section blue-team">
+          <div class="team blue-team">
             <div class="team-header">
-              <h5 class="team-title">
-                <span class="team-color-indicator blue"></span>
-                Time Azul
-              </h5>
+              <span class="team-name">🔵 Time Azul</span>
             </div>
-            <div class="team-players-by-lane">
-              <div class="lane-row" *ngFor="let slot of finalConfirmationData?.blueTeamByLane">
-                <div class="participant-detailed-card">
-                  <div class="player-lane-info">
-                    <span class="player-name">{{ slot.player?.summonerName || slot.player?.name || 'Jogador' }} - {{ getLaneDisplayName(slot.lane) }}</span>
-                    <span class="assigned-lane" [class.autofill]="slot.player?.isAutofill">
-                      {{ getPlayerLaneDisplay('blue', finalConfirmationData?.blueTeamByLane?.indexOf(slot) || 0) }}
-                    </span>
+
+            <div class="team-picks">
+              <div class="pick-slot"
+                   *ngFor="let slot of finalConfirmationData?.blueTeamByLane; let i = index">
+                <ng-container *ngIf="slot.champion">
+                  <img [src]="slot.champion.image" [alt]="slot.champion.name" class="champion-img">
+                  <div class="pick-info">
+                    <span class="champion-name">{{ slot.champion.name }}</span>
+                    <span class="player-name">{{ slot.player?.summonerName || slot.player?.name || 'Jogador' }}</span>
+                    <span class="player-lane">{{ getLaneDisplayName(slot.lane) }}</span>
                   </div>
-                  <div class="champion-info">
-                    <ng-container *ngIf="slot.champion">
-                      <img [src]="slot.champion.image" [alt]="slot.champion.name" class="pick-img">
-                      <span class="champion-name">{{ slot.champion.name }}</span>
-                    </ng-container>
-                    <ng-container *ngIf="!slot.champion">
-                      <span class="no-pick-text">Sem pick</span>
-                    </ng-container>
+                </ng-container>
+                <ng-container *ngIf="!slot.champion">
+                  <div class="champion-placeholder">?</div>
+                  <div class="pick-info">
+                    <span class="champion-name">Sem pick</span>
+                    <span class="player-name">{{ slot.player?.summonerName || slot.player?.name || 'Jogador' }}</span>
+                    <span class="player-lane">{{ getLaneDisplayName(slot.lane) }}</span>
                   </div>
-                  <div class="edit-btn-cell">
-                    <button 
-                      class="edit-pick-btn" 
-                      *ngIf="(currentPlayer?.id === slot.player?.id || currentPlayer?.summonerName === slot.player?.summonerName) || isPlayerBot(slot.player)"
-                      (click)="startEditingPick(slot.player?.id || slot.player?.summonerName, slot.champion?.phaseIndex)">
-                      {{ isPlayerBot(slot.player) ? '🤖 Confirmar' : '✏️ Editar' }}
-                    </button>
-                  </div>
+                </ng-container>
+                <div class="edit-btn-cell">
+                  <button 
+                    class="edit-pick-btn" 
+                    *ngIf="(currentPlayer?.id === slot.player?.id || currentPlayer?.summonerName === slot.player?.summonerName) || isPlayerBot(slot.player)"
+                    (click)="isPlayerBot(slot.player) ? confirmBotPick(slot.player?.id || slot.player?.summonerName, slot.champion?.phaseIndex) : startEditingPick(slot.player?.id || slot.player?.summonerName, slot.champion?.phaseIndex)">
+                    {{ isPlayerBot(slot.player) ? '🤖 Confirmar Bot' : '✏️ Editar' }}
+                  </button>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Center - Bans -->
+          <div class="bans-section">
+            <h3>🚫 Banidos</h3>
+            <div class="banned-champions">
+              <div class="banned-champion"
+                   *ngFor="let ban of finalConfirmationData?.bannedChampions">
+                <img [src]="ban.image" [alt]="ban.name" class="banned-img">
+                <span class="banned-name">{{ ban.name }}</span>
               </div>
             </div>
           </div>
 
           <!-- Time Vermelho -->
-          <div class="team-section red-team">
+          <div class="team red-team">
             <div class="team-header">
-              <h5 class="team-title">
-                <span class="team-color-indicator red"></span>
-                Time Vermelho
-              </h5>
+              <span class="team-name">🔴 Time Vermelho</span>
             </div>
-            <div class="team-players-by-lane">
-              <div class="lane-row" *ngFor="let slot of finalConfirmationData?.redTeamByLane">
-                <div class="participant-detailed-card">
-                  <div class="player-lane-info">
-                    <span class="player-name">{{ slot.player?.summonerName || slot.player?.name || 'Jogador' }} - {{ getLaneDisplayName(slot.lane) }}</span>
-                    <span class="assigned-lane" [class.autofill]="slot.player?.isAutofill">
-                      {{ getPlayerLaneDisplay('red', finalConfirmationData?.redTeamByLane?.indexOf(slot) || 0) }}
-                    </span>
+
+            <div class="team-picks">
+              <div class="pick-slot"
+                   *ngFor="let slot of finalConfirmationData?.redTeamByLane; let i = index">
+                <ng-container *ngIf="slot.champion">
+                  <img [src]="slot.champion.image" [alt]="slot.champion.name" class="champion-img">
+                  <div class="pick-info">
+                    <span class="champion-name">{{ slot.champion.name }}</span>
+                    <span class="player-name">{{ slot.player?.summonerName || slot.player?.name || 'Jogador' }}</span>
+                    <span class="player-lane">{{ getLaneDisplayName(slot.lane) }}</span>
                   </div>
-                  <div class="champion-info">
-                    <ng-container *ngIf="slot.champion">
-                      <img [src]="slot.champion.image" [alt]="slot.champion.name" class="pick-img">
-                      <span class="champion-name">{{ slot.champion.name }}</span>
-                    </ng-container>
-                    <ng-container *ngIf="!slot.champion">
-                      <span class="no-pick-text">Sem pick</span>
-                    </ng-container>
+                </ng-container>
+                <ng-container *ngIf="!slot.champion">
+                  <div class="champion-placeholder">?</div>
+                  <div class="pick-info">
+                    <span class="champion-name">Sem pick</span>
+                    <span class="player-name">{{ slot.player?.summonerName || slot.player?.name || 'Jogador' }}</span>
+                    <span class="player-lane">{{ getLaneDisplayName(slot.lane) }}</span>
                   </div>
-                  <div class="edit-btn-cell">
-                    <button 
-                      class="edit-pick-btn" 
-                      *ngIf="(currentPlayer?.id === slot.player?.id || currentPlayer?.summonerName === slot.player?.summonerName) || isPlayerBot(slot.player)"
-                      (click)="startEditingPick(slot.player?.id || slot.player?.summonerName, slot.champion?.phaseIndex)">
-                      {{ isPlayerBot(slot.player) ? '🤖 Confirmar' : '✏️ Editar' }}
-                    </button>
-                  </div>
+                </ng-container>
+                <div class="edit-btn-cell">
+                  <button 
+                    class="edit-pick-btn" 
+                    *ngIf="(currentPlayer?.id === slot.player?.id || currentPlayer?.summonerName === slot.player?.summonerName) || isPlayerBot(slot.player)"
+                    (click)="isPlayerBot(slot.player) ? confirmBotPick(slot.player?.id || slot.player?.summonerName, slot.champion?.phaseIndex) : startEditingPick(slot.player?.id || slot.player?.summonerName, slot.champion?.phaseIndex)">
+                    {{ isPlayerBot(slot.player) ? '🤖 Confirmar Bot' : '✏️ Editar' }}
+                  </button>
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Bans -->
-        <div class="confirmation-bans" *ngIf="finalConfirmationData?.bannedChampions?.length > 0">
-          <h3>🚫 Campeões Banidos</h3>
-          <div class="banned-list">
-            <div class="banned-champion" *ngFor="let ban of finalConfirmationData.bannedChampions">
-              <img [src]="ban.image" [alt]="ban.name" class="banned-img">
-              <span class="banned-name">{{ ban.name }}</span>
             </div>
           </div>
         </div>
