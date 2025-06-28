@@ -257,6 +257,46 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
     case 'ping':
       ws.send(JSON.stringify({ type: 'pong' }));
       break;
+    case 'accept_match':
+      console.log('✅ Recebida mensagem accept_match:', data.data);
+      try {
+        await matchmakingService.acceptMatch(
+          data.data.playerId,
+          data.data.matchId,
+          data.data.summonerName
+        );
+        ws.send(JSON.stringify({ 
+          type: 'match_accepted', 
+          data: { matchId: data.data.matchId } 
+        }));
+      } catch (error: any) {
+        console.error('❌ Erro ao aceitar partida:', error);
+        ws.send(JSON.stringify({ 
+          type: 'error', 
+          message: 'Erro ao aceitar partida: ' + error.message 
+        }));
+      }
+      break;
+    case 'decline_match':
+      console.log('❌ Recebida mensagem decline_match:', data.data);
+      try {
+        await matchmakingService.declineMatch(
+          data.data.playerId,
+          data.data.matchId,
+          data.data.summonerName
+        );
+        ws.send(JSON.stringify({ 
+          type: 'match_declined', 
+          data: { matchId: data.data.matchId } 
+        }));
+      } catch (error: any) {
+        console.error('❌ Erro ao recusar partida:', error);
+        ws.send(JSON.stringify({ 
+          type: 'error', 
+          message: 'Erro ao recusar partida: ' + error.message 
+        }));
+      }
+      break;
     default:
       ws.send(JSON.stringify({ error: 'Tipo de mensagem desconhecido' }));
   }

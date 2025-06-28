@@ -751,14 +751,36 @@ export class MatchmakingService {
 
     console.log(`🤖 Auto-aceitando ${botPlayers.length} bots na partida ${matchId}`);
     
-    // Auto-aceitar cada bot
-    botPlayers.forEach(bot => {
-      try {
-        this.acceptMatch(bot.id, matchId, bot.summonerName);
-        console.log(`🤖 Bot ${bot.summonerName} aceitou automaticamente`);
-      } catch (error) {
-        console.error(`Erro ao auto-aceitar bot ${bot.summonerName}:`, error);
-      }
+    // Auto-aceitar cada bot com delay para simular tempo de reação
+    botPlayers.forEach((bot, index) => {
+      setTimeout(() => {
+        try {
+          // Adicionar bot diretamente aos aceitos sem chamar acceptMatch
+          match.acceptedPlayers.add(bot.id);
+          console.log(`🤖 Bot ${bot.summonerName} aceitou automaticamente`);
+          
+          // Verificar se todos os jogadores aceitaram
+          const allPlayers = [...match.team1, ...match.team2];
+          const allAccepted = allPlayers.every(p => match.acceptedPlayers.has(p.id));
+          
+          console.log(`📊 Partida ${matchId}: ${match.acceptedPlayers.size}/${allPlayers.length} aceitaram`);
+          
+          if (allAccepted) {
+            console.log(`🎉 Todos os jogadores aceitaram a partida ${matchId}! Iniciando draft...`);
+            
+            // Limpar timeout se existir
+            if (match.acceptTimeout) {
+              clearTimeout(match.acceptTimeout);
+              match.acceptTimeout = undefined;
+            }
+            
+            // Iniciar fase de draft
+            this.startDraftPhase(matchId);
+          }
+        } catch (error) {
+          console.error(`Erro ao auto-aceitar bot ${bot.summonerName}:`, error);
+        }
+      }, (index + 1) * 500); // 500ms de delay entre cada bot
     });
   }
 
@@ -1063,13 +1085,45 @@ export class MatchmakingService {
     // Calcular MMR médio dos times
     const avgMMR1 = team1.reduce((sum, p) => sum + p.currentMMR, 0) / team1.length;
     const avgMMR2 = team2.reduce((sum, p) => sum + p.currentMMR, 0) / team2.length;
+    const mmrDifference = Math.abs(avgMMR1 - avgMMR2);
 
-    console.log(`📊 [Matchmaking] MMR médio: Team1=${Math.round(avgMMR1)}, Team2=${Math.round(avgMMR2)}, Diferença=${Math.abs(avgMMR1 - avgMMR2)}`);
+    console.log(`📊 [Matchmaking] MMR médio: Team1=${Math.round(avgMMR1)}, Team2=${Math.round(avgMMR2)}, Diferença=${mmrDifference}`);
 
-    // Verificar se a diferença de MMR é aceitável (máximo 200)
-    if (Math.abs(avgMMR1 - avgMMR2) > 200) {
-      console.log(`❌ [Matchmaking] Diferença de MMR muito alta: ${Math.abs(avgMMR1 - avgMMR2)} > 200`);
-      return null;
+    // Critério de balanceamento mais flexível quando há 10 jogadores
+    // Se há exatamente 10 jogadores, permitir diferença maior (até 500 MMR)
+    // Se há mais jogadores, usar critério mais restritivo (até 200 MMR)
+    const maxAllowedDifference = this.queue.length === 10 ? 500 : 200;
+    
+    if (mmrDifference > maxAllowedDifference) {
+      console.log(`❌ [Matchmaking] Diferença de MMR muito alta: ${mmrDifference} > ${maxAllowedDifference}`);
+      
+      // Se há exatamente 10 jogadores e a diferença é alta, tentar uma distribuição diferente
+      if (this.queue.length === 10) {
+        console.log(`🔄 [Matchmaking] Tentando distribuição alternativa para 10 jogadores...`);
+        
+        // Tentar distribuição em serpentina (1,4,5,8,9 vs 2,3,6,7,10)
+        const alternativeTeam1 = [sortedPlayers[0], sortedPlayers[3], sortedPlayers[4], sortedPlayers[7], sortedPlayers[8]];
+        const alternativeTeam2 = [sortedPlayers[1], sortedPlayers[2], sortedPlayers[5], sortedPlayers[6], sortedPlayers[9]];
+        
+        const altAvgMMR1 = alternativeTeam1.reduce((sum, p) => sum + p.currentMMR, 0) / alternativeTeam1.length;
+        const altAvgMMR2 = alternativeTeam2.reduce((sum, p) => sum + p.currentMMR, 0) / alternativeTeam2.length;
+        const altMmrDifference = Math.abs(altAvgMMR1 - altAvgMMR2);
+        
+        console.log(`🔄 [Matchmaking] Distribuição alternativa - MMR médio: Team1=${Math.round(altAvgMMR1)}, Team2=${Math.round(altAvgMMR2)}, Diferença=${altMmrDifference}`);
+        
+        if (altMmrDifference <= maxAllowedDifference) {
+          console.log(`✅ [Matchmaking] Distribuição alternativa aceita!`);
+          team1.length = 0;
+          team2.length = 0;
+          team1.push(...alternativeTeam1);
+          team2.push(...alternativeTeam2);
+        } else {
+          console.log(`❌ [Matchmaking] Distribuição alternativa também não atende aos critérios`);
+          return null;
+        }
+      } else {
+        return null;
+      }
     }
 
     // Atribuir lanes baseado no MMR
