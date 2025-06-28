@@ -35,9 +35,14 @@ export class DiscordService {
   // WebSocket principal do servidor
   private wss: any = null;
 
-  // Throttling para broadcast de usuários
+  // Throttling para broadcast de usuários - REDUZIDO PARA TEMPO REAL
   private lastBroadcastTime = 0;
-  private readonly BROADCAST_COOLDOWN = 10000; // 10 segundos entre broadcasts
+  private readonly BROADCAST_COOLDOWN = 1000; // Reduzido para 1 segundo entre broadcasts (era 10 segundos)
+  private readonly IMMEDIATE_BROADCAST_COOLDOWN = 100; // 100ms para broadcasts imediatos (entrada/saída)
+
+  // Cache de usuários para evitar broadcasts desnecessários
+  private lastBroadcastedUsers: any[] = [];
+  private lastBroadcastHash = '';
 
   constructor(databaseManager: DatabaseManager) {
     this.databaseManager = databaseManager;
@@ -234,29 +239,30 @@ export class DiscordService {
     }
   }
 
+  // Detectar quando alguém entra/sai do canal
   private async handleVoiceStateChange(oldState: any, newState: any): Promise<void> {
-    // Usuário entrou no canal
-    if (newState.channel && newState.channel.name === this.targetChannelName) {
-      console.log(`👤 ${newState.member.user.username} entrou no canal de matchmaking`);
-      this.checkUserForQueue(newState.member.user);
-      
-      // Aguardar um pouco para garantir que o estado foi atualizado
-      setTimeout(async () => {
-        console.log(`📡 [VOICE_STATE] Broadcast após entrada de ${newState.member.user.username}`);
-        await this.broadcastUsersInChannel();
-      }, 1000);
-    }
+    const oldChannel = oldState.channel;
+    const newChannel = newState.channel;
+    const user = newState.member?.user || oldState.member?.user;
     
-    // Usuário saiu do canal
-    if (oldState.channel && oldState.channel.name === this.targetChannelName) {
-      console.log(`👋 ${oldState.member.user.username} saiu do canal de matchmaking`);
-      this.removeFromQueue(oldState.member.user.id);
+    if (!user) return;
+
+    const isTargetChannel = (channel: any) => channel && channel.name === this.targetChannelName;
+    const wasInTargetChannel = isTargetChannel(oldChannel);
+    const isInTargetChannel = isTargetChannel(newChannel);
+
+    // Detectar entrada ou saída do canal de matchmaking
+    if (wasInTargetChannel !== isInTargetChannel) {
+      const action = isInTargetChannel ? 'entrou' : 'saiu';
+      console.log(`👤 [DiscordService] ${user.username} ${action} do canal ${this.targetChannelName}`);
       
-      // Aguardar um pouco para garantir que o estado foi atualizado
-      setTimeout(async () => {
-        console.log(`📡 [VOICE_STATE] Broadcast após saída de ${oldState.member.user.username}`);
-        await this.broadcastUsersInChannel();
-      }, 1000);
+      // Broadcast IMEDIATO para entrada/saída (sem throttling)
+      await this.broadcastUsersInChannelImmediate();
+      
+      // Verificar se o usuário tem nick vinculado e está na fila
+      if (isInTargetChannel) {
+        await this.checkUserForQueue(user);
+      }
     }
   }
 
@@ -287,8 +293,78 @@ export class DiscordService {
   }
 
   private async handleClientMessage(ws: WSClient, message: any): Promise<void> {
-    // Método removido - não é mais necessário
-    // As mensagens são processadas pelo handleWebSocketMessage no server.ts
+    console.log(`📥 [DiscordService] Mensagem recebida:`, message.type);
+    
+    try {
+      switch (message.type) {
+        case 'get_discord_status':
+          // Responder imediatamente com status atual
+          const status = {
+            type: 'discord_status',
+            isConnected: this.isConnected,
+            inChannel: await this.hasUsersInMatchmakingChannel(),
+            currentUser: await this.getCurrentUserInfo(),
+            timestamp: Date.now()
+          };
+          ws.send(JSON.stringify(status));
+          break;
+          
+        case 'get_discord_users_online':
+          // Responder imediatamente com usuários atuais
+          const users = await this.getUsersInMatchmakingChannel();
+          ws.send(JSON.stringify({
+            type: 'discord_users_online',
+            users: users,
+            timestamp: Date.now()
+          }));
+          break;
+          
+        case 'get_discord_links':
+          // Responder imediatamente com links
+          await this.broadcastDiscordLinks();
+          break;
+          
+        case 'get_discord_channel_status':
+          // Responder imediatamente com status do canal
+          const channelStatus = {
+            type: 'discord_channel_status',
+            inChannel: await this.hasUsersInMatchmakingChannel(),
+            usersCount: (await this.getUsersInMatchmakingChannel()).length,
+            timestamp: Date.now()
+          };
+          ws.send(JSON.stringify(channelStatus));
+          break;
+          
+        case 'join_discord_queue':
+          // Processar entrada na fila Discord
+          if (message.data) {
+            await this.addToQueue(
+              message.data.discordId,
+              message.data.username || 'Unknown',
+              message.data.role || 'fill',
+              message.data.lcuData
+            );
+          }
+          break;
+          
+        case 'leave_discord_queue':
+          // Processar saída da fila Discord
+          if (message.data && message.data.discordId) {
+            this.removeFromQueue(message.data.discordId);
+          }
+          break;
+          
+        default:
+          console.log(`⚠️ [DiscordService] Tipo de mensagem não reconhecido:`, message.type);
+      }
+    } catch (error) {
+      console.error(`❌ [DiscordService] Erro ao processar mensagem:`, error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        message: 'Erro interno do servidor Discord',
+        timestamp: Date.now()
+      }));
+    }
   }
 
   private async addToQueue(userId: string, username: string, role: string, lcuData?: {gameName: string, tagLine: string}): Promise<void> {
@@ -1057,7 +1133,7 @@ export class DiscordService {
     }
   }
 
-  // Enviar lista de usuários online para todos os clientes
+  // Enviar lista de usuários online para todos os clientes (com throttling normal)
   async broadcastUsersInChannel(): Promise<void> {
     // Verificar throttling
     const now = Date.now();
@@ -1066,16 +1142,46 @@ export class DiscordService {
       return;
     }
 
+    await this.performBroadcast();
+  }
+
+  // Enviar lista de usuários online IMEDIATAMENTE (sem throttling para eventos críticos)
+  async broadcastUsersInChannelImmediate(): Promise<void> {
+    // Verificar throttling mínimo para evitar spam extremo
+    const now = Date.now();
+    if (now - this.lastBroadcastTime < this.IMMEDIATE_BROADCAST_COOLDOWN) {
+      console.log(`⏱️ [DiscordService] Broadcast imediato ignorado (throttling mínimo): ${now - this.lastBroadcastTime}ms desde último broadcast`);
+      return;
+    }
+
+    console.log(`🚀 [DiscordService] Broadcast IMEDIATO de usuários no canal...`);
+    await this.performBroadcast();
+  }
+
+  // Método privado para executar o broadcast real
+  private async performBroadcast(): Promise<void> {
+    const now = Date.now();
     this.lastBroadcastTime = now;
-    console.log('📡 [DEBUG] Iniciando broadcast de usuários no canal...');
+    
+    console.log('📡 [DiscordService] Iniciando broadcast de usuários no canal...');
     const usersInChannel = await this.getUsersInMatchmakingChannel();
     
-    console.log(`📡 [DEBUG] Broadcast enviando ${usersInChannel.length} usuários`);
+    // Verificar se houve mudança real nos usuários
+    if (!this.hasUsersChanged(usersInChannel)) {
+      console.log(`📡 [DiscordService] Nenhuma mudança nos usuários, broadcast ignorado`);
+      return;
+    }
+    
+    console.log(`📡 [DiscordService] Broadcast enviando ${usersInChannel.length} usuários`);
     
     this.broadcastToClients({
       type: 'discord_users_online',
-      users: usersInChannel
+      users: usersInChannel,
+      timestamp: now
     });
+    
+    // Atualizar cache
+    this.lastBroadcastedUsers = [...usersInChannel];
   }
 
   setWebSocketServer(wss: any): void {
@@ -1133,5 +1239,24 @@ export class DiscordService {
     }
     
     return null;
+  }
+
+  // Método para calcular hash dos usuários para detectar mudanças
+  private calculateUsersHash(users: any[]): string {
+    const userData = users.map(u => `${u.id}-${u.username}-${u.linkedNickname ? `${u.linkedNickname.gameName}#${u.linkedNickname.tagLine}` : 'none'}`).sort();
+    return userData.join('|');
+  }
+
+  // Método para verificar se houve mudança real nos usuários
+  private hasUsersChanged(users: any[]): boolean {
+    const currentHash = this.calculateUsersHash(users);
+    const hasChanged = currentHash !== this.lastBroadcastHash;
+    
+    if (hasChanged) {
+      console.log(`🔄 [DiscordService] Mudança detectada nos usuários do canal`);
+      this.lastBroadcastHash = currentHash;
+    }
+    
+    return hasChanged;
   }
 }

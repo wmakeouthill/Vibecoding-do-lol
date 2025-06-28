@@ -175,7 +175,7 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
       matchmakingService.removePlayerFromQueue(ws);
       break;
     case 'get_queue_status':
-      const queueStatus = matchmakingService.getQueueStatus();
+      const queueStatus = await matchmakingService.getQueueStatus();
       ws.send(JSON.stringify({ type: 'queue_status', data: queueStatus }));
       break;
     case 'get_discord_status':

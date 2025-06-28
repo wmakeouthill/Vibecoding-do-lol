@@ -1888,17 +1888,14 @@ export class App implements OnInit, OnDestroy {
   }
 
   private startQueueStatusCheck(): void {
-    console.log('🔄 Iniciando verificação de status da fila...');
+    console.log('🔄 Iniciando verificação de status da fila via WebSocket...');
     
-    // Verificar status inicial
+    // Verificar apenas conexão inicial do backend (sem polling)
     this.checkBackendConnection();
-    this.updateQueueStatus();
     
-    // Verificar a cada 30 segundos (reduzido de 10 para 30)
-    setInterval(() => {
-      this.checkBackendConnection();
-      this.updateQueueStatus();
-    }, 30000);
+    // NÃO fazer polling de status da fila - WebSocket já fornece atualizações em tempo real
+    // Removido setInterval que fazia requisições HTTP desnecessárias
+    console.log('✅ Status da fila será atualizado via WebSocket em tempo real');
   }
   
   private checkBackendConnection(): void {
@@ -1910,18 +1907,6 @@ export class App implements OnInit, OnDestroy {
       error: (error) => {
         this.isConnected = false;
         console.warn('❌ Backend desconectado:', error.message);
-      }
-    });
-  }
-
-  private updateQueueStatus(): void {
-    this.apiService.getQueueStatus().subscribe({
-      next: (status) => {
-        this.queueStatus = status;
-        console.log('📊 Status da fila atualizado:', status.playersInQueue, 'jogadores');
-      },
-      error: (error) => {
-        console.warn('❌ Erro ao atualizar status da fila:', error.message);
       }
     });
   }

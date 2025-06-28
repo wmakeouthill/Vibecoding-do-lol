@@ -919,12 +919,16 @@ export class MatchmakingService {
 
   // Método simplificado para broadcast imediato
   public async broadcastQueueUpdate(force: boolean = false): Promise<void> {
-    if (!this.wss) return;
+    if (!this.wss) {
+      console.log('⚠️ [Matchmaking] WebSocket server não disponível para broadcast');
+      return;
+    }
 
     const now = Date.now();
     
-    // Proteção básica contra spam (mínimo 100ms entre broadcasts)
-    if (!force && now - this.lastBroadcastTime < this.MIN_BROADCAST_INTERVAL) {
+    // Proteção básica contra spam (mínimo 50ms entre broadcasts para tempo real)
+    if (!force && now - this.lastBroadcastTime < 50) {
+      console.log(`⏱️ [Matchmaking] Broadcast ignorado (throttling): ${now - this.lastBroadcastTime}ms desde último`);
       return;
     }
 
@@ -933,7 +937,15 @@ export class MatchmakingService {
     try {
       const queueStatus = await this.getQueueStatus();
       
+      console.log(`📡 [Matchmaking] Enviando broadcast para ${this.wss.clients.size} clientes:`, {
+        playersInQueue: queueStatus.playersInQueue,
+        playersList: queueStatus.playersInQueueList?.map(p => p.summonerName),
+        timestamp: now,
+        force: force
+      });
+      
       // Enviar para todos os clientes conectados
+      let sentCount = 0;
       this.wss.clients.forEach((client: WebSocket) => {
         if (client.readyState === WebSocket.OPEN) {
           try {
@@ -942,15 +954,16 @@ export class MatchmakingService {
               data: queueStatus,
               timestamp: now
             }));
+            sentCount++;
           } catch (error) {
-            console.error('Erro ao enviar atualização da fila:', error);
+            console.error('❌ [Matchmaking] Erro ao enviar atualização da fila:', error);
           }
         }
       });
       
-      console.log(`📡 Broadcast enviado para ${this.wss.clients.size} clientes`);
+      console.log(`✅ [Matchmaking] Broadcast enviado para ${sentCount}/${this.wss.clients.size} clientes`);
     } catch (error) {
-      console.error('❌ Erro no broadcast da fila:', error);
+      console.error('❌ [Matchmaking] Erro no broadcast da fila:', error);
     }
   }
 
@@ -1504,6 +1517,7 @@ export class MatchmakingService {
 
   // Método para forçar atualização imediata (usado para ações críticas)
   public async forceQueueUpdate(): Promise<void> {
+    console.log('🚀 [Matchmaking] Forçando atualização imediata da fila...');
     await this.broadcastQueueUpdate(true);
   }
 }
