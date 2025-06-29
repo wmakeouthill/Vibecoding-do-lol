@@ -107,25 +107,35 @@ export class ChampionService {
    * Obtém todos os campeões do backend
    */
   getAllChampions(): Observable<Champion[]> {
+    console.log('🏆 [ChampionService] getAllChampions() chamado');
+    console.log('🏆 [ChampionService] Cache atual:', this.cachedChampions ? `${this.cachedChampions.length} campeões` : 'null');
+    
     // Se já temos cache, retornar imediatamente
     if (this.cachedChampions) {
+      console.log('🏆 [ChampionService] Retornando cache:', this.cachedChampions.length, 'campeões');
       return of(this.cachedChampions);
     }
 
-    console.log('🏆 [ChampionService] Carregando campeões do backend...');
+    console.log('🏆 [ChampionService] Cache vazio, carregando do backend...');
+    console.log('🏆 [ChampionService] URL do backend:', `${this.baseUrl}/champions`);
     
     return this.http.get<any>(`${this.baseUrl}/champions`).pipe(
       map(response => {
+        console.log('🏆 [ChampionService] Resposta do backend recebida:', response);
+        
         if (response.success && response.champions) {
           console.log(`✅ [ChampionService] ${response.champions.length} campeões carregados do backend`);
+          console.log('🏆 [ChampionService] Primeiros 5 campeões:', response.champions.slice(0, 5).map((c: Champion) => c.name));
           this.cachedChampions = response.champions;
           return response.champions;
         } else {
+          console.error('❌ [ChampionService] Resposta inválida do backend:', response);
           throw new Error('Resposta inválida do backend');
         }
       }),
       catchError(error => {
         console.warn('⚠️ [ChampionService] Erro ao carregar do backend, usando fallback:', error);
+        console.log('🏆 [ChampionService] Retornando fallback:', this.fallbackChampions.length, 'campeões');
         return of(this.fallbackChampions);
       })
     );

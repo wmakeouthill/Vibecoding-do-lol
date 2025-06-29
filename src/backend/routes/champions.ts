@@ -8,17 +8,20 @@ export function setupChampionRoutes(app: any, dataDragonService: DataDragonServi
   app.get('/api/champions', (async (req: Request, res: Response) => {
     try {
       console.log('🏆 [GET /api/champions] Obtendo dados dos campeões...');
+      console.log('🏆 [GET /api/champions] DataDragonService carregado:', dataDragonService.isLoaded());
 
       // Garantir que os campeões estejam carregados
       if (!dataDragonService.isLoaded()) {
         console.log('🔄 [GET /api/champions] Carregando campeões...');
         await dataDragonService.loadChampions();
+        console.log('✅ [GET /api/champions] Campeões carregados com sucesso');
       }
 
       const champions = dataDragonService.getAllChampions();
       const championsByRole = dataDragonService.getChampionsByRole();
 
       console.log(`✅ [GET /api/champions] ${champions.length} campeões retornados`);
+      console.log('🏆 [GET /api/champions] Primeiros 5 campeões:', champions.slice(0, 5).map(c => c.name));
 
       res.json({
         success: true,

@@ -2345,38 +2345,6 @@ app.get('/api/test', ((req: Request, res: Response) => {
   res.json({ ok: true });
 }) as RequestHandler);
 
-// 404 Handler
-app.use((req: Request, res: Response) => {  // Em produção, para rotas não API, tentar servir index.html (SPA routing)
-  if (!isDev && !req.path.startsWith('/api/')) {
-    // Determinar o caminho para o index.html
-    let indexPath: string;
-
-    // Em produção, os arquivos estão diretamente em resources/
-    indexPath = path.join(__dirname, '..', 'frontend', 'dist', 'lol-matchmaking', 'browser', 'index.html');
-
-    // Verificar se o arquivo existe
-    if (fs.existsSync(indexPath)) {
-      return res.sendFile(indexPath);
-    } else {
-      // Tentar caminhos alternativos
-      const altPaths = [
-        path.join(process.cwd(), 'frontend', 'dist', 'lol-matchmaking', 'browser', 'index.html'),
-        path.join(__dirname, '..', '..', 'frontend', 'dist', 'lol-matchmaking', 'browser', 'index.html'),
-        path.join(__dirname, 'frontend', 'dist', 'lol-matchmaking', 'browser', 'index.html')
-      ];
-
-      for (const altPath of altPaths) {
-        if (fs.existsSync(altPath)) {
-          return res.sendFile(altPath);
-        }
-      }
-    }
-  }
-
-  // Fallback para 404
-  res.status(404).json({ error: 'Rota não encontrada' });
-});
-
 // Inicializar servidor
 async function startServer() {
   try {
@@ -2384,6 +2352,38 @@ async function startServer() {
     console.log('🔧 [startServer] Configurando rotas de campeões...');
     setupChampionRoutes(app, dataDragonService);
     console.log('✅ Rotas de campeões configuradas');
+
+    // 404 Handler - DEVE vir DEPOIS das rotas de API
+    app.use((req: Request, res: Response) => {  // Em produção, para rotas não API, tentar servir index.html (SPA routing)
+      if (!isDev && !req.path.startsWith('/api/')) {
+        // Determinar o caminho para o index.html
+        let indexPath: string;
+
+        // Em produção, os arquivos estão diretamente em resources/
+        indexPath = path.join(__dirname, '..', 'frontend', 'dist', 'lol-matchmaking', 'browser', 'index.html');
+
+        // Verificar se o arquivo existe
+        if (fs.existsSync(indexPath)) {
+          return res.sendFile(indexPath);
+        } else {
+          // Tentar caminhos alternativos
+          const altPaths = [
+            path.join(process.cwd(), 'frontend', 'dist', 'lol-matchmaking', 'browser', 'index.html'),
+            path.join(__dirname, '..', '..', 'frontend', 'dist', 'lol-matchmaking', 'browser', 'index.html'),
+            path.join(__dirname, 'frontend', 'dist', 'lol-matchmaking', 'browser', 'index.html')
+          ];
+
+          for (const altPath of altPaths) {
+            if (fs.existsSync(altPath)) {
+              return res.sendFile(altPath);
+            }
+          }
+        }
+      }
+
+      // Fallback para 404
+      res.status(404).json({ error: 'Rota não encontrada' });
+    });
 
     // Inicializar serviços
     await initializeServices();    // Iniciar servidor

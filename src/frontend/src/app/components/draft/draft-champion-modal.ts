@@ -84,18 +84,21 @@ export class DraftChampionModalComponent implements OnInit, OnDestroy, OnChanges
   }
 
   private async loadChampions() {
+    console.log('🎯 [Modal] loadChampions() iniciado');
     try {
       this.championService.getAllChampions().subscribe({
         next: (champions) => {
+          console.log('🎯 [Modal] Campeões carregados:', champions.length, 'campeões');
+          console.log('🎯 [Modal] Primeiros 5 campeões:', champions.slice(0, 5).map(c => c.name));
           this.champions = champions;
           this.organizeChampionsByRole();
         },
         error: (error) => {
-          console.error('Erro ao carregar campeões:', error);
+          console.error('❌ [Modal] Erro ao carregar campeões:', error);
         }
       });
     } catch (error) {
-      console.error('Erro ao carregar campeões:', error);
+      console.error('❌ [Modal] Erro ao carregar campeões:', error);
     }
   }
 
@@ -224,11 +227,18 @@ export class DraftChampionModalComponent implements OnInit, OnDestroy, OnChanges
 
   // MÉTODOS PARA FILTRAGEM
   getModalFilteredChampions(): Champion[] {
+    console.log('🎯 [Modal] getModalFilteredChampions() chamado');
+    console.log('🎯 [Modal] Total de campeões disponíveis:', this.champions.length);
+    console.log('🎯 [Modal] Role selecionada:', this.selectedRole);
+    console.log('🎯 [Modal] Filtro de busca:', this.searchFilter);
+    
     if (this.isCacheValid() && this._cachedModalFilteredChampions) {
+      console.log('🎯 [Modal] Retornando cache:', this._cachedModalFilteredChampions.length, 'campeões');
       return this._cachedModalFilteredChampions;
     }
 
     let filtered = this.champions;
+    console.log('🎯 [Modal] Campeões antes da filtragem:', filtered.length);
 
     // Filtrar por role
     if (this.selectedRole !== 'all') {
@@ -249,6 +259,7 @@ export class DraftChampionModalComponent implements OnInit, OnDestroy, OnChanges
             return true;
         }
       });
+      console.log('🎯 [Modal] Campeões após filtro de role:', filtered.length);
     }
 
     // Filtrar por busca
@@ -257,11 +268,15 @@ export class DraftChampionModalComponent implements OnInit, OnDestroy, OnChanges
       filtered = filtered.filter(champion =>
         champion.name.toLowerCase().includes(searchTerm)
       );
+      console.log('🎯 [Modal] Campeões após filtro de busca:', filtered.length);
     }
 
     this._cachedModalFilteredChampions = filtered;
     this._lastCacheUpdate = Date.now();
 
+    console.log('🎯 [Modal] Campeões finais filtrados:', filtered.length);
+    console.log('🎯 [Modal] Primeiros 5 campeões filtrados:', filtered.slice(0, 5).map(c => c.name));
+    
     return filtered;
   }
 
