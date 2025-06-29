@@ -1,4 +1,4 @@
-<div class="champion-modal-overlay" *ngIf="isVisible" (click)="closeModal()">
+<div class="champion-modal-overlay" *ngIf="isVisible && session && session.phase !== 'completed' && session.currentAction < session.phases.length" (click)="closeModal()">
   <div class="champion-modal" (click)="$event.stopPropagation()">
     <!-- Header do Modal -->
     <div class="modal-header" [style.border-color]="getCurrentTeamColor()">

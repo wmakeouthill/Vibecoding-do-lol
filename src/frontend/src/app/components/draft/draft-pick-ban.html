@@ -49,7 +49,7 @@
 
       <div class="team-picks">
         <!-- Picks mapeados às posições corretas dos jogadores -->
-        <div class="pick-slot" *ngFor="let player of session.blueTeam; let i = index">
+        <div class="pick-slot" *ngFor="let player of getSortedTeamByLaneForDisplay('blue'); let i = index">
           <ng-container *ngIf="session.phases | playerPick:'blue':player as playerPick; else emptySlot">
             <img [src]="playerPick.image" [alt]="playerPick.name" class="champion-img">
             <div class="pick-info">
@@ -110,7 +110,7 @@
 
       <div class="team-picks">
         <!-- Picks mapeados às posições corretas dos jogadores -->
-        <div class="pick-slot" *ngFor="let player of session.redTeam; let i = index">
+        <div class="pick-slot" *ngFor="let player of getSortedTeamByLaneForDisplay('red'); let i = index">
           <ng-container *ngIf="session.phases | playerPick:'red':player as playerPick; else emptySlot">
             <img [src]="playerPick.image" [alt]="playerPick.name" class="champion-img">
             <div class="pick-info">
@@ -140,15 +140,6 @@
 
   <!-- Champion Selection -->
   <div class="champion-selection" *ngIf="isMyTurn">
-    <!-- Debug temporário -->
-    <div style="background: green; color: white; padding: 10px; margin: 10px; border: 2px solid white;">
-      <strong>✅ MODAL DEVE APARECER!</strong><br>
-      isMyTurn: {{ isMyTurn }}<br>
-      currentAction: {{ session.currentAction }}<br>
-      currentPlayer: {{ currentPlayer?.summonerName || currentPlayer?.name || 'N/A' }}<br>
-      phase: {{ session.phases[session.currentAction] && session.phases[session.currentAction].action || 'N/A' }}
-    </div>
-    
     <div class="selection-header">
       <h3>
         {{ session.phases[session.currentAction] && session.phases[session.currentAction].action === 'ban' ? '🚫 Banir
@@ -227,15 +218,6 @@
     (onChampionSelected)="onChampionSelected($event)"
     (onClose)="showChampionModal = false">
   </app-draft-champion-modal>
-
-  <!-- Debug temporário para o modal -->
-  <div style="position: fixed; top: 10px; right: 10px; background: red; color: white; padding: 10px; z-index: 9999; border: 2px solid white;">
-    <strong>🔍 DEBUG MODAL</strong><br>
-    showChampionModal: {{ showChampionModal }}<br>
-    isMyTurn: {{ isMyTurn }}<br>
-    session exists: {{ !!session }}<br>
-    currentPlayer exists: {{ !!currentPlayer }}
-  </div>
 
   <!-- Confirmation Modal -->
   <app-draft-confirmation-modal
