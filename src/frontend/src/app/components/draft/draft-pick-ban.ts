@@ -12,6 +12,11 @@ import { TeamBansPipe } from './team-bans.pipe';
 import { TeamPicksPipe } from './team-picks.pipe';
 import { PlayerPickPipe } from './player-pick.pipe';
 import { LaneDisplayPipe } from './lane-display.pipe';
+import { CurrentPhaseTextPipe } from './current-phase-text.pipe';
+import { PhaseProgressPipe } from './phase-progress.pipe';
+import { CurrentPlayerNamePipe } from './current-player-name.pipe';
+import { CurrentActionTextPipe } from './current-action-text.pipe';
+import { CurrentActionIconPipe } from './current-action-icon.pipe';
 
 @Component({
     selector: 'app-draft-pick-ban',
@@ -25,7 +30,12 @@ import { LaneDisplayPipe } from './lane-display.pipe';
         TeamBansPipe,
         TeamPicksPipe,
         PlayerPickPipe,
-        LaneDisplayPipe
+        LaneDisplayPipe,
+        CurrentPhaseTextPipe,
+        PhaseProgressPipe,
+        CurrentPlayerNamePipe,
+        CurrentActionTextPipe,
+        CurrentActionIconPipe
     ],
     templateUrl: './draft-pick-ban.html',
     styleUrl: './draft-pick-ban.scss',
@@ -78,9 +88,10 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
     ) { }
 
     ngOnInit() {
-        this.loadChampions();
-        this.initializePickBanSession();
-        this._lastRealActionTime = Date.now(); // Inicializar timestamp da última ação
+        this.loadChampions().then(() => {
+            this.initializePickBanSession();
+            this._lastRealActionTime = Date.now(); // Inicializar timestamp da última ação
+        });
     }
 
     ngOnDestroy() {
@@ -94,10 +105,12 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
 
     private async loadChampions() {
         try {
+            console.log('🔄 [loadChampions] Carregando campeões...');
             this.champions = await this.championService.getAllChampions();
+            console.log(`✅ [loadChampions] ${this.champions.length} campeões carregados`);
             this.organizeChampionsByRole();
         } catch (error) {
-            console.error('Erro ao carregar campeões:', error);
+            console.error('❌ [loadChampions] Erro ao carregar campeões:', error);
         }
     }
 
@@ -308,7 +321,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
         console.log(`🎯 [updateCurrentTurn] Fase atual: ${this.session.phase}`);
 
         // Obter jogadores ordenados por lane (top, jungle, mid, adc, support)
-        const sortedPlayers = this.getSortedTeamByLane(currentPhase.team);
+        const sortedPlayers = this.getSortedTeamByLaneInternal(currentPhase.team);
 
         // Garantir que temos exatamente 5 jogadores
         if (sortedPlayers.length !== 5) {
@@ -345,7 +358,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
         this.checkForBotAutoAction(currentPhase);
         this.isMyTurn = this.checkIfMyTurn(currentPhase);
 
-        console.log(`🎯 [updateCurrentTurn] Vez de: ${this.getCurrentPlayerName()}, É minha vez: ${this.isMyTurn}`);
+        console.log(`🎯 [updateCurrentTurn] Vez de: ${currentPhase.playerName || 'Jogador Desconhecido'}, É minha vez: ${this.isMyTurn}`);
         console.log(`🎯 [updateCurrentTurn] === FIM DA AÇÃO ${this.session.currentAction + 1} ===`);
     }
 
@@ -354,6 +367,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
 
         console.log(`🤖 [checkForBotAutoAction] === VERIFICANDO BOT PARA AÇÃO ${this.session.currentAction + 1} ===`);
         console.log(`🤖 [checkForBotAutoAction] Phase:`, phase);
+        console.log(`🤖 [checkForBotAutoAction] Campeões disponíveis: ${this.champions.length}`);
 
         // Cancelar ação anterior se existir
         if (this.botPickTimer) {
@@ -391,6 +405,9 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
                     // Invalidar cache apenas quando há uma ação real (pick/ban do bot)
                     console.log('🔄 [checkForBotAutoAction] Invalidando cache devido a ação real do bot');
                     this.invalidateCache();
+                    
+                    // Marcar para detecção de mudanças com OnPush
+                    this.cdr.markForCheck();
                 }
             );
             console.log(`🤖 [checkForBotAutoAction] Timer agendado: ${this.botPickTimer}`);
@@ -442,11 +459,15 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
                 currentPhase.timeRemaining--;
                 this.timeRemaining = currentPhase.timeRemaining;
                 
-                // NÃO marcar para detecção a cada segundo
-                // O timer será atualizado automaticamente pelo Angular
-                // Apenas marcar quando há mudanças reais nos dados
+                // Com OnPush, precisamos marcar para detecção quando o timer muda
+                this.cdr.markForCheck();
             } else {
-                this.handleTimeOut();
+                // Só executar timeout se não há ação de bot agendada
+                if (!this.botPickTimer) {
+                    this.handleTimeOut();
+                } else {
+                    console.log('⏰ [Timer] Timeout ignorado - bot já agendou ação');
+                }
             }
         });
     }
@@ -472,6 +493,9 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
         // Invalidar cache apenas quando há uma ação real (timeout)
         console.log('🔄 [handleTimeOut] Invalidando cache devido a timeout');
         this.invalidateCache();
+        
+        // Marcar para detecção de mudanças com OnPush
+        this.cdr.markForCheck();
     }
 
     completePickBan() {
@@ -484,51 +508,6 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
 
     cancelPickBan() {
         this.onPickBanCancel.emit();
-    }
-
-    getCurrentPhaseText(): string {
-        if (!this.session) return '';
-
-        if (this.session.phase === 'completed') {
-            return 'Seleção Completa';
-        }
-
-        const currentPhase = this.session.phases[this.session.currentAction];
-        if (!currentPhase) return '';
-
-        const actionIndex = this.session.currentAction + 1; // +1 para mostrar ação 1-20
-
-        if (currentPhase.action === 'ban') {
-            if (actionIndex <= 6) {
-                // Primeira fase de bans (1-6)
-                const banNumber = actionIndex;
-                return `Ban ${banNumber} de 6 (1ª Fase)`;
-            } else {
-                // Segunda fase de bans (13-16)
-                const banNumber = actionIndex - 6;
-                return `Ban ${banNumber} de 4 (2ª Fase)`;
-            }
-        } else {
-            if (actionIndex >= 7 && actionIndex <= 12) {
-                // Primeira fase de picks (7-12)
-                const pickNumber = actionIndex - 6;
-                return `Pick ${pickNumber} de 6 (1ª Fase)`;
-            } else {
-                // Segunda fase de picks (17-20)
-                const pickNumber = actionIndex - 12;
-                return `Pick ${pickNumber} de 4 (2ª Fase)`;
-            }
-        }
-    }
-
-    getPhaseProgress(): number {
-        if (!this.session) return 0;
-
-        if (this.session.phase === 'completed') {
-            return 100;
-        }
-
-        return (this.session.currentAction / this.session.phases.length) * 100;
     }
 
     private invalidateCache(): void {
@@ -626,8 +605,6 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
     private sortPlayersByLane(players: any[]): any[] {
         const laneOrder = ['top', 'jungle', 'mid', 'adc', 'support'];
 
-        console.log('🔄 [sortPlayersByLane] Ordenando jogadores por lane:', players.map(p => ({ name: p.summonerName, lane: p.lane })));
-
         const sortedPlayers = players.sort((a, b) => {
             const laneA = a.lane || 'unknown';
             const laneB = b.lane || 'unknown';
@@ -641,8 +618,6 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
 
             return indexA - indexB;
         });
-
-        console.log('✅ [sortPlayersByLane] Jogadores ordenados:', sortedPlayers.map(p => ({ name: p.summonerName, lane: p.lane })));
 
         return sortedPlayers;
     }
@@ -701,7 +676,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
         if (!this.session) return null;
 
         // Obter jogadores ordenados por lane
-        const sortedPlayers = this.getSortedTeamByLane(team);
+        const sortedPlayers = this.getSortedTeamByLaneInternal(team);
 
         // Encontrar o índice do jogador no time ordenado
         const playerIndex = sortedPlayers.findIndex(p => this.botService.comparePlayers(p, player));
@@ -801,6 +776,9 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
         // Invalidar cache apenas quando há uma ação real (pick/ban)
         console.log('🔄 [onChampionSelected] Invalidando cache devido a ação real');
         this.invalidateCache();
+        
+        // Marcar para detecção de mudanças com OnPush
+        this.cdr.markForCheck();
     }
 
     private stopTimer() {
@@ -915,5 +893,13 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
         }
 
         return true;
+    }
+
+    // Método otimizado para uso interno (não no template)
+    private getSortedTeamByLaneInternal(team: 'blue' | 'red'): any[] {
+        if (!this.session) return [];
+
+        const teamPlayers = team === 'blue' ? this.session.blueTeam : this.session.redTeam;
+        return this.sortPlayersByLane(teamPlayers);
     }
 } 

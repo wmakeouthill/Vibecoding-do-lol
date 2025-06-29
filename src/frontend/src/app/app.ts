@@ -2347,14 +2347,12 @@ export class App implements OnInit, OnDestroy {
   }
 
   // Add getter for currentMatchData to be compatible with CustomPickBanComponent
+  private _lastMatchDataHash: string = '';
+  
   get currentMatchData() {
     if (!this.draftData) {
-      console.log('🔍 [currentMatchData] draftData não está disponível');
       return null;
     }
-
-    console.log('🔍 [currentMatchData] draftData disponível:', this.draftData);
-    console.log('🔍 [currentMatchData] Propriedades:', Object.keys(this.draftData));
 
     const matchData = {
       id: this.draftData.matchId,
@@ -2362,11 +2360,14 @@ export class App implements OnInit, OnDestroy {
       team2: this.draftData.team2 || this.draftData.redTeam || []
     };
 
-    console.log('🔍 [currentMatchData] MatchData construído:', matchData);
-    console.log('🔍 [currentMatchData] Team1 size:', matchData.team1.length);
-    console.log('🔍 [currentMatchData] Team2 size:', matchData.team2.length);
-    console.log('🔍 [currentMatchData] Team1:', matchData.team1);
-    console.log('🔍 [currentMatchData] Team2:', matchData.team2);
+    // Gerar hash dos dados para verificar se houve mudança
+    const currentHash = JSON.stringify(matchData);
+    
+    // Só fazer logs se os dados mudaram
+    if (currentHash !== this._lastMatchDataHash) {
+      console.log('🔍 [currentMatchData] Dados atualizados:', matchData);
+      this._lastMatchDataHash = currentHash;
+    }
 
     return matchData;
   }

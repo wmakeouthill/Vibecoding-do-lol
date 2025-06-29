@@ -4,9 +4,9 @@
     <div class="session-info">
       <h2>🏆 Seleção de Campeões</h2>
       <div class="phase-indicator">
-        <span class="current-phase">{{ getCurrentPhaseText() }}</span>
+        <span class="current-phase">{{ session | currentPhaseText }}</span>
         <div class="progress-bar">
-          <div class="progress-fill" [style.width.%]="getPhaseProgress()"></div>
+          <div class="progress-fill" [style.width.%]="session | phaseProgress"></div>
         </div>
       </div>
     </div>
@@ -18,7 +18,7 @@
       <!-- Current Player Indicator -->
       <div class="current-player" *ngIf="session">
         <span class="current-player-text">
-          {{ getCurrentPlayerName() }}
+          {{ session | currentPlayerName }}
         </span>
       </div>
     </div>
@@ -154,8 +154,8 @@
     <!-- Botão para abrir modal -->
     <div class="modal-trigger-section">
       <button class="btn btn-primary btn-lg open-modal-btn" (click)="openChampionModal()">
-        <span class="btn-icon">{{ getCurrentActionIcon() }}</span>
-        <span class="btn-text">{{ getCurrentActionText() }}</span>
+        <span class="btn-icon">{{ session | currentActionIcon }}</span>
+        <span class="btn-text">{{ session | currentActionText }}</span>
         <span class="btn-hint">Clique para abrir seleção</span>
       </button>
     </div>
@@ -166,7 +166,7 @@
     <div class="waiting-content">
       <div class="waiting-icon">⏳</div>
       <h3>Aguardando outros jogadores...</h3>
-      <p>{{ getCurrentPhaseText() }}</p>
+      <p>{{ session | currentPhaseText }}</p>
     </div>
   </div>
 
