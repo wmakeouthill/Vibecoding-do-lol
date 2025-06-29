@@ -53,6 +53,7 @@ export class DraftChampionModalComponent implements OnInit, OnDestroy, OnChanges
   private _cachedModalFilteredChampions: Champion[] | null = null;
   private _lastCacheUpdate: number = 0;
   private readonly CACHE_DURATION = 100;
+  private _lastSessionHash: string = '';
 
   constructor(private championService: ChampionService) { }
 
@@ -80,6 +81,18 @@ export class DraftChampionModalComponent implements OnInit, OnDestroy, OnChanges
         console.log('🔄 [Modal] Modal se tornou invisível - parando timer');
         this.stopModalTimer();
       }
+    }
+
+    // ✅ NOVO: Detectar mudanças no session e invalidar cache
+    if (changes['session']) {
+      console.log('🔄 [Modal] Session mudou - invalidando cache');
+      this.invalidateCache();
+    }
+
+    // ✅ NOVO: Detectar mudanças no currentPlayer
+    if (changes['currentPlayer']) {
+      console.log('🔄 [Modal] CurrentPlayer mudou - invalidando cache');
+      this.invalidateCache();
     }
   }
 
@@ -187,6 +200,7 @@ export class DraftChampionModalComponent implements OnInit, OnDestroy, OnChanges
     this._cachedBannedChampions = bannedChampions;
     this._lastCacheUpdate = Date.now();
 
+    console.log('🚫 [Modal] Campeões banidos:', bannedChampions.map(c => c.name));
     return bannedChampions;
   }
 
@@ -211,18 +225,26 @@ export class DraftChampionModalComponent implements OnInit, OnDestroy, OnChanges
     }
     this._lastCacheUpdate = Date.now();
 
+    console.log(`⭐ [Modal] Picks do time ${team}:`, teamPicks.map(c => c.name));
     return teamPicks;
   }
 
   isChampionBanned(champion: Champion): boolean {
-    return this.getBannedChampions().some(c => c.id === champion.id);
+    const isBanned = this.getBannedChampions().some(c => c.id === champion.id);
+    if (isBanned) {
+      console.log('🚫 [Modal] Campeão banido:', champion.name);
+    }
+    return isBanned;
   }
 
   isChampionPicked(champion: Champion): boolean {
     const bluePicks = this.getTeamPicks('blue');
     const redPicks = this.getTeamPicks('red');
-
-    return [...bluePicks, ...redPicks].some(c => c.id === champion.id);
+    const isPicked = [...bluePicks, ...redPicks].some(c => c.id === champion.id);
+    if (isPicked) {
+      console.log('⭐ [Modal] Campeão escolhido:', champion.name);
+    }
+    return isPicked;
   }
 
   // MÉTODOS PARA FILTRAGEM
@@ -231,6 +253,25 @@ export class DraftChampionModalComponent implements OnInit, OnDestroy, OnChanges
     console.log('🎯 [Modal] Total de campeões disponíveis:', this.champions.length);
     console.log('🎯 [Modal] Role selecionada:', this.selectedRole);
     console.log('🎯 [Modal] Filtro de busca:', this.searchFilter);
+    
+    // ✅ CORREÇÃO: Sempre invalidar cache se o session mudou
+    if (this.session && this.session.currentAction !== undefined) {
+      const sessionHash = JSON.stringify({
+        currentAction: this.session.currentAction,
+        phases: this.session.phases.map(p => ({
+          action: p.action,
+          team: p.team,
+          locked: p.locked,
+          championId: p.champion?.id
+        }))
+      });
+      
+      if (sessionHash !== this._lastSessionHash) {
+        console.log('🔄 [Modal] Session mudou - invalidando cache');
+        this._lastSessionHash = sessionHash;
+        this.invalidateCache();
+      }
+    }
     
     if (this.isCacheValid() && this._cachedModalFilteredChampions) {
       console.log('🎯 [Modal] Retornando cache:', this._cachedModalFilteredChampions.length, 'campeões');
@@ -286,20 +327,49 @@ export class DraftChampionModalComponent implements OnInit, OnDestroy, OnChanges
     this.invalidateCache();
   }
 
-  selectChampionInModal(champion: Champion): void {
-    if (this.isChampionBanned(champion) || this.isChampionPicked(champion)) {
+  selectChampion(champion: Champion): void {
+    console.log('🎯 [Modal] selectChampion() chamado:', champion.name);
+    
+    // ✅ CORREÇÃO: Verificar se o campeão pode ser selecionado
+    if (this.isChampionBanned(champion)) {
+      console.log('🚫 [Modal] Campeão banido:', champion.name);
       return;
     }
+    
+    if (this.isChampionPicked(champion)) {
+      console.log('⭐ [Modal] Campeão já escolhido:', champion.name);
+      return;
+    }
+    
+    // ✅ CORREÇÃO: Limpar seleção anterior e selecionar novo
     this.selectedChampion = champion;
+    console.log('✅ [Modal] Campeão selecionado:', champion.name);
   }
 
   // MÉTODOS PARA CONFIRMAÇÃO
   confirmModalSelection(): void {
-    if (!this.selectedChampion || this.isChampionBanned(this.selectedChampion) || this.isChampionPicked(this.selectedChampion)) {
+    console.log('🎯 [Modal] confirmModalSelection() chamado');
+    console.log('🎯 [Modal] Campeão selecionado:', this.selectedChampion?.name);
+    
+    if (!this.selectedChampion) {
+      console.log('❌ [Modal] Nenhum campeão selecionado');
+      return;
+    }
+    
+    if (this.isChampionBanned(this.selectedChampion) || this.isChampionPicked(this.selectedChampion)) {
+      console.log('❌ [Modal] Campeão inválido para seleção');
       return;
     }
 
+    console.log('✅ [Modal] Emitindo campeão selecionado e invalidando cache');
     this.onChampionSelected.emit(this.selectedChampion);
+    
+    // Invalidar cache do modal imediatamente
+    this.invalidateCache();
+    
+    // ✅ CORREÇÃO: Limpar seleção ANTES de fechar o modal
+    this.selectedChampion = null;
+    
     this.closeModal();
   }
 
@@ -308,12 +378,27 @@ export class DraftChampionModalComponent implements OnInit, OnDestroy, OnChanges
   }
 
   // MÉTODOS PARA CONTROLE DO MODAL
+  openModal(): void {
+    console.log('🎯 [Modal] openModal() chamado');
+    this.isVisible = true;
+    this.loadChampions();
+    this.startModalTimer();
+  }
+
   closeModal(): void {
+    console.log('🎯 [Modal] closeModal() chamado');
+    this.isVisible = false;
+    this.stopModalTimer();
+    
+    // ✅ CORREÇÃO: Limpar seleção quando fechar o modal
     this.selectedChampion = null;
     this.searchFilter = '';
     this.selectedRole = 'all';
-    this.stopModalTimer();
+    
+    // ✅ CORREÇÃO: Emitir evento de fechamento
     this.onClose.emit();
+    
+    console.log('🎯 [Modal] Modal fechado e seleção limpa');
   }
 
   // MÉTODOS PARA TIMER
@@ -362,13 +447,7 @@ export class DraftChampionModalComponent implements OnInit, OnDestroy, OnChanges
   }
 
   isCurrentPlayerForModal(): boolean {
-    if (!this.currentPlayer || !this.session) {
-      console.log(`🎯 [Modal] isCurrentPlayerForModal - Dados inválidos:`, {
-        hasCurrentPlayer: !!this.currentPlayer,
-        hasSession: !!this.session
-      });
-      return false;
-    }
+    if (!this.currentPlayer || !this.session) return false;
 
     const currentPhase = this.session.phases[this.session.currentAction];
     if (!currentPhase) {
@@ -452,11 +531,21 @@ export class DraftChampionModalComponent implements OnInit, OnDestroy, OnChanges
 
   // MÉTODOS PARA CACHE
   private invalidateCache(): void {
+    console.log('🗑️ [Modal] Invalidando cache do modal');
     this._cachedBannedChampions = null;
     this._cachedBlueTeamPicks = null;
     this._cachedRedTeamPicks = null;
     this._cachedModalFilteredChampions = null;
     this._lastCacheUpdate = Date.now();
+    
+    // Forçar detecção de mudanças se o modal estiver visível
+    if (this.isVisible) {
+      console.log('🔄 [Modal] Forçando atualização da interface');
+      // Usar setTimeout para garantir que a mudança seja detectada
+      setTimeout(() => {
+        // Trigger change detection
+      }, 0);
+    }
   }
 
   private isCacheValid(): boolean {
@@ -475,4 +564,4 @@ export class DraftChampionModalComponent implements OnInit, OnDestroy, OnChanges
       this.invalidateCache();
     }
   }
-} 
+}

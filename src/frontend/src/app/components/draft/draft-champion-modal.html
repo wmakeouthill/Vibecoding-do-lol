@@ -67,10 +67,11 @@
 
       <!-- Grid de Campeões -->
       <div class="modal-champions-grid">
-        <div class="modal-champion-card" *ngFor="let champion of getModalFilteredChampions()"
-          [class.selected]="selectedChampion && selectedChampion.id === champion.id"
-          [class.banned]="isChampionBanned(champion)" [class.picked]="isChampionPicked(champion)"
-          (click)="selectChampionInModal(champion)">
+        <div class="champion-card" *ngFor="let champion of getModalFilteredChampions()"
+          [class.selected]="selectedChampion?.id === champion.id"
+          [class.banned]="isChampionBanned(champion)"
+          [class.picked]="isChampionPicked(champion)"
+          (click)="selectChampion(champion)">
           <img [src]="champion.image" [alt]="champion.name" class="modal-champion-portrait"
             (error)="onImageError($event, champion)" loading="lazy">
           <span class="modal-champion-label">{{ champion.name }}</span>

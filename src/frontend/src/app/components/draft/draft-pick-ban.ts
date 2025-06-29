@@ -108,6 +108,44 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
     ngOnChanges(changes: SimpleChanges) {
         console.log('🔄 [ngOnChanges] Mudanças detectadas:', changes);
         
+        // ✅ CORREÇÃO: Verificar se a mudança é real e não apenas referência
+        if (changes['matchData']) {
+            const currentValue = changes['matchData'].currentValue;
+            const previousValue = changes['matchData'].previousValue;
+            
+            // Verificar se é uma mudança real de dados
+            if (currentValue && previousValue) {
+                const currentHash = JSON.stringify({
+                    currentAction: currentValue.currentAction,
+                    phases: currentValue.phases?.map((p: any) => ({
+                        action: p.action,
+                        team: p.team,
+                        locked: p.locked,
+                        championId: p.champion?.id
+                    }))
+                });
+                
+                const previousHash = JSON.stringify({
+                    currentAction: previousValue.currentAction,
+                    phases: previousValue.phases?.map((p: any) => ({
+                        action: p.action,
+                        team: p.team,
+                        locked: p.locked,
+                        championId: p.champion?.id
+                    }))
+                });
+                
+                if (currentHash === previousHash) {
+                    console.log('🔄 [ngOnChanges] Mudança ignorada - dados idênticos');
+                    return;
+                }
+            }
+            
+            console.log('🔄 [ngOnChanges] Mudança real detectada - atualizando session');
+            this.session = currentValue;
+            this.invalidateCache();
+        }
+        
         if (changes['currentPlayer']) {
             console.log('🔄 [ngOnChanges] currentPlayer mudou:', {
                 previousValue: changes['currentPlayer'].previousValue,
@@ -943,32 +981,53 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
 
     // MÉTODO PARA RECEBER SELEÇÃO DO MODAL
     onChampionSelected(champion: Champion): void {
+        console.log('🎯 [onChampionSelected] === CAMPEÃO SELECIONADO ===');
         console.log('🎯 [onChampionSelected] Campeão selecionado:', champion.name);
 
-        if (!this.session) return;
+        if (!this.session) {
+            console.log('❌ [onChampionSelected] Session não existe');
+            return;
+        }
 
         const currentPhase = this.session.phases[this.session.currentAction];
-        if (!currentPhase) return;
+        if (!currentPhase) {
+            console.log('❌ [onChampionSelected] Fase atual não existe');
+            return;
+        }
 
+        console.log('🎯 [onChampionSelected] Fase atual:', {
+            currentAction: this.session.currentAction,
+            team: currentPhase.team,
+            action: currentPhase.action,
+            playerIndex: currentPhase.playerIndex,
+            playerId: currentPhase.playerId,
+            playerName: currentPhase.playerName
+        });
+
+        // ✅ CORREÇÃO: Atualizar a fase corretamente
         currentPhase.champion = champion;
         currentPhase.locked = true;
         currentPhase.timeRemaining = 0;
 
+        console.log('✅ [onChampionSelected] Fase atualizada com campeão:', champion.name);
+
+        // ✅ CORREÇÃO: Incrementar currentAction
         this.session.currentAction++;
 
+        console.log('✅ [onChampionSelected] currentAction incrementado para:', this.session.currentAction);
+
+        // ✅ CORREÇÃO: Verificar se a sessão foi completada
         if (this.session.currentAction >= this.session.phases.length) {
+            console.log('🎉 [onChampionSelected] Sessão completada!');
             this.session.phase = 'completed';
-            this.stopTimer();
         } else {
-            this.updateCurrentTurn();
+            console.log('🔄 [onChampionSelected] Próxima ação:', this.session.currentAction);
         }
 
-        // Invalidar cache apenas quando há uma ação real (pick/ban)
-        console.log('🔄 [onChampionSelected] Invalidando cache devido a ação real');
+        // ✅ CORREÇÃO: Invalidar cache para forçar atualização
         this.invalidateCache();
-        
-        // Marcar para detecção de mudanças com OnPush
-        this.cdr.markForCheck();
+
+        console.log('✅ [onChampionSelected] Cache invalidado - atualização concluída');
     }
 
     private stopTimer() {
@@ -1098,7 +1157,23 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         if (!this.session) return [];
 
         const teamPlayers = team === 'blue' ? this.session.blueTeam : this.session.redTeam;
-        return this.sortPlayersByLane(teamPlayers);
+        const sortedPlayers = this.sortPlayersByLane(teamPlayers);
+        
+        console.log(`🎯 [getSortedTeamByLaneForDisplay] === ${team.toUpperCase()} TEAM ===`);
+        console.log('🎯 [getSortedTeamByLaneForDisplay] Jogadores originais:', teamPlayers.map((p, i) => ({
+            index: i,
+            teamIndex: p.teamIndex,
+            name: p.summonerName,
+            lane: p.lane
+        })));
+        console.log('🎯 [getSortedTeamByLaneForDisplay] Jogadores ordenados por lane:', sortedPlayers.map((p, i) => ({
+            index: i,
+            teamIndex: p.teamIndex,
+            name: p.summonerName,
+            lane: p.lane
+        })));
+        
+        return sortedPlayers;
     }
 
     // ✅ NOVO: Método para obter jogador por teamIndex
