@@ -9,7 +9,8 @@
           <div class="progress-fill" [style.width.%]="getPhaseProgress()"></div>
         </div>
       </div>
-    </div>    <div class="timer-section">
+    </div>
+    <div class="timer-section">
       <div class="timer" [class.warning]="timeRemaining <= 10">
         ⏱️ {{ timeRemaining }}s
       </div>
@@ -20,6 +21,11 @@
           {{ getCurrentPlayerName() }}
         </span>
       </div>
+
+      <!-- Debug Button -->
+      <button class="debug-btn" (click)="debugPlayerData()" title="Debug Player Data">
+        🐛 Debug
+      </button>
     </div>
   </div>
 
@@ -48,31 +54,31 @@
       </div>
 
       <div class="team-picks">
+        <!-- Picks mapeados às posições corretas dos jogadores -->
         <div class="pick-slot"
-             *ngFor="let pick of getTeamPicks('blue'); let i = index">
-          <img [src]="pick.image" [alt]="pick.name" class="champion-img">
-          <div class="pick-info">
-            <span class="champion-name">{{ pick.name }}</span>
-            <span class="player-name">
-              {{ getPlayerNameForPick('blue', i) }}
-              <span class="you-indicator" *ngIf="isCurrentPlayerForPick('blue', i)">(Você)</span>
-            </span>
-            <span class="player-lane">{{ getPlayerLaneDisplay('blue', i) }}</span>
-          </div>
-        </div>
-
-        <!-- Empty slots ordenados por lane -->
-        <div class="pick-slot empty"
-             *ngFor="let player of getSortedTeamByLane('blue').slice(getTeamPicks('blue').length); let i = index">
-          <div class="champion-placeholder">?</div>
-          <div class="pick-info">
-            <span class="champion-name">Aguardando...</span>
-            <span class="player-name">
-              {{ player.summonerName || player.name || 'Jogador' }}
-              <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
-            </span>
-            <span class="player-lane">{{ getPlayerLaneDisplayForPlayer(player) }}</span>
-          </div>
+             *ngFor="let player of getSortedTeamByLane('blue'); let i = index">
+          <ng-container *ngIf="getPlayerPick('blue', player); else emptySlot">
+            <img [src]="getPlayerPick('blue', player)?.image" [alt]="getPlayerPick('blue', player)?.name" class="champion-img">
+            <div class="pick-info">
+              <span class="champion-name">{{ getPlayerPick('blue', player)?.name }}</span>
+              <span class="player-name">
+                {{ player.summonerName || player.name || 'Jogador' }}
+                <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
+              </span>
+              <span class="player-lane">{{ getPlayerLaneDisplayForPlayer(player) }}</span>
+            </div>
+          </ng-container>
+          <ng-template #emptySlot>
+            <div class="champion-placeholder">?</div>
+            <div class="pick-info">
+              <span class="champion-name">Aguardando...</span>
+              <span class="player-name">
+                {{ player.summonerName || player.name || 'Jogador' }}
+                <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
+              </span>
+              <span class="player-lane">{{ getPlayerLaneDisplayForPlayer(player) }}</span>
+            </div>
+          </ng-template>
         </div>
       </div>
     </div>
@@ -112,31 +118,31 @@
       </div>
 
       <div class="team-picks">
+        <!-- Picks mapeados às posições corretas dos jogadores -->
         <div class="pick-slot"
-             *ngFor="let pick of getTeamPicks('red'); let i = index">
-          <img [src]="pick.image" [alt]="pick.name" class="champion-img">
-          <div class="pick-info">
-            <span class="champion-name">{{ pick.name }}</span>
-            <span class="player-name">
-              {{ getPlayerNameForPick('red', i) }}
-              <span class="you-indicator" *ngIf="isCurrentPlayerForPick('red', i)">(Você)</span>
-            </span>
-            <span class="player-lane">{{ getPlayerLaneDisplay('red', i) }}</span>
-          </div>
-        </div>
-
-        <!-- Empty slots ordenados por lane -->
-        <div class="pick-slot empty"
-             *ngFor="let player of getSortedTeamByLane('red').slice(getTeamPicks('red').length); let i = index">
-          <div class="champion-placeholder">?</div>
-          <div class="pick-info">
-            <span class="champion-name">Aguardando...</span>
-            <span class="player-name">
-              {{ player.summonerName || player.name || 'Jogador' }}
-              <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
-            </span>
-            <span class="player-lane">{{ getPlayerLaneDisplayForPlayer(player) }}</span>
-          </div>
+             *ngFor="let player of getSortedTeamByLane('red'); let i = index">
+          <ng-container *ngIf="getPlayerPick('red', player); else emptySlot">
+            <img [src]="getPlayerPick('red', player)?.image" [alt]="getPlayerPick('red', player)?.name" class="champion-img">
+            <div class="pick-info">
+              <span class="champion-name">{{ getPlayerPick('red', player)?.name }}</span>
+              <span class="player-name">
+                {{ player.summonerName || player.name || 'Jogador' }}
+                <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
+              </span>
+              <span class="player-lane">{{ getPlayerLaneDisplayForPlayer(player) }}</span>
+            </div>
+          </ng-container>
+          <ng-template #emptySlot>
+            <div class="champion-placeholder">?</div>
+            <div class="pick-info">
+              <span class="champion-name">Aguardando...</span>
+              <span class="player-name">
+                {{ player.summonerName || player.name || 'Jogador' }}
+                <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
+              </span>
+              <span class="player-lane">{{ getPlayerLaneDisplayForPlayer(player) }}</span>
+            </div>
+          </ng-template>
         </div>
       </div>
     </div>
