@@ -1098,6 +1098,21 @@ export class DatabaseManager {
     }
   }
 
+  /**
+   * Verifica se a função JSON_CONTAINS está disponível no MySQL
+   */
+  private async isJsonContainsAvailable(): Promise<boolean> {
+    if (!this.pool) return false;
+    
+    try {
+      await this.pool.execute('SELECT JSON_CONTAINS(\'["test"]\', \'"test"\') as test');
+      return true;
+    } catch (error: any) {
+      console.log('⚠️ JSON_CONTAINS não está disponível no MySQL:', error.message);
+      return false;
+    }
+  }
+
   async getPlayerCustomMatches(playerIdentifier: string, limit: number = 20): Promise<any[]> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
 
@@ -1105,95 +1120,90 @@ export class DatabaseManager {
       // Garantir que a tabela existe antes de consultar
       await this.ensureCustomMatchesTable();
 
-      // Validar e sanitizar parâmetros
+      // Validar parâmetros
       if (!playerIdentifier || typeof playerIdentifier !== 'string') {
         console.warn('getPlayerCustomMatches: playerIdentifier inválido:', playerIdentifier);
         return [];
       }
 
-      // Garantir que limit seja um número válido
-      let limitValue = 20;
-      if (typeof limit === 'number' && !isNaN(limit) && limit > 0) {
-        limitValue = Math.min(100, Math.max(1, limit));
-      } else if (typeof limit === 'string') {
-        const parsedLimit = parseInt(limit);
-        if (!isNaN(parsedLimit) && parsedLimit > 0) {
-          limitValue = Math.min(100, Math.max(1, parsedLimit));
-        }
+      if (typeof limit !== 'number' || limit < 1) {
+        console.warn('getPlayerCustomMatches: limit inválido, usando padrão 20:', limit);
+        limit = 20;
       }
 
-      // CORREÇÃO: Usar busca exata ao invés de LIKE com %%
-      // Buscar partidas onde o jogador está exatamente no array JSON
-      const query = `
-      SELECT 
-          id,
-          title,
-          description,
-          team1_players,
-          team2_players,
-          created_by,
-          game_mode,
-          winner_team,
-          status,
-          created_at,
-          completed_at,
-          duration,
-          pick_ban_data,
-          participants_data,
-          riot_game_id,
-          detected_by_lcu,
-          notes,
-          lp_changes,
-          custom_lp
-      FROM custom_matches
-        WHERE JSON_CONTAINS(team1_players, ?) OR JSON_CONTAINS(team2_players, ?)
-        ORDER BY created_at DESC
-      `;
+      const limitValue = Math.min(limit, 100); // Máximo 100 registros
 
-      // Usar o nome do jogador como string JSON
-      const playerJson = JSON.stringify(playerIdentifier.trim());
-      const params = [playerJson, playerJson];
+      // Verificar se JSON_CONTAINS está disponível
+      const useJsonContains = await this.isJsonContainsAvailable();
 
-      console.log('🔍 [getPlayerCustomMatches] Query corrigida:', query);
-      console.log('🔍 [getPlayerCustomMatches] Params:', params);
+      let query: string;
+      let params: any[];
 
-      let rows;
-      try {
-        [rows] = await this.pool.execute(query, params);
-        console.log('✅ [getPlayerCustomMatches] Query executada com sucesso');
-      } catch (executeError: any) {
-        console.error('❌ Erro na query corrigida:', executeError);
-        // Fallback para LIKE se JSON_CONTAINS não funcionar
-        console.log('🔄 Tentando fallback com LIKE...');
-        const fallbackQuery = `
-        SELECT 
-            id,
-            title,
-            description,
-            team1_players,
-            team2_players,
-            created_by,
-            game_mode,
-            winner_team,
-            status,
-            created_at,
-            completed_at,
-            duration,
-            pick_ban_data,
-            participants_data,
-            riot_game_id,
-            detected_by_lcu,
-            notes,
-            lp_changes,
-            custom_lp
-        FROM custom_matches
-          WHERE team1_players LIKE ? OR team2_players LIKE ?
-          ORDER BY created_at DESC
+      if (useJsonContains) {
+        // Query com JSON_CONTAINS
+        query = `
+          SELECT 
+              id,
+              title,
+              description,
+              team1_players,
+              team2_players,
+              created_by,
+              game_mode,
+              winner_team,
+              status,
+              created_at,
+              completed_at,
+              duration,
+              pick_ban_data,
+              participants_data,
+              riot_game_id,
+              detected_by_lcu,
+              notes,
+              lp_changes,
+              custom_lp
+          FROM custom_matches
+            WHERE JSON_CONTAINS(team1_players, ?) OR JSON_CONTAINS(team2_players, ?)
+            ORDER BY created_at DESC
+        `;
+        const playerJson = JSON.stringify(playerIdentifier.trim());
+        params = [playerJson, playerJson];
+      } else {
+        // Fallback com LIKE
+        query = `
+          SELECT 
+              id,
+              title,
+              description,
+              team1_players,
+              team2_players,
+              created_by,
+              game_mode,
+              winner_team,
+              status,
+              created_at,
+              completed_at,
+              duration,
+              pick_ban_data,
+              participants_data,
+              riot_game_id,
+              detected_by_lcu,
+              notes,
+              lp_changes,
+              custom_lp
+          FROM custom_matches
+            WHERE team1_players LIKE ? OR team2_players LIKE ?
+            ORDER BY created_at DESC
         `;
         const fallbackSearchTerm = `%"${playerIdentifier.trim()}"%`;
-        const fallbackParams = [fallbackSearchTerm, fallbackSearchTerm];
-        [rows] = await this.pool.execute(fallbackQuery, fallbackParams);
+        params = [fallbackSearchTerm, fallbackSearchTerm];
       }
+
+      console.log('🔍 [getPlayerCustomMatches] Query:', query);
+      console.log('🔍 [getPlayerCustomMatches] Params:', params);
+
+      const [rows] = await this.pool.execute(query, params);
+      console.log('✅ [getPlayerCustomMatches] Query executada com sucesso');
 
       // Aplicar LIMIT manualmente no JavaScript
       const limitedRows = (rows as any[]).slice(0, limitValue);
@@ -1268,35 +1278,35 @@ export class DatabaseManager {
         return 0;
       }
 
-      // CORREÇÃO: Usar busca exata ao invés de LIKE com %%
-      const query = `
-        SELECT COUNT(*) as count FROM custom_matches 
-        WHERE JSON_CONTAINS(team1_players, ?) OR JSON_CONTAINS(team2_players, ?)
-      `;
+      // Verificar se JSON_CONTAINS está disponível
+      const useJsonContains = await this.isJsonContainsAvailable();
 
-      // Usar o nome do jogador como string JSON
-      const playerJson = JSON.stringify(playerIdentifier.trim());
-      const params = [playerJson, playerJson];
+      let query: string;
+      let params: any[];
 
-      console.log('🔍 [getPlayerCustomMatchesCount] Query corrigida:', query);
-      console.log('🔍 [getPlayerCustomMatchesCount] Params:', params);
-
-      let rows;
-      try {
-        [rows] = await this.pool.execute(query, params);
-        console.log('✅ [getPlayerCustomMatchesCount] Query executada com sucesso');
-      } catch (executeError: any) {
-        console.error('❌ Erro na query count corrigida:', executeError);
-        // Fallback para LIKE se JSON_CONTAINS não funcionar
-        console.log('🔄 Tentando fallback com LIKE...');
-        const fallbackQuery = `
+      if (useJsonContains) {
+        // Query com JSON_CONTAINS
+        query = `
+          SELECT COUNT(*) as count FROM custom_matches 
+          WHERE JSON_CONTAINS(team1_players, ?) OR JSON_CONTAINS(team2_players, ?)
+        `;
+        const playerJson = JSON.stringify(playerIdentifier.trim());
+        params = [playerJson, playerJson];
+      } else {
+        // Fallback com LIKE
+        query = `
           SELECT COUNT(*) as count FROM custom_matches 
           WHERE team1_players LIKE ? OR team2_players LIKE ?
         `;
         const fallbackSearchTerm = `%"${playerIdentifier.trim()}"%`;
-        const fallbackParams = [fallbackSearchTerm, fallbackSearchTerm];
-        [rows] = await this.pool.execute(fallbackQuery, fallbackParams);
+        params = [fallbackSearchTerm, fallbackSearchTerm];
       }
+
+      console.log('🔍 [getPlayerCustomMatchesCount] Query:', query);
+      console.log('🔍 [getPlayerCustomMatchesCount] Params:', params);
+
+      const [rows] = await this.pool.execute(query, params);
+      console.log('✅ [getPlayerCustomMatchesCount] Query executada com sucesso');
 
       const results = rows as any[];
       const count = results[0]?.count || 0;
