@@ -29,7 +29,7 @@ export class DiscordService {
   private activeMatches: Map<string, DiscordMatch> = new Map();
   private isConnected = false;
   private botToken?: string;
-  private targetChannelName = '🦆┊Fazenda';
+  private targetChannelName = 'lol-matchmaking'; // Valor padrão, será sobrescrito pelo banco
   private databaseManager: DatabaseManager;
 
   // WebSocket principal do servidor
@@ -116,6 +116,39 @@ export class DiscordService {
       console.log('🔌 Discord Bot desconectado');
       this.isConnected = false;
     });
+  }
+
+  // Carregar configuração do canal do banco de dados
+  private async loadChannelConfiguration(): Promise<void> {
+    try {
+      const channelName = await this.databaseManager.getSetting('discord_channel');
+      if (channelName && channelName.trim() !== '') {
+        this.targetChannelName = channelName.trim();
+        console.log(`🎯 [DiscordService] Canal configurado: ${this.targetChannelName}`);
+      } else {
+        console.log(`🎯 [DiscordService] Usando canal padrão: ${this.targetChannelName}`);
+      }
+    } catch (error) {
+      console.error('❌ [DiscordService] Erro ao carregar configuração do canal:', error);
+      console.log(`🎯 [DiscordService] Usando canal padrão: ${this.targetChannelName}`);
+    }
+  }
+
+  // Método público para atualizar configuração do canal
+  async updateChannelConfiguration(channelName: string): Promise<void> {
+    try {
+      await this.databaseManager.setSetting('discord_channel', channelName.trim());
+      this.targetChannelName = channelName.trim();
+      console.log(`🎯 [DiscordService] Canal atualizado para: ${this.targetChannelName}`);
+    } catch (error) {
+      console.error('❌ [DiscordService] Erro ao atualizar configuração do canal:', error);
+      throw error;
+    }
+  }
+
+  // Método público para obter configuração atual do canal
+  getCurrentChannelName(): string {
+    return this.targetChannelName;
   }
 
   // Método para verificação inicial do canal
@@ -210,6 +243,9 @@ export class DiscordService {
       console.log('✅ [DiscordService] Discord Bot inicializado com sucesso');
       console.log('🎮 [DiscordService] Bot conectado como:', this.client.user?.tag);
       console.log('🏠 [DiscordService] Servidores conectados:', this.client.guilds.cache.size);
+      
+      // Carregar configuração do canal após conectar com sucesso
+      await this.loadChannelConfiguration();
       
       return true;
     } catch (error: any) {

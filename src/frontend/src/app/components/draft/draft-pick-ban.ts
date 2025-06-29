@@ -58,7 +58,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
     private _cachedBlueTeamPicks: Champion[] | null = null;
     private _cachedRedTeamPicks: Champion[] | null = null;
     private _lastCacheUpdate: number = 0;
-    private readonly CACHE_DURATION = 100;
+    private readonly CACHE_DURATION = 5000; // Aumentado para 5 segundos
 
     // SISTEMA DE CACHE INTELIGENTE
     private _sessionStateHash: string = '';
@@ -66,6 +66,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
     private _phaseHash: string = '';
     private _lastStateUpdate: number = 0;
     private _cacheInvalidationNeeded: boolean = false;
+    private _lastActionHash: string = ''; // Hash da última ação realizada
 
     private timer: any = null;
     private botPickTimer: any = null;
@@ -336,6 +337,11 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
         this.updateCurrentTurn();
         this.startTimer();
 
+        // Inicializar hashes para o sistema de cache inteligente
+        this._sessionStateHash = this.generateSessionStateHash();
+        this._lastActionHash = this.generateActionHash();
+        this._lastStateUpdate = Date.now();
+
         console.log('✅ [DraftPickBan] Sessão criada:', {
             id: this.session.id,
             blueTeamSize: this.session.blueTeam.length,
@@ -563,6 +569,8 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
             this.updateCurrentTurn();
         }
 
+        // Invalidar cache apenas quando há uma ação real (pick/ban do bot)
+        console.log('🔄 [performBotAction] Invalidando cache devido a ação real do bot');
         this.invalidateCache();
     }
 
@@ -593,6 +601,9 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
             if (currentPhase.timeRemaining > 0) {
                 currentPhase.timeRemaining--;
                 this.timeRemaining = currentPhase.timeRemaining;
+                
+                // NÃO invalidar cache aqui - apenas atualizar o timer
+                // O cache só deve ser invalidado quando há mudanças reais nos dados
             } else {
                 this.handleTimeOut();
             }
@@ -653,6 +664,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
     }
 
     private invalidateCache(): void {
+        console.log('🗑️ [Cache] Invalidando cache manualmente');
         this._cachedSortedBlueTeam = null;
         this._cachedSortedRedTeam = null;
         this._cachedBannedChampions = null;
@@ -662,11 +674,18 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
     }
 
     private isCacheValid(): boolean {
+        // Verificar se há mudanças reais que requerem invalidação
+        if (this.checkStateChange()) {
+            return false;
+        }
+
+        // Verificar se o cache expirou por tempo
         return Date.now() - this._lastCacheUpdate < this.CACHE_DURATION;
     }
 
     getBannedChampions(): Champion[] {
-        if (this.isCacheValid() && this._cachedBannedChampions) {
+        // Verificar se o cache é válido antes de usar
+        if (!this.shouldInvalidateCache() && this._cachedBannedChampions) {
             return this._cachedBannedChampions;
         }
 
@@ -686,10 +705,11 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
     }
 
     getTeamPicks(team: 'blue' | 'red'): Champion[] {
-        if (team === 'blue' && this.isCacheValid() && this._cachedBlueTeamPicks) {
+        // Verificar se o cache é válido antes de usar
+        if (team === 'blue' && !this.shouldInvalidateCache() && this._cachedBlueTeamPicks) {
             return this._cachedBlueTeamPicks;
         }
-        if (team === 'red' && this.isCacheValid() && this._cachedRedTeamPicks) {
+        if (team === 'red' && !this.shouldInvalidateCache() && this._cachedRedTeamPicks) {
             return this._cachedRedTeamPicks;
         }
 
@@ -713,11 +733,12 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
         console.log(`🔍 [getSortedTeamByLane] Chamado para time: ${team}`);
         console.log(`🔍 [getSortedTeamByLane] Session existe:`, !!this.session);
         
-        if (team === 'blue' && this.isCacheValid() && this._cachedSortedBlueTeam) {
+        // Verificar se o cache é válido antes de usar
+        if (team === 'blue' && !this.shouldInvalidateCache() && this._cachedSortedBlueTeam) {
             console.log(`🔍 [getSortedTeamByLane] Retornando cache para blue team:`, this._cachedSortedBlueTeam);
             return this._cachedSortedBlueTeam;
         }
-        if (team === 'red' && this.isCacheValid() && this._cachedSortedRedTeam) {
+        if (team === 'red' && !this.shouldInvalidateCache() && this._cachedSortedRedTeam) {
             console.log(`🔍 [getSortedTeamByLane] Retornando cache para red team:`, this._cachedSortedRedTeam);
             return this._cachedSortedRedTeam;
         }
@@ -871,6 +892,8 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
 
     // MÉTODO PARA RECEBER SELEÇÃO DO MODAL
     onChampionSelected(champion: Champion): void {
+        console.log('🎯 [onChampionSelected] Campeão selecionado:', champion.name);
+        
         if (!this.session) return;
 
         const currentPhase = this.session.phases[this.session.currentAction];
@@ -889,6 +912,8 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
             this.updateCurrentTurn();
         }
 
+        // Invalidar cache apenas quando há uma ação real (pick/ban)
+        console.log('🔄 [onChampionSelected] Invalidando cache devido a ação real');
         this.invalidateCache();
     }
 
@@ -902,33 +927,73 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
     private generateSessionStateHash(): string {
         if (!this.session) return '';
 
-        return JSON.stringify({
+        // Gerar hash baseado apenas nos dados que afetam a interface
+        const stateData = {
             currentAction: this.session.currentAction,
             phase: this.session.phase,
             phases: this.session.phases.map(p => ({
                 action: p.action,
                 team: p.team,
                 locked: p.locked,
-                championId: p.champion?.id
+                championId: p.champion?.id,
+                playerId: p.playerId
             }))
-        });
+        };
+
+        return JSON.stringify(stateData);
+    }
+
+    private generateActionHash(): string {
+        if (!this.session) return '';
+
+        // Hash específico para ações (picks/bans realizados)
+        const actionData = this.session.phases
+            .filter(p => p.locked && p.champion)
+            .map(p => ({
+                action: p.action,
+                team: p.team,
+                championId: p.champion?.id,
+                playerId: p.playerId
+            }));
+
+        return JSON.stringify(actionData);
     }
 
     private checkStateChange(): boolean {
-        const newHash = this.generateSessionStateHash();
-        const hasChanged = newHash !== this._sessionStateHash;
+        const newStateHash = this.generateSessionStateHash();
+        const newActionHash = this.generateActionHash();
+        
+        const stateChanged = newStateHash !== this._sessionStateHash;
+        const actionChanged = newActionHash !== this._lastActionHash;
 
-        if (hasChanged) {
-            this._sessionStateHash = newHash;
+        if (stateChanged || actionChanged) {
+            console.log('🔄 [Cache] Mudança detectada - invalidando cache');
+            console.log('🔄 [Cache] State changed:', stateChanged);
+            console.log('🔄 [Cache] Action changed:', actionChanged);
+            
+            this._sessionStateHash = newStateHash;
+            this._lastActionHash = newActionHash;
             this._lastStateUpdate = Date.now();
-            this.invalidateCache();
+            return true;
         }
 
-        return hasChanged;
+        return false;
     }
 
-    private forceCacheInvalidation(): void {
-        this._cacheInvalidationNeeded = true;
-        this.invalidateCache();
+    private shouldInvalidateCache(): boolean {
+        // Verificar se há mudanças reais nos dados
+        if (this.checkStateChange()) {
+            return true;
+        }
+
+        // Verificar se o cache expirou por tempo
+        const cacheExpired = Date.now() - this._lastCacheUpdate > this.CACHE_DURATION;
+        
+        if (cacheExpired) {
+            console.log('⏰ [Cache] Cache expirado por tempo');
+            return true;
+        }
+
+        return false;
     }
 } 

@@ -292,11 +292,36 @@
                 </small>
               </div>
 
+              <div style="margin-bottom: 1rem;">
+                <label for="discordChannel" style="display: block; color: #c9aa71; font-weight: bold; margin-bottom: 0.5rem;">
+                  Canal do Discord:
+                </label>
+                <input
+                  type="text"
+                  id="discordChannel"
+                  [(ngModel)]="settingsForm.discordChannel"
+                  name="discordChannel"
+                  placeholder="lol-matchmaking"
+                  style="width: 100%; padding: 12px; border: 2px solid #463714; border-radius: 8px; background: rgba(15, 20, 25, 0.8); color: #cdbe91; font-size: 1rem; margin-bottom: 0.5rem; transition: border-color 0.3s ease;"
+                  onfocus="this.style.borderColor='#c9aa71'"
+                  onblur="this.style.borderColor='#463714'">
+                <small style="color: #a09b8c; font-size: 0.8rem;">
+                  Nome do canal de voz que será monitorado para matchmaking
+                </small>
+              </div>
+
               <button
                 type="button"
                 (click)="updateDiscordBotToken()"
-                style="background: linear-gradient(135deg, #5865f2 0%, #7289da 100%); color: #ffffff; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(88, 101, 242, 0.3); display: flex; align-items: center; gap: 0.5rem; font-size: 1rem;">
+                style="background: linear-gradient(135deg, #5865f2 0%, #7289da 100%); color: #ffffff; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(88, 101, 242, 0.3); display: flex; align-items: center; gap: 0.5rem; font-size: 1rem; margin-bottom: 0.5rem;">
                 🤖 Configurar Discord Bot
+              </button>
+
+              <button
+                type="button"
+                (click)="updateDiscordChannel()"
+                style="background: linear-gradient(135deg, #5865f2 0%, #7289da 100%); color: #ffffff; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(88, 101, 242, 0.3); display: flex; align-items: center; gap: 0.5rem; font-size: 1rem;">
+                🎯 Configurar Canal
               </button>
 
               <div *ngIf="discordStatus?.isConnected" style="margin-top: 1rem; padding: 1rem; background: rgba(88, 101, 242, 0.1); border: 1px solid rgba(88, 101, 242, 0.3); border-radius: 8px;">

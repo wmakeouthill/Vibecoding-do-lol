@@ -84,7 +84,8 @@ export class App implements OnInit, OnDestroy {
     summonerName: '',
     region: 'br1',
     riotApiKey: '',
-    discordBotToken: ''
+    discordBotToken: '',
+    discordChannel: ''
   };
 
   // Status do Discord
@@ -302,7 +303,7 @@ export class App implements OnInit, OnDestroy {
     // CORREÇÃO: Mapear campeões aos jogadores específicos que os escolheram
     // Buscar os picks com informações do jogador que escolheu
     const picksWithPlayerInfo = pickBanResult.picks || [];
-    
+
     console.log('👥 Picks com informações de jogador:', picksWithPlayerInfo);
 
     // Mapear campeões aos jogadores do time azul (team1)
@@ -404,7 +405,7 @@ export class App implements OnInit, OnDestroy {
     console.log('❌ Jogo cancelado');
     console.log('🔍 Game data completo:', this.gameData);
     console.log('🔍 Draft data:', this.draftData);
-    
+
     // Enviar mensagem de cancelamento de partida em andamento para o backend
     if (this.gameData?.originalMatchId) {
       console.log('📤 Enviando cancelamento de partida em andamento para matchId:', this.gameData.originalMatchId);
@@ -420,7 +421,7 @@ export class App implements OnInit, OnDestroy {
       console.warn('⚠️ Game data não tem originalMatchId:', this.gameData);
       console.warn('⚠️ Draft data tem matchId?', this.draftData?.matchId);
     }
-    
+
     // CORREÇÃO: Seguir a mesma estrutura do onPickBanCancel
     this.inGamePhase = false;
     this.gameData = null;
@@ -1180,7 +1181,7 @@ export class App implements OnInit, OnDestroy {
     console.log('👥 Team 2 players processados:', team2Players);
 
     // Usar dados REAIS de pick/ban da partida histórica se disponível
-    let realPickBanData = null;
+    let realPickBanData: { team1Picks: any; team2Picks: any; source: any; isReal: any; team1Bans?: string[]; team2Bans?: string[]; } | null = null;
     try {
       if (matchData.pick_ban_data && typeof matchData.pick_ban_data === 'string') {
         realPickBanData = JSON.parse(matchData.pick_ban_data);
@@ -2544,6 +2545,15 @@ export class App implements OnInit, OnDestroy {
             // Fallback para localStorage se não existir no banco
             this.loadDiscordTokenFromLocalStorage();
           }
+
+          // Configurar Canal do Discord se existir no banco
+          if (response.settings.discordChannel && response.settings.discordChannel.trim() !== '') {
+            this.settingsForm.discordChannel = response.settings.discordChannel;
+            console.log('✅ Canal do Discord carregado do banco de dados:', response.settings.discordChannel);
+          } else {
+            console.log('ℹ️ Nenhum canal do Discord configurado no banco, usando padrão');
+            this.settingsForm.discordChannel = 'lol-matchmaking';
+          }
         } else {
           console.warn('⚠️ Falha ao carregar configurações do banco, usando fallbacks');
           this.loadConfigFromFallbacks();
@@ -2599,5 +2609,35 @@ export class App implements OnInit, OnDestroy {
     const specialUsers = ['wcaco', 'admin', 'dev', 'popcorn seller'];
     return specialUsers.includes(this.currentPlayer?.gameName?.toLowerCase() || '') ||
       specialUsers.includes(this.currentPlayer?.summonerName?.toLowerCase() || '');
+  }
+
+  updateDiscordChannel(): void {
+    const channelName = this.settingsForm.discordChannel?.trim();
+
+    if (!channelName) {
+      this.addNotification('error', 'Canal Vazio', 'Por favor, insira o nome do canal do Discord');
+      return;
+    }
+
+    console.log('🎯 Salvando canal do Discord...');
+
+    this.apiService.setDiscordChannel(channelName).subscribe({
+      next: (response) => {
+        console.log('✅ Canal do Discord salvo:', response);
+
+        if (response.success) {
+          this.addNotification('success', 'Canal Salvo', `Canal do Discord configurado para: ${channelName}`);
+
+          // Limpar campo após salvar
+          this.settingsForm.discordChannel = '';
+        } else {
+          this.addNotification('error', 'Erro', response.error || 'Falha ao salvar canal');
+        }
+      },
+      error: (error) => {
+        console.error('❌ Erro ao salvar canal do Discord:', error);
+        this.addNotification('error', 'Erro do Discord', 'Erro ao configurar canal do Discord');
+      }
+    });
   }
 }

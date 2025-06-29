@@ -326,6 +326,14 @@ export class ApiService {
       );
   }
 
+  // Método para configurar o Canal do Discord
+  setDiscordChannel(channelName: string): Observable<any> {
+    return this.http.post(`http://localhost:3000/api/config/discord-channel`, { channelName })
+      .pipe(
+        catchError(this.handleError)
+      );
+  }
+
   // Método para verificar status do Discord Bot
   getDiscordStatus(): Observable<any> {
     return this.http.get(`${this.baseUrl}/discord/status`)

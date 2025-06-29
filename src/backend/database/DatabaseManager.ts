@@ -83,12 +83,22 @@ export class DatabaseManager {
         queueLimit: 0,
         // Configurações específicas para MySQL 5.6
         charset: 'utf8mb4',
-        timezone: 'local'
+        timezone: 'local',
+        // Configurações adicionais para UTF-8
+        supportBigNumbers: true,
+        bigNumberStrings: true,
+        dateStrings: true,
+        multipleStatements: true
       });
 
       // Testar conexão
       this.connection = await this.pool.getConnection();
       await this.connection.ping();
+
+      // Configurar charset da conexão para UTF-8
+      await this.connection.execute('SET NAMES utf8mb4');
+      await this.connection.execute('SET CHARACTER SET utf8mb4');
+      await this.connection.execute('SET character_set_connection=utf8mb4');
 
       console.log('✅ Conexão MySQL estabelecida com sucesso');
 
@@ -214,12 +224,15 @@ export class DatabaseManager {
     // Tabela de configurações
     await this.pool.execute(`
       CREATE TABLE IF NOT EXISTS settings (
-        \`key\` VARCHAR(255) PRIMARY KEY,
+        \`key\` VARCHAR(191) PRIMARY KEY,
         value TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-      )
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
     `);
+
+    // Verificar e corrigir charset da tabela settings se necessário
+    await this.ensureSettingsTableCharset();
 
     // Tabela para persistir jogadores na fila
     await this.pool.execute(`
@@ -253,7 +266,8 @@ export class DatabaseManager {
       { key: 'max_mmr_difference', value: '200' },
       { key: 'app_version', value: '1.0.0' },
       { key: 'riot_api_key', value: '' },
-      { key: 'enable_lcu_integration', value: 'true' }
+      { key: 'enable_lcu_integration', value: 'true' },
+      { key: 'discord_channel', value: 'lol-matchmaking' }
     ];
 
     for (const setting of defaultSettings) {
@@ -2540,6 +2554,25 @@ export class DatabaseManager {
       );
     } catch (error) {
       console.error('Erro ao atualizar posição na fila:', error);
+      throw error;
+    }
+  }
+
+  // Verificar e corrigir charset da tabela settings se necessário
+  private async ensureSettingsTableCharset(): Promise<void> {
+    if (!this.pool) throw new Error('Pool de conexão não inicializado');
+
+    try {
+      const [rows] = await this.pool.execute('SHOW CREATE TABLE settings');
+      const results = rows as any[];
+      const createTableQuery = results[0]['Create Table'];
+
+      if (!createTableQuery.includes('CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci')) {
+        console.log('📋 Tabela settings não está configurada corretamente, corrigindo...');
+        await this.pool.execute('ALTER TABLE settings CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');
+      }
+    } catch (error) {
+      console.error('❌ Erro ao verificar/corrigir charset da tabela settings:', error);
       throw error;
     }
   }

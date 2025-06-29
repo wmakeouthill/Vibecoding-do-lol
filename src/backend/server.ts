@@ -14,7 +14,6 @@ if (fs.existsSync(envPath)) {
 }
 
 import cors from 'cors';
-import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { createServer, IncomingMessage } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -1887,14 +1886,14 @@ app.get('/api/matches/custom/:playerId', (req: Request, res: Response) => {
         // Processar participants_data se existir
         if (match.participants_data) {
           try {
-            const participantsData = typeof match.participants_data === 'string' 
-              ? JSON.parse(match.participants_data) 
+            const participantsData = typeof match.participants_data === 'string'
+              ? JSON.parse(match.participants_data)
               : match.participants_data;
-            
+
             if (Array.isArray(participantsData)) {
               // Processar participantes com DataDragonService
               const processedParticipants = dataDragonService.processParticipants(participantsData);
-              
+
               return {
                 ...match,
                 participants_data: processedParticipants
@@ -1904,7 +1903,7 @@ app.get('/api/matches/custom/:playerId', (req: Request, res: Response) => {
             console.warn('⚠️ Erro ao processar participants_data da partida', match.id, ':', error);
           }
         }
-        
+
         return match;
       });
 
@@ -2233,17 +2232,61 @@ app.get('/api/config/settings', (async (req: Request, res: Response) => {
   try {
     const riotApiKey = await dbManager.getSetting('riot_api_key');
     const discordToken = await dbManager.getSetting('discord_bot_token');
+    const discordChannel = await dbManager.getSetting('discord_channel');
 
     res.json({
       success: true,
       settings: {
         riotApiKey: riotApiKey || '',
-        discordBotToken: discordToken || ''
+        discordBotToken: discordToken || '',
+        discordChannel: discordChannel || 'lol-matchmaking'
       }
     });
 
   } catch (error: any) {
     console.error('❌ Erro ao obter configurações do banco:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}) as RequestHandler);
+
+// Configurar Canal do Discord
+app.post('/api/config/discord-channel', (async (req: Request, res: Response) => {
+  console.log('🎯 Endpoint Discord channel chamado');
+  console.log('📦 Body:', req.body);
+
+  try {
+    const { channelName } = req.body;
+
+    console.log('🎯 Nome do canal recebido:', channelName);
+
+    if (!channelName || typeof channelName !== 'string' || channelName.trim() === '') {
+      console.log('❌ Nome do canal inválido ou vazio');
+      return res.status(400).json({
+        success: false,
+        error: 'Nome do canal do Discord é obrigatório'
+      });
+    }
+
+    console.log('💾 Salvando nome do canal no banco...');
+    // Salvar no banco de dados
+    await dbManager.setSetting('discord_channel', channelName.trim());
+    console.log('✅ Nome do canal salvo no banco');
+
+    console.log('🎯 Atualizando configuração do Discord Service...');
+    // Atualizar a configuração no DiscordService
+    await discordService.updateChannelConfiguration(channelName.trim());
+
+    res.json({
+      success: true,
+      message: `Canal do Discord configurado para: ${channelName.trim()}`,
+      channelName: channelName.trim()
+    });
+
+  } catch (error: any) {
+    console.error('❌ Erro ao configurar canal do Discord:', error);
     res.status(500).json({
       success: false,
       error: error.message
