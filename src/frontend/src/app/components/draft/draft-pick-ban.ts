@@ -1,16 +1,35 @@
-import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ChampionService, Champion } from '../../services/champion.service';
 import { BotService, PickBanPhase, CustomPickBanSession } from '../../services/bot.service';
 import { DraftChampionModalComponent } from './draft-champion-modal';
 import { DraftConfirmationModalComponent } from './draft-confirmation-modal';
+import { interval, Subscription } from 'rxjs';
+import { SortedTeamByLanePipe } from './sorted-team-by-lane.pipe';
+import { BannedChampionsPipe } from './banned-champions.pipe';
+import { TeamBansPipe } from './team-bans.pipe';
+import { TeamPicksPipe } from './team-picks.pipe';
+import { PlayerPickPipe } from './player-pick.pipe';
+import { LaneDisplayPipe } from './lane-display.pipe';
 
 @Component({
     selector: 'app-draft-pick-ban',
-    imports: [CommonModule, FormsModule, DraftChampionModalComponent, DraftConfirmationModalComponent],
+    imports: [
+        CommonModule, 
+        FormsModule, 
+        DraftChampionModalComponent, 
+        DraftConfirmationModalComponent, 
+        SortedTeamByLanePipe,
+        BannedChampionsPipe,
+        TeamBansPipe,
+        TeamPicksPipe,
+        PlayerPickPipe,
+        LaneDisplayPipe
+    ],
     templateUrl: './draft-pick-ban.html',
-    styleUrl: './draft-pick-ban.scss'
+    styleUrl: './draft-pick-ban.scss',
+    changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class DraftPickBanComponent implements OnInit, OnDestroy {
     @Input() matchData: any = null;
@@ -49,7 +68,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
     public _lastActionHash: string = ''; // Hash da última ação realizada
     public _lastRealActionTime: number = 0; // Timestamp da última ação real (pick/ban)
 
-    public timer: any = null;
+    public timer: Subscription | null = null;
     public botPickTimer: number | null = null;
 
     constructor(
@@ -66,7 +85,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
 
     ngOnDestroy() {
         if (this.timer) {
-            clearInterval(this.timer);
+            this.timer.unsubscribe();
         }
         if (this.botPickTimer) {
             this.botService.cancelScheduledAction(this.botPickTimer);
@@ -409,10 +428,11 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
 
     startTimer() {
         if (this.timer) {
-            clearInterval(this.timer);
+            this.timer.unsubscribe();
         }
 
-        this.timer = setInterval(() => {
+        // Timer único para lógica e display
+        this.timer = interval(1000).subscribe(() => {
             if (!this.session) return;
 
             const currentPhase = this.session.phases[this.session.currentAction];
@@ -421,14 +441,14 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
             if (currentPhase.timeRemaining > 0) {
                 currentPhase.timeRemaining--;
                 this.timeRemaining = currentPhase.timeRemaining;
-
-                // Usar detecção de mudanças otimizada apenas para o timer
-                // NÃO invalidar cache aqui - apenas atualizar o timer
-                this.cdr.detectChanges();
+                
+                // NÃO marcar para detecção a cada segundo
+                // O timer será atualizado automaticamente pelo Angular
+                // Apenas marcar quando há mudanças reais nos dados
             } else {
                 this.handleTimeOut();
             }
-        }, 1000);
+        });
     }
 
     handleTimeOut() {
@@ -578,29 +598,20 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
     }
 
     getSortedTeamByLane(team: 'blue' | 'red'): any[] {
-        console.log(`🔍 [getSortedTeamByLane] Chamado para time: ${team}`);
-        console.log(`🔍 [getSortedTeamByLane] Session existe:`, !!this.session);
-
         // Verificar se o cache é válido antes de usar
         if (team === 'blue' && this.isCacheValidForDisplay() && this._cachedSortedBlueTeam) {
-            console.log(`🔍 [getSortedTeamByLane] Retornando cache para blue team:`, this._cachedSortedBlueTeam);
             return this._cachedSortedBlueTeam;
         }
         if (team === 'red' && this.isCacheValidForDisplay() && this._cachedSortedRedTeam) {
-            console.log(`🔍 [getSortedTeamByLane] Retornando cache para red team:`, this._cachedSortedRedTeam);
             return this._cachedSortedRedTeam;
         }
 
         if (!this.session) {
-            console.warn(`⚠️ [getSortedTeamByLane] Session não existe para time ${team}`);
             return [];
         }
 
         const teamPlayers = team === 'blue' ? this.session.blueTeam : this.session.redTeam;
-        console.log(`🔍 [getSortedTeamByLane] Team players para ${team}:`, teamPlayers);
-
         const sortedPlayers = this.sortPlayersByLane(teamPlayers);
-        console.log(`🔍 [getSortedTeamByLane] Players ordenados para ${team}:`, sortedPlayers);
 
         if (team === 'blue') {
             this._cachedSortedBlueTeam = sortedPlayers;
@@ -794,7 +805,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
 
     private stopTimer() {
         if (this.timer) {
-            clearInterval(this.timer);
+            this.timer.unsubscribe();
             this.timer = null;
         }
     }

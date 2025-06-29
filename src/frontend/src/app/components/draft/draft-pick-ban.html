@@ -36,11 +36,11 @@
       <div class="team-bans">
         <h4>🚫 Bans do Time Azul</h4>
         <div class="banned-champions-row">
-          <div class="banned-champion" *ngFor="let ban of getTeamBans('blue')">
+          <div class="banned-champion" *ngFor="let ban of session.phases | teamBans:'blue'">
             <img [src]="ban.image" [alt]="ban.name" class="banned-img">
             <span class="banned-name">{{ ban.name }}</span>
           </div>
-          <div class="banned-placeholder" *ngFor="let i of [1,2,3,4,5].slice(getTeamBans('blue').length)">
+          <div class="banned-placeholder" *ngFor="let i of [1,2,3,4,5].slice((session.phases | teamBans:'blue').length)">
             <div class="ban-placeholder">?</div>
             <span class="banned-name">Aguardando...</span>
           </div>
@@ -49,8 +49,8 @@
 
       <div class="team-picks">
         <!-- Picks mapeados às posições corretas dos jogadores -->
-        <div class="pick-slot" *ngFor="let player of getSortedTeamByLane('blue'); let i = index">
-          <ng-container *ngIf="getPlayerPick('blue', player) as playerPick; else emptySlot">
+        <div class="pick-slot" *ngFor="let player of session.blueTeam | sortedTeamByLane; let i = index">
+          <ng-container *ngIf="session.phases | playerPick:'blue':player:(session.blueTeam | sortedTeamByLane) as playerPick; else emptySlot">
             <img [src]="playerPick.image" [alt]="playerPick.name" class="champion-img">
             <div class="pick-info">
               <span class="champion-name">{{ playerPick.name }}</span>
@@ -58,7 +58,7 @@
                 {{ player.summonerName || player.name || 'Jogador' }}
                 <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
               </span>
-              <span class="player-lane">{{ getPlayerLaneDisplayForPlayer(player) }}</span>
+              <span class="player-lane">{{ player.lane | laneDisplay }}</span>
             </div>
           </ng-container>
           <ng-template #emptySlot>
@@ -69,7 +69,7 @@
                 {{ player.summonerName || player.name || 'Jogador' }}
                 <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
               </span>
-              <span class="player-lane">{{ getPlayerLaneDisplayForPlayer(player) }}</span>
+              <span class="player-lane">{{ player.lane | laneDisplay }}</span>
             </div>
           </ng-template>
         </div>
@@ -80,7 +80,7 @@
     <div class="bans-section">
       <h3>🚫 Banidos</h3>
       <div class="banned-champions">
-        <div class="banned-champion" *ngFor="let ban of getBannedChampions()">
+        <div class="banned-champion" *ngFor="let ban of session.phases | bannedChampions">
           <img [src]="ban.image" [alt]="ban.name" class="banned-img">
           <span class="banned-name">{{ ban.name }}</span>
         </div>
@@ -97,11 +97,11 @@
       <div class="team-bans">
         <h4>🚫 Bans do Time Vermelho</h4>
         <div class="banned-champions-row">
-          <div class="banned-champion" *ngFor="let ban of getTeamBans('red')">
+          <div class="banned-champion" *ngFor="let ban of session.phases | teamBans:'red'">
             <img [src]="ban.image" [alt]="ban.name" class="banned-img">
             <span class="banned-name">{{ ban.name }}</span>
           </div>
-          <div class="banned-placeholder" *ngFor="let i of [1,2,3,4,5].slice(getTeamBans('red').length)">
+          <div class="banned-placeholder" *ngFor="let i of [1,2,3,4,5].slice((session.phases | teamBans:'red').length)">
             <div class="ban-placeholder">?</div>
             <span class="banned-name">Aguardando...</span>
           </div>
@@ -110,8 +110,8 @@
 
       <div class="team-picks">
         <!-- Picks mapeados às posições corretas dos jogadores -->
-        <div class="pick-slot" *ngFor="let player of getSortedTeamByLane('red'); let i = index">
-          <ng-container *ngIf="getPlayerPick('red', player) as playerPick; else emptySlot">
+        <div class="pick-slot" *ngFor="let player of session.redTeam | sortedTeamByLane; let i = index">
+          <ng-container *ngIf="session.phases | playerPick:'red':player:(session.redTeam | sortedTeamByLane) as playerPick; else emptySlot">
             <img [src]="playerPick.image" [alt]="playerPick.name" class="champion-img">
             <div class="pick-info">
               <span class="champion-name">{{ playerPick.name }}</span>
@@ -119,7 +119,7 @@
                 {{ player.summonerName || player.name || 'Jogador' }}
                 <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
               </span>
-              <span class="player-lane">{{ getPlayerLaneDisplayForPlayer(player) }}</span>
+              <span class="player-lane">{{ player.lane | laneDisplay }}</span>
             </div>
           </ng-container>
           <ng-template #emptySlot>
@@ -130,7 +130,7 @@
                 {{ player.summonerName || player.name || 'Jogador' }}
                 <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
               </span>
-              <span class="player-lane">{{ getPlayerLaneDisplayForPlayer(player) }}</span>
+              <span class="player-lane">{{ player.lane | laneDisplay }}</span>
             </div>
           </ng-template>
         </div>
@@ -181,7 +181,7 @@
         <div class="final-team">
           <h4>🔵 Time Azul</h4>
           <div class="final-picks">
-            <div class="final-pick" *ngFor="let pick of getTeamPicks('blue')">
+            <div class="final-pick" *ngFor="let pick of session.phases | teamPicks:'blue'">
               <img [src]="pick.image" [alt]="pick.name" class="final-champion-img">
               <span class="final-champion-name">{{ pick.name }}</span>
             </div>
@@ -191,7 +191,7 @@
         <div class="final-team">
           <h4>🔴 Time Vermelho</h4>
           <div class="final-picks">
-            <div class="final-pick" *ngFor="let pick of getTeamPicks('red')">
+            <div class="final-pick" *ngFor="let pick of session.phases | teamPicks:'red'">
               <img [src]="pick.image" [alt]="pick.name" class="final-champion-img">
               <span class="final-champion-name">{{ pick.name }}</span>
             </div>
