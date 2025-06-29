@@ -1203,7 +1203,7 @@
 }
 
 .final-confirmation-modal {
-  background: #1a1a1a;
+  background: linear-gradient(135deg, #0a1428 0%, #1e2e4b 100%);
   border-radius: 12px;
   padding: 24px;
   max-width: 90vw;
@@ -1211,6 +1211,7 @@
   overflow-y: auto;
   border: 2px solid #3498db;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  color: #f0f2f5;
 }
 
 .confirmation-header {
@@ -1223,13 +1224,14 @@
   }
   
   h2 {
-    color: #fff;
+    color: #f0c040;
     margin: 0 0 8px 0;
     font-size: 24px;
+    font-weight: bold;
   }
   
   p {
-    color: #bdc3c7;
+    color: #c9aa71;
     margin: 0;
     font-size: 14px;
   }
@@ -1237,107 +1239,207 @@
 
 .confirmation-content {
   .teams-container {
-    display: flex;
-    gap: 24px;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 30px;
     margin-bottom: 24px;
     
     .team {
-      flex: 1;
-      background: #2c3e50;
-      border-radius: 8px;
-      padding: 16px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 20px;
+      border: 2px solid;
       
       &.blue-team {
-        border-left: 4px solid #3498db;
+        border-color: #5bc0de;
       }
       
       &.red-team {
-        border-left: 4px solid #e74c3c;
+        border-color: #d9534f;
       }
       
       .team-header {
-        margin-bottom: 16px;
+        text-align: center;
+        margin-bottom: 20px;
         
         .team-name {
-          color: #fff;
-          font-weight: 600;
-          font-size: 16px;
+          font-size: 18px;
+          font-weight: bold;
+          color: #f0f2f5;
+        }
+      }
+      
+      .team-bans {
+        margin-bottom: 20px;
+        padding: 15px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+
+        h4 {
+          margin: 0 0 10px 0;
+          font-size: 14px;
+          color: #c9aa71;
+          text-align: center;
+        }
+
+        .banned-champions-row {
+          display: flex;
+          gap: 8px;
+          justify-content: center;
+          flex-wrap: wrap;
+        }
+
+        .banned-champion {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 4px;
+          min-width: 50px;
+
+          .banned-img {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 2px solid #d9534f;
+            opacity: 0.7;
+          }
+
+          .banned-name {
+            font-size: 10px;
+            color: #d9534f;
+            text-align: center;
+            max-width: 50px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+        }
+
+        .banned-placeholder {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 4px;
+          min-width: 50px;
+
+          .ban-placeholder {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            font-weight: bold;
+            color: #888;
+          }
+
+          .banned-name {
+            font-size: 10px;
+            color: #888;
+            text-align: center;
+            max-width: 50px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
         }
       }
       
       .team-picks {
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 15px;
         
-        .pick-slot {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 8px;
-          background: #34495e;
-          border-radius: 6px;
-          position: relative;
-          
-          .champion-img {
-            width: 40px;
-            height: 40px;
-            border-radius: 6px;
-            object-fit: cover;
-          }
-          
-          .champion-placeholder {
-            width: 40px;
-            height: 40px;
-            border-radius: 6px;
-            background: #7f8c8d;
+        .team-slot {
+          .slot-content {
             display: flex;
             align-items: center;
-            justify-content: center;
-            color: #fff;
-            font-size: 18px;
-            font-weight: bold;
-          }
-          
-          .pick-info {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
+            gap: 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 10px;
+            min-height: 60px;
             
-            .champion-name {
-              font-weight: 600;
-              font-size: 14px;
-              color: #2c3e50;
-            }
-            
-            .player-name {
-              font-size: 12px;
-              color: #7f8c8d;
-            }
-            
-            .player-lane {
-              font-size: 11px;
-              color: #3498db;
-              font-weight: 500;
+            .player-info {
+              display: flex;
+              flex-direction: column;
+              gap: 2px;
+              flex: 1;
               
-              &.autofill {
-                color: #e74c3c;
-                font-style: italic;
+              .player-name {
+                font-weight: 600;
+                font-size: 14px;
+                color: #f0f2f5;
+                
+                .you-indicator {
+                  color: #f0c040;
+                  font-weight: bold;
+                }
+              }
+              
+              .player-lane {
+                font-size: 11px;
+                color: #3498db;
+                font-weight: 500;
+                
+                &.autofill {
+                  color: #e74c3c;
+                  font-style: italic;
+                }
               }
             }
-          }
-          
-          .edit-btn-cell {
-            .edit-pick-btn {
+            
+            .champion-info {
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              gap: 4px;
+              
+              .champion-img {
+                width: 40px;
+                height: 40px;
+                border-radius: 50%;
+                border: 2px solid #c9aa71;
+              }
+              
+              .champion-name {
+                font-size: 12px;
+                color: #f0f2f5;
+                font-weight: 500;
+                text-align: center;
+                max-width: 80px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+              }
+            }
+            
+            .champion-placeholder {
+              width: 40px;
+              height: 40px;
+              border-radius: 50%;
+              background: rgba(255, 255, 255, 0.2);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 18px;
+              font-weight: bold;
+              color: #888;
+            }
+            
+            .edit-btn {
               background: #3498db;
               color: #fff;
               border: none;
-              padding: 6px 12px;
-              border-radius: 4px;
+              padding: 8px 12px;
+              border-radius: 6px;
               font-size: 12px;
               cursor: pointer;
               transition: background 0.2s;
+              white-space: nowrap;
               
               &:hover {
                 background: #2980b9;
@@ -1350,12 +1452,13 @@
     
     .bans-section {
       flex: 0 0 200px;
-      background: #2c3e50;
-      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
       padding: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.2);
       
       h3 {
-        color: #fff;
+        color: #f0f2f5;
         margin: 0 0 12px 0;
         font-size: 14px;
         text-align: center;
@@ -1371,7 +1474,7 @@
           align-items: center;
           gap: 8px;
           padding: 6px;
-          background: #34495e;
+          background: rgba(255, 255, 255, 0.1);
           border-radius: 4px;
           
           .banned-img {
@@ -1382,7 +1485,7 @@
           }
           
           .banned-name {
-            color: #fff;
+            color: #f0f2f5;
             font-size: 12px;
             font-weight: 500;
           }
@@ -1434,6 +1537,7 @@
   }
 }
 
+// ========== ESTILOS GERAIS PARA TEAM-BANS ==========
 .team-bans {
   margin-bottom: 20px;
   padding: 15px;
@@ -1514,7 +1618,7 @@
   }
 }
 
-// Estilos para o modal de confirmação final
+// ========== ESTILOS ESPECÍFICOS PARA O MODAL DE CONFIRMAÇÃO ==========
 .final-confirmation-modal {
   .team {
     .team-bans {

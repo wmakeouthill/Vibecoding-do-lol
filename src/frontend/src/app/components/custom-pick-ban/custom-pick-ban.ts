@@ -3,31 +3,6 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ChampionService, Champion } from '../../services/champion.service';
 
-/**
- * CORREÇÕES IMPLEMENTADAS (v2.0):
- * 
- * 1. DISTRIBUIÇÃO CORRETA DE JOGADORES:
- *    - Garantia de que todos os 5 jogadores são utilizados
- *    - Ordem correta seguindo o padrão do LoL: top, jungle, mid, adc, support
- *    - Mapeamento específico por fase de pick/ban
- * 
- * 2. ORDEM DE PICKS/BANS CORRIGIDA:
- *    - Primeira fase de bans (0-5): distribuídos entre todos os 5 jogadores
- *    - Primeira fase de picks (6-10): cada jogador faz 1 pick na ordem das lanes
- *    - Segunda fase de bans (11-14): jogadores restantes fazem bans
- *    - Segunda fase de picks (15-19): jogadores restantes fazem picks
- * 
- * 3. VINCULAÇÃO COM LANES:
- *    - Jogadores ordenados por lane antes da distribuição
- *    - Picks vinculados às lanes corretas dos jogadores
- *    - Suporte para jogadores placeholder se necessário
- * 
- * 4. VALIDAÇÃO E DEBUG:
- *    - Método validatePlayerUsage() para verificar uso correto
- *    - Logs detalhados para debugging
- *    - Garantia de 5 jogadores por time
- */
-
 interface LocalChampion {
   id: number;
   name: string;
@@ -101,6 +76,13 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
   private _cachedModalFilteredChampions: Champion[] | null = null;
   private _lastCacheUpdate: number = 0;
   private readonly CACHE_DURATION = 100; // 100ms de cache
+
+  // NOVO SISTEMA DE CACHE INTELIGENTE
+  private _sessionStateHash: string = '';
+  private _currentActionHash: string = '';
+  private _phaseHash: string = '';
+  private _lastStateUpdate: number = 0;
+  private _cacheInvalidationNeeded: boolean = false;
 
   private timer: any = null;
   private botPickTimer: any = null;
@@ -651,6 +633,9 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
       // Resetar timer
       this.timeRemaining = 30;
 
+      // OTIMIZAÇÃO: Invalidar cache após modificação
+      this.forceCacheInvalidation();
+
       // Atualizar turno
       this.updateCurrentTurn();
     }
@@ -839,7 +824,7 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     }
 
     // OTIMIZAÇÃO: Invalidar cache após modificação
-    this.invalidateCache();
+    this.forceCacheInvalidation();
 
     this.updateCurrentTurn();
   }
@@ -960,14 +945,19 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     this._cachedBlueTeamPicks = null;
     this._cachedRedTeamPicks = null;
     this._cachedModalFilteredChampions = null;
-    this._lastCacheUpdate = Date.now();
+    this._cacheInvalidationNeeded = false;
+    this._lastStateUpdate = Date.now();
   }
 
   /**
    * Verifica se o cache ainda é válido
    */
   private isCacheValid(): boolean {
-    return (Date.now() - this._lastCacheUpdate) < this.CACHE_DURATION;
+    if (this._cacheInvalidationNeeded) {
+      return false;
+    }
+    
+    return (Date.now() - this._lastStateUpdate) < this.CACHE_DURATION;
   }
 
   /**
@@ -976,9 +966,21 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
   getBannedChampions(): Champion[] {
     if (!this.session) return [];
 
-    return this.session.phases
+    // Verificar se o cache é válido
+    if (this._cachedBannedChampions && this.isCacheValid()) {
+      return this._cachedBannedChampions;
+    }
+
+    // Verificar se o estado mudou
+    this.checkStateChange();
+
+    const result = this.session.phases
       .filter(p => p.action === 'ban' && p.champion)
       .map(p => p.champion!);
+
+    // Armazenar no cache
+    this._cachedBannedChampions = result;
+    return result;
   }
 
   /**
@@ -1002,9 +1004,12 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
       return emptyResult;
     }
 
+    // Verificar se o estado mudou
+    this.checkStateChange();
+
     // Obter jogadores ordenados por lane
     const sortedPlayers = this.getSortedTeamByLane(team);
-
+    
     // Obter todos os picks do time
     const teamPicks = this.session.phases
       .filter(p => p.action === 'pick' && p.team === team && p.champion);
@@ -1031,6 +1036,7 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     // Retornar apenas os picks que existem (remover null)
     const result = picksByLane.filter(pick => pick !== null) as Champion[];
 
+    // Armazenar no cache
     if (team === 'blue') this._cachedBlueTeamPicks = result;
     else this._cachedRedTeamPicks = result;
 
@@ -1058,13 +1064,16 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
       return emptyResult;
     }
 
+    // Verificar se o estado mudou
+    this.checkStateChange();
+
     const teamPlayers = team === 'blue' ? this.session.blueTeam : this.session.redTeam;
     const laneOrder = ['top', 'jungle', 'mid', 'bot', 'support'];
 
     // Garantir que temos exatamente 5 jogadores
     if (teamPlayers.length !== 5) {
       console.warn(`⚠️ [getSortedTeamByLane] Time ${team} não tem exatamente 5 jogadores: ${teamPlayers.length}`);
-
+      
       // Se temos menos de 5 jogadores, criar jogadores placeholder
       const paddedPlayers = [...teamPlayers];
       while (paddedPlayers.length < 5) {
@@ -1079,12 +1088,12 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
           isBot: true
         });
       }
-
+      
       // Se temos mais de 5 jogadores, truncar para 5
       if (paddedPlayers.length > 5) {
         paddedPlayers.splice(5);
       }
-
+      
       console.log(`✅ [getSortedTeamByLane] Time ${team} normalizado para 5 jogadores`);
       const result = this.sortPlayersByLane(paddedPlayers);
       if (team === 'blue') this._cachedSortedBlueTeam = result;
@@ -2143,7 +2152,7 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     this.timeRemaining = 30;
 
     // OTIMIZAÇÃO: Invalidar cache após modificação
-    this.invalidateCache();
+    this.forceCacheInvalidation();
 
     // Atualizar turno
     this.updateCurrentTurn();
@@ -2312,5 +2321,55 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     }
 
     return '#007bff'; // Padrão azul
+  }
+
+  /**
+   * Gera um hash do estado atual da sessão para detectar mudanças
+   */
+  private generateSessionStateHash(): string {
+    if (!this.session) return '';
+    
+    const state = {
+      currentAction: this.session.currentAction,
+      phase: this.session.phase,
+      phases: this.session.phases.map(p => ({
+        action: p.action,
+        team: p.team,
+        champion: p.champion?.id,
+        locked: p.locked,
+        playerId: p.playerId
+      })),
+      blueTeam: this.session.blueTeam.map(p => p.id),
+      redTeam: this.session.redTeam.map(p => p.id)
+    };
+    
+    return JSON.stringify(state);
+  }
+
+  /**
+   * Verifica se o estado mudou e precisa invalidar o cache
+   */
+  private checkStateChange(): boolean {
+    if (!this.session) return false;
+    
+    const currentHash = this.generateSessionStateHash();
+    const hasChanged = currentHash !== this._sessionStateHash;
+    
+    if (hasChanged) {
+      this._sessionStateHash = currentHash;
+      this._cacheInvalidationNeeded = true;
+      this._lastStateUpdate = Date.now();
+      console.log('🔄 [Cache] Estado mudou, cache será invalidado');
+    }
+    
+    return hasChanged;
+  }
+
+  /**
+   * Força a invalidação do cache (usado quando há mudanças explícitas)
+   */
+  private forceCacheInvalidation(): void {
+    this._cacheInvalidationNeeded = true;
+    this.invalidateCache();
   }
 }
