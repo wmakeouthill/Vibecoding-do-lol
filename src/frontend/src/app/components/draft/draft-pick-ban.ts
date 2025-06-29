@@ -6,7 +6,6 @@ import { BotService, PickBanPhase, CustomPickBanSession } from '../../services/b
 import { DraftChampionModalComponent } from './draft-champion-modal';
 import { DraftConfirmationModalComponent } from './draft-confirmation-modal';
 import { interval, Subscription } from 'rxjs';
-import { SortedTeamByLanePipe } from './sorted-team-by-lane.pipe';
 import { BannedChampionsPipe } from './banned-champions.pipe';
 import { TeamBansPipe } from './team-bans.pipe';
 import { TeamPicksPipe } from './team-picks.pipe';
@@ -25,7 +24,6 @@ import { CurrentActionIconPipe } from './current-action-icon.pipe';
         FormsModule, 
         DraftChampionModalComponent, 
         DraftConfirmationModalComponent, 
-        SortedTeamByLanePipe,
         BannedChampionsPipe,
         TeamBansPipe,
         TeamPicksPipe,
@@ -183,7 +181,8 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
                         name: summonerName, // Manter compatibilidade
                         id: player.id || player.summonerId || Math.random().toString(),
                         lane: lane, // Usar lane original preservada
-                        originalIndex: index
+                        originalIndex: index, // ✅ CORREÇÃO: Manter índice original do array
+                        teamIndex: index // ✅ NOVO: Índice específico do time (0-4 para cada time)
                     };
 
                     console.log(`✅ [DraftPickBan] Jogador processado [${index}]:`, processedPlayer);
@@ -197,7 +196,8 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
                     name: playerName,
                     summonerName: playerName,
                     lane: this.getLaneForIndex(index), // Fallback apenas para strings
-                    originalIndex: index
+                    originalIndex: index, // ✅ CORREÇÃO: Manter índice original
+                    teamIndex: index // ✅ NOVO: Índice específico do time
                 };
 
                 console.log(`✅ [DraftPickBan] Jogador string processado [${index}]:`, processedPlayer);
@@ -218,8 +218,20 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
         console.log('✅ [DraftPickBan] Times processados:', {
             blueTeamSize: processedBlueTeam.length,
             redTeamSize: processedRedTeam.length,
-            blueTeam: processedBlueTeam.map((p: any) => ({ id: p.id, name: p.summonerName, lane: p.lane, isBot: this.botService.isBot(p) })),
-            redTeam: processedRedTeam.map((p: any) => ({ id: p.id, name: p.summonerName, lane: p.lane, isBot: this.botService.isBot(p) }))
+            blueTeam: processedBlueTeam.map((p: any) => ({ 
+                id: p.id, 
+                name: p.summonerName, 
+                lane: p.lane, 
+                teamIndex: p.teamIndex,
+                isBot: this.botService.isBot(p) 
+            })),
+            redTeam: processedRedTeam.map((p: any) => ({ 
+                id: p.id, 
+                name: p.summonerName, 
+                lane: p.lane, 
+                teamIndex: p.teamIndex,
+                isBot: this.botService.isBot(p) 
+            }))
         });
 
         this.session = {
@@ -320,23 +332,24 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
         console.log(`🎯 [updateCurrentTurn] Ação ${this.session.currentAction + 1}: ${currentPhase.team} - ${currentPhase.action}`);
         console.log(`🎯 [updateCurrentTurn] Fase atual: ${this.session.phase}`);
 
-        // Obter jogadores ordenados por lane (top, jungle, mid, adc, support)
-        const sortedPlayers = this.getSortedTeamByLaneInternal(currentPhase.team);
-
+        // ✅ CORREÇÃO: Usar teamIndex diretamente em vez de ordenação por lane
+        const teamPlayers = currentPhase.team === 'blue' ? this.session.blueTeam : this.session.redTeam;
+        
         // Garantir que temos exatamente 5 jogadores
-        if (sortedPlayers.length !== 5) {
-            console.error(`❌ [updateCurrentTurn] Time ${currentPhase.team} não tem exatamente 5 jogadores: ${sortedPlayers.length}`);
-            console.error(`❌ [updateCurrentTurn] Jogadores:`, sortedPlayers);
+        if (teamPlayers.length !== 5) {
+            console.error(`❌ [updateCurrentTurn] Time ${currentPhase.team} não tem exatamente 5 jogadores: ${teamPlayers.length}`);
+            console.error(`❌ [updateCurrentTurn] Jogadores:`, teamPlayers);
             return;
         }
 
-        // Usar o playerIndex pré-definido na fase
+        // ✅ CORREÇÃO: Usar o playerIndex pré-definido na fase diretamente no array do time
         const playerIndex = currentPhase.playerIndex ?? 0;
-        const player = sortedPlayers[playerIndex];
+        const player = teamPlayers[playerIndex];
 
         console.log(`🎯 [updateCurrentTurn] PlayerIndex da fase: ${playerIndex}`);
-        console.log(`🎯 [updateCurrentTurn] Jogadores ordenados:`, sortedPlayers.map((p, i) => ({
+        console.log(`🎯 [updateCurrentTurn] Jogadores do time ${currentPhase.team}:`, teamPlayers.map((p, i) => ({
             index: i,
+            teamIndex: p.teamIndex,
             name: p.summonerName,
             lane: p.lane,
             id: p.id,
@@ -348,12 +361,24 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
             return;
         }
 
-        currentPhase.playerId = player?.id?.toString() || player?.summonerName;
-        currentPhase.playerName = player?.summonerName || player?.name;
+        // ✅ CORREÇÃO: Adicionar logs detalhados para debug do playerId
+        console.log(`🔍 [updateCurrentTurn] Debug do jogador:`, {
+            id: player.id,
+            summonerName: player.summonerName,
+            name: player.name,
+            teamIndex: player.teamIndex,
+            isBot: this.botService.isBot(player)
+        });
+
+        // ✅ CORREÇÃO: Garantir que playerId seja definido corretamente
+        currentPhase.playerId = player?.id?.toString() || player?.summonerName || player?.name || playerIndex?.toString();
+        currentPhase.playerName = player?.summonerName || player?.name || `Jogador ${playerIndex}`;
 
         console.log(`🎯 [updateCurrentTurn] Ação ${this.session.currentAction + 1}: ${currentPhase.playerName} (${currentPhase.playerId}) - ${this.getLaneDisplayName(player.lane)}`);
-        console.log(`🎯 [updateCurrentTurn] Índice do jogador: ${playerIndex}`);
+        console.log(`🎯 [updateCurrentTurn] Índice do jogador: ${playerIndex} (teamIndex: ${player.teamIndex})`);
         console.log(`🎯 [updateCurrentTurn] É bot? ${this.botService.isBot(player)}`);
+        console.log(`🎯 [updateCurrentTurn] Phase.playerId definido: ${currentPhase.playerId}`);
+        console.log(`🎯 [updateCurrentTurn] Phase.playerIndex: ${currentPhase.playerIndex}`);
 
         this.checkForBotAutoAction(currentPhase);
         this.isMyTurn = this.checkIfMyTurn(currentPhase);
@@ -367,6 +392,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
 
         console.log(`🤖 [checkForBotAutoAction] === VERIFICANDO BOT PARA AÇÃO ${this.session.currentAction + 1} ===`);
         console.log(`🤖 [checkForBotAutoAction] Phase:`, phase);
+        console.log(`🤖 [checkForBotAutoAction] Tipo de ação: ${phase.action} (${phase.action === 'pick' ? 'PICK' : 'BAN'})`);
         console.log(`🤖 [checkForBotAutoAction] Campeões disponíveis: ${this.champions.length}`);
 
         // Cancelar ação anterior se existir
@@ -381,7 +407,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
         console.log(`🤖 [checkForBotAutoAction] shouldPerformBotAction retornou: ${shouldPerformAction}`);
 
         if (shouldPerformAction) {
-            console.log('🤖 [checkForBotAutoAction] Bot detectado, agendando ação automática...');
+            console.log(`🤖 [checkForBotAutoAction] Bot detectado para ${phase.action}, agendando ação automática...`);
 
             this.botPickTimer = this.botService.scheduleBotAction(
                 phase,
@@ -389,7 +415,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
                 this.champions,
                 () => {
                     // Callback executado após a ação do bot
-                    console.log('🤖 [checkForBotAutoAction] Ação do bot concluída, atualizando interface...');
+                    console.log(`🤖 [checkForBotAutoAction] Ação do bot (${phase.action}) concluída, atualizando interface...`);
                     console.log(`🤖 [checkForBotAutoAction] currentAction após bot: ${this.session?.currentAction}`);
                     console.log(`🤖 [checkForBotAutoAction] total de fases: ${this.session?.phases.length}`);
 
@@ -412,7 +438,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
             );
             console.log(`🤖 [checkForBotAutoAction] Timer agendado: ${this.botPickTimer}`);
         } else {
-            console.log('🤖 [checkForBotAutoAction] Não é bot ou jogador não encontrado');
+            console.log(`🤖 [checkForBotAutoAction] Não é bot ou jogador não encontrado para ${phase.action}`);
         }
 
         console.log(`🤖 [checkForBotAutoAction] === FIM DA VERIFICAÇÃO DE BOT ===`);
@@ -656,7 +682,9 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
         if (!this.currentPlayer || !this.session) return false;
 
         const teamPlayers = team === 'blue' ? this.session.blueTeam : this.session.redTeam;
-        const player = teamPlayers[pickIndex];
+        
+        // ✅ CORREÇÃO: Encontrar jogador pelo teamIndex em vez de posição no array
+        const player = teamPlayers.find(p => p.teamIndex === pickIndex);
 
         return player ? this.botService.comparePlayers(this.currentPlayer, player) : false;
     }
@@ -675,12 +703,15 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
     getPlayerPick(team: 'blue' | 'red', player: any): Champion | null {
         if (!this.session) return null;
 
-        // Obter jogadores ordenados por lane
-        const sortedPlayers = this.getSortedTeamByLaneInternal(team);
+        // ✅ CORREÇÃO: Usar teamIndex diretamente em vez de ordenação por lane
+        const teamPlayers = team === 'blue' ? this.session.blueTeam : this.session.redTeam;
 
-        // Encontrar o índice do jogador no time ordenado
-        const playerIndex = sortedPlayers.findIndex(p => this.botService.comparePlayers(p, player));
-        if (playerIndex === -1) return null;
+        // Encontrar o jogador pelo ID ou nome
+        const foundPlayer = teamPlayers.find(p => this.botService.comparePlayers(p, player));
+        if (!foundPlayer) return null;
+
+        // ✅ CORREÇÃO: Usar teamIndex do jogador encontrado
+        const playerIndex = foundPlayer.teamIndex;
 
         // Mapear o índice do jogador para as fases de pick correspondentes
         // Baseado no novo fluxo da partida ranqueada
@@ -901,5 +932,31 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
 
         const teamPlayers = team === 'blue' ? this.session.blueTeam : this.session.redTeam;
         return this.sortPlayersByLane(teamPlayers);
+    }
+
+    // ✅ NOVO: Método para obter jogadores ordenados por lane para exibição
+    getSortedTeamByLaneForDisplay(team: 'blue' | 'red'): any[] {
+        if (!this.session) return [];
+
+        const teamPlayers = team === 'blue' ? this.session.blueTeam : this.session.redTeam;
+        return this.sortPlayersByLane(teamPlayers);
+    }
+
+    // ✅ NOVO: Método para obter jogador por teamIndex
+    getPlayerByTeamIndex(team: 'blue' | 'red', teamIndex: number): any {
+        if (!this.session) return null;
+
+        const teamPlayers = team === 'blue' ? this.session.blueTeam : this.session.redTeam;
+        return teamPlayers.find(p => p.teamIndex === teamIndex) || null;
+    }
+
+    // ✅ NOVO: Método para obter jogador atual da fase
+    getCurrentPhasePlayer(): any {
+        if (!this.session) return null;
+
+        const currentPhase = this.session.phases[this.session.currentAction];
+        if (!currentPhase) return null;
+
+        return this.getPlayerByTeamIndex(currentPhase.team, currentPhase.playerIndex || 0);
     }
 } 

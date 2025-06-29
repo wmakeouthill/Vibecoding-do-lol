@@ -2,15 +2,13 @@ import { Pipe, PipeTransform } from '@angular/core';
 
 @Pipe({ name: 'playerPick', pure: true })
 export class PlayerPickPipe implements PipeTransform {
-  transform(phases: any[], team: 'blue' | 'red', player: any, sortedPlayers: any[]): any {
-    if (!Array.isArray(phases) || !player || !Array.isArray(sortedPlayers)) return null;
+  transform(phases: any[], team: 'blue' | 'red', player: any): any {
+    if (!Array.isArray(phases) || !player) return null;
     
-    // Encontrar o índice do jogador no time ordenado
-    const playerIndex = sortedPlayers.findIndex(p => 
-      p.id === player.id || p.summonerName === player.summonerName
-    );
+    // ✅ CORREÇÃO: Usar teamIndex diretamente do jogador
+    const playerIndex = player.teamIndex;
     
-    if (playerIndex === -1) return null;
+    if (playerIndex === undefined || playerIndex === null) return null;
 
     // Mapear o índice do jogador para as fases de pick correspondentes
     // Baseado no fluxo da partida ranqueada

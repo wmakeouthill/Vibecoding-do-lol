@@ -31,76 +31,30 @@ export class BotService {
     constructor() { }
 
     /**
-     * Verifica se um jogador é bot
+     * Verifica se um jogador é um bot
      */
     isBot(player: any): boolean {
-        if (!player) return false;
-
-        const name = player.summonerName || player.name || '';
-        const id = player.id;
-
-        console.log(`🤖 [BotService] Verificando jogador: ${name} (ID: ${id})`);
-
-        if (id < 0) {
-            console.log(`🤖 [BotService] ID negativo detectado: ${id}`);
-            return true;
+        if (!player) {
+            console.log('🤖 [BotService] isBot: player é null/undefined');
+            return false;
         }
 
-        if (typeof id === 'string') {
-            const numericId = parseInt(id);
-            if (!isNaN(numericId) && numericId < 0) {
-                console.log(`🤖 [BotService] ID string negativo detectado: ${numericId}`);
-                return true;
-            }
+        // Verificar se é um bot baseado no nome
+        const playerName = player.name || player.summonerName || '';
+        const isBotPlayer = playerName.toLowerCase().includes('bot') || 
+                           playerName.toLowerCase().includes('ai') ||
+                           playerName.toLowerCase().includes('computer') ||
+                           playerName.toLowerCase().includes('cpu');
 
-            if (id.toLowerCase().includes('bot') || id.startsWith('-')) {
-                console.log(`🤖 [BotService] ID contém 'bot' ou começa com '-': ${id}`);
-                return true;
-            }
-        }
+        console.log(`🤖 [BotService] isBot check:`, {
+            playerName: playerName,
+            isBot: isBotPlayer,
+            id: player.id,
+            summonerName: player.summonerName,
+            name: player.name
+        });
 
-        const botPatterns = [
-            /^bot\d+$/i,
-            /^bot\s*\d+$/i,
-            /^ai\s*bot$/i,
-            /^computer\s*\d*$/i,
-            /^bot\s*player$/i,
-            /^ai\s*player$/i,
-            /^bot$/i,
-            /^ai$/i,
-            /^popcornseller$/i,
-            /^bot\s*[a-z]*$/i,
-            /^ai\s*[a-z]*$/i,
-            /^bot\s*\d+\s*[a-z]*$/i,
-            /^ai\s*\d+\s*[a-z]*$/i,
-            /^bot\d+[a-z]*$/i,
-            /^ai\d+[a-z]*$/i
-        ];
-
-        for (const pattern of botPatterns) {
-            if (pattern.test(name)) {
-                console.log(`🤖 [BotService] Padrão de bot detectado: ${pattern.source}`);
-                return true;
-            }
-        }
-
-        if (name.toLowerCase().includes('bot')) {
-            console.log(`🤖 [BotService] Nome contém 'bot': ${name}`);
-            return true;
-        }
-
-        if (name.toLowerCase().includes('ai')) {
-            console.log(`🤖 [BotService] Nome contém 'ai': ${name}`);
-            return true;
-        }
-
-        if (/\d/.test(name) && (name.toLowerCase().includes('bot') || name.toLowerCase().includes('ai'))) {
-            console.log(`🤖 [BotService] Nome com número e bot/ai: ${name}`);
-            return true;
-        }
-
-        console.log(`🤖 [BotService] Jogador não é bot: ${name}`);
-        return false;
+        return isBotPlayer;
     }
 
     /**
@@ -145,26 +99,48 @@ export class BotService {
      * Compara um jogador com um ID específico
      */
     comparePlayerWithId(player: any, targetId: string): boolean {
-        if (!player || !targetId) return false;
+        if (!player || !targetId) {
+            console.log(`🤖 [comparePlayerWithId] Dados inválidos - player: ${!!player}, targetId: ${targetId}`);
+            return false;
+        }
 
         const playerId = player.id?.toString();
         const playerName = player.summonerName || player.name || '';
 
+        console.log(`🤖 [comparePlayerWithId] Comparando:`, {
+            playerId: playerId,
+            playerName: playerName,
+            targetId: targetId,
+            player: player
+        });
+
         if (playerId === targetId) {
+            console.log(`🤖 [comparePlayerWithId] Match por ID: ${playerId} === ${targetId}`);
             return true;
         }
 
         if (playerName === targetId) {
+            console.log(`🤖 [comparePlayerWithId] Match por nome: ${playerName} === ${targetId}`);
             return true;
         }
 
         if (playerName.includes('#')) {
             const gameName = playerName.split('#')[0];
             if (gameName === targetId) {
+                console.log(`🤖 [comparePlayerWithId] Match por gameName: ${gameName} === ${targetId}`);
                 return true;
             }
         }
 
+        if (player.teamIndex !== undefined && player.teamIndex !== null) {
+            const teamIndexStr = player.teamIndex.toString();
+            if (teamIndexStr === targetId) {
+                console.log(`🤖 [comparePlayerWithId] Match por teamIndex: ${teamIndexStr} === ${targetId}`);
+                return true;
+            }
+        }
+
+        console.log(`🤖 [comparePlayerWithId] Nenhum match encontrado`);
         return false;
     }
 
@@ -174,11 +150,8 @@ export class BotService {
     shouldPerformBotAction(phase: PickBanPhase, session: CustomPickBanSession): boolean {
         console.log('🤖 [BotService] === VERIFICANDO AÇÃO AUTOMÁTICA ===');
         console.log('🤖 [BotService] Phase:', phase);
-
-        if (!phase.playerId) {
-            console.log('⚠️ [BotService] Phase não tem playerId');
-            return false;
-        }
+        console.log('🤖 [BotService] Tipo de ação:', phase.action);
+        console.log('🤖 [BotService] Session currentAction:', session.currentAction);
 
         const currentTeam = phase.team;
         const teamPlayers = currentTeam === 'blue' ? session.blueTeam : session.redTeam;
@@ -188,20 +161,50 @@ export class BotService {
             id: p.id,
             name: p.summonerName,
             lane: p.lane,
+            teamIndex: p.teamIndex,
             isBot: this.isBot(p)
         })));
-        console.log(`🤖 [BotService] Procurando playerId: ${phase.playerId}`);
 
-        const currentPlayer = teamPlayers.find(p => this.comparePlayerWithId(p, phase.playerId!));
+        let currentPlayer = null;
+
+        // ✅ CORREÇÃO: Primeiro tentar pelo playerId se existir
+        if (phase.playerId) {
+            console.log(`🤖 [BotService] Procurando por playerId: ${phase.playerId}`);
+            currentPlayer = teamPlayers.find(p => this.comparePlayerWithId(p, phase.playerId!));
+        }
+
+        // ✅ CORREÇÃO: Se não encontrou por playerId, tentar pelo teamIndex
+        if (!currentPlayer && phase.playerIndex !== undefined) {
+            console.log(`🤖 [BotService] Tentando encontrar por teamIndex: ${phase.playerIndex}`);
+            currentPlayer = teamPlayers.find(p => p.teamIndex === phase.playerIndex);
+        }
+
+        // ✅ CORREÇÃO: Se ainda não encontrou, tentar pelo índice do array
+        if (!currentPlayer && phase.playerIndex !== undefined) {
+            console.log(`🤖 [BotService] Tentando encontrar por índice do array: ${phase.playerIndex}`);
+            currentPlayer = teamPlayers[phase.playerIndex];
+        }
 
         console.log('🤖 [BotService] Current player encontrado:', currentPlayer);
-        console.log('🤖 [BotService] É bot?', currentPlayer ? this.isBot(currentPlayer) : false);
-
-        const result = currentPlayer ? this.isBot(currentPlayer) : false;
-        console.log(`🤖 [BotService] Resultado final: ${result}`);
-        console.log('🤖 [BotService] === FIM DA VERIFICAÇÃO ===');
-
-        return result;
+        
+        if (currentPlayer) {
+            const isBotPlayer = this.isBot(currentPlayer);
+            console.log('🤖 [BotService] É bot?', isBotPlayer);
+            console.log('🤖 [BotService] Detalhes do jogador:', {
+                id: currentPlayer.id,
+                name: currentPlayer.summonerName,
+                teamIndex: currentPlayer.teamIndex,
+                isBot: isBotPlayer,
+                action: phase.action
+            });
+            return isBotPlayer;
+        } else {
+            console.log('⚠️ [BotService] Jogador não encontrado!');
+            console.log('🤖 [BotService] Phase.playerId:', phase.playerId);
+            console.log('🤖 [BotService] Phase.playerIndex:', phase.playerIndex);
+            console.log('🤖 [BotService] Todos os jogadores do time:', teamPlayers);
+            return false;
+        }
     }
 
     /**
@@ -210,10 +213,17 @@ export class BotService {
     performBotAction(phase: PickBanPhase, session: CustomPickBanSession, champions: Champion[]): void {
         console.log('🤖 [BotService] === EXECUTANDO AÇÃO DO BOT ===');
         console.log('🤖 [BotService] Executando ação do bot para fase:', phase);
+        console.log('🤖 [BotService] Tipo de ação:', phase.action);
         console.log(`🤖 [BotService] currentAction antes: ${session.currentAction}`);
+        console.log(`🤖 [BotService] total de fases: ${session.phases.length}`);
 
         if (!session) {
             console.log('⚠️ [BotService] Session não existe');
+            return;
+        }
+
+        if (!phase) {
+            console.log('⚠️ [BotService] Phase não existe');
             return;
         }
 
@@ -222,6 +232,7 @@ export class BotService {
         );
 
         console.log('🤖 [BotService] Campeões disponíveis:', availableChampions.length);
+        console.log('🤖 [BotService] Primeiros 5 campeões disponíveis:', availableChampions.slice(0, 5).map(c => c.name));
 
         if (availableChampions.length === 0) {
             console.log('⚠️ [BotService] Nenhum campeão disponível');
@@ -229,12 +240,25 @@ export class BotService {
         }
 
         const randomChampion = availableChampions[Math.floor(Math.random() * availableChampions.length)];
-        console.log('🤖 [BotService] Campeão selecionado:', randomChampion.name);
+        console.log(`🤖 [BotService] Campeão selecionado para ${phase.action}:`, randomChampion.name);
 
+        // ✅ CORREÇÃO: Garantir que a fase seja atualizada corretamente
         phase.champion = randomChampion;
         phase.locked = true;
         phase.timeRemaining = 0;
 
+        // ✅ NOVO: Clonar o array de fases para garantir detecção de mudança
+        session.phases = [...session.phases];
+
+        console.log('🤖 [BotService] Fase atualizada:', {
+            team: phase.team,
+            action: phase.action,
+            champion: phase.champion?.name,
+            locked: phase.locked,
+            timeRemaining: phase.timeRemaining
+        });
+
+        // ✅ CORREÇÃO: Incrementar currentAction
         session.currentAction++;
 
         console.log(`🤖 [BotService] currentAction após incremento: ${session.currentAction}`);
@@ -245,6 +269,7 @@ export class BotService {
             session.phase = 'completed';
         } else {
             console.log(`🤖 [BotService] Próxima ação será: ${session.currentAction + 1}`);
+            console.log(`🤖 [BotService] Próxima fase:`, session.phases[session.currentAction]);
         }
 
         console.log('🤖 [BotService] === FIM DA AÇÃO DO BOT ===');
@@ -269,7 +294,7 @@ export class BotService {
     }
 
     /**
-     * Agenda uma ação automática do bot com delay
+     * Agenda uma ação automática do bot
      */
     scheduleBotAction(
         phase: PickBanPhase,
@@ -277,15 +302,30 @@ export class BotService {
         champions: Champion[],
         callback: () => void
     ): number {
-        console.log('🤖 [BotService] Agendando ação do bot...');
+        console.log('🤖 [BotService] === AGENDANDO AÇÃO DO BOT ===');
+        console.log('🤖 [BotService] Agendando ação para fase:', phase);
+        console.log('🤖 [BotService] Tipo de ação:', phase.action);
+        console.log('🤖 [BotService] currentAction:', session.currentAction);
 
-        const delay = 2000 + Math.random() * 3000; // 2-5 segundos
+        const delay = Math.random() * 2000 + 1000; // 1-3 segundos
+        console.log(`🤖 [BotService] Delay agendado: ${delay}ms`);
 
-        return window.setTimeout(() => {
-            console.log('🤖 [BotService] Executando ação do bot agendada...');
+        const timerId = setTimeout(() => {
+            console.log(`🤖 [BotService] === EXECUTANDO AÇÃO AGENDADA (${phase.action}) ===`);
+            console.log(`🤖 [BotService] Timer ${timerId} executando para ação ${session.currentAction + 1}`);
+            
             this.performBotAction(phase, session, champions);
-            callback(); // Callback para atualizar a interface
+            
+            console.log(`🤖 [BotService] Ação agendada concluída, executando callback`);
+            callback();
+            
+            console.log(`🤖 [BotService] === FIM DA AÇÃO AGENDADA ===`);
         }, delay);
+
+        console.log(`🤖 [BotService] Timer agendado: ${timerId}`);
+        console.log(`🤖 [BotService] === FIM DO AGENDAMENTO ===`);
+        
+        return timerId;
     }
 
     /**

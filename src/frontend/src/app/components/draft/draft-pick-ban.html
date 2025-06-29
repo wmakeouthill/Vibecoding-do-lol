@@ -49,8 +49,8 @@
 
       <div class="team-picks">
         <!-- Picks mapeados às posições corretas dos jogadores -->
-        <div class="pick-slot" *ngFor="let player of session.blueTeam | sortedTeamByLane; let i = index">
-          <ng-container *ngIf="session.phases | playerPick:'blue':player:(session.blueTeam | sortedTeamByLane) as playerPick; else emptySlot">
+        <div class="pick-slot" *ngFor="let player of getSortedTeamByLaneForDisplay('blue'); let i = index">
+          <ng-container *ngIf="session.phases | playerPick:'blue':player as playerPick; else emptySlot">
             <img [src]="playerPick.image" [alt]="playerPick.name" class="champion-img">
             <div class="pick-info">
               <span class="champion-name">{{ playerPick.name }}</span>
@@ -110,8 +110,8 @@
 
       <div class="team-picks">
         <!-- Picks mapeados às posições corretas dos jogadores -->
-        <div class="pick-slot" *ngFor="let player of session.redTeam | sortedTeamByLane; let i = index">
-          <ng-container *ngIf="session.phases | playerPick:'red':player:(session.redTeam | sortedTeamByLane) as playerPick; else emptySlot">
+        <div class="pick-slot" *ngFor="let player of getSortedTeamByLaneForDisplay('red'); let i = index">
+          <ng-container *ngIf="session.phases | playerPick:'red':player as playerPick; else emptySlot">
             <img [src]="playerPick.image" [alt]="playerPick.name" class="champion-img">
             <div class="pick-info">
               <span class="champion-name">{{ playerPick.name }}</span>

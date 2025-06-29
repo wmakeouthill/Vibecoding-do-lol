@@ -9,6 +9,7 @@ interface PickBanPhase {
   champion?: Champion;
   playerId?: string;
   playerName?: string;
+  playerIndex?: number;
   locked: boolean;
   timeRemaining: number;
 }
@@ -84,26 +85,49 @@ export class DraftChampionModalComponent implements OnInit, OnDestroy {
 
   // MÉTODOS PARA COMPARAÇÃO DE JOGADORES
   private comparePlayerWithId(player: any, targetId: string): boolean {
-    if (!player || !targetId) return false;
+    if (!player || !targetId) {
+      console.log(`🎯 [Modal] Dados inválidos - player: ${!!player}, targetId: ${targetId}`);
+      return false;
+    }
 
     const playerId = player.id?.toString();
     const playerName = player.summonerName || player.name || '';
 
+    console.log(`🎯 [Modal] Comparando:`, {
+      playerId: playerId,
+      playerName: playerName,
+      targetId: targetId,
+      teamIndex: player.teamIndex
+    });
+
     if (playerId === targetId) {
+      console.log(`🎯 [Modal] Match por ID: ${playerId} === ${targetId}`);
       return true;
     }
 
     if (playerName === targetId) {
+      console.log(`🎯 [Modal] Match por nome: ${playerName} === ${targetId}`);
       return true;
     }
 
     if (playerName.includes('#')) {
       const gameName = playerName.split('#')[0];
       if (gameName === targetId) {
+        console.log(`🎯 [Modal] Match por gameName: ${gameName} === ${targetId}`);
         return true;
       }
     }
 
+    // ✅ NOVO: Verificar teamIndex
+    if (player.teamIndex !== undefined && player.teamIndex !== null) {
+      const teamIndexStr = player.teamIndex.toString();
+      if (teamIndexStr === targetId) {
+        console.log(`🎯 [Modal] Match por teamIndex: ${teamIndexStr} === ${targetId}`);
+        return true;
+      }
+    }
+
+    console.log(`🎯 [Modal] Nenhum match encontrado`);
     return false;
   }
 
@@ -288,12 +312,65 @@ export class DraftChampionModalComponent implements OnInit, OnDestroy {
   }
 
   isCurrentPlayerForModal(): boolean {
-    if (!this.currentPlayer || !this.session) return false;
+    if (!this.currentPlayer || !this.session) {
+      console.log(`🎯 [Modal] isCurrentPlayerForModal - Dados inválidos:`, {
+        hasCurrentPlayer: !!this.currentPlayer,
+        hasSession: !!this.session
+      });
+      return false;
+    }
 
     const currentPhase = this.session.phases[this.session.currentAction];
-    if (!currentPhase) return false;
+    if (!currentPhase) {
+      console.log(`🎯 [Modal] isCurrentPlayerForModal - Fase não encontrada para currentAction: ${this.session.currentAction}`);
+      return false;
+    }
 
-    return this.comparePlayerWithId(this.currentPlayer, currentPhase.playerId!);
+    console.log(`🎯 [Modal] isCurrentPlayerForModal - Verificando:`, {
+      currentPlayer: {
+        id: this.currentPlayer.id,
+        name: this.currentPlayer.summonerName,
+        teamIndex: this.currentPlayer.teamIndex
+      },
+      currentPhase: {
+        playerId: currentPhase.playerId,
+        playerIndex: currentPhase.playerIndex,
+        team: currentPhase.team,
+        action: currentPhase.action
+      }
+    });
+
+    // ✅ CORREÇÃO: Tentar múltiplas formas de comparação
+    let isCurrent = false;
+
+    // 1. Tentar por playerId
+    if (currentPhase.playerId) {
+      isCurrent = this.comparePlayerWithId(this.currentPlayer, currentPhase.playerId);
+      if (isCurrent) {
+        console.log(`🎯 [Modal] isCurrentPlayerForModal - Match por playerId: ${currentPhase.playerId}`);
+        return true;
+      }
+    }
+
+    // 2. Tentar por teamIndex se disponível
+    if (currentPhase.playerIndex !== undefined && this.currentPlayer.teamIndex !== undefined) {
+      if (this.currentPlayer.teamIndex === currentPhase.playerIndex) {
+        console.log(`🎯 [Modal] isCurrentPlayerForModal - Match por teamIndex: ${this.currentPlayer.teamIndex} === ${currentPhase.playerIndex}`);
+        return true;
+      }
+    }
+
+    // 3. Tentar por nome do jogador
+    if (currentPhase.playerName) {
+      const currentPlayerName = this.currentPlayer.summonerName || this.currentPlayer.name;
+      if (currentPlayerName === currentPhase.playerName) {
+        console.log(`🎯 [Modal] isCurrentPlayerForModal - Match por playerName: ${currentPlayerName}`);
+        return true;
+      }
+    }
+
+    console.log(`🎯 [Modal] isCurrentPlayerForModal - Nenhum match encontrado`);
+    return false;
   }
 
   getCurrentActionText(): string {
