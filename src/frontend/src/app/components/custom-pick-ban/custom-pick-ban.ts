@@ -998,10 +998,18 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     const bannedChampions = this.getBannedChampions();
     const bannedIds = bannedChampions.map(ban => ban.id);
 
-    // Filtrar campeões disponíveis (excluindo banidos)
     let availableChampions = this.champions.filter(champion =>
       !bannedIds.includes(champion.id)
     );
+
+    // Filtrar campeões já escolhidos (picked) - NOVA FUNCIONALIDADE
+    if (this.session.phase === 'picks') {
+      const pickedChampions = this.getTeamPicks('blue').concat(this.getTeamPicks('red'));
+      const pickedIds = pickedChampions.map(pick => pick.id);
+      availableChampions = availableChampions.filter(champion =>
+        !pickedIds.includes(champion.id)
+      );
+    }
 
     // Aplicar filtro de role
     if (this.modalSelectedRole && this.modalSelectedRole !== 'all') {
@@ -1581,9 +1589,13 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
    * Inicia edição de um pick específico
    */
   startEditingPick(playerId: string, phaseIndex: number): void {
-    if (!this.session) return;
+    console.log(`🎯 [Edição] Iniciando edição - PlayerID: ${playerId}, PhaseIndex: ${phaseIndex}`);
+    console.log(`🔍 [Edição] Current Player:`, this.currentPlayer);
 
-    console.log(`✏️ [Edição] Iniciando edição para jogador ${playerId} na fase ${phaseIndex}`);
+    if (!this.session) {
+      console.log(`❌ [Edição] Sessão não disponível`);
+      return;
+    }
 
     // Verificar se o jogador atual pode editar este pick
     if (!this.canCurrentPlayerEdit()) {
@@ -1594,6 +1606,8 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     // Definir o jogador que está editando
     this.editingPlayerId = playerId;
     this.isEditingMode = true;
+
+    console.log(`✅ [Edição] Modo de edição ativado - EditingPlayerId: ${this.editingPlayerId}`);
 
     // Encontrar a fase correta para edição
     let targetPhaseIndex = phaseIndex;
@@ -1612,17 +1626,20 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
 
       if (playerPick) {
         targetPhaseIndex = this.session.phases.indexOf(playerPick);
+        console.log(`🔍 [Edição] Fase encontrada para edição: ${targetPhaseIndex}`);
       }
     }
 
     // Voltar para a fase específica
     if (targetPhaseIndex !== undefined && targetPhaseIndex >= 0 && targetPhaseIndex < this.session.phases.length) {
       this.session.currentAction = targetPhaseIndex;
+      console.log(`🔍 [Edição] Voltando para fase: ${targetPhaseIndex}`);
     } else {
       // Fallback: voltar para a última ação
       if (this.session.currentAction > 0) {
         this.session.currentAction--;
       }
+      console.log(`🔍 [Edição] Usando fallback - fase atual: ${this.session.currentAction}`);
     }
 
     // Resetar o timer
@@ -1637,7 +1654,9 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
 
     // ABRIR MODAL DIRETAMENTE PARA EDIÇÃO
     console.log('🎯 [Edição] Abrindo modal para edição');
-    this.openChampionModal();
+    setTimeout(() => {
+      this.openChampionModal();
+    }, 100); // Pequeno delay para garantir que o estado foi atualizado
   }
 
   /**
@@ -1977,6 +1996,15 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     if (!this.session) return false;
     const bannedChampions = this.getBannedChampions();
     return bannedChampions.some(ban => ban.id === champion.id);
+  }
+
+  /**
+ * Verifica se um campeão já foi escolhido (picked)
+ */
+  isChampionPicked(champion: Champion): boolean {
+    if (!this.session || this.session.phase !== 'picks') return false;
+    const pickedChampions = this.getTeamPicks('blue').concat(this.getTeamPicks('red'));
+    return pickedChampions.some(pick => pick.id === champion.id);
   }
 
   /**

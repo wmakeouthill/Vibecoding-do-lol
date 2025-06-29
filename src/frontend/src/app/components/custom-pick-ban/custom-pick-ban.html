@@ -321,6 +321,7 @@
                *ngFor="let champion of getModalFilteredChampions()"
                [class.selected]="modalSelectedChampion && modalSelectedChampion.id === champion.id"
                [class.banned]="isChampionBanned(champion)"
+               [class.picked]="isChampionPicked(champion)"
                (click)="selectChampionInModal(champion)">
             <img
               [src]="champion.image"
@@ -331,6 +332,9 @@
             <span class="modal-champion-label">{{ champion.name }}</span>
             <div class="banned-overlay" *ngIf="isChampionBanned(champion)">
               <span class="banned-text">BANIDO</span>
+            </div>
+            <div class="picked-overlay" *ngIf="isChampionPicked(champion)">
+              <span class="picked-text">ESCOLHIDO</span>
             </div>
           </div>
 
@@ -363,8 +367,8 @@
           </button>
           <button 
             class="btn btn-primary confirm-btn" 
-            [class.disabled]="!modalSelectedChampion || isChampionBanned(modalSelectedChampion)"
-            [disabled]="!modalSelectedChampion || isChampionBanned(modalSelectedChampion)"
+            [class.disabled]="!modalSelectedChampion || isChampionBanned(modalSelectedChampion) || isChampionPicked(modalSelectedChampion)"
+            [disabled]="!modalSelectedChampion || isChampionBanned(modalSelectedChampion) || isChampionPicked(modalSelectedChampion)"
             (click)="confirmModalSelection()">
             {{ getCurrentActionIcon() }} Confirmar {{ getCurrentActionText() }}
           </button>
@@ -424,7 +428,7 @@
                   </div>
                   <div class="champion-placeholder" *ngIf="!slot.champion">?</div>
                   <button class="edit-btn" 
-                          (click)="isPlayerBot(slot.player) ? confirmBotPick(slot.player.id || slot.player.summonerName, slot.champion?.phaseIndex) : startEditingPick(slot.player.id || slot.player.summonerName, slot.champion?.phaseIndex)">
+                          (click)="isPlayerBot(slot.player) ? confirmBotPick(slot.player.id || slot.player.summonerName, slot.champion?.phaseIndex) : startEditingPick(slot.player.id || slot.player.summonerName, slot.champion?.phaseIndex || 0)">
                     {{ isPlayerBot(slot.player) ? 'Confirmar Bot' : 'Editar' }}
                   </button>
                 </div>
@@ -469,7 +473,7 @@
                   </div>
                   <div class="champion-placeholder" *ngIf="!slot.champion">?</div>
                   <button class="edit-btn" 
-                          (click)="isPlayerBot(slot.player) ? confirmBotPick(slot.player.id || slot.player.summonerName, slot.champion?.phaseIndex) : startEditingPick(slot.player.id || slot.player.summonerName, slot.champion?.phaseIndex)">
+                          (click)="isPlayerBot(slot.player) ? confirmBotPick(slot.player.id || slot.player.summonerName, slot.champion?.phaseIndex) : startEditingPick(slot.player.id || slot.player.summonerName, slot.champion?.phaseIndex || 0)">
                     {{ isPlayerBot(slot.player) ? 'Confirmar Bot' : 'Editar' }}
                   </button>
                 </div>
