@@ -1,5 +1,6 @@
 import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { ProfileIconService } from '../../services/profile-icon.service';
 
 export interface MatchFoundData {
   matchId: number;
@@ -23,6 +24,9 @@ export interface PlayerInfo {
   secondaryLane: string;
   assignedLane: string;
   isAutofill: boolean;
+  riotIdGameName?: string;
+  riotIdTagline?: string;
+  profileIconId?: number;
 }
 
 @Component({
@@ -40,6 +44,8 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
   acceptTimeLeft = 30;
   private countdownTimer?: number;
 
+  constructor(private profileIconService: ProfileIconService) {}
+
   ngOnInit() {
     if (this.matchData && this.matchData.phase === 'accept') {
       this.startAcceptCountdown();
@@ -56,6 +62,9 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
       if (this.matchData && this.matchData.phase === 'accept') {
         this.startAcceptCountdown();
       }
+
+      // Carregar ícones de perfil para todos os jogadores
+      this.loadProfileIconsForPlayers();
     }
   }
 
@@ -63,6 +72,51 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
     if (this.countdownTimer) {
       clearInterval(this.countdownTimer);
     }
+  }
+
+  /**
+   * Carrega os ícones de perfil para todos os jogadores da partida
+   */
+  private async loadProfileIconsForPlayers(): Promise<void> {
+    if (!this.matchData) return;
+
+    const allPlayers = [...this.matchData.teammates, ...this.matchData.enemies];
+    
+    // Carregar ícones em paralelo para melhor performance
+    const iconPromises = allPlayers.map(async (player) => {
+      try {
+        const profileIconId = await this.profileIconService.getOrFetchProfileIcon(
+          player.summonerName,
+          player.riotIdGameName,
+          player.riotIdTagline
+        );
+        if (profileIconId) {
+          player.profileIconId = profileIconId;
+        }
+      } catch (error) {
+        console.warn(`Erro ao carregar ícone para ${player.summonerName}:`, error);
+      }
+    });
+
+    await Promise.all(iconPromises);
+  }
+
+  /**
+   * Obtém a URL do ícone de perfil para um jogador
+   */
+  getPlayerProfileIconUrl(player: PlayerInfo): string {
+    return this.profileIconService.getProfileIconUrl(
+      player.summonerName,
+      player.riotIdGameName,
+      player.riotIdTagline
+    );
+  }
+
+  /**
+   * Handler para erro de carregamento de imagem de perfil
+   */
+  onProfileIconError(event: Event, player: PlayerInfo): void {
+    this.profileIconService.onProfileIconError(event, player.profileIconId);
   }
 
   private startAcceptCountdown(): void {

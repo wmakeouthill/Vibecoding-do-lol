@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { interval, Subscription, debounceTime, distinctUntilChanged } from 'rxjs';
 import { ChampionService } from '../../services/champion.service';
+import { ProfileIconService } from '../../services/profile-icon.service';
 
 interface LeaderboardPlayer {
   rank: number;
@@ -36,7 +37,6 @@ interface CacheData {
   data: LeaderboardPlayer[];
   timestamp: number;
   version: string;
-  profileIcons?: { [key: string]: number }; // Cache dos ícones de perfil
 }
 
 @Component({
@@ -51,10 +51,8 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
   error: string | null = null;
   lastUpdated: Date = new Date();
   private refreshSubscription?: Subscription;
-  private profileIconCache: Map<string, number> = new Map();
   private playerTotalMMRCache: Map<string, number> = new Map();
   private localStorageKey = 'leaderboard_cache';
-  private profileIconsCacheKey = 'leaderboard_profile_icons_cache';
   private cacheVersion = '1.0.0';
   private cacheExpiryTime = 5 * 60 * 1000; // 5 minutos
 
@@ -67,7 +65,11 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
   retryCount = 0;
   maxRetries = 3;
 
-  constructor(private http: HttpClient, private championService: ChampionService) {}
+  constructor(
+    private http: HttpClient, 
+    private championService: ChampionService,
+    private profileIconService: ProfileIconService
+  ) {}
 
   ngOnInit() {
     // Primeiro tentar carregar do cache
@@ -102,9 +104,6 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
           this.lastUpdated = new Date(cacheData.timestamp);
           console.log('📦 Cache carregado do localStorage');
           
-          // Carregar cache dos ícones de perfil
-          this.loadProfileIconsCache();
-          
           return true;
         } else {
           console.log('⏰ Cache expirado ou versão incompatível');
@@ -116,23 +115,6 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
     return false;
   }
 
-  private loadProfileIconsCache(): void {
-    try {
-      // Carregar cache dos ícones do localStorage
-      const iconsCache = localStorage.getItem(this.profileIconsCacheKey);
-      if (iconsCache) {
-        const iconsData = JSON.parse(iconsCache);
-        if (iconsData.version === this.cacheVersion) {
-          // Converter de volta para Map
-          this.profileIconCache = new Map(Object.entries(iconsData.icons));
-          console.log(`📦 Cache de ícones carregado: ${this.profileIconCache.size} ícones`);
-        }
-      }
-    } catch (error) {
-      console.warn('Erro ao carregar cache de ícones:', error);
-    }
-  }
-
   private saveCacheToStorage(): void {
     try {
       const cacheData: CacheData = {
@@ -142,25 +124,8 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
       };
       localStorage.setItem(this.localStorageKey, JSON.stringify(cacheData));
       console.log('💾 Cache salvo no localStorage');
-      
-      // Salvar cache dos ícones de perfil
-      this.saveProfileIconsCache();
     } catch (error) {
       console.warn('Erro ao salvar cache no localStorage:', error);
-    }
-  }
-
-  private saveProfileIconsCache(): void {
-    try {
-      const iconsData = {
-        icons: Object.fromEntries(this.profileIconCache),
-        version: this.cacheVersion,
-        timestamp: Date.now()
-      };
-      localStorage.setItem(this.profileIconsCacheKey, JSON.stringify(iconsData));
-      console.log(`💾 Cache de ícones salvo: ${this.profileIconCache.size} ícones`);
-    } catch (error) {
-      console.warn('Erro ao salvar cache de ícones:', error);
     }
   }
 
@@ -204,23 +169,22 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
   private async loadProfileIconsOptimized(): Promise<void> {
     // Filtrar jogadores que precisam buscar ícone
     const playersToFetch = this.leaderboardData.filter(player => {
-      if (!player.riot_id_game_name || !player.riot_id_tagline) {
-        if (this.profileIconCache.has(player.summoner_name)) {
-          player.profileIconId = this.profileIconCache.get(player.summoner_name);
-          return false;
-        }
-        return true;
-      }
-      const riotId = `${player.riot_id_game_name}#${player.riot_id_tagline}`;
-      if (this.profileIconCache.has(riotId)) {
-        player.profileIconId = this.profileIconCache.get(riotId);
+      // Verificar se já tem ícone no cache compartilhado
+      const hasIcon = this.profileIconService.getProfileIconId(
+        player.summoner_name,
+        player.riot_id_game_name,
+        player.riot_id_tagline
+      );
+      
+      if (hasIcon) {
+        player.profileIconId = hasIcon;
         return false;
       }
       return true;
     });
 
     if (playersToFetch.length === 0) {
-      console.log('✅ Todos os ícones já estão em cache');
+      console.log('✅ Todos os ícones já estão em cache compartilhado');
       return;
     }
 
@@ -228,27 +192,24 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
     this.isLoadingProfileIcons = true;
     this.profileIconsProgress = { current: 0, total: playersToFetch.length };
     
-    // Processar em lotes maiores e sem delays desnecessários
+    // Processar em lotes para melhor performance
     const batchSize = 10;
     const delayBetweenBatches = 100;
 
     for (let i = 0; i < playersToFetch.length; i += batchSize) {
       const batch = playersToFetch.slice(i, i + batchSize);
       const batchPromises = batch.map(async (player) => {
-        let riotId;
-        if (player.riot_id_game_name && player.riot_id_tagline) {
-          riotId = `${player.riot_id_game_name}#${player.riot_id_tagline}`;
-        } else {
-          riotId = player.summoner_name;
-        }
         try {
-          const profileIconId = await this.fetchProfileIconWithRetry(riotId);
+          const profileIconId = await this.profileIconService.getOrFetchProfileIcon(
+            player.summoner_name,
+            player.riot_id_game_name,
+            player.riot_id_tagline
+          );
           if (profileIconId) {
             player.profileIconId = profileIconId;
-            this.profileIconCache.set(riotId, profileIconId);
           }
         } catch (error) {
-          // fallback
+          console.warn(`Erro ao carregar ícone para ${player.summoner_name}:`, error);
         } finally {
           this.profileIconsProgress.current++;
         }
@@ -260,34 +221,7 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
     }
     
     this.isLoadingProfileIcons = false;
-    console.log(`✅ Ícones carregados: ${this.profileIconCache.size} no cache total`);
-    
-    // Salvar cache dos ícones após carregar novos
-    this.saveProfileIconsCache();
-  }
-
-  private async fetchProfileIconWithRetry(riotId: string, maxRetries = 1): Promise<number | null> {
-    let lastError: any;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const profileIconId = await this.fetchProfileIcon(riotId);
-        if (profileIconId) {
-          return profileIconId;
-        }
-        return null;
-      } catch (error: any) {
-        lastError = error;
-        if (error.status === 404) {
-          return null;
-        }
-        if (attempt < maxRetries) {
-          const retryDelay = 100 * attempt;
-          await this.delay(retryDelay);
-        }
-      }
-    }
-    throw lastError;
+    console.log(`✅ Ícones carregados e cache compartilhado atualizado`);
   }
 
   private delay(ms: number): Promise<void> {
@@ -359,28 +293,19 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
     return totalMMRGained;
   }
 
-  private async fetchProfileIcon(riotId: string): Promise<number | null> {
-    try {
-      const response = await this.http.get<any>(`http://localhost:3000/api/summoner/profile-icon/${encodeURIComponent(riotId)}`).toPromise();
-      if (response.success && response.data.profileIconId !== undefined) {
-        return response.data.profileIconId;
-      }
-      return null;
-    } catch (error: any) {
-      if (error.status === 404) {
-        console.log(`ℹ️ Jogador ${riotId} não encontrado no LCU`);
-      } else if (error.status === 503) {
-        console.log(`⚠️ Cliente do LoL não conectado para buscar ${riotId}`);
-      } else {
-        console.warn(`Erro ao buscar profile icon para ${riotId}:`, error);
-      }
-      return null;
-    }
-  }
-
+  // Usar o serviço compartilhado para obter URLs de ícones
   getProfileIconUrl(profileIconId?: number): string {
     const iconId = profileIconId || 29;
     return `https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/${iconId}.jpg`;
+  }
+
+  // Método para obter URL do ícone de perfil de um jogador específico
+  getPlayerProfileIconUrl(player: LeaderboardPlayer): string {
+    return this.profileIconService.getProfileIconUrl(
+      player.summoner_name,
+      player.riot_id_game_name,
+      player.riot_id_tagline
+    );
   }
 
   getChampionIconUrl(championName: string): string {
@@ -511,30 +436,7 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
   }
 
   onProfileIconError(event: Event, profileIconId?: number): void {
-    const target = event.target as HTMLImageElement;
-    if (!target) return;
-
-    const iconId = profileIconId || 29;
-    const fallbackUrls = [
-      `https://ddragon.leagueoflegends.com/cdn/15.13.1/img/profileicon/${iconId}.png`,
-      `https://ddragon.leagueoflegends.com/cdn/14.24.1/img/profileicon/${iconId}.png`,
-      `https://ddragon.leagueoflegends.com/cdn/14.23.1/img/profileicon/${iconId}.png`,
-      `https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/29.jpg`
-    ];
-
-    const currentSrc = target.src;
-    let nextIndex = 0;
-
-    for (let i = 0; i < fallbackUrls.length; i++) {
-      if (fallbackUrls[i] === currentSrc) {
-        nextIndex = i + 1;
-        break;
-      }
-    }
-
-    if (nextIndex < fallbackUrls.length) {
-      target.src = fallbackUrls[nextIndex];
-    }
+    this.profileIconService.onProfileIconError(event, profileIconId);
   }
 
   getLoadingStatus(): string {
@@ -569,19 +471,21 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
     this.isLoading = true;
     this.error = null;
     
-    // Limpar todos os caches antes de recarregar
+    // Limpar cache de dados da leaderboard
     localStorage.removeItem(this.localStorageKey);
-    localStorage.removeItem(this.profileIconsCacheKey);
-    this.profileIconCache.clear();
     this.playerTotalMMRCache.clear();
-    console.log('🗑️ Cache limpo (dados + ícones)');
+    
+    // Limpar cache de ícones compartilhado também
+    this.profileIconService.clearCache();
+    
+    console.log('🗑️ Cache limpo (dados + ícones compartilhados)');
     
     try {
-      await this.http.post('http://localhost:3000/api/stats/refresh-rebuild-players', {}).toPromise();
-      await this.loadLeaderboard(false); // Não mostrar loading duplo
+      await this.loadLeaderboard(true);
+      console.log('✅ Refresh completo concluído');
     } catch (error) {
-      console.error('❌ Erro ao reconstruir jogadores:', error);
-      this.error = 'Erro ao reconstruir jogadores';
+      console.error('❌ Erro no refresh completo:', error);
+      this.error = 'Erro ao atualizar dados';
     } finally {
       this.isLoading = false;
     }
