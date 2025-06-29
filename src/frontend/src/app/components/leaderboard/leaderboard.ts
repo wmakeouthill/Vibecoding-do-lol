@@ -394,46 +394,8 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
       finalName = ChampionService.getChampionNameById(championId);
     }
 
-    const normalizedName = this.normalizeChampionName(finalName);
-    return `https://ddragon.leagueoflegends.com/cdn/15.12.1/img/champion/${normalizedName}.png`;
-  }
-
-  private normalizeChampionName(championName: string): string {
-    const nameMap: { [key: string]: string } = {
-      'KaiSa': 'Kaisa',
-      'Kai\'Sa': 'Kaisa',
-      'Cho\'Gath': 'Chogath',
-      'Kha\'Zix': 'Khazix',
-      'LeBlanc': 'Leblanc',
-      'Vel\'Koz': 'Velkoz',
-      'Kog\'Maw': 'Kogmaw',
-      'Rek\'Sai': 'Reksai',
-      'Nunu & Willump': 'Nunu',
-      'Wukong': 'MonkeyKing',
-      'Renata Glasc': 'Renata',
-      'Dr. Mundo': 'DrMundo',
-      'Tahm Kench': 'TahmKench',
-      'Twisted Fate': 'TwistedFate',
-      'Master Yi': 'MasterYi',
-      'Miss Fortune': 'MissFortune',
-      'Jarvan IV': 'JarvanIV',
-      'Lee Sin': 'LeeSin',
-      'Xin Zhao': 'XinZhao',
-      'Aurelion Sol': 'AurelionSol'
-    };
-
-    if (nameMap[championName]) {
-      return nameMap[championName];
-    }
-
-    const championIdMatch = championName.match(/Champion(\d+)/i);
-    if (championIdMatch) {
-      const championId = parseInt(championIdMatch[1]);
-      const correctName = ChampionService.getChampionNameById(championId);
-      return nameMap[correctName] || correctName;
-    }
-
-    return championName;
+    // O nome do campeão já vem no formato correto do Data Dragon
+    return `https://ddragon.leagueoflegends.com/cdn/15.13.1/img/champion/${finalName}.png`;
   }
 
   getChampionDisplayName(championName: string): string {
@@ -554,7 +516,7 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
 
     const iconId = profileIconId || 29;
     const fallbackUrls = [
-      `https://ddragon.leagueoflegends.com/cdn/15.12.1/img/profileicon/${iconId}.png`,
+      `https://ddragon.leagueoflegends.com/cdn/15.13.1/img/profileicon/${iconId}.png`,
       `https://ddragon.leagueoflegends.com/cdn/14.24.1/img/profileicon/${iconId}.png`,
       `https://ddragon.leagueoflegends.com/cdn/14.23.1/img/profileicon/${iconId}.png`,
       `https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/29.jpg`

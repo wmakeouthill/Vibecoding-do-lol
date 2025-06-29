@@ -80,9 +80,10 @@ export class DataDragonService {
       this.championsLoaded = true;
 
       // Criar mapeamento de ID para nome
-      Object.values(this.championsCache).forEach(champion => {
+      Object.entries(this.championsCache).forEach(([championKey, champion]) => {
         const championId = parseInt(champion.key);
-        this.championIdToNameMap[championId] = champion.name;
+        // Usar a chave do objeto (nome correto para URL) em vez do campo name
+        this.championIdToNameMap[championId] = championKey;
       });
 
       console.log(`✅ DataDragon: ${Object.keys(this.championsCache).length} campeões carregados`);
@@ -116,8 +117,8 @@ export class DataDragonService {
       return null;
     }
 
-    const normalizedName = this.normalizeChampionName(championName);
-    return this.championsCache[normalizedName] || null;
+    // O Data Dragon já retorna os nomes no formato correto
+    return this.championsCache[championName] || null;
   }
 
   /**
@@ -136,48 +137,8 @@ export class DataDragonService {
    * Obtém a URL da imagem de um campeão
    */
   getChampionImageUrl(championName: string): string {
-    const normalizedName = this.normalizeChampionName(championName);
-    return `${this.baseUrl}/${this.version}/img/champion/${normalizedName}.png`;
-  }
-
-  /**
-   * Normaliza o nome do campeão para corresponder ao formato da Data Dragon
-   */
-  private normalizeChampionName(championName: string): string {
-    // Mapeamento de nomes especiais que não correspondem exatamente
-    const nameMapping: { [key: string]: string } = {
-      'Aurelion Sol': 'AurelionSol',
-      'Cho\'Gath': 'Chogath',
-      'Dr. Mundo': 'DrMundo',
-      'Fiddlesticks': 'FiddleSticks',
-      'Heimerdinger': 'Heimerdinger',
-      'Jarvan IV': 'JarvanIV',
-      'Kai\'Sa': 'Kaisa',
-      'Kha\'Zix': 'Khazix',
-      'Kog\'Maw': 'KogMaw',
-      'K\'Sante': 'KSante',
-      'LeBlanc': 'Leblanc',
-      'Lee Sin': 'LeeSin',
-      'Master Yi': 'MasterYi',
-      'Miss Fortune': 'MissFortune',
-      'Monkey King': 'MonkeyKing',
-      'Nunu & Willump': 'Nunu',
-      'Nunu e Willump': 'Nunu',
-      'Rek\'Sai': 'RekSai',
-      'Renata Glasc': 'Renata',
-      'Tahm Kench': 'TahmKench',
-      'Twisted Fate': 'TwistedFate',
-      'Vel\'Koz': 'Velkoz',
-      'Xin Zhao': 'XinZhao'
-    };
-
-    // Verificar se existe um mapeamento específico
-    if (nameMapping[championName]) {
-      return nameMapping[championName];
-    }
-
-    // Se não, tentar normalizar o nome
-    return championName.replace(/[^a-zA-Z0-9]/g, '');
+    // O nome do campeão já vem no formato correto do Data Dragon
+    return `${this.baseUrl}/${this.version}/img/champion/${championName}.png`;
   }
 
   /**
@@ -216,8 +177,96 @@ export class DataDragonService {
         // Mantém a mesma estrutura que o frontend espera
         championName: championName || `Champion${championId}`,
         // Adiciona URL da imagem se necessário
-        championImageUrl: championName ? this.getChampionImageUrl(championName) : null
+        championImageUrl: championName ? this.getChampionImageUrl(championName) : null,
+        // Adiciona lane detectada baseada nas tags do Data Dragon
+        detectedLane: championName ? this.detectChampionLane(championName) : 'UNKNOWN'
       };
     });
+  }
+
+  /**
+   * Detecta a lane mais provável de um campeão baseado nas tags e estatísticas do Data Dragon
+   */
+  private detectChampionLane(championName: string): string {
+    const champion = this.getChampionByName(championName);
+    if (!champion) {
+      return 'UNKNOWN';
+    }
+
+    const tags = champion.tags;
+    const stats = champion.stats;
+    
+    // Sistema de pontuação para cada lane
+    const laneScores: { [key: string]: number } = {
+      'TOP': 0,
+      'JUNGLE': 0,
+      'MIDDLE': 0,
+      'ADC': 0,
+      'SUPPORT': 0
+    };
+
+    // Pontuação baseada nas tags
+    if (tags.includes('Marksman')) {
+      laneScores['ADC'] += 80;
+      laneScores['MIDDLE'] += 20; // Alguns marksmen podem ir mid
+    }
+
+    if (tags.includes('Support')) {
+      laneScores['SUPPORT'] += 80;
+      laneScores['ADC'] += 10; // Alguns supports podem ir ADC
+    }
+
+    if (tags.includes('Mage')) {
+      laneScores['MIDDLE'] += 70;
+      laneScores['SUPPORT'] += 30; // Mages podem ser support
+      if (!tags.includes('Support')) {
+        laneScores['ADC'] += 10; // Mages não-support podem ser ADC
+      }
+    }
+
+    if (tags.includes('Fighter')) {
+      laneScores['TOP'] += 70;
+      laneScores['JUNGLE'] += 30; // Fighters também podem ser jungle
+    }
+
+    if (tags.includes('Tank')) {
+      laneScores['TOP'] += 70;
+      laneScores['SUPPORT'] += 30; // Tanks também podem ser support
+    }
+
+    if (tags.includes('Assassin')) {
+      laneScores['JUNGLE'] += 60;
+      laneScores['MIDDLE'] += 50; // Assassins também podem ser mid
+      laneScores['TOP'] += 20; // Assassins também podem ser top
+    }
+
+    // Pontuação baseada nas estatísticas
+    if (stats.attackrange > 500) {
+      laneScores['ADC'] += 20; // Campeões com range alto tendem a ser ADC
+    }
+
+    if (stats.attackdamage > 60) {
+      laneScores['ADC'] += 15; // Alto dano físico sugere ADC
+    }
+
+    if (stats.hp > 600) {
+      laneScores['TOP'] += 15; // Alto HP sugere top lane
+    }
+
+    if (stats.movespeed > 340) {
+      laneScores['JUNGLE'] += 10; // Alta velocidade sugere jungle
+    }
+
+    // Encontrar a lane com maior pontuação
+    const bestLane = Object.entries(laneScores).reduce((a, b) =>
+      laneScores[a[0]] > laneScores[b[0]] ? a : b
+    )[0];
+
+    // Se a melhor pontuação for muito baixa, usar fallback
+    if (laneScores[bestLane] < 20) {
+      return 'UNKNOWN';
+    }
+
+    return bestLane;
   }
 } 

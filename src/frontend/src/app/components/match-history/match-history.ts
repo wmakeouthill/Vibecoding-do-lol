@@ -64,7 +64,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     }
   };
 
-  constructor(private apiService: ApiService, private cdr: ChangeDetectorRef) {}  // ========== UNIFIED LOADING METHODS ==========
+  constructor(private apiService: ApiService, private cdr: ChangeDetectorRef) { }  // ========== UNIFIED LOADING METHODS ==========
 
   /**
    * Loads matches for the current active tab using Strategy Pattern
@@ -102,13 +102,14 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     if (matches.length === 0) return '0.0';
     const wins = matches.filter(m => m.playerStats?.isWin).length;
     return ((wins / matches.length) * 100).toFixed(1);
-  }loadRiotMatches(): void {
+  } loadRiotMatches(): void {
     if (!this.player) {
       // console.warn('⚠️ Nenhum player disponível para carregar partidas');
       return;
-    }this.loading = true;
+    } this.loading = true;
     this.error = null;
-    this.apiService.getLCUMatchHistoryAll(0, 20, false).subscribe({      next: (lcuResponse: any) => {
+    this.apiService.getLCUMatchHistoryAll(0, 20, false).subscribe({
+      next: (lcuResponse: any) => {
         if (lcuResponse && lcuResponse.success && lcuResponse.matches && lcuResponse.matches.length > 0) {
           this.processLCUMatches(lcuResponse.matches);
         } else {
@@ -116,7 +117,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           this.error = 'Nenhuma partida encontrada no histórico do League of Legends. Certifique-se de que o LoL está aberto e você jogou partidas recentemente.';
         }
         this.loading = false;
-      },      error: (error: any) => {
+      }, error: (error: any) => {
         this.riotMatches = [];
 
         // Mensagem mais específica baseada no tipo de erro
@@ -131,19 +132,20 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         this.loading = false;
       }
     });
-  }  loadCustomMatches(): void {
+  } loadCustomMatches(): void {
     if (!this.player) {
       return;
     }
 
     this.loading = true;
-    this.error = null;    try {
+    this.error = null; try {
       // Usar gameName#tagLine como identificador principal, com fallbacks
       const playerIdentifier = this.player.gameName && this.player.tagLine
-                              ? `${this.player.gameName}#${this.player.tagLine}`
-                              : this.player.summonerName || this.player.id.toString();
+        ? `${this.player.gameName}#${this.player.tagLine}`
+        : this.player.summonerName || this.player.id.toString();
 
-      this.apiService.getCustomMatches(playerIdentifier, this.currentPage * this.matchesPerPage, this.matchesPerPage).subscribe({        next: (response) => {
+      this.apiService.getCustomMatches(playerIdentifier, this.currentPage * this.matchesPerPage, this.matchesPerPage).subscribe({
+        next: (response) => {
           if (response && response.success && response.matches && response.matches.length > 0) {
 
             this.customMatches = this.mapApiMatchesToModel(response.matches);
@@ -154,7 +156,8 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
             this.totalMatches = 0;
             this.error = 'Você ainda não jogou nenhuma partida customizada. Complete uma partida personalizada para vê-la aparecer aqui.';
           }
-          this.loading = false;        },
+          this.loading = false;
+        },
         error: (error) => {
           console.error('❌ Erro na requisição:', error);
 
@@ -167,7 +170,8 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           // Forçar detecção de mudanças para mock data também
           this.cdr.detectChanges();
         }
-      });    } catch (error: any) {
+      });
+    } catch (error: any) {
       console.error('❌ Erro no try/catch:', error);
 
       // FALLBACK TEMPORÁRIO: Usar dados mock para testar o frontend
@@ -186,7 +190,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
 
     this.loadCurrentTabMatches();
   }
-  
+
   // Helper function para evitar erro de lint no template
   isCustomTab(): boolean {
     const result = this.activeTab === 'custom';
@@ -200,16 +204,16 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
   // Método para identificar se um participante é o jogador atual (para partidas customizadas)
   private isCurrentPlayer(participantName: string): boolean {
     if (!this.player) return false;
-    
+
     const currentPlayerName = this.player.summonerName?.toLowerCase().trim() || '';
     const currentPlayerTagLine = this.player.tagLine || '';
     const fullPlayerName = currentPlayerTagLine ? `${currentPlayerName}#${currentPlayerTagLine}` : currentPlayerName;
-    
+
     const participantNameLower = participantName?.toLowerCase().trim() || '';
-    
+
     // Comparar por nome completo (gameName#tagLine) ou apenas gameName
-    return participantNameLower === fullPlayerName.toLowerCase() || 
-           participantNameLower === currentPlayerName;
+    return participantNameLower === fullPlayerName.toLowerCase() ||
+      participantNameLower === currentPlayerName;
   }
 
   ngOnInit() {
@@ -246,7 +250,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
 
     // Initial check
     this.checkCurrentGame();
-  }  private checkCurrentGame(): void {
+  } private checkCurrentGame(): void {
     if (!this.player) return;
 
     // Use LCU status check instead of current-match-details to avoid 404s
@@ -263,7 +267,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           this.currentGame = null;
           this.gamePhase = '';
         }
-      },      error: (err: any) => {
+      }, error: (err: any) => {
         // console.error('Failed to get LCU status:', err);
         this.isInGame = false;
         this.currentGame = null;
@@ -289,7 +293,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           this.totalMatches = this.matches.length;
         }
         this.loading = false;
-      },      error: (error) => {
+      }, error: (error) => {
         this.error = error.message || 'Erro ao carregar histórico de partidas';
         this.loading = false;
         // console.error('Error loading match history:', error);
@@ -302,7 +306,8 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           this.loading = false;
         }, 1000);
       }
-    });  }
+    });
+  }
 
   // MÉTODO REMOVIDO: processRiotMatches
   // Agora usamos apenas LCU via processLCUMatches
@@ -317,7 +322,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
 
       const playerData = matchData.info.participants.find(
         (p: any) => p.puuid === this.player?.puuid
-      );      if (!playerData) {
+      ); if (!playerData) {
         // console.warn('⚠️ Jogador não encontrado na partida:', matchData.metadata?.matchId);
         return this.createDefaultMatch();
       }      // Mapear participantes com dados completos para exibição
@@ -347,7 +352,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         teams: matchData.info.teams,
         team1: team1,
         team2: team2,
-        winner: matchWinner,        playerStats: {
+        winner: matchWinner, playerStats: {
           champion: playerData.championName,
           kills: playerData.kills,
           deaths: playerData.deaths,
@@ -401,12 +406,13 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         mmrChange: 0,
         isWin: false
       }
-    };  }  private mapApiMatchesToModel(apiMatches: any[]): Match[] {
+    };
+  } private mapApiMatchesToModel(apiMatches: any[]): Match[] {
     return apiMatches.map((match, index) => {
       // Parse JSON fields safely
-      let team1Players = [];
-      let team2Players = [];
-      let pickBanData = null;
+      let team1Players: any[] = [];
+      let team2Players: any[] = [];
+      let pickBanData: any = null;
 
       try {
         team1Players = typeof match.team1_players === 'string' ? JSON.parse(match.team1_players) : (match.team1_players || []);
@@ -418,7 +424,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
 
         // Parse participants_data se existir
         if (match.participants_data) {
-          match.participants_data = typeof match.participants_data === 'string' ? 
+          match.participants_data = typeof match.participants_data === 'string' ?
             JSON.parse(match.participants_data) : match.participants_data;
         }
       } catch (e) {
@@ -449,23 +455,23 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           const currentPlayerName = this.player?.summonerName?.toLowerCase() || '';
           const currentPlayerTagLine = this.player?.tagLine || '';
           const fullPlayerName = currentPlayerTagLine ? `${currentPlayerName}#${currentPlayerTagLine}` : currentPlayerName;
-          
+
           // Buscar o jogador atual nos dados reais primeiro
           if (hasRealData) {
             const realPlayerData = match.participants_data.find((p: any) => {
               const pName = p.summonerName?.toLowerCase() || '';
-              const pRiotId = p.riotIdGameName && p.riotIdTagline ? 
+              const pRiotId = p.riotIdGameName && p.riotIdTagline ?
                 `${p.riotIdGameName}#${p.riotIdTagline}`.toLowerCase() : '';
-              
+
               return pName === currentPlayerName || pRiotId === fullPlayerName.toLowerCase();
             });
-            
+
             if (realPlayerData) {
               currentPlayerTeam = realPlayerData.teamId === 100 ? 1 : 2;
               playerChampion = ChampionService.getChampionNameById(realPlayerData.championId) || 'Unknown';
             }
           }
-          
+
           // Fallback para dados de pick/ban se não encontrou nos dados reais
           if (currentPlayerTeam === -1) {
             // Tentar encontrar em team1
@@ -503,13 +509,13 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         const currentPlayerName = this.player.summonerName?.toLowerCase().trim() || '';
         const currentPlayerTagLine = this.player.tagLine || '';
         const fullPlayerName = currentPlayerTagLine ? `${currentPlayerName}#${currentPlayerTagLine}` : currentPlayerName;
-        
+
         // Buscar o jogador atual nos dados reais
         playerRealData = match.participants_data.find((p: any) => {
           const pName = p.summonerName?.toLowerCase().trim() || '';
-          const pRiotId = p.riotIdGameName && p.riotIdTagline ? 
+          const pRiotId = p.riotIdGameName && p.riotIdTagline ?
             `${p.riotIdGameName}#${p.riotIdTagline}`.toLowerCase() : '';
-          
+
           // Correspondência exata
           return pName === currentPlayerName || pRiotId === fullPlayerName.toLowerCase();
         });
@@ -548,17 +554,17 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
 
         // Normalizar o nome do jogador para busca
         const normalizedPlayerName = playerName?.toString().toLowerCase().trim() || '';
-        
+
         // Buscar por correspondência exata primeiro
         let foundPlayer = match.participants_data.find((p: any) => {
           const pName = p.summonerName?.toLowerCase().trim() || '';
           const teamMatches = (teamId === 100 && p.teamId === 100) || (teamId === 200 && p.teamId === 200);
-          
+
           // Correspondência exata por summonerName
           if (teamMatches && pName === normalizedPlayerName) {
             return true;
           }
-          
+
           // Correspondência por Riot ID (gameName#tagLine)
           if (teamMatches && p.riotIdGameName && p.riotIdTagline) {
             const riotId = `${p.riotIdGameName}#${p.riotIdTagline}`.toLowerCase();
@@ -566,16 +572,16 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
               return true;
             }
           }
-          
+
           // Correspondência por Riot ID completo passado como parâmetro
           if (teamMatches && normalizedPlayerName.includes('#')) {
-            const pRiotId = p.riotIdGameName && p.riotIdTagline ? 
+            const pRiotId = p.riotIdGameName && p.riotIdTagline ?
               `${p.riotIdGameName}#${p.riotIdTagline}`.toLowerCase() : '';
             if (pRiotId === normalizedPlayerName) {
               return true;
             }
           }
-          
+
           return false;
         });
 
@@ -584,10 +590,10 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           foundPlayer = match.participants_data.find((p: any) => {
             const pName = p.summonerName?.toLowerCase().trim() || '';
             const teamMatches = (teamId === 100 && p.teamId === 100) || (teamId === 200 && p.teamId === 200);
-            
+
             // Busca parcial mais restritiva - só se um nome contém o outro completamente
             return teamMatches && (
-              (pName.includes(normalizedPlayerName) && normalizedPlayerName.length > 2) || 
+              (pName.includes(normalizedPlayerName) && normalizedPlayerName.length > 2) ||
               (normalizedPlayerName.includes(pName) && pName.length > 2)
             );
           });
@@ -601,7 +607,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         id: match.id || match.match_id,
         createdAt: new Date(match.created_at),
         duration: match.duration ? (match.duration * 60) : 1500, // Converter minutos para segundos
-        gameMode: match.game_mode || 'CUSTOM',        team1: team1Players.map((playerId: any, index: number) => {
+        gameMode: match.game_mode || 'CUSTOM', team1: team1Players.map((playerId: any, index: number) => {
           let championName = 'Unknown';
           let playerName = 'Unknown Player';
 
@@ -666,7 +672,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
             item4: teamItems[4],
             item5: teamItems[5]
           };
-        }),        team2: team2Players.map((playerId: any, index: number) => {
+        }), team2: team2Players.map((playerId: any, index: number) => {
           let championName = 'Unknown';
           let playerName = 'Unknown Player';
 
@@ -698,79 +704,79 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
               playerName = currentPlayerTagLine ? `${currentPlayerName}#${currentPlayerTagLine}` : currentPlayerName;
             }
           }
-            const teamItems = realData ? [
-              realData.item0 || 0,
-              realData.item1 || 0,
-              realData.item2 || 0,
-              realData.item3 || 0,
-              realData.item4 || 0,
-              realData.item5 || 0
-            ] : this.generateRandomItems();            return {
-              name: playerName, // Usar o nome real ao invés do playerId
-              champion: championName,
-              championName: championName, // Para compatibilidade com o template
-              summonerName: playerName, // Nome real do jogador
-              puuid: this.isCurrentPlayer(playerName) ? this.player?.puuid || `custom_player_${playerId}_${index + 5}` : `custom_player_${playerId}_${index + 5}`,
-              teamId: 200,
-              kills: realData?.kills ?? Math.floor(Math.random() * 10) + 2,
-              deaths: realData?.deaths ?? Math.floor(Math.random() * 8) + 1,
-              assists: realData?.assists ?? Math.floor(Math.random() * 12) + 3,
-              champLevel: realData?.champLevel ?? Math.floor(Math.random() * 6) + 13,
-              goldEarned: realData?.goldEarned ?? Math.floor(Math.random() * 8000) + 12000,
-              totalMinionsKilled: realData?.totalMinionsKilled ?? Math.floor(Math.random() * 150) + 100,
-              neutralMinionsKilled: realData?.neutralMinionsKilled ?? Math.floor(Math.random() * 50) + 10,
-              totalDamageDealtToChampions: realData?.totalDamageDealtToChampions ?? Math.floor(Math.random() * 20000) + 15000,
-              visionScore: realData?.visionScore ?? Math.floor(Math.random() * 40) + 20,
-              firstBloodKill: realData?.firstBloodKill ?? Math.random() > 0.9, // 10% chance de first blood
-              item0: teamItems[0],
-              item1: teamItems[1],
-              item2: teamItems[2],
-              item3: teamItems[3],
-              item4: teamItems[4],
-              item5: teamItems[5]
-            };
-          }),
-          winner: match.winner_team || 0,
-          averageMMR1: 1200, // Mock value for custom matches
-          averageMMR2: 1200, // Mock value for custom matches
-          participants: [...team1Players, ...team2Players], // Will be populated with team1 + team2
-          teams: [
-            { teamId: 100, win: (match.winner_team === 1) },
-            { teamId: 200, win: (match.winner_team === 2) }
-          ],        // Determine if current player won
-          playerStats: {
-            champion: playerChampion,
-            kills: playerKills,
-            deaths: playerDeaths,
-            assists: playerAssists,
-            mmrChange: match.player_won ? (Math.floor(Math.random() * 20) + 10) : -(Math.floor(Math.random() * 15) + 5),
-            isWin: isWin,
-            championLevel: playerRealData?.champLevel ?? Math.floor(Math.random() * 6) + 13,
-            firstBloodKill: playerRealData?.firstBloodKill ?? Math.random() > 0.85, // 15% chance de first blood para o jogador
-            doubleKills: playerRealData?.doubleKills ?? (Math.random() > 0.7 ? Math.floor(Math.random() * 2) + 1 : 0),
-            tripleKills: playerRealData?.tripleKills ?? (Math.random() > 0.9 ? 1 : 0),
-            quadraKills: playerRealData?.quadraKills ?? (Math.random() > 0.98 ? 1 : 0),
-            pentaKills: playerRealData?.pentaKills ?? (Math.random() > 0.995 ? 1 : 0),
-            items: playerItems,
-            goldEarned: playerRealData?.goldEarned ?? Math.floor(Math.random() * 10000) + 15000,
-            totalDamageDealt: playerRealData?.totalDamageDealt ?? Math.floor(Math.random() * 50000) + 80000,
-            totalDamageDealtToChampions: playerRealData?.totalDamageDealtToChampions ?? Math.floor(Math.random() * 25000) + 20000,
-            totalDamageTaken: playerRealData?.totalDamageTaken ?? Math.floor(Math.random() * 20000) + 15000,
-            totalMinionsKilled: playerRealData?.totalMinionsKilled ?? Math.floor(Math.random() * 180) + 120,
-            neutralMinionsKilled: playerRealData?.neutralMinionsKilled ?? Math.floor(Math.random() * 60) + 20,
-            wardsPlaced: playerRealData?.wardsPlaced ?? Math.floor(Math.random() * 15) + 8,
-            wardsKilled: playerRealData?.wardsKilled ?? Math.floor(Math.random() * 10) + 3,
-            visionScore: playerRealData?.visionScore ?? Math.floor(Math.random() * 50) + 25,
-            lpChange: match.player_lp_change || 0 // Usar LP change real das partidas customizadas
-          },
+          const teamItems = realData ? [
+            realData.item0 || 0,
+            realData.item1 || 0,
+            realData.item2 || 0,
+            realData.item3 || 0,
+            realData.item4 || 0,
+            realData.item5 || 0
+          ] : this.generateRandomItems(); return {
+            name: playerName, // Usar o nome real ao invés do playerId
+            champion: championName,
+            championName: championName, // Para compatibilidade com o template
+            summonerName: playerName, // Nome real do jogador
+            puuid: this.isCurrentPlayer(playerName) ? this.player?.puuid || `custom_player_${playerId}_${index + 5}` : `custom_player_${playerId}_${index + 5}`,
+            teamId: 200,
+            kills: realData?.kills ?? Math.floor(Math.random() * 10) + 2,
+            deaths: realData?.deaths ?? Math.floor(Math.random() * 8) + 1,
+            assists: realData?.assists ?? Math.floor(Math.random() * 12) + 3,
+            champLevel: realData?.champLevel ?? Math.floor(Math.random() * 6) + 13,
+            goldEarned: realData?.goldEarned ?? Math.floor(Math.random() * 8000) + 12000,
+            totalMinionsKilled: realData?.totalMinionsKilled ?? Math.floor(Math.random() * 150) + 100,
+            neutralMinionsKilled: realData?.neutralMinionsKilled ?? Math.floor(Math.random() * 50) + 10,
+            totalDamageDealtToChampions: realData?.totalDamageDealtToChampions ?? Math.floor(Math.random() * 20000) + 15000,
+            visionScore: realData?.visionScore ?? Math.floor(Math.random() * 40) + 20,
+            firstBloodKill: realData?.firstBloodKill ?? Math.random() > 0.9, // 10% chance de first blood
+            item0: teamItems[0],
+            item1: teamItems[1],
+            item2: teamItems[2],
+            item3: teamItems[3],
+            item4: teamItems[4],
+            item5: teamItems[5]
+          };
+        }),
+        winner: match.winner_team || 0,
+        averageMMR1: 1200, // Mock value for custom matches
+        averageMMR2: 1200, // Mock value for custom matches
+        participants: [...team1Players, ...team2Players], // Will be populated with team1 + team2
+        teams: [
+          { teamId: 100, win: (match.winner_team === 1) },
+          { teamId: 200, win: (match.winner_team === 2) }
+        ],        // Determine if current player won
+        playerStats: {
+          champion: playerChampion,
+          kills: playerKills,
+          deaths: playerDeaths,
+          assists: playerAssists,
+          mmrChange: match.player_won ? (Math.floor(Math.random() * 20) + 10) : -(Math.floor(Math.random() * 15) + 5),
+          isWin: isWin,
+          championLevel: playerRealData?.champLevel ?? Math.floor(Math.random() * 6) + 13,
+          firstBloodKill: playerRealData?.firstBloodKill ?? Math.random() > 0.85, // 15% chance de first blood para o jogador
+          doubleKills: playerRealData?.doubleKills ?? (Math.random() > 0.7 ? Math.floor(Math.random() * 2) + 1 : 0),
+          tripleKills: playerRealData?.tripleKills ?? (Math.random() > 0.9 ? 1 : 0),
+          quadraKills: playerRealData?.quadraKills ?? (Math.random() > 0.98 ? 1 : 0),
+          pentaKills: playerRealData?.pentaKills ?? (Math.random() > 0.995 ? 1 : 0),
+          items: playerItems,
+          goldEarned: playerRealData?.goldEarned ?? Math.floor(Math.random() * 10000) + 15000,
+          totalDamageDealt: playerRealData?.totalDamageDealt ?? Math.floor(Math.random() * 50000) + 80000,
+          totalDamageDealtToChampions: playerRealData?.totalDamageDealtToChampions ?? Math.floor(Math.random() * 25000) + 20000,
+          totalDamageTaken: playerRealData?.totalDamageTaken ?? Math.floor(Math.random() * 20000) + 15000,
+          totalMinionsKilled: playerRealData?.totalMinionsKilled ?? Math.floor(Math.random() * 180) + 120,
+          neutralMinionsKilled: playerRealData?.neutralMinionsKilled ?? Math.floor(Math.random() * 60) + 20,
+          wardsPlaced: playerRealData?.wardsPlaced ?? Math.floor(Math.random() * 15) + 8,
+          wardsKilled: playerRealData?.wardsKilled ?? Math.floor(Math.random() * 10) + 3,
+          visionScore: playerRealData?.visionScore ?? Math.floor(Math.random() * 50) + 25,
+          lpChange: match.player_lp_change || 0 // Usar LP change real das partidas customizadas
+        },
 
-          // Campos específicos para partidas customizadas
-          player_lp_change: match.player_lp_change || 0,
-          player_mmr_change: match.player_mmr_change || 0,
-          player_team: match.player_team || null,
-          player_won: match.player_won || false,
-          lp_changes: match.lp_changes || {}
-        };
+        // Campos específicos para partidas customizadas
+        player_lp_change: match.player_lp_change || 0,
+        player_mmr_change: match.player_mmr_change || 0,
+        player_team: match.player_team || null,
+        player_won: match.player_won || false,
+        lp_changes: match.lp_changes || {}
+      };
 
       return mappedMatch;
     });
@@ -990,7 +996,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     });
 
     return stats;
-  }  getCustomStats() {
+  } getCustomStats() {
     const stats = {
       totalKills: 0,
       totalDeaths: 0,
@@ -1121,50 +1127,20 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       'CLASSIC': 'Clássica'
     };
     return modes[gameMode || ''] || 'Desconhecido';
-  }  getChampionImageUrl(championName?: string): string {
+  } getChampionImageUrl(championName?: string): string {
     if (!championName) return '';
-    // Normalize champion name for Data Dragon URL using proper mapping
-    const normalizedName = this.normalizeChampionName(championName);
-    return `https://ddragon.leagueoflegends.com/cdn/15.12.1/img/champion/${normalizedName}.png`;
+    
+    // Usar a versão mais recente do Data Dragon (igual ao backend)
+    const version = '15.13.1';
+    
+    // O nome do campeão já vem normalizado do backend, então usar diretamente
+    return `https://ddragon.leagueoflegends.com/cdn/${version}/img/champion/${championName}.png`;
   }
 
-  private normalizeChampionName(championName: string): string {
-    // Mapeamento de nomes especiais
-    const nameMap: { [key: string]: string } = {
-      'KaiSa': 'Kaisa',
-      'Kai\'Sa': 'Kaisa',
-      'Cho\'Gath': 'Chogath',
-      'Kha\'Zix': 'Khazix',
-      'LeBlanc': 'Leblanc',
-      'Vel\'Koz': 'Velkoz',
-      'Kog\'Maw': 'Kogmaw',
-      'Rek\'Sai': 'Reksai',
-      'Nunu & Willump': 'Nunu',
-      'Wukong': 'MonkeyKing',
-      'Renata Glasc': 'Renata',
-      'Dr. Mundo': 'DrMundo',
-      'Tahm Kench': 'TahmKench',
-      'Twisted Fate': 'TwistedFate',
-      'Master Yi': 'MasterYi',
-      'Miss Fortune': 'MissFortune',
-      'Jarvan IV': 'JarvanIV',
-      'Lee Sin': 'LeeSin',
-      'Xin Zhao': 'XinZhao',
-      'Aurelion Sol': 'AurelionSol'
-    };
-
-    // Verifica se existe um mapeamento específico
-    if (nameMap[championName]) {
-      return nameMap[championName];
-    }
-
-    // Para outros casos, remove caracteres especiais e espaços
-    return championName.replace(/[^a-zA-Z]/g, '');
-  }
   getItemImageUrl(itemId: number): string {
     if (!itemId || itemId === 0) return '';
     // Data Dragon item image URL
-    return `https://ddragon.leagueoflegends.com/cdn/15.12.1/img/item/${itemId}.png`;
+    return `https://ddragon.leagueoflegends.com/cdn/15.13.1/img/item/${itemId}.png`;
   }
 
   getPlayerItems(match: Match): number[] {
@@ -1447,7 +1423,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
       case 4: return 'SUPPORT';
       default: return 'UNKNOWN';
     }
-  }  organizeTeamByLanes(team: any[] | undefined): { [lane: string]: any } {
+  } organizeTeamByLanes(team: any[] | undefined): { [lane: string]: any } {
     const organizedTeam: { [lane: string]: any } = {
       'TOP': null,
       'JUNGLE': null,
@@ -1471,7 +1447,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     const unassignedPlayers = team.filter(participant => {
       const lane = this.getParticipantLane(participant);
       return organizedTeam[lane] !== participant;
-    });    const emptyLanes = Object.keys(organizedTeam).filter(lane => organizedTeam[lane] === null);
+    }); const emptyLanes = Object.keys(organizedTeam).filter(lane => organizedTeam[lane] === null);
 
     unassignedPlayers.forEach((participant, index) => {
       if (index < emptyLanes.length) {
@@ -1510,13 +1486,9 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     // Função para detectar lane baseada em dados reais
     const detectLane = (participant: any): string => {
       const championName = participant.championName || participant.champion;
-      
-      console.log('🔍 [detectLane] Analisando jogador:', {
-        championName,
-        summonerName: participant.summonerName || participant.name,
-        summoner1Id: participant.summoner1Id,
-        summoner2Id: participant.summoner2Id,
-        items: [participant.item0, participant.item1, participant.item2, participant.item3, participant.item4, participant.item5]
+
+      console.log('🔍 [detectLane] Análise do campeão:', {
+        championName
       });
 
       // Sistema de pontuação para cada lane
@@ -1540,99 +1512,27 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         participant.item0, participant.item1, participant.item2,
         participant.item3, participant.item4, participant.item5
       ];
-      
+
       const supportItems = [
         3850, 3851, 3853, 3854, 3855, 3857, 3858, 3859, 3860, 3862, 3863, 3864
       ];
       const hasSupportItem = items.some(item => supportItems.includes(item));
-      
+
       if (hasSupportItem) {
         laneScores['SUPPORT'] += 100; // Pontuação máxima
         console.log('✅ [detectLane] +100 pontos para SUPPORT por item:', championName);
       }
 
-      // 3. Verificar tags do campeão
-      const championTags = this.getChampionTags(championName);
-      
-      console.log('🔍 [detectLane] Tags do campeão:', {
-        championName,
-        championTags
-      });
-
-      // Pontuação por tags
-      if (championTags.includes('Marksman')) {
-        laneScores['ADC'] += 80;
-        console.log('✅ [detectLane] +80 pontos para ADC por Marksman:', championName);
-      }
-      
-      if (championTags.includes('Support')) {
-        laneScores['SUPPORT'] += 80;
-        console.log('✅ [detectLane] +80 pontos para SUPPORT por Support:', championName);
-      }
-      
-      if (championTags.includes('Mage')) {
-        laneScores['MIDDLE'] += 70;
-        // Mages podem ser ADC apenas se não forem Support
-        if (!championTags.includes('Support')) {
-          laneScores['ADC'] += 10;
-        }
-        console.log('✅ [detectLane] +70 pontos para MIDDLE e +10 para ADC por Mage:', championName);
-      }
-      
-      if (championTags.includes('Fighter')) {
-        laneScores['TOP'] += 70;
-        laneScores['JUNGLE'] += 30; // Fighters também podem ser jungle
-        console.log('✅ [detectLane] +70 pontos para TOP e +30 para JUNGLE por Fighter:', championName);
-      }
-      
-      if (championTags.includes('Tank')) {
-        laneScores['TOP'] += 70;
-        laneScores['SUPPORT'] += 30; // Tanks também podem ser support
-        console.log('✅ [detectLane] +70 pontos para TOP e +30 para SUPPORT por Tank:', championName);
-      }
-      
-      if (championTags.includes('Assassin')) {
-        laneScores['JUNGLE'] += 60;
-        laneScores['MIDDLE'] += 50; // Assassins também podem ser mid
-        laneScores['TOP'] += 20; // Assassins também podem ser top
-        // Assassins que são Marksman têm prioridade para MIDDLE, não ADC
-        if (championTags.includes('Marksman')) {
-          laneScores['MIDDLE'] += 40; // Bonus para mid
-          laneScores['ADC'] -= 30; // Penalidade para ADC
-        }
-        console.log('✅ [detectLane] +60 pontos para JUNGLE, +50 para MIDDLE e +20 para TOP por Assassin:', championName);
-      }
-
-      // 4. Casos especiais (bonus)
-      const specialCases: { [key: string]: { [key: string]: number } } = {
-        'Vladimir': { 'ADC': 50, 'MIDDLE': 30 },
-        'Katarina': { 'MIDDLE': 50, 'JUNGLE': 20 },
-        'Gragas': { 'TOP': 50, 'JUNGLE': 30 },
-        'Khazix': { 'JUNGLE': 50, 'MIDDLE': 20 },
-        'Akshan': { 'MIDDLE': 50, 'TOP': 20 }
-      };
-      
-      if (specialCases[championName]) {
-        Object.entries(specialCases[championName]).forEach(([lane, points]) => {
-          laneScores[lane] += points;
-        });
-        console.log('✅ [detectLane] Bonus por caso especial:', {
-          championName,
-          bonuses: specialCases[championName]
-        });
+      // 3. Usar lane detectada pelo backend (Data Dragon)
+      if (participant.detectedLane && participant.detectedLane !== 'UNKNOWN') {
+        laneScores[participant.detectedLane] += 50; // Pontuação alta para lane detectada pelo Data Dragon
+        console.log('✅ [detectLane] +50 pontos para', participant.detectedLane, 'por Data Dragon:', championName);
       }
 
       // Encontrar a lane com maior pontuação
-      const bestLane = Object.entries(laneScores).reduce((a, b) => 
+      const bestLane = Object.entries(laneScores).reduce((a, b) =>
         laneScores[a[0]] > laneScores[b[0]] ? a : b
       )[0];
-
-      console.log('🎯 [detectLane] Pontuações finais:', {
-        championName,
-        laneScores,
-        bestLane,
-        bestScore: laneScores[bestLane]
-      });
 
       // Se a melhor pontuação for 0, usar fallback
       if (laneScores[bestLane] === 0) {
@@ -1645,9 +1545,6 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         lane: bestLane,
         score: laneScores[bestLane]
       });
-
-      // Casos específicos para champions problemáticos
-      // Removidos para tornar a lógica mais flexível e inteligente
 
       return bestLane;
     };
@@ -1680,7 +1577,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     // Organizar por lanes detectadas
     participantsWithLanes.forEach(participant => {
       const lane = participant.detectedLane;
-      
+
       if (lane !== 'UNKNOWN' && !organizedTeam[lane]) {
         organizedTeam[lane] = participant;
       }
@@ -1689,7 +1586,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     // Para participantes não classificados, usar ordem sequencial
     const remainingParticipants = participantsWithLanes.filter(p => p.detectedLane === 'UNKNOWN');
     const availableLanes = ['TOP', 'JUNGLE', 'MIDDLE', 'ADC', 'SUPPORT'].filter(lane => !organizedTeam[lane]);
-    
+
     remainingParticipants.forEach((participant, index) => {
       if (index < availableLanes.length) {
         organizedTeam[availableLanes[index]] = participant;
@@ -1700,14 +1597,14 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     const emptyLanes = ['TOP', 'JUNGLE', 'MIDDLE', 'ADC', 'SUPPORT'].filter(lane => !organizedTeam[lane]);
     if (emptyLanes.length > 0) {
       console.log('⚠️ [organizeCustomTeamByLanes] Lanes vazias encontradas:', emptyLanes);
-      
+
       // Buscar jogadores que podem ser redistribuídos
       const allParticipants = participantsWithLanes;
       const usedParticipants = Object.values(organizedTeam).filter(p => p !== null);
       const unusedParticipants = allParticipants.filter(p => !usedParticipants.includes(p));
-      
+
       console.log('🔍 [organizeCustomTeamByLanes] Jogadores não utilizados:', unusedParticipants.map(p => p.summonerName || p.name));
-      
+
       // Distribuir jogadores não utilizados nas lanes vazias
       unusedParticipants.forEach((participant, index) => {
         if (index < emptyLanes.length) {
@@ -1759,7 +1656,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
   // Método para obter as tags de um campeão usando o ChampionService
   private getChampionTags(championName: string): string[] {
     if (!championName) return [];
-    
+
     // Criar uma instância do ChampionService para obter as tags
     const championService = new ChampionService();
     const champion = championService.getAllChampions().find((c: any) => c.name === championName);
@@ -1773,7 +1670,8 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     }).filter(match => match !== null) as Match[];
 
     this.riotMatches = mappedMatches;
-    this.totalMatches = this.riotMatches.length;    if (this.riotMatches.length === 0) {
+    this.totalMatches = this.riotMatches.length;
+    if (this.riotMatches.length === 0) {
       // console.warn('⚠️ Nenhuma partida foi mapeada com sucesso');
     }
   }
@@ -1819,12 +1717,10 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
 
       if (!playerData) {
         return null;
-      }      // Convert championId to championName using centralized service
-      const getChampionName = (championId: number): string => {
-        return ChampionService.getChampionNameById(championId);
-      };
+      }
 
       // Map participants with complete information
+      // O backend já processa os dados dos campeões, então usamos championName diretamente
       const enhancedParticipants = lcuMatch.participants?.map((p: any) => {
         const identity = lcuMatch.participantIdentities?.find((id: any) =>
           id.participantId === p.participantId
@@ -1833,7 +1729,8 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         const isCurrentPlayerByPuuid = identity?.player?.puuid === currentPlayerPuuid;
         const isCurrentPlayerByName = currentPlayerName &&
           (identity?.player?.summonerName?.toLowerCase() === currentPlayerName ||
-           identity?.player?.gameName?.toLowerCase() === currentPlayerName);        const isCurrentPlayer = isCurrentPlayerByPuuid || isCurrentPlayerByName;
+            identity?.player?.gameName?.toLowerCase() === currentPlayerName);
+        const isCurrentPlayer = isCurrentPlayerByPuuid || isCurrentPlayerByName;
 
         // Create a proper display name combining gameName and tagLine
         let displayName = `Player ${p.participantId}`;
@@ -1846,9 +1743,12 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           } else if (player.gameName) {
             displayName = player.gameName;
           }
-        }        return {
+        }
+
+        return {
           ...p,
-          championName: getChampionName(p.championId),
+          // Usar championName já processado pelo backend, com fallback para o ID
+          championName: p.championName || `Champion${p.championId}`,
           summonerName: displayName,
           puuid: identity?.player?.puuid || '',
           kills: p.stats?.kills || 0,
@@ -1873,7 +1773,9 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           item5: p.stats?.item5 || 0,
           isCurrentPlayer: isCurrentPlayer
         };
-      }) || [];      // Separate into teams
+      }) || [];
+
+      // Separate into teams
       const team1 = enhancedParticipants.filter((p: any) => p.teamId === 100);
       const team2 = enhancedParticipants.filter((p: any) => p.teamId === 200);
 
@@ -1891,8 +1793,10 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
         teams: lcuMatch.teams,
         team1: team1,
         team2: team2,
-        winner: lcuMatch.teams?.find((t: any) => t.win)?.teamId === 100 ? 1 : 2,        playerStats: {
-          champion: getChampionName(currentPlayerData.championId) || 'Aatrox',
+        winner: lcuMatch.teams?.find((t: any) => t.win)?.teamId === 100 ? 1 : 2,
+        playerStats: {
+          // Usar championName já processado pelo backend
+          champion: currentPlayerData.championName || `Champion${currentPlayerData.championId}`,
           kills: currentPlayerData.stats?.kills || currentPlayerData.kills || 0,
           deaths: currentPlayerData.stats?.deaths || currentPlayerData.deaths || 0,
           assists: currentPlayerData.stats?.assists || currentPlayerData.assists || 0,
@@ -1924,7 +1828,9 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           visionScore: currentPlayerData.stats?.visionScore || currentPlayerData.visionScore || 0,
           summoner1Id: currentPlayerData.spell1Id || 0,
           summoner2Id: currentPlayerData.spell2Id || 0
-        }};    } catch (error: any) {
+        }
+      };
+    } catch (error: any) {
       console.error('❌ Erro ao mapear partida LCU:', error);
       return null;
     }
