@@ -195,6 +195,26 @@
   font-size: 12px;
   color: #c9aa71;
   opacity: 0.8;
+
+  .you-indicator {
+    color: #f0c040;
+    font-weight: bold;
+    font-size: 11px;
+    background: rgba(240, 192, 64, 0.2);
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: 4px;
+    animation: glow 2s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes glow {
+  from {
+    box-shadow: 0 0 5px rgba(240, 192, 64, 0.3);
+  }
+  to {
+    box-shadow: 0 0 10px rgba(240, 192, 64, 0.6);
+  }
 }
 
 .bans-section {
@@ -1326,5 +1346,85 @@
         background: #229954;
       }
     }
+  }
+}
+
+.team-bans {
+  margin-bottom: 20px;
+  padding: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+
+  h4 {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+    color: #c9aa71;
+    text-align: center;
+  }
+}
+
+.banned-champions-row {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.banned-champion {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 50px;
+
+  .banned-img {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 2px solid #d9534f;
+    opacity: 0.7;
+  }
+
+  .banned-name {
+    font-size: 10px;
+    color: #d9534f;
+    text-align: center;
+    max-width: 50px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.banned-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 50px;
+
+  .ban-placeholder {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: bold;
+    color: #888;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .banned-name {
+    font-size: 10px;
+    color: #888;
+    text-align: center;
+    max-width: 50px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
