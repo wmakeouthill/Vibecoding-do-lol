@@ -254,4 +254,56 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
   isFairBalance(): boolean {
     return this.getMMRDifference() > 100;
   }
+
+  /**
+   * Determina se um jogador é o jogador atual
+   */
+  isCurrentPlayer(player: PlayerInfo): boolean {
+    if (!this.matchData) return false;
+    return player.summonerName.includes('popcorn seller');
+  }
+
+  /**
+   * Retorna os jogadores do time azul (sempre à esquerda)
+   */
+  getBlueTeamPlayers(): PlayerInfo[] {
+    if (!this.matchData) return [];
+    
+    // Se o jogador está no time azul, teammates são azul, enemies são vermelho
+    // Se o jogador está no time vermelho, teammates são vermelho, enemies são azul
+    return this.matchData.playerSide === 'blue' ? this.matchData.teammates : this.matchData.enemies;
+  }
+
+  /**
+   * Retorna os jogadores do time vermelho (sempre à direita)
+   */
+  getRedTeamPlayers(): PlayerInfo[] {
+    if (!this.matchData) return [];
+    
+    // Se o jogador está no time azul, teammates são azul, enemies são vermelho
+    // Se o jogador está no time vermelho, teammates são vermelho, enemies são azul
+    return this.matchData.playerSide === 'blue' ? this.matchData.enemies : this.matchData.teammates;
+  }
+
+  /**
+   * Retorna o MMR médio do time azul
+   */
+  getBlueTeamMMR(): number {
+    if (!this.matchData) return 0;
+    
+    return this.matchData.playerSide === 'blue' 
+      ? this.matchData.averageMMR.yourTeam 
+      : this.matchData.averageMMR.enemyTeam;
+  }
+
+  /**
+   * Retorna o MMR médio do time vermelho
+   */
+  getRedTeamMMR(): number {
+    if (!this.matchData) return 0;
+    
+    return this.matchData.playerSide === 'blue' 
+      ? this.matchData.averageMMR.enemyTeam 
+      : this.matchData.averageMMR.yourTeam;
+  }
 }

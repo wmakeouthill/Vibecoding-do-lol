@@ -123,7 +123,7 @@
   }
 }
 
-.your-team {
+.blue-team {
   .team-header {
     border-color: #3498db;
     background: linear-gradient(135deg, rgba(52, 152, 219, 0.2), rgba(52, 152, 219, 0.1));
@@ -134,7 +134,7 @@
   }
 }
 
-.enemy-team {
+.red-team {
   .team-header {
     border-color: #e74c3c;
     background: linear-gradient(135deg, rgba(231, 76, 60, 0.2), rgba(231, 76, 60, 0.1));
@@ -586,7 +586,7 @@
     margin: 0.4rem 0;
   }
 
-  .enemy-team {
+  .red-team {
     order: 3;
   }
 

@@ -7,18 +7,18 @@
 
     <!-- Teams Overview -->
     <div class="teams-container">
-      <!-- Your Team -->
-      <div class="team-section your-team">
-        <div class="team-header" [style.border-color]="getTeamColor(matchData.playerSide)">
-          <h3 [style.color]="getTeamColor(matchData.playerSide)">
-            {{ getTeamSideName(matchData.playerSide) }}
+      <!-- Blue Team (Always Left) -->
+      <div class="team-section blue-team">
+        <div class="team-header" [style.border-color]="getTeamColor('blue')">
+          <h3 [style.color]="getTeamColor('blue')">
+            {{ getTeamSideName('blue') }}
           </h3>
-          <span class="team-mmr">{{ getRoundedMMR(matchData.averageMMR.yourTeam) }} MMR médio</span>
+          <span class="team-mmr">{{ getRoundedMMR(getBlueTeamMMR()) }} MMR médio</span>
         </div>
 
         <div class="players-list">
-          <div class="player-card" *ngFor="let player of getSortedPlayersByLane(matchData.teammates)"
-            [class.current-player]="player.summonerName.includes('popcorn seller')">
+          <div class="player-card" *ngFor="let player of getSortedPlayersByLane(getBlueTeamPlayers())"
+            [class.current-player]="isCurrentPlayer(player)">
             <div class="player-avatar">
               <img [src]="getPlayerProfileIconUrl(player)" alt="Avatar" class="avatar-image"
                 (error)="onProfileIconError($event, player)">
@@ -47,17 +47,18 @@
         <span class="vs-text">VS</span>
       </div>
 
-      <!-- Enemy Team -->
-      <div class="team-section enemy-team">
-        <div class="team-header" [style.border-color]="getTeamColor(matchData.playerSide === 'blue' ? 'red' : 'blue')">
-          <h3 [style.color]="getTeamColor(matchData.playerSide === 'blue' ? 'red' : 'blue')">
-            {{ getTeamSideName(matchData.playerSide === 'blue' ? 'red' : 'blue') }}
+      <!-- Red Team (Always Right) -->
+      <div class="team-section red-team">
+        <div class="team-header" [style.border-color]="getTeamColor('red')">
+          <h3 [style.color]="getTeamColor('red')">
+            {{ getTeamSideName('red') }}
           </h3>
-          <span class="team-mmr">{{ getRoundedMMR(matchData.averageMMR.enemyTeam) }} MMR médio</span>
+          <span class="team-mmr">{{ getRoundedMMR(getRedTeamMMR()) }} MMR médio</span>
         </div>
 
         <div class="players-list">
-          <div class="player-card" *ngFor="let player of getSortedPlayersByLane(matchData.enemies)">
+          <div class="player-card" *ngFor="let player of getSortedPlayersByLane(getRedTeamPlayers())"
+            [class.current-player]="isCurrentPlayer(player)">
             <div class="player-avatar">
               <img [src]="getPlayerProfileIconUrl(player)" alt="Avatar" class="avatar-image"
                 (error)="onProfileIconError($event, player)">
