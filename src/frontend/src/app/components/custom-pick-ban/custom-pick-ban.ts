@@ -3,31 +3,6 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ChampionService, Champion } from '../../services/champion.service';
 
-/**
- * CORREÇÕES IMPLEMENTADAS (v2.0):
- * 
- * 1. DISTRIBUIÇÃO CORRETA DE JOGADORES:
- *    - Garantia de que todos os 5 jogadores são utilizados
- *    - Ordem correta seguindo o padrão do LoL: top, jungle, mid, adc, support
- *    - Mapeamento específico por fase de pick/ban
- * 
- * 2. ORDEM DE PICKS/BANS CORRIGIDA:
- *    - Primeira fase de bans (0-5): distribuídos entre todos os 5 jogadores
- *    - Primeira fase de picks (6-10): cada jogador faz 1 pick na ordem das lanes
- *    - Segunda fase de bans (11-14): jogadores restantes fazem bans
- *    - Segunda fase de picks (15-19): jogadores restantes fazem picks
- * 
- * 3. VINCULAÇÃO COM LANES:
- *    - Jogadores ordenados por lane antes da distribuição
- *    - Picks vinculados às lanes corretas dos jogadores
- *    - Suporte para jogadores placeholder se necessário
- * 
- * 4. VALIDAÇÃO E DEBUG:
- *    - Método validatePlayerUsage() para verificar uso correto
- *    - Logs detalhados para debugging
- *    - Garantia de 5 jogadores por time
- */
-
 interface LocalChampion {
   id: number;
   name: string;
