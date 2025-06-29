@@ -85,7 +85,7 @@
     <!-- Accept/Decline Phase -->
     <div class="accept-phase" *ngIf="matchData.phase === 'accept'">
       <div class="countdown-timer">
-        <div class="timer-circle">
+        <div class="timer-circle" [class.urgent]="isTimerUrgent">
           <span class="time-left">{{ acceptTimeLeft }}</span>
         </div>
       </div>

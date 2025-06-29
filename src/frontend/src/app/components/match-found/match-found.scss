@@ -170,36 +170,35 @@
 .player-card {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.3rem;
-  margin-bottom: 0.2rem;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 6px;
+  gap: 0.6rem;
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
   transition: all 0.3s ease;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  min-height: 3.2rem;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.1);
-    transform: translateX(3px);
-    border-color: rgba(255, 255, 255, 0.2);
-  }
-
-  &:last-child {
-    margin-bottom: 0;
+    background: rgba(255, 255, 255, 0.12);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   }
 
   &.current-player {
-    background: rgba(52, 152, 219, 0.15);
-    border: 1px solid rgba(52, 152, 219, 0.4);
-    box-shadow: 0 0 10px rgba(52, 152, 219, 0.2);
+    background: linear-gradient(135deg, rgba(52, 152, 219, 0.2), rgba(41, 128, 185, 0.2));
+    border-color: #3498db;
+    box-shadow: 0 0 15px rgba(52, 152, 219, 0.3);
   }
 
   .player-avatar {
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 
     .avatar-image {
-      width: 28px;
-      height: 28px;
+      width: 36px;
+      height: 36px;
       border-radius: 50%;
       border: 2px solid rgba(255, 255, 255, 0.3);
       object-fit: cover;
@@ -215,12 +214,12 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 0.1rem;
+      margin-bottom: 0.2rem;
 
       .player-name {
         color: #fff;
         font-weight: 600;
-        font-size: 0.8rem;
+        font-size: 0.85rem;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -229,7 +228,7 @@
       }
 
       .player-mmr {
-        font-size: 0.65rem;
+        font-size: 0.7rem;
         color: #81ecec;
         font-weight: 500;
         flex-shrink: 0;
@@ -239,8 +238,8 @@
     .player-lanes {
       display: flex;
       align-items: center;
-      gap: 2px;
-      font-size: 9px;
+      gap: 3px;
+      font-size: 10px;
       color: #a8dadc;
       flex-wrap: wrap;
 
@@ -288,23 +287,61 @@
     margin-bottom: 0.6rem;
 
     .timer-circle {
-      width: 50px;
-      height: 50px;
-      border: 2px solid #3498db;
+      width: 60px;
+      height: 60px;
+      border: 3px solid transparent;
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
       margin: 0 auto 0.4rem;
-      background: rgba(52, 152, 219, 0.15);
-      animation: pulse 1.5s infinite;
-      box-shadow: 0 0 20px rgba(52, 152, 219, 0.3);
+      background: linear-gradient(135deg, #3498db, #2980b9);
+      position: relative;
+      animation: timerPulse 2s ease-in-out infinite;
+      box-shadow: 
+        0 0 20px rgba(52, 152, 219, 0.4),
+        inset 0 0 20px rgba(255, 255, 255, 0.1);
+
+      &::before {
+        content: '';
+        position: absolute;
+        top: -3px;
+        left: -3px;
+        right: -3px;
+        bottom: -3px;
+        border-radius: 50%;
+        background: linear-gradient(45deg, #3498db, #2980b9, #3498db);
+        background-size: 200% 200%;
+        animation: borderRotate 3s linear infinite;
+        z-index: -1;
+      }
+
+      &.urgent {
+        background: linear-gradient(135deg, #e74c3c, #c0392b);
+        animation: timerPulseUrgent 1s ease-in-out infinite;
+        box-shadow: 
+          0 0 25px rgba(231, 76, 60, 0.6),
+          inset 0 0 25px rgba(255, 255, 255, 0.15);
+
+        &::before {
+          background: linear-gradient(45deg, #e74c3c, #c0392b, #e74c3c);
+          animation: borderRotateUrgent 1.5s linear infinite;
+        }
+
+        .time-left {
+          color: #fff;
+          text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+          animation: textBlink 0.5s ease-in-out infinite alternate;
+        }
+      }
 
       .time-left {
         color: #fff;
-        font-size: 1.1rem;
-        font-weight: bold;
-        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+        font-size: 1.3rem;
+        font-weight: 700;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        font-family: 'Courier New', monospace;
+        letter-spacing: 1px;
       }
     }
 
@@ -467,6 +504,70 @@
   }
 }
 
+@keyframes timerPulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 20px rgba(52, 152, 219, 0.4), inset 0 0 20px rgba(255, 255, 255, 0.1);
+  }
+
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 30px rgba(52, 152, 219, 0.6), inset 0 0 30px rgba(255, 255, 255, 0.15);
+  }
+
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 20px rgba(52, 152, 219, 0.4), inset 0 0 20px rgba(255, 255, 255, 0.1);
+  }
+}
+
+@keyframes borderRotate {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes textBlink {
+  0% {
+    opacity: 0.5;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes timerPulseUrgent {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 25px rgba(231, 76, 60, 0.6), inset 0 0 25px rgba(255, 255, 255, 0.15);
+  }
+
+  50% {
+    transform: scale(1.08);
+    box-shadow: 0 0 35px rgba(231, 76, 60, 0.8), inset 0 0 35px rgba(255, 255, 255, 0.2);
+  }
+
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 25px rgba(231, 76, 60, 0.6), inset 0 0 25px rgba(255, 255, 255, 0.15);
+  }
+}
+
+@keyframes borderRotateUrgent {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
 // Responsive design
 @media (max-width: 768px) {
   .match-found-modal {
@@ -539,8 +640,8 @@
     gap: 0.4rem;
 
     .player-avatar .avatar-image {
-      width: 24px;
-      height: 24px;
+      width: 32px;
+      height: 32px;
     }
 
     .player-info .player-main-info .player-name {

@@ -43,6 +43,7 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
 
   acceptTimeLeft = 30;
   private countdownTimer?: number;
+  isTimerUrgent = false;
 
   constructor(private profileIconService: ProfileIconService) {}
 
@@ -121,9 +122,11 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
 
   private startAcceptCountdown(): void {
     this.acceptTimeLeft = this.matchData?.acceptTimeout || 30;
+    this.isTimerUrgent = this.acceptTimeLeft <= 10; // Verificar urgência inicial
 
     this.countdownTimer = window.setInterval(() => {
       this.acceptTimeLeft--;
+      this.isTimerUrgent = this.acceptTimeLeft <= 10; // Atualizar urgência
 
       if (this.acceptTimeLeft <= 0) {
         this.onDeclineMatch(); // Auto-decline se não aceitar

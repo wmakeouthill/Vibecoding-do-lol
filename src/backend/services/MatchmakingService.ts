@@ -706,33 +706,17 @@ export class MatchmakingService {
       console.log(`⏰ Timeout da partida ${matchId}! Jogadores que não aceitaram:`,
         nonAcceptedPlayers.map(p => p.summonerName));
 
-      // Notificar jogadores sobre o timeout
-      allPlayers.forEach(player => {
-        if (player.websocket && player.id > 0) { // Pular bots
+      // Usar o mesmo método do botão recusar para cada jogador que não aceitou
+      nonAcceptedPlayers.forEach(async (player) => {
+        if (player.id > 0) { // Pular bots
           try {
-            player.websocket.send(JSON.stringify({
-              type: 'match_timeout',
-              data: { matchId: matchId }
-            }));
+            await this.declineMatch(player.id, matchId, player.summonerName);
+            console.log(`✅ [Timeout] ${player.summonerName} removido via declineMatch (timeout)`);
           } catch (error) {
-            console.error(`Erro ao notificar timeout para ${player.summonerName}:`, error);
+            console.error(`❌ [Timeout] Erro ao remover ${player.summonerName} via declineMatch:`, error);
           }
         }
       });
-
-      // Remover partida das ativas
-      this.activeMatches.delete(matchId);
-
-      // Retornar jogadores que aceitaram para a fila
-      const acceptedPlayers = allPlayers.filter(p => match.acceptedPlayers.has(p.id) && p.id > 0);
-      acceptedPlayers.forEach(player => {
-        this.queue.push(player);
-      });
-
-      // Atualizar status da fila
-      this.broadcastQueueUpdate();
-
-      this.addActivity('match_created', `Partida ${matchId} cancelada por timeout`);
     }
   }
 
@@ -1636,7 +1620,7 @@ export class MatchmakingService {
       }
 
       // Verificar se já está na fila
-      const existingPlayerIndex = this.queue.findIndex(p => p.id === player.id);
+      const existingPlayerIndex = this.queue.findIndex(p => p.id === player?.id);
       if (existingPlayerIndex !== -1) {
         // Atualizar websocket se jogador reconectar
         this.queue[existingPlayerIndex].websocket = websocket;
