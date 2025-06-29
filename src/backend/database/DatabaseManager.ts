@@ -1,6 +1,7 @@
 import mysql from 'mysql2/promise';
 import * as path from 'path';
 import * as fs from 'fs';
+import { DataDragonService } from '../services/DataDragonService';
 
 export interface Player {
   id?: number;
@@ -51,9 +52,11 @@ export interface Match {
 export class DatabaseManager {
   private connection: mysql.Connection | null = null;
   private pool: mysql.Pool | null = null;
+  private dataDragonService: DataDragonService;
 
   constructor() {
     console.log('🗃️ DatabaseManager MySQL inicializado');
+    this.dataDragonService = new DataDragonService();
   }
 
   async initialize(): Promise<void> {
@@ -109,6 +112,11 @@ export class DatabaseManager {
       await this.ensureCustomMatchesTable();
 
       await this.insertDefaultSettings();
+
+      // Inicializar DataDragonService para carregar dados dos campeões
+      console.log('🔍 Inicializando DataDragonService...');
+      await this.dataDragonService.loadChampions();
+      console.log('✅ DataDragonService inicializado com sucesso');
 
       console.log('📁 Banco de dados MySQL inicializado com sucesso');
     } catch (error) {
@@ -1519,6 +1527,30 @@ export class DatabaseManager {
     }
   }
 
+  /**
+   * Processa dados de participantes usando o DataDragonService
+   * Similar ao método processParticipants do DataDragonService
+   */
+  private processParticipantsWithDataDragon(participants: any[]): any[] {
+    if (!this.dataDragonService.isLoaded()) {
+      console.warn('⚠️ DataDragonService não carregado. Processando sem conversão...');
+      return participants;
+    }
+
+    return participants.map(participant => {
+      const championId = participant.championId;
+      const championName = this.dataDragonService.getChampionNameById(championId);
+      
+      return {
+        ...participant,
+        // Usar nome do campeão resolvido pelo DataDragonService
+        championName: championName || `Champion${championId}`,
+        // Adiciona URL da imagem se necessário
+        championImageUrl: championName ? this.dataDragonService.getChampionImageUrl(championName) : null
+      };
+    });
+  }
+
   async getParticipantsLeaderboard(limit: number | string = 100): Promise<any[]> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
 
@@ -1611,20 +1643,24 @@ export class DatabaseManager {
                 });
 
                 if (participant) {
+                  // Processar o participante usando DataDragonService
+                  const processedParticipant = this.processParticipantsWithDataDragon([participant])[0];
+                  
                   gamesCounted++;
-                  totalKills += participant.kills || 0;
-                  totalDeaths += participant.deaths || 0;
-                  totalAssists += participant.assists || 0;
-                  totalGold += participant.goldEarned || 0;
-                  totalDamage += participant.totalDamageDealtToChampions || 0;
-                  totalCS += (participant.totalMinionsKilled || 0) + (participant.neutralMinionsKilled || 0);
-                  totalVision += participant.visionScore || 0;
+                  totalKills += processedParticipant.kills || 0;
+                  totalDeaths += processedParticipant.deaths || 0;
+                  totalAssists += processedParticipant.assists || 0;
+                  totalGold += processedParticipant.goldEarned || 0;
+                  totalDamage += processedParticipant.totalDamageDealtToChampions || 0;
+                  totalCS += (processedParticipant.totalMinionsKilled || 0) + (processedParticipant.neutralMinionsKilled || 0);
+                  totalVision += processedParticipant.visionScore || 0;
 
-                  maxKills = Math.max(maxKills, participant.kills || 0);
-                  maxDamage = Math.max(maxDamage, participant.totalDamageDealtToChampions || 0);
+                  maxKills = Math.max(maxKills, processedParticipant.kills || 0);
+                  maxDamage = Math.max(maxDamage, processedParticipant.totalDamageDealtToChampions || 0);
 
-                  // Contar campeões
-                  const championName = participant.championName || `Champion${participant.championId}`;
+                  // Usar o nome do campeão já processado pelo DataDragonService
+                  const championName = processedParticipant.championName;
+                  console.log(`✅ [Leaderboard] ${player.summoner_name} jogou ${championName}`);
                   championStats[championName] = (championStats[championName] || 0) + 1;
                 }
               } catch (parseError) {

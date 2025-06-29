@@ -66,15 +66,15 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
   maxRetries = 3;
 
   constructor(
-    private http: HttpClient, 
+    private http: HttpClient,
     private championService: ChampionService,
     private profileIconService: ProfileIconService
-  ) {}
+  ) { }
 
   ngOnInit() {
     // Primeiro tentar carregar do cache
     const cacheLoaded = this.loadCacheFromStorage();
-    
+
     if (cacheLoaded) {
       // Se carregou do cache, apenas carregar ícones se necessário
       this.isLoading = false;
@@ -96,14 +96,14 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
       const cached = localStorage.getItem(this.localStorageKey);
       if (cached) {
         const cacheData: CacheData = JSON.parse(cached);
-        
+
         // Verificar se o cache ainda é válido
-        if (cacheData.version === this.cacheVersion && 
-            Date.now() - cacheData.timestamp < this.cacheExpiryTime) {
+        if (cacheData.version === this.cacheVersion &&
+          Date.now() - cacheData.timestamp < this.cacheExpiryTime) {
           this.leaderboardData = cacheData.data;
           this.lastUpdated = new Date(cacheData.timestamp);
           console.log('📦 Cache carregado do localStorage');
-          
+
           return true;
         } else {
           console.log('⏰ Cache expirado ou versão incompatível');
@@ -134,9 +134,9 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
       this.isLoading = true;
       this.error = null;
     }
-    
+
     try {
-      const response = await this.http.get<any>('http://localhost:3000/api/stats/participants-leaderboard?limit=200').toPromise();
+      const response = await this.http.get<any>('http://localhost:3000/api/stats/participants-leaderboard?limit=500').toPromise();
       if (response.success) {
         this.leaderboardData = response.data.map((player: any, index: number) => ({
           ...player,
@@ -152,7 +152,7 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
 
         // Carregar ícones de perfil de forma otimizada
         await this.loadProfileIconsOptimized();
-        
+
         this.lastUpdated = new Date();
         this.saveCacheToStorage();
       } else {
@@ -175,7 +175,7 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
         player.riot_id_game_name,
         player.riot_id_tagline
       );
-      
+
       if (hasIcon) {
         player.profileIconId = hasIcon;
         return false;
@@ -191,7 +191,7 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
     console.log(`🔄 Carregando ${playersToFetch.length} ícones de perfil...`);
     this.isLoadingProfileIcons = true;
     this.profileIconsProgress = { current: 0, total: playersToFetch.length };
-    
+
     // Processar em lotes para melhor performance
     const batchSize = 10;
     const delayBetweenBatches = 100;
@@ -219,7 +219,7 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
         await this.delay(delayBetweenBatches);
       }
     }
-    
+
     this.isLoadingProfileIcons = false;
     console.log(`✅ Ícones carregados e cache compartilhado atualizado`);
   }
@@ -239,10 +239,10 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
       }
       return true;
     });
-    
+
     this.mmrProgress = { current: 0, total: playersToFetch.length };
     console.log(`📊 Precisando calcular MMR para ${playersToFetch.length} jogadores`);
-    
+
     // Processar em lotes maiores
     const batchSize = 15;
     const delayBetweenBatches = 0;
@@ -270,7 +270,7 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
 
   private async fetchPlayerCustomMatches(playerIdentifier: string): Promise<any[]> {
     try {
-      const response = await this.http.get<any>(`http://localhost:3000/api/matches/custom/${encodeURIComponent(playerIdentifier)}?limit=100`).toPromise();
+      const response = await this.http.get<any>(`http://localhost:3000/api/matches/custom/${encodeURIComponent(playerIdentifier)}?limit=500`).toPromise();
       if (response && response.success) {
         return response.matches || [];
       }
@@ -311,27 +311,14 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
   getChampionIconUrl(championName: string): string {
     if (!championName) return 'assets/images/champion-placeholder.svg';
 
-    const championIdMatch = championName.match(/Champion(\d+)/i);
-    let finalName = championName;
-
-    if (championIdMatch) {
-      const championId = parseInt(championIdMatch[1]);
-      finalName = ChampionService.getChampionNameById(championId);
-    }
-
     // O nome do campeão já vem no formato correto do Data Dragon
-    return `https://ddragon.leagueoflegends.com/cdn/15.13.1/img/champion/${finalName}.png`;
+    return `https://ddragon.leagueoflegends.com/cdn/15.13.1/img/champion/${championName}.png`;
   }
 
   getChampionDisplayName(championName: string): string {
     if (!championName) return 'Nenhum';
 
-    const championIdMatch = championName.match(/Champion(\d+)/i);
-    if (championIdMatch) {
-      const championId = parseInt(championIdMatch[1]);
-      return ChampionService.getChampionNameById(championId);
-    }
-
+    // O nome do campeão já vem no formato correto do backend
     return championName;
   }
 
@@ -470,16 +457,16 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
     console.log('🔄 Iniciando refresh completo (apaga tudo e recarrega)...');
     this.isLoading = true;
     this.error = null;
-    
+
     // Limpar cache de dados da leaderboard
     localStorage.removeItem(this.localStorageKey);
     this.playerTotalMMRCache.clear();
-    
+
     // Limpar cache de ícones compartilhado também
     this.profileIconService.clearCache();
-    
+
     console.log('🗑️ Cache limpo (dados + ícones compartilhados)');
-    
+
     try {
       await this.loadLeaderboard(true);
       console.log('✅ Refresh completo concluído');
