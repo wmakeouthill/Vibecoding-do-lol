@@ -106,38 +106,94 @@ export class BotService {
 
         const playerId = player.id?.toString();
         const playerName = player.summonerName || player.name || '';
+        const playerGameName = player.gameName || '';
+        const playerTagLine = player.tagLine || '';
 
         console.log(`🤖 [comparePlayerWithId] Comparando:`, {
             playerId: playerId,
             playerName: playerName,
+            playerGameName: playerGameName,
+            playerTagLine: playerTagLine,
             targetId: targetId,
             player: player
         });
 
+        // ✅ CORREÇÃO: Priorizar comparação por summonerName (gameName#tagLine)
+        if (playerName === targetId) {
+            console.log(`🤖 [comparePlayerWithId] Match por summonerName: ${playerName} === ${targetId}`);
+            return true;
+        }
+
+        // ✅ CORREÇÃO: Match por Riot ID completo (gameName#tagLine)
+        if (playerGameName && playerTagLine) {
+            const fullRiotId = `${playerGameName}#${playerTagLine}`;
+            if (fullRiotId === targetId) {
+                console.log(`🤖 [comparePlayerWithId] Match por Riot ID completo: ${fullRiotId} === ${targetId}`);
+                return true;
+            }
+        }
+
+        // ✅ CORREÇÃO: Match por gameName quando targetId tem tag (quando currentPlayer tem só gameName, mas phase tem gameName#tagLine)
+        if (targetId.includes('#')) {
+            const targetGameName = targetId.split('#')[0];
+            if (playerGameName === targetGameName) {
+                console.log(`🤖 [comparePlayerWithId] Match por gameName quando targetId tem tag: ${playerGameName} === ${targetGameName}`);
+                return true;
+            }
+        }
+
+        // ✅ CORREÇÃO: Match por nome quando targetId tem tag (quando currentPlayer tem só name, mas phase tem gameName#tagLine)
+        if (targetId.includes('#')) {
+            const targetGameName = targetId.split('#')[0];
+            if (playerName === targetGameName) {
+                console.log(`🤖 [comparePlayerWithId] Match por nome quando targetId tem tag: ${playerName} === ${targetGameName}`);
+                return true;
+            }
+        }
+
+        // ✅ CORREÇÃO: Match por gameName apenas
+        if (playerGameName === targetId) {
+            console.log(`🤖 [comparePlayerWithId] Match por gameName: ${playerGameName} === ${targetId}`);
+            return true;
+        }
+
+        // ✅ CORREÇÃO: Match por nome com tag (quando currentPlayer tem nome sem tag, mas phase tem nome com tag)
+        if (playerName.includes('#')) {
+            const gameName = playerName.split('#')[0];
+            if (gameName === targetId) {
+                console.log(`🤖 [comparePlayerWithId] Match por gameName do nome: ${gameName} === ${targetId}`);
+                return true;
+            }
+        }
+
+        // ✅ CORREÇÃO: Match por ID (fallback)
         if (playerId === targetId) {
             console.log(`🤖 [comparePlayerWithId] Match por ID: ${playerId} === ${targetId}`);
             return true;
         }
 
-        if (playerName === targetId) {
-            console.log(`🤖 [comparePlayerWithId] Match por nome: ${playerName} === ${targetId}`);
-            return true;
-        }
-
-        if (playerName.includes('#')) {
-            const gameName = playerName.split('#')[0];
-            if (gameName === targetId) {
-                console.log(`🤖 [comparePlayerWithId] Match por gameName: ${gameName} === ${targetId}`);
-                return true;
-            }
-        }
-
+        // ✅ CORREÇÃO: Match por teamIndex (fallback)
         if (player.teamIndex !== undefined && player.teamIndex !== null) {
             const teamIndexStr = player.teamIndex.toString();
             if (teamIndexStr === targetId) {
                 console.log(`🤖 [comparePlayerWithId] Match por teamIndex: ${teamIndexStr} === ${targetId}`);
                 return true;
             }
+        }
+
+        // ✅ CORREÇÃO: Match por summonerId (fallback)
+        if (player.summonerId) {
+            const summonerIdStr = player.summonerId.toString();
+            if (summonerIdStr === targetId) {
+                console.log(`🤖 [comparePlayerWithId] Match por summonerId: ${summonerIdStr} === ${targetId}`);
+                return true;
+            }
+        }
+
+        // ✅ CORREÇÃO: Match por puuid (fallback)
+        if (player.puuid && player.puuid === targetId) {
+            console.log(`🤖 [comparePlayerWithId] Match por puuid: ${player.puuid} === ${targetId}`);
+            return true;
         }
 
         console.log(`🤖 [comparePlayerWithId] Nenhum match encontrado`);

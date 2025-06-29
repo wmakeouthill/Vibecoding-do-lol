@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, OnInit, OnDestroy } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ChampionService, Champion } from '../../services/champion.service';
@@ -31,7 +31,7 @@ interface CustomPickBanSession {
   templateUrl: './draft-champion-modal.html',
   styleUrl: './draft-champion-modal.scss'
 })
-export class DraftChampionModalComponent implements OnInit, OnDestroy {
+export class DraftChampionModalComponent implements OnInit, OnDestroy, OnChanges {
   @Input() session: CustomPickBanSession | null = null;
   @Input() currentPlayer: any = null;
   @Input() isVisible: boolean = false;
@@ -62,6 +62,25 @@ export class DraftChampionModalComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     this.stopModalTimer();
+  }
+
+  ngOnChanges(changes: SimpleChanges) {
+    console.log('🔄 [Modal] ngOnChanges detectado:', changes);
+    
+    if (changes['isVisible']) {
+      console.log('🔄 [Modal] isVisible mudou:', {
+        previousValue: changes['isVisible'].previousValue,
+        currentValue: changes['isVisible'].currentValue
+      });
+      
+      if (changes['isVisible'].currentValue === true) {
+        console.log('🔄 [Modal] Modal se tornou visível - chamando onModalShow');
+        this.onModalShow();
+      } else {
+        console.log('🔄 [Modal] Modal se tornou invisível - parando timer');
+        this.stopModalTimer();
+      }
+    }
   }
 
   private async loadChampions() {

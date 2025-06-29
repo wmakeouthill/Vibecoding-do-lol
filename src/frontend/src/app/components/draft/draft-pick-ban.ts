@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, ChangeDetectorRef, ChangeDetectionStrategy, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ChampionService, Champion } from '../../services/champion.service';
@@ -39,7 +39,7 @@ import { CurrentActionIconPipe } from './current-action-icon.pipe';
     styleUrl: './draft-pick-ban.scss',
     changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class DraftPickBanComponent implements OnInit, OnDestroy {
+export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
     @Input() matchData: any = null;
     @Input() isLeader: boolean = false;
     @Input() currentPlayer: any = null;
@@ -86,6 +86,10 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
     ) { }
 
     ngOnInit() {
+        console.log('🚀 [DraftPickBan] ngOnInit iniciado');
+        console.log('🚀 [DraftPickBan] currentPlayer recebido:', this.currentPlayer);
+        console.log('🚀 [DraftPickBan] matchData recebido:', this.matchData);
+        
         this.loadChampions().then(() => {
             this.initializePickBanSession();
             this._lastRealActionTime = Date.now(); // Inicializar timestamp da última ação
@@ -98,6 +102,18 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
         }
         if (this.botPickTimer) {
             this.botService.cancelScheduledAction(this.botPickTimer);
+        }
+    }
+
+    ngOnChanges(changes: SimpleChanges) {
+        console.log('🔄 [ngOnChanges] Mudanças detectadas:', changes);
+        
+        if (changes['currentPlayer']) {
+            console.log('🔄 [ngOnChanges] currentPlayer mudou:', {
+                previousValue: changes['currentPlayer'].previousValue,
+                currentValue: changes['currentPlayer'].currentValue
+            });
+            this.checkCurrentPlayerChange();
         }
     }
 
@@ -371,20 +387,76 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
         });
 
         // ✅ CORREÇÃO: Garantir que playerId seja definido corretamente
-        currentPhase.playerId = player?.id?.toString() || player?.summonerName || player?.name || playerIndex?.toString();
+        // Priorizar o formato gameName#tagLine, depois summonerName, depois outros identificadores
+        let playerIdReason = '';
+        if (player?.gameName && player?.tagLine) {
+            currentPhase.playerId = `${player.gameName}#${player.tagLine}`;
+            playerIdReason = 'player.gameName#tagLine';
+        } else if (player?.summonerName) {
+            currentPhase.playerId = player.summonerName;
+            playerIdReason = 'player.summonerName';
+        } else if (player?.name) {
+            currentPhase.playerId = player.name;
+            playerIdReason = 'player.name';
+        } else if (player?.id) {
+            currentPhase.playerId = player.id.toString();
+            playerIdReason = 'player.id';
+        } else if (player?.summonerId) {
+            currentPhase.playerId = player.summonerId.toString();
+            playerIdReason = 'player.summonerId';
+        } else {
+            currentPhase.playerId = playerIndex.toString();
+            playerIdReason = 'playerIndex (fallback)';
+        }
+        
         currentPhase.playerName = player?.summonerName || player?.name || `Jogador ${playerIndex}`;
 
         console.log(`🎯 [updateCurrentTurn] Ação ${this.session.currentAction + 1}: ${currentPhase.playerName} (${currentPhase.playerId}) - ${this.getLaneDisplayName(player.lane)}`);
         console.log(`🎯 [updateCurrentTurn] Índice do jogador: ${playerIndex} (teamIndex: ${player.teamIndex})`);
         console.log(`🎯 [updateCurrentTurn] É bot? ${this.botService.isBot(player)}`);
-        console.log(`🎯 [updateCurrentTurn] Phase.playerId definido: ${currentPhase.playerId}`);
+        console.log(`🎯 [updateCurrentTurn] Phase.playerId definido: ${currentPhase.playerId} (fonte: ${playerIdReason})`);
         console.log(`🎯 [updateCurrentTurn] Phase.playerIndex: ${currentPhase.playerIndex}`);
 
         this.checkForBotAutoAction(currentPhase);
         this.isMyTurn = this.checkIfMyTurn(currentPhase);
 
         console.log(`🎯 [updateCurrentTurn] Vez de: ${currentPhase.playerName || 'Jogador Desconhecido'}, É minha vez: ${this.isMyTurn}`);
+        console.log(`🎯 [updateCurrentTurn] isMyTurn definido como: ${this.isMyTurn}`);
+        console.log(`🎯 [updateCurrentTurn] currentPlayer:`, this.currentPlayer);
+        
+        // ✅ NOVO: Log detalhado para debug da ação 6
+        if (this.session.currentAction === 5) { // Ação 6 (índice 5)
+            console.log('🔍 [DEBUG AÇÃO 6] === DETALHES DA AÇÃO 6 ===');
+            console.log('🔍 [DEBUG AÇÃO 6] currentPhase:', currentPhase);
+            console.log('🔍 [DEBUG AÇÃO 6] currentPlayer:', this.currentPlayer);
+            console.log('🔍 [DEBUG AÇÃO 6] isMyTurn:', this.isMyTurn);
+            console.log('🔍 [DEBUG AÇÃO 6] Time do currentPlayer:', this.getPlayerTeam());
+            console.log('🔍 [DEBUG AÇÃO 6] Time da fase:', currentPhase.team);
+            console.log('🔍 [DEBUG AÇÃO 6] === FIM DOS DETALHES ===');
+        }
+        
         console.log(`🎯 [updateCurrentTurn] === FIM DA AÇÃO ${this.session.currentAction + 1} ===`);
+        
+        // ✅ NOVO: Forçar detecção de mudanças após atualizar isMyTurn
+        this.cdr.markForCheck();
+        
+        // ✅ NOVO: Se é minha vez, abrir o modal automaticamente após um pequeno delay
+        if (this.isMyTurn) {
+            console.log('🎯 [updateCurrentTurn] É minha vez - agendando abertura do modal...');
+            setTimeout(() => {
+                if (this.isMyTurn && !this.showChampionModal) {
+                    console.log('🎯 [updateCurrentTurn] Abrindo modal automaticamente...');
+                    this.openChampionModal();
+                }
+            }, 100);
+        }
+        
+        // ✅ NOVO: Log para verificar se está passando para a próxima ação
+        console.log(`🎯 [updateCurrentTurn] Próxima ação será: ${this.session.currentAction + 1}`);
+        if (this.session.currentAction + 1 < this.session.phases.length) {
+            const nextPhase = this.session.phases[this.session.currentAction + 1];
+            console.log(`🎯 [updateCurrentTurn] Próxima fase:`, nextPhase);
+        }
     }
 
     private checkForBotAutoAction(phase: PickBanPhase) {
@@ -457,9 +529,56 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
     }
 
     checkIfMyTurn(phase: PickBanPhase): boolean {
-        if (!this.currentPlayer) return false;
+        console.log('🎯 [checkIfMyTurn] === VERIFICANDO SE É MINHA VEZ ===');
+        console.log('🎯 [checkIfMyTurn] currentPlayer:', this.currentPlayer);
+        console.log('🎯 [checkIfMyTurn] phase:', phase);
+        console.log('🎯 [checkIfMyTurn] phase.playerId:', phase.playerId);
 
-        return this.botService.comparePlayerWithId(this.currentPlayer, phase.playerId!);
+        if (!this.currentPlayer) {
+            console.log('❌ [checkIfMyTurn] currentPlayer é null/undefined');
+            return false;
+        }
+
+        if (!phase.playerId) {
+            console.log('❌ [checkIfMyTurn] phase.playerId é null/undefined');
+            return false;
+        }
+
+        // ✅ NOVO: Verificar se o currentPlayer tem o formato correto
+        const currentPlayerFormatted = this.currentPlayer.gameName && this.currentPlayer.tagLine 
+            ? `${this.currentPlayer.gameName}#${this.currentPlayer.tagLine}`
+            : this.currentPlayer.summonerName || this.currentPlayer.name;
+            
+        console.log('🎯 [checkIfMyTurn] currentPlayer formatado para comparação:', currentPlayerFormatted);
+
+        const isMyTurn = this.botService.comparePlayerWithId(this.currentPlayer, phase.playerId);
+        
+        console.log('🎯 [checkIfMyTurn] Resultado da comparação:', isMyTurn);
+        console.log('🎯 [checkIfMyTurn] Detalhes da comparação:', {
+            currentPlayerId: this.currentPlayer.id,
+            currentPlayerName: this.currentPlayer.summonerName || this.currentPlayer.name,
+            currentPlayerGameName: this.currentPlayer.gameName,
+            currentPlayerTagLine: this.currentPlayer.tagLine,
+            currentPlayerFormatted: currentPlayerFormatted,
+            currentPlayerSummonerId: this.currentPlayer.summonerId,
+            currentPlayerPuuid: this.currentPlayer.puuid,
+            phasePlayerId: phase.playerId,
+            phasePlayerName: phase.playerName,
+            isMyTurn: isMyTurn
+        });
+        
+        // ✅ NOVO: Log específico para ação 6
+        if (this.session && this.session.currentAction === 5) {
+            console.log('🔍 [DEBUG AÇÃO 6 - checkIfMyTurn] === DETALHES ESPECÍFICOS ===');
+            console.log('🔍 [DEBUG AÇÃO 6 - checkIfMyTurn] currentPlayer:', this.currentPlayer);
+            console.log('🔍 [DEBUG AÇÃO 6 - checkIfMyTurn] phase:', phase);
+            console.log('🔍 [DEBUG AÇÃO 6 - checkIfMyTurn] isMyTurn:', isMyTurn);
+            console.log('🔍 [DEBUG AÇÃO 6 - checkIfMyTurn] === FIM DOS DETALHES ===');
+        }
+        
+        console.log('🎯 [checkIfMyTurn] === FIM DA VERIFICAÇÃO ===');
+        
+        return isMyTurn;
     }
 
     getPlayerTeam(): 'blue' | 'red' {
@@ -504,6 +623,13 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
         const currentPhase = this.session.phases[this.session.currentAction];
         if (!currentPhase) return;
 
+        console.log('⏰ [handleTimeOut] === TIMEOUT EXECUTADO ===');
+        console.log('⏰ [handleTimeOut] Fase atual:', currentPhase);
+        console.log('⏰ [handleTimeOut] É minha vez?', this.isMyTurn);
+
+        // ✅ CORREÇÃO: Executar ação automática para TODOS quando o timer acaba
+        console.log('⏰ [handleTimeOut] Executando ação automática (timeout)');
+        
         // Auto-pick/ban para o jogador atual usando o BotService
         this.botService.performBotAction(currentPhase, this.session, this.champions);
 
@@ -775,7 +901,24 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
 
     // MÉTODOS PARA COMUNICAÇÃO COM OS MODAIS
     openChampionModal(): void {
+        console.log('🎯 [openChampionModal] === ABRINDO MODAL DE CAMPEÕES ===');
+        console.log('🎯 [openChampionModal] isMyTurn:', this.isMyTurn);
+        console.log('🎯 [openChampionModal] currentPlayer:', this.currentPlayer);
+        console.log('🎯 [openChampionModal] session:', this.session);
+        
+        if (this.session) {
+            const currentPhase = this.session.phases[this.session.currentAction];
+            console.log('🎯 [openChampionModal] currentPhase:', currentPhase);
+        }
+        
+        // ✅ CORREÇÃO: Garantir que o modal seja exibido
         this.showChampionModal = true;
+        console.log('🎯 [openChampionModal] showChampionModal definido como true');
+        
+        // ✅ NOVO: Forçar detecção de mudanças
+        this.cdr.markForCheck();
+        
+        console.log('🎯 [openChampionModal] === FIM DA ABERTURA DO MODAL ===');
     }
 
     openConfirmationModal(): void {
@@ -958,5 +1101,32 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
         if (!currentPhase) return null;
 
         return this.getPlayerByTeamIndex(currentPhase.team, currentPhase.playerIndex || 0);
+    }
+
+    // ✅ NOVO: Método para forçar atualização do isMyTurn
+    private forceUpdateMyTurn(): void {
+        if (!this.session) return;
+
+        const currentPhase = this.session.phases[this.session.currentAction];
+        if (!currentPhase) return;
+
+        const oldIsMyTurn = this.isMyTurn;
+        this.isMyTurn = this.checkIfMyTurn(currentPhase);
+
+        console.log(`🔄 [forceUpdateMyTurn] isMyTurn mudou: ${oldIsMyTurn} -> ${this.isMyTurn}`);
+        
+        // Forçar detecção de mudanças
+        this.cdr.markForCheck();
+    }
+
+    // ✅ NOVO: Método para verificar se o currentPlayer mudou
+    private checkCurrentPlayerChange(): void {
+        console.log('🔍 [checkCurrentPlayerChange] Verificando mudança no currentPlayer...');
+        console.log('🔍 [checkCurrentPlayerChange] currentPlayer atual:', this.currentPlayer);
+        
+        // Se temos uma sessão ativa, forçar atualização do isMyTurn
+        if (this.session && this.session.phase !== 'completed') {
+            this.forceUpdateMyTurn();
+        }
     }
 } 
