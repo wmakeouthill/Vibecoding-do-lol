@@ -1,0 +1,212 @@
+<div class="draft-pick-ban" *ngIf="session">
+  <!-- Header -->
+  <div class="pick-ban-header">
+    <div class="session-info">
+      <h2>🏆 Seleção de Campeões</h2>
+      <div class="phase-indicator">
+        <span class="current-phase">{{ getCurrentPhaseText() }}</span>
+        <div class="progress-bar">
+          <div class="progress-fill" [style.width.%]="getPhaseProgress()"></div>
+        </div>
+      </div>
+    </div>
+    <div class="timer-section">
+      <div class="timer" [class.warning]="timeRemaining <= 10">
+        ⏱️ {{ timeRemaining }}s
+      </div>
+
+      <!-- Current Player Indicator -->
+      <div class="current-player" *ngIf="session">
+        <span class="current-player-text">
+          {{ getCurrentPlayerName() }}
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Teams Display -->
+  <div class="teams-container">
+    <!-- Blue Team -->
+    <div class="team blue-team">
+      <div class="team-header">
+        <span class="team-name">🔵 Time Azul</span>
+      </div>
+
+      <!-- Bans do Time Azul -->
+      <div class="team-bans">
+        <h4>🚫 Bans do Time Azul</h4>
+        <div class="banned-champions-row">
+          <div class="banned-champion" *ngFor="let ban of getTeamBans('blue')">
+            <img [src]="ban.image" [alt]="ban.name" class="banned-img">
+            <span class="banned-name">{{ ban.name }}</span>
+          </div>
+          <div class="banned-placeholder" *ngFor="let i of [1,2,3,4,5].slice(getTeamBans('blue').length)">
+            <div class="ban-placeholder">?</div>
+            <span class="banned-name">Aguardando...</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="team-picks">
+        <!-- Picks mapeados às posições corretas dos jogadores -->
+        <div class="pick-slot" *ngFor="let player of getSortedTeamByLane('blue'); let i = index">
+          <ng-container *ngIf="getPlayerPick('blue', player) as playerPick; else emptySlot">
+            <img [src]="playerPick.image" [alt]="playerPick.name" class="champion-img">
+            <div class="pick-info">
+              <span class="champion-name">{{ playerPick.name }}</span>
+              <span class="player-name">
+                {{ player.summonerName || player.name || 'Jogador' }}
+                <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
+              </span>
+              <span class="player-lane">{{ getPlayerLaneDisplayForPlayer(player) }}</span>
+            </div>
+          </ng-container>
+          <ng-template #emptySlot>
+            <div class="champion-placeholder">?</div>
+            <div class="pick-info">
+              <span class="champion-name">Aguardando...</span>
+              <span class="player-name">
+                {{ player.summonerName || player.name || 'Jogador' }}
+                <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
+              </span>
+              <span class="player-lane">{{ getPlayerLaneDisplayForPlayer(player) }}</span>
+            </div>
+          </ng-template>
+        </div>
+      </div>
+    </div>
+
+    <!-- Center - Bans Gerais -->
+    <div class="bans-section">
+      <h3>🚫 Banidos</h3>
+      <div class="banned-champions">
+        <div class="banned-champion" *ngFor="let ban of getBannedChampions()">
+          <img [src]="ban.image" [alt]="ban.name" class="banned-img">
+          <span class="banned-name">{{ ban.name }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Red Team -->
+    <div class="team red-team">
+      <div class="team-header">
+        <span class="team-name">🔴 Time Vermelho</span>
+      </div>
+
+      <!-- Bans do Time Vermelho -->
+      <div class="team-bans">
+        <h4>🚫 Bans do Time Vermelho</h4>
+        <div class="banned-champions-row">
+          <div class="banned-champion" *ngFor="let ban of getTeamBans('red')">
+            <img [src]="ban.image" [alt]="ban.name" class="banned-img">
+            <span class="banned-name">{{ ban.name }}</span>
+          </div>
+          <div class="banned-placeholder" *ngFor="let i of [1,2,3,4,5].slice(getTeamBans('red').length)">
+            <div class="ban-placeholder">?</div>
+            <span class="banned-name">Aguardando...</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="team-picks">
+        <!-- Picks mapeados às posições corretas dos jogadores -->
+        <div class="pick-slot" *ngFor="let player of getSortedTeamByLane('red'); let i = index">
+          <ng-container *ngIf="getPlayerPick('red', player) as playerPick; else emptySlot">
+            <img [src]="playerPick.image" [alt]="playerPick.name" class="champion-img">
+            <div class="pick-info">
+              <span class="champion-name">{{ playerPick.name }}</span>
+              <span class="player-name">
+                {{ player.summonerName || player.name || 'Jogador' }}
+                <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
+              </span>
+              <span class="player-lane">{{ getPlayerLaneDisplayForPlayer(player) }}</span>
+            </div>
+          </ng-container>
+          <ng-template #emptySlot>
+            <div class="champion-placeholder">?</div>
+            <div class="pick-info">
+              <span class="champion-name">Aguardando...</span>
+              <span class="player-name">
+                {{ player.summonerName || player.name || 'Jogador' }}
+                <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
+              </span>
+              <span class="player-lane">{{ getPlayerLaneDisplayForPlayer(player) }}</span>
+            </div>
+          </ng-template>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Champion Selection -->
+  <div class="champion-selection" *ngIf="isMyTurn">
+    <div class="selection-header">
+      <h3>
+        {{ session.phases[session.currentAction] && session.phases[session.currentAction].action === 'ban' ? '🚫 Banir
+        Campeão' : '⭐ Escolher Campeão' }}
+      </h3>
+      <p class="selection-subtitle">
+        Sua vez de {{ session.phases[session.currentAction] && session.phases[session.currentAction].action === 'ban' ?
+        'banir' : 'escolher' }} um campeão
+      </p>
+    </div>
+
+    <!-- Botão para abrir modal -->
+    <div class="modal-trigger-section">
+      <button class="btn btn-primary btn-lg open-modal-btn" (click)="openChampionModal()">
+        <span class="btn-icon">{{ getCurrentActionIcon() }}</span>
+        <span class="btn-text">{{ getCurrentActionText() }}</span>
+        <span class="btn-hint">Clique para abrir seleção</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Waiting Message -->
+  <div class="waiting-message" *ngIf="!isMyTurn && session.phase !== 'completed'">
+    <div class="waiting-content">
+      <div class="waiting-icon">⏳</div>
+      <h3>Aguardando outros jogadores...</h3>
+      <p>{{ getCurrentPhaseText() }}</p>
+    </div>
+  </div>
+
+  <!-- Completion Message -->
+  <div class="completion-message" *ngIf="session.phase === 'completed'">
+    <div class="completion-content">
+      <div class="completion-icon">✅</div>
+      <h3>Seleção de Campeões Completa!</h3>
+      <p>A partida pode começar agora.</p>
+
+      <div class="final-teams">
+        <div class="final-team">
+          <h4>🔵 Time Azul</h4>
+          <div class="final-picks">
+            <div class="final-pick" *ngFor="let pick of getTeamPicks('blue')">
+              <img [src]="pick.image" [alt]="pick.name" class="final-champion-img">
+              <span class="final-champion-name">{{ pick.name }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="final-team">
+          <h4>🔴 Time Vermelho</h4>
+          <div class="final-picks">
+            <div class="final-pick" *ngFor="let pick of getTeamPicks('red')">
+              <img [src]="pick.image" [alt]="pick.name" class="final-champion-img">
+              <span class="final-champion-name">{{ pick.name }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="completion-actions">
+        <button class="btn btn-success btn-lg" (click)="completePickBan()">
+          ✅ Iniciar Partida
+        </button>
+        <button class="btn btn-secondary btn-lg" (click)="cancelPickBan()">
+          ❌ Cancelar
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

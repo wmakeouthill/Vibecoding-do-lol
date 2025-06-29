@@ -9,7 +9,9 @@ import { QueueComponent } from './components/queue/queue';
 import { MatchHistoryComponent } from './components/match-history/match-history';
 import { LeaderboardComponent } from './components/leaderboard/leaderboard';
 import { MatchFoundComponent, MatchFoundData } from './components/match-found/match-found';
-import { CustomPickBanComponent } from './components/custom-pick-ban/custom-pick-ban';
+import { DraftPickBanComponent } from './components/draft/draft-pick-ban';
+import { DraftChampionModalComponent } from './components/draft/draft-champion-modal';
+import { DraftConfirmationModalComponent } from './components/draft/draft-confirmation-modal';
 import { GameInProgressComponent } from './components/game-in-progress/game-in-progress';
 import { ApiService } from './services/api';
 import { QueueStateService } from './services/queue-state';
@@ -27,7 +29,9 @@ import type { Notification } from './interfaces';
     MatchHistoryComponent,
     LeaderboardComponent,
     MatchFoundComponent,
-    CustomPickBanComponent,
+    DraftPickBanComponent,
+    DraftChampionModalComponent,
+    DraftConfirmationModalComponent,
     GameInProgressComponent
   ],
   templateUrl: './app-simple.html',

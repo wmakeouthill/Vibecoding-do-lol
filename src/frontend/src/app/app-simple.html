@@ -41,13 +41,13 @@
   <!-- Content -->
   <main class="content">    <!-- Draft Phase -->
     <div *ngIf="inDraftPhase" class="view-container draft-view">
-      <!-- Use the CustomPickBanComponent -->
-      <app-custom-pick-ban
+      <!-- Use the new modular Draft Components -->
+      <app-draft-pick-ban
         [matchData]="currentMatchData"
         [currentPlayer]="currentPlayer"
         (onPickBanComplete)="onPickBanComplete($event)"
         (onPickBanCancel)="exitDraft()">
-      </app-custom-pick-ban>
+      </app-draft-pick-ban>
     </div>
 
     <!-- Game In Progress Phase -->
