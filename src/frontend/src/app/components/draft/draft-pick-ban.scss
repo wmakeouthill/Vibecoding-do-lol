@@ -154,11 +154,12 @@
 }
 
 .banned-champions-row {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  display: flex;
+  flex-direction: row;
   gap: 8px;
   justify-content: center;
-  max-width: 120px;
+  flex-wrap: wrap;
+  max-width: 300px;
   margin: 0 auto;
 }
 

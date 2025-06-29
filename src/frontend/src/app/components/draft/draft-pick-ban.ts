@@ -1,30 +1,10 @@
-import { Component, Input, Output, EventEmitter, OnInit, OnDestroy } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ChampionService, Champion } from '../../services/champion.service';
+import { BotService, PickBanPhase, CustomPickBanSession } from '../../services/bot.service';
 import { DraftChampionModalComponent } from './draft-champion-modal';
 import { DraftConfirmationModalComponent } from './draft-confirmation-modal';
-
-interface PickBanPhase {
-    team: 'blue' | 'red';
-    action: 'ban' | 'pick';
-    champion?: Champion;
-    playerId?: string;
-    playerName?: string;
-    locked: boolean;
-    timeRemaining: number;
-}
-
-interface CustomPickBanSession {
-    id: string;
-    phase: 'bans' | 'picks' | 'completed';
-    currentAction: number;
-    extendedTime: number;
-    phases: PickBanPhase[];
-    blueTeam: any[];
-    redTeam: any[];
-    currentPlayerIndex: number;
-}
 
 @Component({
     selector: 'app-draft-pick-ban',
@@ -52,168 +32,36 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
     showConfirmationModal: boolean = false;
 
     // PROPRIEDADES PARA CACHE E PERFORMANCE
-    private _cachedSortedBlueTeam: any[] | null = null;
-    private _cachedSortedRedTeam: any[] | null = null;
-    private _cachedBannedChampions: Champion[] | null = null;
-    private _cachedBlueTeamPicks: Champion[] | null = null;
-    private _cachedRedTeamPicks: Champion[] | null = null;
-    private _lastCacheUpdate: number = 0;
-    private readonly CACHE_DURATION = 5000; // Aumentado para 5 segundos
+    public _cachedSortedBlueTeam: any[] | null = null;
+    public _cachedSortedRedTeam: any[] | null = null;
+    public _cachedBannedChampions: Champion[] | null = null;
+    public _cachedBlueTeamPicks: Champion[] | null = null;
+    public _cachedRedTeamPicks: Champion[] | null = null;
+    public _lastCacheUpdate: number = 0;
+    public readonly CACHE_DURATION = 5000; // Aumentado para 5 segundos
 
     // SISTEMA DE CACHE INTELIGENTE
-    private _sessionStateHash: string = '';
-    private _currentActionHash: string = '';
-    private _phaseHash: string = '';
-    private _lastStateUpdate: number = 0;
-    private _cacheInvalidationNeeded: boolean = false;
-    private _lastActionHash: string = ''; // Hash da última ação realizada
+    public _sessionStateHash: string = '';
+    public _currentActionHash: string = '';
+    public _phaseHash: string = '';
+    public _lastStateUpdate: number = 0;
+    public _cacheInvalidationNeeded: boolean = false;
+    public _lastActionHash: string = ''; // Hash da última ação realizada
+    public _lastRealActionTime: number = 0; // Timestamp da última ação real (pick/ban)
 
-    private timer: any = null;
-    private botPickTimer: any = null;
+    public timer: any = null;
+    public botPickTimer: number | null = null;
 
-    constructor(private championService: ChampionService) { }
-
-    /**
-     * Verifica se um jogador é bot
-     */
-    private isBot(player: any): boolean {
-        if (!player) return false;
-
-        const name = player.summonerName || player.name || '';
-        const id = player.id;
-
-        console.log(`🤖 [isBot] Verificando jogador: ${name} (ID: ${id})`);
-
-        if (id < 0) {
-            console.log(`🤖 [isBot] ID negativo detectado: ${id}`);
-            return true;
-        }
-
-        if (typeof id === 'string') {
-            const numericId = parseInt(id);
-            if (!isNaN(numericId) && numericId < 0) {
-                console.log(`🤖 [isBot] ID string negativo detectado: ${numericId}`);
-                return true;
-            }
-
-            if (id.toLowerCase().includes('bot') || id.startsWith('-')) {
-                console.log(`🤖 [isBot] ID contém 'bot' ou começa com '-': ${id}`);
-                return true;
-            }
-        }
-
-        const botPatterns = [
-            /^bot\d+$/i,
-            /^bot\s*\d+$/i,
-            /^ai\s*bot$/i,
-            /^computer\s*\d*$/i,
-            /^bot\s*player$/i,
-            /^ai\s*player$/i,
-            /^bot$/i,
-            /^ai$/i,
-            /^popcornseller$/i,
-            /^bot\s*[a-z]*$/i,
-            /^ai\s*[a-z]*$/i,
-            /^bot\s*\d+\s*[a-z]*$/i,
-            /^ai\s*\d+\s*[a-z]*$/i,
-            /^bot\d+[a-z]*$/i,
-            /^ai\d+[a-z]*$/i
-        ];
-
-        for (const pattern of botPatterns) {
-            if (pattern.test(name)) {
-                console.log(`🤖 [isBot] Padrão de bot detectado: ${pattern.source}`);
-                return true;
-            }
-        }
-
-        if (name.toLowerCase().includes('bot')) {
-            console.log(`🤖 [isBot] Nome contém 'bot': ${name}`);
-            return true;
-        }
-
-        if (name.toLowerCase().includes('ai')) {
-            console.log(`🤖 [isBot] Nome contém 'ai': ${name}`);
-            return true;
-        }
-
-        if (/\d/.test(name) && (name.toLowerCase().includes('bot') || name.toLowerCase().includes('ai'))) {
-            console.log(`🤖 [isBot] Nome com número e bot/ai: ${name}`);
-            return true;
-        }
-
-        console.log(`🤖 [isBot] Jogador não é bot: ${name}`);
-        return false;
-    }
-
-    /**
-     * Método auxiliar para comparar jogadores de forma consistente
-     */
-    private comparePlayers(player1: any, player2: any): boolean {
-        if (!player1 || !player2) return false;
-
-        const id1 = player1.id?.toString();
-        const name1 = player1.summonerName || player1.name || '';
-        const id2 = player2.id?.toString();
-        const name2 = player2.summonerName || player2.name || '';
-
-        if (id1 && id2 && id1 === id2) {
-            return true;
-        }
-
-        if (name1 && name2 && name1 === name2) {
-            return true;
-        }
-
-        if (name1 && name2 && name1.includes('#')) {
-            const gameName1 = name1.split('#')[0];
-            if (name2.includes('#')) {
-                const gameName2 = name2.split('#')[0];
-                if (gameName1 === gameName2) {
-                    return true;
-                }
-            } else if (gameName1 === name2) {
-                return true;
-            }
-        }
-
-        if (name1 && name2 && name1.startsWith(name2 + '#')) {
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * Compara um jogador com um ID específico
-     */
-    private comparePlayerWithId(player: any, targetId: string): boolean {
-        if (!player || !targetId) return false;
-
-        const playerId = player.id?.toString();
-        const playerName = player.summonerName || player.name || '';
-
-        if (playerId === targetId) {
-            return true;
-        }
-
-        if (playerName === targetId) {
-            return true;
-        }
-
-        if (playerName.includes('#')) {
-            const gameName = playerName.split('#')[0];
-            if (gameName === targetId) {
-                return true;
-            }
-        }
-
-        return false;
-    }
+    constructor(
+        public championService: ChampionService,
+        public botService: BotService,
+        public cdr: ChangeDetectorRef
+    ) { }
 
     ngOnInit() {
         this.loadChampions();
         this.initializePickBanSession();
+        this._lastRealActionTime = Date.now(); // Inicializar timestamp da última ação
     }
 
     ngOnDestroy() {
@@ -221,7 +69,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
             clearInterval(this.timer);
         }
         if (this.botPickTimer) {
-            clearTimeout(this.botPickTimer);
+            this.botService.cancelScheduledAction(this.botPickTimer);
         }
     }
 
@@ -263,10 +111,20 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
 
         const processTeamData = (teamData: any[]): any[] => {
             console.log('🔄 [DraftPickBan] Processando teamData:', teamData);
-            
+
             return teamData.map((player, index) => {
                 // Se já é um objeto com dados completos, usar como está
                 if (typeof player === 'object' && player !== null) {
+                    console.log(`🔍 [DraftPickBan] Processando jogador [${index}]:`, {
+                        id: player.id,
+                        name: player.name,
+                        summonerName: player.summonerName,
+                        assignedLane: player.assignedLane,
+                        lane: player.lane,
+                        primaryLane: player.primaryLane,
+                        secondaryLane: player.secondaryLane
+                    });
+
                     // Garantir que summonerName está no formato correto
                     let summonerName = player.summonerName || player.name || '';
 
@@ -277,12 +135,22 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
                         summonerName = player.gameName;
                     }
 
+                    // Preservar a lane original do jogador (assignedLane do matchmaking)
+                    let lane = player.assignedLane || player.lane || this.getLaneForIndex(index);
+
+                    // Mapear 'bot' para 'adc' para compatibilidade
+                    if (lane === 'bot') {
+                        lane = 'adc';
+                    }
+
+                    console.log(`🎯 [DraftPickBan] Lane final para jogador [${index}]: ${lane} (original: ${player.assignedLane})`);
+
                     const processedPlayer = {
                         ...player,
                         summonerName: summonerName,
                         name: summonerName, // Manter compatibilidade
                         id: player.id || player.summonerId || Math.random().toString(),
-                        lane: this.getLaneForIndex(index),
+                        lane: lane, // Usar lane original preservada
                         originalIndex: index
                     };
 
@@ -296,7 +164,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
                     id: playerName,
                     name: playerName,
                     summonerName: playerName,
-                    lane: this.getLaneForIndex(index),
+                    lane: this.getLaneForIndex(index), // Fallback apenas para strings
                     originalIndex: index
                 };
 
@@ -318,8 +186,8 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
         console.log('✅ [DraftPickBan] Times processados:', {
             blueTeamSize: processedBlueTeam.length,
             redTeamSize: processedRedTeam.length,
-            blueTeam: processedBlueTeam.map((p: any) => ({ id: p.id, name: p.summonerName, lane: p.lane, isBot: this.isBot(p) })),
-            redTeam: processedRedTeam.map((p: any) => ({ id: p.id, name: p.summonerName, lane: p.lane, isBot: this.isBot(p) }))
+            blueTeam: processedBlueTeam.map((p: any) => ({ id: p.id, name: p.summonerName, lane: p.lane, isBot: this.botService.isBot(p) })),
+            redTeam: processedRedTeam.map((p: any) => ({ id: p.id, name: p.summonerName, lane: p.lane, isBot: this.botService.isBot(p) }))
         });
 
         this.session = {
@@ -359,38 +227,38 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
     private generatePhases() {
         if (!this.session) return;
 
-        // Create the pick/ban sequence (seguindo exatamente o padrão do LoL)
+        // Create the pick/ban sequence (seguindo exatamente o padrão da partida ranqueada do LoL)
         this.session.phases = [
-            // 1ª Fase de Banimento (3 bans por time)
-            { team: 'blue', action: 'ban', locked: false, timeRemaining: 30 },   // Ban 1 - Blue
-            { team: 'red', action: 'ban', locked: false, timeRemaining: 30 },    // Ban 1 - Red
-            { team: 'blue', action: 'ban', locked: false, timeRemaining: 30 },   // Ban 2 - Blue
-            { team: 'red', action: 'ban', locked: false, timeRemaining: 30 },    // Ban 2 - Red
-            { team: 'blue', action: 'ban', locked: false, timeRemaining: 30 },   // Ban 3 - Blue
-            { team: 'red', action: 'ban', locked: false, timeRemaining: 30 },    // Ban 3 - Red
+            // Primeira Fase de Banimento (6 bans - 3 por time)
+            { team: 'blue', action: 'ban', locked: false, timeRemaining: 30, playerIndex: 0 },   // Ação 1: Jogador 1 Blue (Top)
+            { team: 'red', action: 'ban', locked: false, timeRemaining: 30, playerIndex: 0 },    // Ação 2: Jogador 1 Red (Top)
+            { team: 'blue', action: 'ban', locked: false, timeRemaining: 30, playerIndex: 1 },   // Ação 3: Jogador 2 Blue (Jungle)
+            { team: 'red', action: 'ban', locked: false, timeRemaining: 30, playerIndex: 1 },    // Ação 4: Jogador 2 Red (Jungle)
+            { team: 'blue', action: 'ban', locked: false, timeRemaining: 30, playerIndex: 2 },   // Ação 5: Jogador 3 Blue (Mid)
+            { team: 'red', action: 'ban', locked: false, timeRemaining: 30, playerIndex: 2 },    // Ação 6: Jogador 3 Red (Mid)
 
-            // 1ª Fase de Picks (3 picks iniciais)
-            { team: 'blue', action: 'pick', locked: false, timeRemaining: 30 },  // Pick 1 - Blue (primeiro pick)
-            { team: 'red', action: 'pick', locked: false, timeRemaining: 30 },   // Pick 1 - Red
-            { team: 'red', action: 'pick', locked: false, timeRemaining: 30 },   // Pick 2 - Red
-            { team: 'blue', action: 'pick', locked: false, timeRemaining: 30 },  // Pick 2 - Blue
-            { team: 'blue', action: 'pick', locked: false, timeRemaining: 30 },  // Pick 3 - Blue
+            // Primeira Fase de Picks (6 picks - 3 por time)
+            { team: 'blue', action: 'pick', locked: false, timeRemaining: 30, playerIndex: 0 },  // Ação 7: Jogador 1 Blue (Top) - First Pick
+            { team: 'red', action: 'pick', locked: false, timeRemaining: 30, playerIndex: 0 },   // Ação 8: Jogador 1 Red (Top)
+            { team: 'red', action: 'pick', locked: false, timeRemaining: 30, playerIndex: 1 },   // Ação 9: Jogador 2 Red (Jungle)
+            { team: 'blue', action: 'pick', locked: false, timeRemaining: 30, playerIndex: 1 },  // Ação 10: Jogador 2 Blue (Jungle)
+            { team: 'blue', action: 'pick', locked: false, timeRemaining: 30, playerIndex: 2 },  // Ação 11: Jogador 3 Blue (Mid)
+            { team: 'red', action: 'pick', locked: false, timeRemaining: 30, playerIndex: 2 },   // Ação 12: Jogador 3 Red (Mid)
 
-            // 2ª Fase de Banimento (2 bans por time)
-            { team: 'red', action: 'ban', locked: false, timeRemaining: 30 },    // Ban 4 - Red (começa o vermelho)
-            { team: 'blue', action: 'ban', locked: false, timeRemaining: 30 },   // Ban 4 - Blue
-            { team: 'red', action: 'ban', locked: false, timeRemaining: 30 },    // Ban 5 - Red
-            { team: 'blue', action: 'ban', locked: false, timeRemaining: 30 },   // Ban 5 - Blue
+            // Segunda Fase de Banimento (4 bans - 2 por time)
+            { team: 'red', action: 'ban', locked: false, timeRemaining: 30, playerIndex: 3 },    // Ação 13: Jogador 4 Red (ADC)
+            { team: 'blue', action: 'ban', locked: false, timeRemaining: 30, playerIndex: 3 },   // Ação 14: Jogador 4 Blue (ADC)
+            { team: 'red', action: 'ban', locked: false, timeRemaining: 30, playerIndex: 4 },    // Ação 15: Jogador 5 Red (Support)
+            { team: 'blue', action: 'ban', locked: false, timeRemaining: 30, playerIndex: 4 },   // Ação 16: Jogador 5 Blue (Support)
 
-            // 2ª Fase de Picks (2 picks finais)
-            { team: 'red', action: 'pick', locked: false, timeRemaining: 30 },   // Pick 3 - Red
-            { team: 'blue', action: 'pick', locked: false, timeRemaining: 30 },  // Pick 4 - Blue
-            { team: 'red', action: 'pick', locked: false, timeRemaining: 30 },   // Pick 4 - Red
-            { team: 'blue', action: 'pick', locked: false, timeRemaining: 30 },  // Pick 5 - Blue (último pick)
-            { team: 'red', action: 'pick', locked: false, timeRemaining: 30 }    // Pick 5 - Red (último pick)
+            // Segunda Fase de Picks (4 picks - 2 por time)
+            { team: 'red', action: 'pick', locked: false, timeRemaining: 30, playerIndex: 3 },   // Ação 17: Jogador 4 Red (ADC)
+            { team: 'blue', action: 'pick', locked: false, timeRemaining: 30, playerIndex: 3 },  // Ação 18: Jogador 4 Blue (ADC)
+            { team: 'blue', action: 'pick', locked: false, timeRemaining: 30, playerIndex: 4 },  // Ação 19: Jogador 5 Blue (Support)
+            { team: 'red', action: 'pick', locked: false, timeRemaining: 30, playerIndex: 4 }    // Ação 20: Jogador 5 Red (Support) - Last Pick
         ];
 
-        console.log('✅ [generatePhases] Fases criadas:', this.session.phases.length);
+        console.log('✅ [generatePhases] Fases criadas seguindo fluxo ranqueado:', this.session.phases.length);
     }
 
     updateCurrentTurn() {
@@ -403,119 +271,115 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
         const currentPhase = this.session.phases[this.session.currentAction];
         if (!currentPhase) return;
 
+        console.log(`🎯 [updateCurrentTurn] === INÍCIO DA AÇÃO ${this.session.currentAction + 1} ===`);
+        console.log(`🎯 [updateCurrentTurn] Fase atual:`, currentPhase);
+
         // Update phase status baseado na ação atual
         if (this.session.currentAction < 6) {
             this.session.phase = 'bans'; // Primeira fase de bans (0-5)
-        } else if (this.session.currentAction >= 6 && this.session.currentAction < 11) {
-            this.session.phase = 'picks'; // Primeira fase de picks (6-10)
-        } else if (this.session.currentAction >= 11 && this.session.currentAction < 15) {
-            this.session.phase = 'bans'; // Segunda fase de bans (11-14)
+        } else if (this.session.currentAction >= 6 && this.session.currentAction < 12) {
+            this.session.phase = 'picks'; // Primeira fase de picks (6-11)
+        } else if (this.session.currentAction >= 12 && this.session.currentAction < 16) {
+            this.session.phase = 'bans'; // Segunda fase de bans (12-15)
         } else {
-            this.session.phase = 'picks'; // Segunda fase de picks (15-19)
+            this.session.phase = 'picks'; // Segunda fase de picks (16-19)
         }
 
-        console.log(`🎯 [updateCurrentTurn] Ação ${this.session.currentAction}: ${currentPhase.team} - ${currentPhase.action}`);
+        console.log(`🎯 [updateCurrentTurn] Ação ${this.session.currentAction + 1}: ${currentPhase.team} - ${currentPhase.action}`);
         console.log(`🎯 [updateCurrentTurn] Fase atual: ${this.session.phase}`);
 
         // Obter jogadores ordenados por lane (top, jungle, mid, adc, support)
         const sortedPlayers = this.getSortedTeamByLane(currentPhase.team);
-        
+
         // Garantir que temos exatamente 5 jogadores
         if (sortedPlayers.length !== 5) {
             console.error(`❌ [updateCurrentTurn] Time ${currentPhase.team} não tem exatamente 5 jogadores: ${sortedPlayers.length}`);
+            console.error(`❌ [updateCurrentTurn] Jogadores:`, sortedPlayers);
             return;
         }
 
-        // Mapeamento baseado na ordem padrão do LoL e na ação atual
-        let playerIndex = 0;
-        const actionIndex = this.session.currentAction;
+        // Usar o playerIndex pré-definido na fase
+        const playerIndex = currentPhase.playerIndex ?? 0;
+        const player = sortedPlayers[playerIndex];
 
-        // Distribuição seguindo a ordem padrão do LoL:
-        // - Bans: distribuídos entre os 5 jogadores de forma rotativa
-        // - Picks: cada jogador faz exatamente 1 pick na ordem de suas lanes
+        console.log(`🎯 [updateCurrentTurn] PlayerIndex da fase: ${playerIndex}`);
+        console.log(`🎯 [updateCurrentTurn] Jogadores ordenados:`, sortedPlayers.map((p, i) => ({
+            index: i,
+            name: p.summonerName,
+            lane: p.lane,
+            id: p.id,
+            isBot: this.botService.isBot(p)
+        })));
 
-        if (actionIndex < 6) {
-            // Primeira fase de bans (0-5): distribuir entre todos os 5 players
-            // Blue: 0, 2, 4 | Red: 1, 3, 5
-            const teamBanIndex = actionIndex % 2 === 0 ? actionIndex / 2 : (actionIndex - 1) / 2;
-            playerIndex = teamBanIndex % 5;
-        } else if (actionIndex >= 6 && actionIndex < 11) {
-            // Primeira fase de picks (6-10): cada jogador faz 1 pick
-            // Blue: 6, 9, 10 | Red: 7, 8
-            if (currentPhase.team === 'blue') {
-                // Blue team picks: 6, 9, 10
-                if (actionIndex === 6) playerIndex = 0; // Primeiro pick - Top
-                else if (actionIndex === 9) playerIndex = 1; // Segundo pick - Jungle  
-                else if (actionIndex === 10) playerIndex = 2; // Terceiro pick - Mid
-            } else {
-                // Red team picks: 7, 8
-                if (actionIndex === 7) playerIndex = 0; // Primeiro pick - Top
-                else if (actionIndex === 8) playerIndex = 1; // Segundo pick - Jungle
-            }
-        } else if (actionIndex >= 11 && actionIndex < 15) {
-            // Segunda fase de bans (11-14): usar jogadores que ainda não fizeram ban
-            // Blue: 12, 14 | Red: 11, 13
-            if (currentPhase.team === 'blue') {
-                // Blue team bans: 12, 14
-                if (actionIndex === 12) playerIndex = 3; // ADC
-                else if (actionIndex === 14) playerIndex = 4; // Support
-            } else {
-                // Red team bans: 11, 13
-                if (actionIndex === 11) playerIndex = 2; // Mid
-                else if (actionIndex === 13) playerIndex = 3; // ADC
-            }
-        } else {
-            // Segunda fase de picks (15-19): jogadores restantes fazem seus picks
-            // Blue: 16, 18 | Red: 15, 17, 19
-            if (currentPhase.team === 'blue') {
-                // Blue team picks: 16, 18
-                if (actionIndex === 16) playerIndex = 3; // ADC
-                else if (actionIndex === 18) playerIndex = 4; // Support
-            } else {
-                // Red team picks: 15, 17, 19
-                if (actionIndex === 15) playerIndex = 2; // Mid
-                else if (actionIndex === 17) playerIndex = 3; // ADC
-                else if (actionIndex === 19) playerIndex = 4; // Support
-            }
+        if (!player) {
+            console.error(`❌ [updateCurrentTurn] Jogador não encontrado no índice ${playerIndex}`);
+            return;
         }
 
-        const player = sortedPlayers[playerIndex];
         currentPhase.playerId = player?.id?.toString() || player?.summonerName;
         currentPhase.playerName = player?.summonerName || player?.name;
 
-        console.log(`🎯 [updateCurrentTurn] Jogador selecionado: ${currentPhase.playerName} (${currentPhase.playerId})`);
+        console.log(`🎯 [updateCurrentTurn] Ação ${this.session.currentAction + 1}: ${currentPhase.playerName} (${currentPhase.playerId}) - ${this.getLaneDisplayName(player.lane)}`);
         console.log(`🎯 [updateCurrentTurn] Índice do jogador: ${playerIndex}`);
+        console.log(`🎯 [updateCurrentTurn] É bot? ${this.botService.isBot(player)}`);
 
         this.checkForBotAutoAction(currentPhase);
         this.isMyTurn = this.checkIfMyTurn(currentPhase);
 
         console.log(`🎯 [updateCurrentTurn] Vez de: ${this.getCurrentPlayerName()}, É minha vez: ${this.isMyTurn}`);
+        console.log(`🎯 [updateCurrentTurn] === FIM DA AÇÃO ${this.session.currentAction + 1} ===`);
     }
 
     private checkForBotAutoAction(phase: PickBanPhase) {
-        console.log('🤖 [checkForBotAutoAction] Verificando ação automática para fase:', phase);
-        
-        if (!phase.playerId) {
-            console.log('⚠️ [checkForBotAutoAction] Phase não tem playerId');
-            return;
+        if (!this.session) return;
+
+        console.log(`🤖 [checkForBotAutoAction] === VERIFICANDO BOT PARA AÇÃO ${this.session.currentAction + 1} ===`);
+        console.log(`🤖 [checkForBotAutoAction] Phase:`, phase);
+
+        // Cancelar ação anterior se existir
+        if (this.botPickTimer) {
+            console.log(`🤖 [checkForBotAutoAction] Cancelando timer anterior: ${this.botPickTimer}`);
+            this.botService.cancelScheduledAction(this.botPickTimer);
+            this.botPickTimer = null;
         }
 
-        const currentTeam = phase.team;
-        const teamPlayers = currentTeam === 'blue' ? this.session!.blueTeam : this.session!.redTeam;
-        const currentPlayer = teamPlayers.find(p => this.comparePlayerWithId(p, phase.playerId!));
+        // Verificar se deve executar ação de bot
+        const shouldPerformAction = this.botService.shouldPerformBotAction(phase, this.session);
+        console.log(`🤖 [checkForBotAutoAction] shouldPerformBotAction retornou: ${shouldPerformAction}`);
 
-        console.log('🤖 [checkForBotAutoAction] Current player encontrado:', currentPlayer);
-        console.log('🤖 [checkForBotAutoAction] É bot?', currentPlayer ? this.isBot(currentPlayer) : false);
-
-        if (currentPlayer && this.isBot(currentPlayer)) {
+        if (shouldPerformAction) {
             console.log('🤖 [checkForBotAutoAction] Bot detectado, agendando ação automática...');
-            this.botPickTimer = setTimeout(() => {
-                console.log('🤖 [checkForBotAutoAction] Executando ação do bot...');
-                this.performBotAction(phase);
-            }, 2000 + Math.random() * 3000);
+
+            this.botPickTimer = this.botService.scheduleBotAction(
+                phase,
+                this.session,
+                this.champions,
+                () => {
+                    // Callback executado após a ação do bot
+                    console.log('🤖 [checkForBotAutoAction] Ação do bot concluída, atualizando interface...');
+                    console.log(`🤖 [checkForBotAutoAction] currentAction após bot: ${this.session?.currentAction}`);
+                    console.log(`🤖 [checkForBotAutoAction] total de fases: ${this.session?.phases.length}`);
+
+                    if (this.session && this.session.currentAction >= this.session.phases.length) {
+                        console.log('🤖 [checkForBotAutoAction] Sessão completada pelo bot');
+                        this.session.phase = 'completed';
+                        this.stopTimer();
+                    } else {
+                        console.log('🤖 [checkForBotAutoAction] Continuando para próxima ação...');
+                        this.updateCurrentTurn();
+                    }
+
+                    // Invalidar cache apenas quando há uma ação real (pick/ban do bot)
+                    console.log('🔄 [checkForBotAutoAction] Invalidando cache devido a ação real do bot');
+                    this.invalidateCache();
+                }
+            );
+            console.log(`🤖 [checkForBotAutoAction] Timer agendado: ${this.botPickTimer}`);
         } else {
             console.log('🤖 [checkForBotAutoAction] Não é bot ou jogador não encontrado');
         }
+
+        console.log(`🤖 [checkForBotAutoAction] === FIM DA VERIFICAÇÃO DE BOT ===`);
     }
 
     private getCurrentPlayer(): any {
@@ -527,63 +391,19 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
         const currentTeam = currentPhase.team;
         const teamPlayers = currentTeam === 'blue' ? this.session.blueTeam : this.session.redTeam;
 
-        return teamPlayers.find(p => this.comparePlayerWithId(p, currentPhase.playerId!));
-    }
-
-    private performBotAction(phase: PickBanPhase) {
-        console.log('🤖 [performBotAction] Executando ação do bot para fase:', phase);
-        
-        if (!this.session) {
-            console.log('⚠️ [performBotAction] Session não existe');
-            return;
-        }
-
-        const availableChampions = this.champions.filter(c =>
-            !this.isChampionBanned(c) && !this.isChampionPicked(c)
-        );
-
-        console.log('🤖 [performBotAction] Campeões disponíveis:', availableChampions.length);
-
-        if (availableChampions.length === 0) {
-            console.log('⚠️ [performBotAction] Nenhum campeão disponível');
-            return;
-        }
-
-        const randomChampion = availableChampions[Math.floor(Math.random() * availableChampions.length)];
-        console.log('🤖 [performBotAction] Campeão selecionado:', randomChampion.name);
-
-        phase.champion = randomChampion;
-        phase.locked = true;
-        phase.timeRemaining = 0;
-
-        this.session.currentAction++;
-
-        console.log('🤖 [performBotAction] Próxima ação:', this.session.currentAction);
-
-        if (this.session.currentAction >= this.session.phases.length) {
-            console.log('🤖 [performBotAction] Sessão completada');
-            this.session.phase = 'completed';
-            this.stopTimer();
-        } else {
-            console.log('🤖 [performBotAction] Atualizando próximo turno');
-            this.updateCurrentTurn();
-        }
-
-        // Invalidar cache apenas quando há uma ação real (pick/ban do bot)
-        console.log('🔄 [performBotAction] Invalidando cache devido a ação real do bot');
-        this.invalidateCache();
+        return teamPlayers.find(p => this.botService.comparePlayerWithId(p, currentPhase.playerId!));
     }
 
     checkIfMyTurn(phase: PickBanPhase): boolean {
         if (!this.currentPlayer) return false;
 
-        return this.comparePlayerWithId(this.currentPlayer, phase.playerId!);
+        return this.botService.comparePlayerWithId(this.currentPlayer, phase.playerId!);
     }
 
     getPlayerTeam(): 'blue' | 'red' {
         if (!this.currentPlayer || !this.session) return 'blue';
 
-        const blueTeamPlayer = this.session.blueTeam.find(p => this.comparePlayers(p, this.currentPlayer));
+        const blueTeamPlayer = this.session.blueTeam.find(p => this.botService.comparePlayers(p, this.currentPlayer));
         return blueTeamPlayer ? 'blue' : 'red';
     }
 
@@ -601,9 +421,10 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
             if (currentPhase.timeRemaining > 0) {
                 currentPhase.timeRemaining--;
                 this.timeRemaining = currentPhase.timeRemaining;
-                
+
+                // Usar detecção de mudanças otimizada apenas para o timer
                 // NÃO invalidar cache aqui - apenas atualizar o timer
-                // O cache só deve ser invalidado quando há mudanças reais nos dados
+                this.cdr.detectChanges();
             } else {
                 this.handleTimeOut();
             }
@@ -616,8 +437,21 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
         const currentPhase = this.session.phases[this.session.currentAction];
         if (!currentPhase) return;
 
-        // Auto-pick/ban para o jogador atual
-        this.performBotAction(currentPhase);
+        // Auto-pick/ban para o jogador atual usando o BotService
+        this.botService.performBotAction(currentPhase, this.session, this.champions);
+
+        this.session.currentAction++;
+
+        if (this.session.currentAction >= this.session.phases.length) {
+            this.session.phase = 'completed';
+            this.stopTimer();
+        } else {
+            this.updateCurrentTurn();
+        }
+
+        // Invalidar cache apenas quando há uma ação real (timeout)
+        console.log('🔄 [handleTimeOut] Invalidando cache devido a timeout');
+        this.invalidateCache();
     }
 
     completePickBan() {
@@ -642,14 +476,28 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
         const currentPhase = this.session.phases[this.session.currentAction];
         if (!currentPhase) return '';
 
-        const phaseNumber = this.session.currentAction + 1;
-        const totalPhases = this.session.phases.length;
+        const actionIndex = this.session.currentAction + 1; // +1 para mostrar ação 1-20
 
         if (currentPhase.action === 'ban') {
-            return `Ban ${Math.ceil(phaseNumber / 2)} de 3`;
+            if (actionIndex <= 6) {
+                // Primeira fase de bans (1-6)
+                const banNumber = actionIndex;
+                return `Ban ${banNumber} de 6 (1ª Fase)`;
+            } else {
+                // Segunda fase de bans (13-16)
+                const banNumber = actionIndex - 6;
+                return `Ban ${banNumber} de 4 (2ª Fase)`;
+            }
         } else {
-            const pickNumber = phaseNumber - 6; // -6 porque os primeiros 6 são bans
-            return `Pick ${Math.ceil(pickNumber / 2)} de 5`;
+            if (actionIndex >= 7 && actionIndex <= 12) {
+                // Primeira fase de picks (7-12)
+                const pickNumber = actionIndex - 6;
+                return `Pick ${pickNumber} de 6 (1ª Fase)`;
+            } else {
+                // Segunda fase de picks (17-20)
+                const pickNumber = actionIndex - 12;
+                return `Pick ${pickNumber} de 4 (2ª Fase)`;
+            }
         }
     }
 
@@ -673,7 +521,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
         this._lastCacheUpdate = Date.now();
     }
 
-    private isCacheValid(): boolean {
+    public isCacheValid(): boolean {
         // Verificar se há mudanças reais que requerem invalidação
         if (this.checkStateChange()) {
             return false;
@@ -685,7 +533,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
 
     getBannedChampions(): Champion[] {
         // Verificar se o cache é válido antes de usar
-        if (!this.shouldInvalidateCache() && this._cachedBannedChampions) {
+        if (this.isCacheValidForDisplay() && this._cachedBannedChampions) {
             return this._cachedBannedChampions;
         }
 
@@ -706,10 +554,10 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
 
     getTeamPicks(team: 'blue' | 'red'): Champion[] {
         // Verificar se o cache é válido antes de usar
-        if (team === 'blue' && !this.shouldInvalidateCache() && this._cachedBlueTeamPicks) {
+        if (team === 'blue' && this.isCacheValidForDisplay() && this._cachedBlueTeamPicks) {
             return this._cachedBlueTeamPicks;
         }
-        if (team === 'red' && !this.shouldInvalidateCache() && this._cachedRedTeamPicks) {
+        if (team === 'red' && this.isCacheValidForDisplay() && this._cachedRedTeamPicks) {
             return this._cachedRedTeamPicks;
         }
 
@@ -732,13 +580,13 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
     getSortedTeamByLane(team: 'blue' | 'red'): any[] {
         console.log(`🔍 [getSortedTeamByLane] Chamado para time: ${team}`);
         console.log(`🔍 [getSortedTeamByLane] Session existe:`, !!this.session);
-        
+
         // Verificar se o cache é válido antes de usar
-        if (team === 'blue' && !this.shouldInvalidateCache() && this._cachedSortedBlueTeam) {
+        if (team === 'blue' && this.isCacheValidForDisplay() && this._cachedSortedBlueTeam) {
             console.log(`🔍 [getSortedTeamByLane] Retornando cache para blue team:`, this._cachedSortedBlueTeam);
             return this._cachedSortedBlueTeam;
         }
-        if (team === 'red' && !this.shouldInvalidateCache() && this._cachedSortedRedTeam) {
+        if (team === 'red' && this.isCacheValidForDisplay() && this._cachedSortedRedTeam) {
             console.log(`🔍 [getSortedTeamByLane] Retornando cache para red team:`, this._cachedSortedRedTeam);
             return this._cachedSortedRedTeam;
         }
@@ -750,7 +598,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
 
         const teamPlayers = team === 'blue' ? this.session.blueTeam : this.session.redTeam;
         console.log(`🔍 [getSortedTeamByLane] Team players para ${team}:`, teamPlayers);
-        
+
         const sortedPlayers = this.sortPlayersByLane(teamPlayers);
         console.log(`🔍 [getSortedTeamByLane] Players ordenados para ${team}:`, sortedPlayers);
 
@@ -767,7 +615,9 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
     private sortPlayersByLane(players: any[]): any[] {
         const laneOrder = ['top', 'jungle', 'mid', 'adc', 'support'];
 
-        return players.sort((a, b) => {
+        console.log('🔄 [sortPlayersByLane] Ordenando jogadores por lane:', players.map(p => ({ name: p.summonerName, lane: p.lane })));
+
+        const sortedPlayers = players.sort((a, b) => {
             const laneA = a.lane || 'unknown';
             const laneB = b.lane || 'unknown';
 
@@ -780,6 +630,10 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
 
             return indexA - indexB;
         });
+
+        console.log('✅ [sortPlayersByLane] Jogadores ordenados:', sortedPlayers.map(p => ({ name: p.summonerName, lane: p.lane })));
+
+        return sortedPlayers;
     }
 
     getPlayerLaneDisplayForPlayer(player: any): string {
@@ -801,7 +655,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
 
     isCurrentPlayer(player: any): boolean {
         if (!this.currentPlayer || !player) return false;
-        return this.comparePlayers(this.currentPlayer, player);
+        return this.botService.comparePlayers(this.currentPlayer, player);
     }
 
     getTeamBans(team: 'blue' | 'red'): Champion[] {
@@ -818,7 +672,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
         const teamPlayers = team === 'blue' ? this.session.blueTeam : this.session.redTeam;
         const player = teamPlayers[pickIndex];
 
-        return player ? this.comparePlayers(this.currentPlayer, player) : false;
+        return player ? this.botService.comparePlayers(this.currentPlayer, player) : false;
     }
 
     isChampionBanned(champion: Champion): boolean {
@@ -835,15 +689,36 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
     getPlayerPick(team: 'blue' | 'red', player: any): Champion | null {
         if (!this.session) return null;
 
-        const teamPicks = this.getTeamPicks(team);
-        const teamPlayers = team === 'blue' ? this.session.blueTeam : this.session.redTeam;
+        // Obter jogadores ordenados por lane
+        const sortedPlayers = this.getSortedTeamByLane(team);
 
-        // Encontrar o índice do jogador no time
-        const playerIndex = teamPlayers.findIndex(p => this.comparePlayers(p, player));
+        // Encontrar o índice do jogador no time ordenado
+        const playerIndex = sortedPlayers.findIndex(p => this.botService.comparePlayers(p, player));
         if (playerIndex === -1) return null;
 
-        // Retornar o pick correspondente ao índice do jogador
-        return teamPicks[playerIndex] || null;
+        // Mapear o índice do jogador para as fases de pick correspondentes
+        // Baseado no novo fluxo da partida ranqueada
+        if (team === 'blue') {
+            // Blue team picks: ações 7, 10, 11, 18, 19
+            const bluePickActions = [6, 9, 10, 17, 18]; // -1 porque currentAction é 0-based
+            const playerPickAction = bluePickActions[playerIndex];
+
+            if (playerPickAction !== undefined) {
+                const pickPhase = this.session.phases[playerPickAction];
+                return pickPhase?.champion || null;
+            }
+        } else {
+            // Red team picks: ações 8, 9, 12, 17, 20
+            const redPickActions = [7, 8, 11, 16, 19]; // -1 porque currentAction é 0-based
+            const playerPickAction = redPickActions[playerIndex];
+
+            if (playerPickAction !== undefined) {
+                const pickPhase = this.session.phases[playerPickAction];
+                return pickPhase?.champion || null;
+            }
+        }
+
+        return null;
     }
 
     getCurrentPlayerName(): string {
@@ -874,7 +749,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
     }
 
     isPlayerBot(player: any): boolean {
-        return this.isBot(player);
+        return this.botService.isBot(player);
     }
 
     onImageError(event: any, champion: Champion): void {
@@ -893,7 +768,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
     // MÉTODO PARA RECEBER SELEÇÃO DO MODAL
     onChampionSelected(champion: Champion): void {
         console.log('🎯 [onChampionSelected] Campeão selecionado:', champion.name);
-        
+
         if (!this.session) return;
 
         const currentPhase = this.session.phases[this.session.currentAction];
@@ -928,6 +803,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
         if (!this.session) return '';
 
         // Gerar hash baseado apenas nos dados que afetam a interface
+        // NÃO incluir timeRemaining pois muda a cada segundo
         const stateData = {
             currentAction: this.session.currentAction,
             phase: this.session.phase,
@@ -937,6 +813,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
                 locked: p.locked,
                 championId: p.champion?.id,
                 playerId: p.playerId
+                // NÃO incluir timeRemaining aqui
             }))
         };
 
@@ -962,7 +839,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
     private checkStateChange(): boolean {
         const newStateHash = this.generateSessionStateHash();
         const newActionHash = this.generateActionHash();
-        
+
         const stateChanged = newStateHash !== this._sessionStateHash;
         const actionChanged = newActionHash !== this._lastActionHash;
 
@@ -970,7 +847,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
             console.log('🔄 [Cache] Mudança detectada - invalidando cache');
             console.log('🔄 [Cache] State changed:', stateChanged);
             console.log('🔄 [Cache] Action changed:', actionChanged);
-            
+
             this._sessionStateHash = newStateHash;
             this._lastActionHash = newActionHash;
             this._lastStateUpdate = Date.now();
@@ -981,19 +858,51 @@ export class DraftPickBanComponent implements OnInit, OnDestroy {
     }
 
     private shouldInvalidateCache(): boolean {
-        // Verificar se há mudanças reais nos dados
+        // Verificar se há mudanças reais nos dados (não timer)
         if (this.checkStateChange()) {
+            console.log('🔄 [Cache] Mudança real detectada - invalidando cache');
+            this._lastRealActionTime = Date.now();
             return true;
         }
 
-        // Verificar se o cache expirou por tempo
+        // Verificar se o cache expirou por tempo (apenas como fallback)
+        // Mas apenas se não houve ação real recente
+        const timeSinceLastAction = Date.now() - this._lastRealActionTime;
         const cacheExpired = Date.now() - this._lastCacheUpdate > this.CACHE_DURATION;
-        
-        if (cacheExpired) {
-            console.log('⏰ [Cache] Cache expirado por tempo');
+
+        if (cacheExpired && timeSinceLastAction > this.CACHE_DURATION) {
+            console.log('⏰ [Cache] Cache expirado por tempo (sem ações recentes)');
             return true;
         }
 
         return false;
+    }
+
+    // Método otimizado para verificar cache sem logs desnecessários
+    private isCacheValidForDisplay(): boolean {
+        // Verificar se há mudanças reais nos dados (não timer)
+        const newStateHash = this.generateSessionStateHash();
+        const newActionHash = this.generateActionHash();
+
+        const stateChanged = newStateHash !== this._sessionStateHash;
+        const actionChanged = newActionHash !== this._lastActionHash;
+
+        if (stateChanged || actionChanged) {
+            this._sessionStateHash = newStateHash;
+            this._lastActionHash = newActionHash;
+            this._lastStateUpdate = Date.now();
+            this._lastRealActionTime = Date.now();
+            return false;
+        }
+
+        // Verificar se o cache expirou por tempo (apenas como fallback)
+        const timeSinceLastAction = Date.now() - this._lastRealActionTime;
+        const cacheExpired = Date.now() - this._lastCacheUpdate > this.CACHE_DURATION;
+
+        if (cacheExpired && timeSinceLastAction > this.CACHE_DURATION) {
+            return false;
+        }
+
+        return true;
     }
 } 
