@@ -264,13 +264,12 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit() {
-    console.log('🔥 CustomPickBanComponent ngOnInit iniciado');
+    console.log('🚀 CustomPickBanComponent ngOnInit iniciado');
     console.log('📊 matchData recebido:', this.matchData);
     console.log('👤 currentPlayer recebido:', this.currentPlayer);
 
     // Carregar todos os campeões do serviço
-    this.champions = this.championService.getAllChampions();
-    this.championsByRole = this.championService.getChampionsByRole();
+    this.loadChampions();
 
     console.log('🏆 Campeões carregados no Pick&Ban:', this.champions.length);
     console.log('📁 Campeões por role:', Object.keys(this.championsByRole).map(key => `${key}: ${this.championsByRole[key]?.length || 0}`));
@@ -2371,5 +2370,32 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
   private forceCacheInvalidation(): void {
     this._cacheInvalidationNeeded = true;
     this.invalidateCache();
+  }
+
+  private async loadChampions() {
+    try {
+      this.championService.getAllChampions().subscribe({
+        next: (champions) => {
+          this.champions = champions;
+          console.log(`✅ [custom-pick-ban] ${this.champions.length} campeões carregados`);
+          
+          // Carregar campeões por role
+          this.championService.getChampionsByRole().subscribe({
+            next: (championsByRole) => {
+              this.championsByRole = championsByRole;
+              console.log('✅ [custom-pick-ban] Campeões por role carregados');
+            },
+            error: (error) => {
+              console.error('❌ [custom-pick-ban] Erro ao carregar campeões por role:', error);
+            }
+          });
+        },
+        error: (error) => {
+          console.error('❌ [custom-pick-ban] Erro ao carregar campeões:', error);
+        }
+      });
+    } catch (error) {
+      console.error('❌ [custom-pick-ban] Erro ao carregar campeões:', error);
+    }
   }
 }

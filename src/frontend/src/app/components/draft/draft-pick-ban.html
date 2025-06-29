@@ -146,7 +146,7 @@
       isMyTurn: {{ isMyTurn }}<br>
       currentAction: {{ session.currentAction }}<br>
       currentPlayer: {{ currentPlayer?.summonerName || currentPlayer?.name || 'N/A' }}<br>
-      phase: {{ session.phases[session.currentAction]?.action || 'N/A' }}
+      phase: {{ session.phases[session.currentAction].action || 'N/A' }}
     </div>
     
     <div class="selection-header">

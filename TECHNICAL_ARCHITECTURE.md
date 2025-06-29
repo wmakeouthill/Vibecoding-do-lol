@@ -4,7 +4,6 @@
 
 O sistema foi projetado e **totalmente implementado** com uma arquitetura modular e escalável, separando responsabilidades entre backend, frontend e integração com APIs externas.
 
-```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   Frontend      │    │   Backend       │    │  External APIs  │
 │   (Angular 18)  │    │   (Node.js 20)  │    │                 │
@@ -17,11 +16,9 @@ O sistema foi projetado e **totalmente implementado** com uma arquitetura modula
         │                        │
         └────────────────────────┘
            ✅ Electron Container
-```
 
 ## 🏗️ Estrutura de Diretórios - IMPLEMENTADO
 
-```
 /src
 ├── backend/                    # ✅ Servidor Node.js + TypeScript
 │   ├── server.ts              # ✅ Ponto de entrada e rotas
@@ -44,11 +41,11 @@ O sistema foi projetado e **totalmente implementado** com uma arquitetura modula
 └── electron/                   # ✅ Configuração desktop
     ├── main.ts                # ✅ Processo principal
     └── preload.ts             # ✅ Scripts de segurança
-```
 
 ## 🔧 Camada Backend
 
 ### Servidor Principal (`server.ts`)
+
 - **Framework**: Express.js com TypeScript
 - **Middleware**: CORS, Helmet (segurança), Rate Limiting
 - **WebSocket**: Comunicação real-time para matchmaking
@@ -57,6 +54,7 @@ O sistema foi projetado e **totalmente implementado** com uma arquitetura modula
 ### Serviços Especializados
 
 #### `RiotAPIService.ts`
+
 ```typescript
 class RiotAPIService {
   // Integração com Account API (Riot ID)
@@ -74,6 +72,7 @@ class RiotAPIService {
 ```
 
 #### `LCUService.ts`
+
 ```typescript
 class LCUService {
   // Conecta automaticamente ao League Client
@@ -91,6 +90,7 @@ class LCUService {
 ```
 
 #### `PlayerService.ts`
+
 ```typescript
 class PlayerService {
   // Registro automático via Riot ID
@@ -105,6 +105,7 @@ class PlayerService {
 ```
 
 #### `MatchmakingService.ts`
+
 ```typescript
 class MatchmakingService {
   // Adiciona jogador à fila com preferências
@@ -172,6 +173,7 @@ updatePlayerMMR(player: Player, matchResult: MatchResult): number {
 ### Serviços de Integração
 
 #### `ApiService.ts`
+
 ```typescript
 @Injectable()
 export class ApiService {
@@ -188,6 +190,7 @@ export class ApiService {
 ```
 
 #### `WebsocketService.ts`
+
 ```typescript
 @Injectable()
 export class WebsocketService {
@@ -246,6 +249,7 @@ CREATE TABLE settings (
 ```
 
 ### `DatabaseManager.ts`
+
 ```typescript
 class DatabaseManager {
   // Operações CRUD para jogadores
@@ -266,30 +270,28 @@ class DatabaseManager {
 ## 🔄 Fluxo de Dados Principais
 
 ### 1. Auto-Load do Jogador
-```
-Usuario abre app → LCU detectado → getCurrentSummoner() → 
-Extrair Riot ID → Buscar na Riot API → Salvar/Atualizar no DB → 
+
+Usuario abre app → LCU detectado → getCurrentSummoner() →
+Extrair Riot ID → Buscar na Riot API → Salvar/Atualizar no DB →
 Exibir no Frontend
-```
 
 ### 2. Matchmaking Flow
-```
-Jogador entra na fila → WebSocket notification → 
-Algoritmo de matching → Equipes balanceadas → 
-Match found → Todos aceitam → Criar lobby LCU → 
+
+Jogador entra na fila → WebSocket notification →
+Algoritmo de matching → Equipes balanceadas →
+Match found → Todos aceitam → Criar lobby LCU →
 Convites automáticos → Jogo iniciado
-```
 
 ### 3. Pós-Partida
-```
-Partida termina → Detectar resultado → Calcular novo MMR → 
-Atualizar banco de dados → Notificar jogadores → 
+
+Partida termina → Detectar resultado → Calcular novo MMR →
+Atualizar banco de dados → Notificar jogadores →
 Atualizar estatísticas
-```
 
 ## 🛡️ Segurança e Performance
 
 ### Medidas de Segurança
+
 - **Helmet.js**: Headers de segurança HTTP
 - **CORS**: Controle de origem cruzada
 - **Rate Limiting**: 100 requests/15min por IP
@@ -297,6 +299,7 @@ Atualizar estatísticas
 - **API Key Management**: Armazenamento seguro da chave Riot
 
 ### Otimizações de Performance
+
 - **WebSocket**: Comunicação real-time eficiente
 - **Database Indexing**: Índices em campos críticos
 - **Caching**: Cache de dados da Riot API
@@ -304,6 +307,7 @@ Atualizar estatísticas
 - **Lazy Loading**: Componentes carregados sob demanda
 
 ### Monitoramento
+
 - **Health Checks**: Endpoint `/api/health`
 - **Error Logging**: Console logs estruturados
 - **Performance Metrics**: Tempo de resposta das APIs
@@ -312,6 +316,7 @@ Atualizar estatísticas
 ## 🚀 Deployment e Distribuição
 
 ### Build Process
+
 ```bash
 # 1. Build backend (TypeScript → JavaScript)
 npm run build:backend
@@ -327,11 +332,13 @@ npm run dist
 ```
 
 ### Arquivos de Saída
+
 - **Windows**: `.exe` installer + portable
 - **macOS**: `.dmg` + `.app` bundle  
 - **Linux**: `.AppImage` + `.deb` + `.rpm`
 
 ### Auto-Update
+
 - **Electron Builder**: Sistema de update automático
 - **GitHub Releases**: Distribuição de versões
 - **Delta Updates**: Updates incrementais para economia de banda
@@ -340,7 +347,6 @@ npm run dist
 
 ### Arquitetura do Draft System
 
-```
 ┌─────────────────────────────────────────────────────────────┐
 │                     Draft Flow (Implementado)              │
 ├─────────────────────────────────────────────────────────────┤
@@ -364,11 +370,11 @@ npm run dist
 │     └─► Real-time updates                                 │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
-```
 
 ### Componentes Implementados
 
 #### 1. Match Found Component (✅ Completo)
+
 ```typescript
 // app.ts - Modal de partida encontrada
 showMatchFoundModal(matchData: MatchFoundData): void {
@@ -393,6 +399,7 @@ handleMatchAccept(): void {
 ```
 
 #### 2. Leadership System (✅ Completo)
+
 ```typescript
 // Sistema de liderança inteligente
 private determineLeader(blueTeam: any[]): any {
@@ -421,6 +428,7 @@ getEligiblePlayersForTransfer(): any[] {
 ```
 
 #### 3. Pick & Ban Interface (✅ Completo)
+
 ```typescript
 // Grid de campeões com filtragem
 getAvailableChampions(): any[] {
@@ -458,6 +466,7 @@ confirmSelection(): void {
 ### Interface HTML (✅ Implementado)
 
 #### Draft Preview
+
 ```html
 <!-- app-simple.html - Preview dos times -->
 <div class="draft-preview" *ngIf="inDraftPhase && draftPhase === 'preview'">
@@ -512,6 +521,7 @@ confirmSelection(): void {
 ```
 
 #### Pick & Ban Interface
+
 ```html
 <!-- app-simple.html - Pick & Ban -->
 <div class="pickban-interface" *ngIf="inDraftPhase && draftPhase === 'pickban'">

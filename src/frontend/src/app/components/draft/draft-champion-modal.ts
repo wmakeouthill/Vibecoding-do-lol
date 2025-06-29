@@ -85,21 +85,37 @@ export class DraftChampionModalComponent implements OnInit, OnDestroy, OnChanges
 
   private async loadChampions() {
     try {
-      this.champions = await this.championService.getAllChampions();
-      this.organizeChampionsByRole();
+      this.championService.getAllChampions().subscribe({
+        next: (champions) => {
+          this.champions = champions;
+          this.organizeChampionsByRole();
+        },
+        error: (error) => {
+          console.error('Erro ao carregar campeões:', error);
+        }
+      });
     } catch (error) {
       console.error('Erro ao carregar campeões:', error);
     }
   }
 
   private organizeChampionsByRole() {
-    this.championsByRole = {
-      top: this.champions.filter(c => c.tags?.includes('Fighter') || c.tags?.includes('Tank')),
-      jungle: this.champions.filter(c => c.tags?.includes('Fighter') || c.tags?.includes('Assassin')),
-      mid: this.champions.filter(c => c.tags?.includes('Mage') || c.tags?.includes('Assassin')),
-      adc: this.champions.filter(c => c.tags?.includes('Marksman')),
-      support: this.champions.filter(c => c.tags?.includes('Support'))
-    };
+    this.championService.getChampionsByRole().subscribe({
+      next: (championsByRole) => {
+        this.championsByRole = championsByRole;
+      },
+      error: (error) => {
+        console.error('Erro ao organizar campeões por role:', error);
+        // Fallback manual se necessário
+        this.championsByRole = {
+          top: this.champions.filter(c => c.tags?.includes('Fighter') || c.tags?.includes('Tank')),
+          jungle: this.champions.filter(c => c.tags?.includes('Fighter') || c.tags?.includes('Assassin')),
+          mid: this.champions.filter(c => c.tags?.includes('Mage') || c.tags?.includes('Assassin')),
+          adc: this.champions.filter(c => c.tags?.includes('Marksman')),
+          support: this.champions.filter(c => c.tags?.includes('Support'))
+        };
+      }
+    });
   }
 
   // MÉTODOS PARA COMPARAÇÃO DE JOGADORES

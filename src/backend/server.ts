@@ -2,6 +2,20 @@ import express, { Request, Response, NextFunction, RequestHandler } from 'expres
 import dotenv from 'dotenv';
 import * as path from 'path';
 import * as fs from 'fs';
+import cors from 'cors';
+import rateLimit from 'express-rate-limit';
+import { createServer, IncomingMessage } from 'http';
+import { WebSocketServer, WebSocket } from 'ws';
+import { Server as SocketIOServer } from 'socket.io';
+import { DatabaseManager } from './database/DatabaseManager';
+import { MatchmakingService } from './services/MatchmakingService';
+import { PlayerService } from './services/PlayerService';
+import { RiotAPIService } from './services/RiotAPIService';
+import { LCUService } from './services/LCUService';
+import { MatchHistoryService } from './services/MatchHistoryService';
+import { DiscordService } from './services/DiscordService';
+import { DataDragonService } from './services/DataDragonService';
+import { setupChampionRoutes } from './routes/champions';
 
 // Carregar variáveis de ambiente do arquivo .env
 const envPath = path.resolve(process.cwd(), '.env');
@@ -12,21 +26,6 @@ if (fs.existsSync(envPath)) {
   console.warn('⚠️ Arquivo .env não encontrado em:', envPath);
   dotenv.config(); // Tentar carregar do diretório atual
 }
-
-import cors from 'cors';
-import rateLimit from 'express-rate-limit';
-import { createServer, IncomingMessage } from 'http';
-import { WebSocketServer, WebSocket } from 'ws';
-import { Server as SocketIOServer } from 'socket.io';
-
-import { DatabaseManager } from './database/DatabaseManager';
-import { MatchmakingService } from './services/MatchmakingService';
-import { PlayerService } from './services/PlayerService';
-import { RiotAPIService } from './services/RiotAPIService';
-import { LCUService } from './services/LCUService';
-import { MatchHistoryService } from './services/MatchHistoryService';
-import { DiscordService } from './services/DiscordService';
-import { DataDragonService } from './services/DataDragonService';
 
 const app = express();
 const server = createServer(app);
@@ -2341,6 +2340,11 @@ app.use((error: any, req: Request, res: Response, next: NextFunction) => {
   res.status(500).json({ error: 'Erro interno do servidor' });
 });
 
+// ROTA DE TESTE SIMPLES
+app.get('/api/test', ((req: Request, res: Response) => {
+  res.json({ ok: true });
+}) as RequestHandler);
+
 // 404 Handler
 app.use((req: Request, res: Response) => {  // Em produção, para rotas não API, tentar servir index.html (SPA routing)
   if (!isDev && !req.path.startsWith('/api/')) {
@@ -2376,6 +2380,11 @@ app.use((req: Request, res: Response) => {  // Em produção, para rotas não AP
 // Inicializar servidor
 async function startServer() {
   try {
+    // Configurar rotas de campeões ANTES de inicializar serviços
+    console.log('🔧 [startServer] Configurando rotas de campeões...');
+    setupChampionRoutes(app, dataDragonService);
+    console.log('✅ Rotas de campeões configuradas');
+
     // Inicializar serviços
     await initializeServices();    // Iniciar servidor
     server.listen(PORT as number, '0.0.0.0', () => {
@@ -2578,3 +2587,72 @@ app.post('/api/matches/:matchId/game-completed', (async (req: Request, res: Resp
     res.status(500).json({ error: error.message });
   }
 }) as RequestHandler);
+
+// === FIM CONFIGURAÇÕES APIs ===
+
+// Endpoint para obter todos os campeões do DataDragon
+app.get('/api/champions', (async (req: Request, res: Response) => {
+  try {
+    console.log('🏆 [GET /api/champions] Obtendo dados dos campeões...');
+
+    // Garantir que os campeões estejam carregados
+    if (!dataDragonService.isLoaded()) {
+      console.log('🔄 [GET /api/champions] Carregando campeões...');
+      await dataDragonService.loadChampions();
+    }
+
+    const champions = dataDragonService.getAllChampions();
+    const championsByRole = dataDragonService.getChampionsByRole();
+
+    console.log(`✅ [GET /api/champions] ${champions.length} campeões retornados`);
+
+    res.json({
+      success: true,
+      champions: champions,
+      championsByRole: championsByRole,
+      total: champions.length
+    });
+
+  } catch (error: any) {
+    console.error('❌ [GET /api/champions] Erro:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}) as RequestHandler);
+
+// Endpoint para obter campeões por role
+app.get('/api/champions/role/:role', (async (req: Request, res: Response) => {
+  try {
+    const { role } = req.params;
+    console.log(`🏆 [GET /api/champions/role/${role}] Obtendo campeões da role...`);
+
+    // Garantir que os campeões estejam carregados
+    if (!dataDragonService.isLoaded()) {
+      console.log('🔄 [GET /api/champions/role] Carregando campeões...');
+      await dataDragonService.loadChampions();
+    }
+
+    const championsByRole = dataDragonService.getChampionsByRole();
+    const roleChampions = championsByRole[role as keyof typeof championsByRole] || [];
+
+    console.log(`✅ [GET /api/champions/role/${role}] ${roleChampions.length} campeões retornados`);
+
+    res.json({
+      success: true,
+      champions: roleChampions,
+      role: role,
+      total: roleChampions.length
+    });
+
+  } catch (error: any) {
+    console.error('❌ [GET /api/champions/role] Erro:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}) as RequestHandler);
+
+// Endpoint para corrigir status das partidas antigas

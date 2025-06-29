@@ -269,4 +269,77 @@ export class DataDragonService {
 
     return bestLane;
   }
+
+  /**
+   * Obtém todos os campeões no formato que o frontend espera
+   */
+  getAllChampions(): any[] {
+    if (!this.championsLoaded) {
+      console.warn('⚠️ Champions não carregados. Retornando array vazio...');
+      return [];
+    }
+
+    return Object.entries(this.championsCache).map(([championKey, champion]) => ({
+      id: champion.key,
+      key: champion.key,
+      name: champion.name,
+      title: champion.title,
+      image: this.getChampionImageUrl(championKey),
+      tags: champion.tags,
+      info: champion.info
+    }));
+  }
+
+  /**
+   * Obtém campeões organizados por role
+   */
+  getChampionsByRole(): any {
+    const allChampions = this.getAllChampions();
+    
+    const roleMapping = {
+      top: ['Fighter', 'Tank'],
+      jungle: ['Assassin', 'Fighter', 'Tank'],
+      mid: ['Mage', 'Assassin'],
+      adc: ['Marksman'],
+      support: ['Support', 'Tank', 'Mage']
+    };
+
+    const result: any = {
+      top: [],
+      jungle: [],
+      mid: [],
+      adc: [],
+      support: [],
+      all: allChampions
+    };
+
+    allChampions.forEach(champion => {
+      // Top lane
+      if (champion.tags.some((tag: string) => roleMapping.top.includes(tag))) {
+        result.top.push(champion);
+      }
+
+      // Jungle
+      if (champion.tags.some((tag: string) => roleMapping.jungle.includes(tag))) {
+        result.jungle.push(champion);
+      }
+
+      // Mid lane
+      if (champion.tags.some((tag: string) => roleMapping.mid.includes(tag))) {
+        result.mid.push(champion);
+      }
+
+      // ADC
+      if (champion.tags.some((tag: string) => roleMapping.adc.includes(tag))) {
+        result.adc.push(champion);
+      }
+
+      // Support
+      if (champion.tags.some((tag: string) => roleMapping.support.includes(tag))) {
+        result.support.push(champion);
+      }
+    });
+
+    return result;
+  }
 } 

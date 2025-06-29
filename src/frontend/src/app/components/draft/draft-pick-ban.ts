@@ -120,22 +120,38 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
     private async loadChampions() {
         try {
             console.log('🔄 [loadChampions] Carregando campeões...');
-            this.champions = await this.championService.getAllChampions();
-            console.log(`✅ [loadChampions] ${this.champions.length} campeões carregados`);
-            this.organizeChampionsByRole();
+            this.championService.getAllChampions().subscribe({
+                next: (champions) => {
+                    this.champions = champions;
+                    console.log(`✅ [loadChampions] ${this.champions.length} campeões carregados`);
+                    this.organizeChampionsByRole();
+                },
+                error: (error) => {
+                    console.error('❌ [loadChampions] Erro ao carregar campeões:', error);
+                }
+            });
         } catch (error) {
             console.error('❌ [loadChampions] Erro ao carregar campeões:', error);
         }
     }
 
     private organizeChampionsByRole() {
-        this.championsByRole = {
-            top: this.champions.filter(c => c.tags?.includes('Fighter') || c.tags?.includes('Tank')),
-            jungle: this.champions.filter(c => c.tags?.includes('Fighter') || c.tags?.includes('Assassin')),
-            mid: this.champions.filter(c => c.tags?.includes('Mage') || c.tags?.includes('Assassin')),
-            adc: this.champions.filter(c => c.tags?.includes('Marksman')),
-            support: this.champions.filter(c => c.tags?.includes('Support'))
-        };
+        this.championService.getChampionsByRole().subscribe({
+            next: (championsByRole) => {
+                this.championsByRole = championsByRole;
+            },
+            error: (error) => {
+                console.error('❌ [organizeChampionsByRole] Erro ao organizar campeões por role:', error);
+                // Fallback manual se necessário
+                this.championsByRole = {
+                    top: this.champions.filter(c => c.tags?.includes('Fighter') || c.tags?.includes('Tank')),
+                    jungle: this.champions.filter(c => c.tags?.includes('Fighter') || c.tags?.includes('Assassin')),
+                    mid: this.champions.filter(c => c.tags?.includes('Mage') || c.tags?.includes('Assassin')),
+                    adc: this.champions.filter(c => c.tags?.includes('Marksman')),
+                    support: this.champions.filter(c => c.tags?.includes('Support'))
+                };
+            }
+        });
     }
 
     initializePickBanSession() {
