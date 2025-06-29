@@ -209,4 +209,24 @@
       </div>
     </div>
   </div>
+
+  <!-- Champion Selection Modal -->
+  <app-draft-champion-modal
+    [session]="session"
+    [currentPlayer]="currentPlayer"
+    [isVisible]="showChampionModal"
+    (onChampionSelected)="onChampionSelected($event)"
+    (onClose)="showChampionModal = false">
+  </app-draft-champion-modal>
+
+  <!-- Confirmation Modal -->
+  <app-draft-confirmation-modal
+    [session]="session"
+    [currentPlayer]="currentPlayer"
+    [isVisible]="showConfirmationModal"
+    (onConfirm)="completePickBan()"
+    (onCancel)="cancelPickBan()"
+    (onClose)="showConfirmationModal = false"
+    (onEditPick)="openChampionModal()">
+  </app-draft-confirmation-modal>
 </div>

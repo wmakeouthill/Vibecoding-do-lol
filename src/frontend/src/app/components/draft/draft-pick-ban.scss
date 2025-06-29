@@ -154,10 +154,12 @@
 }
 
 .banned-champions-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
   justify-content: center;
-  flex-wrap: wrap;
+  max-width: 120px;
+  margin: 0 auto;
 }
 
 .banned-champion {
@@ -307,10 +309,12 @@
 }
 
 .banned-champions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
   justify-content: center;
-  flex-wrap: wrap;
+  max-width: 200px;
+  margin: 0 auto;
 }
 
 // ========== SELEÇÃO DE CAMPEÕES ==========

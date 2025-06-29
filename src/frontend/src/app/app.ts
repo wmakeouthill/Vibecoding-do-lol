@@ -10,8 +10,6 @@ import { MatchHistoryComponent } from './components/match-history/match-history'
 import { LeaderboardComponent } from './components/leaderboard/leaderboard';
 import { MatchFoundComponent, MatchFoundData } from './components/match-found/match-found';
 import { DraftPickBanComponent } from './components/draft/draft-pick-ban';
-import { DraftChampionModalComponent } from './components/draft/draft-champion-modal';
-import { DraftConfirmationModalComponent } from './components/draft/draft-confirmation-modal';
 import { GameInProgressComponent } from './components/game-in-progress/game-in-progress';
 import { ApiService } from './services/api';
 import { QueueStateService } from './services/queue-state';
@@ -30,8 +28,6 @@ import type { Notification } from './interfaces';
     LeaderboardComponent,
     MatchFoundComponent,
     DraftPickBanComponent,
-    DraftChampionModalComponent,
-    DraftConfirmationModalComponent,
     GameInProgressComponent
   ],
   templateUrl: './app-simple.html',
@@ -2390,16 +2386,27 @@ export class App implements OnInit, OnDestroy {
 
   // Add getter for currentMatchData to be compatible with CustomPickBanComponent
   get currentMatchData() {
-    if (!this.draftData) return null;
+    if (!this.draftData) {
+      console.log('🔍 [currentMatchData] draftData não está disponível');
+      return null;
+    }
 
     console.log('🔍 [currentMatchData] draftData disponível:', this.draftData);
     console.log('🔍 [currentMatchData] Propriedades:', Object.keys(this.draftData));
 
-    return {
+    const matchData = {
       id: this.draftData.matchId,
       team1: this.draftData.team1 || this.draftData.blueTeam || [],
       team2: this.draftData.team2 || this.draftData.redTeam || []
     };
+
+    console.log('🔍 [currentMatchData] MatchData construído:', matchData);
+    console.log('🔍 [currentMatchData] Team1 size:', matchData.team1.length);
+    console.log('🔍 [currentMatchData] Team2 size:', matchData.team2.length);
+    console.log('🔍 [currentMatchData] Team1:', matchData.team1);
+    console.log('🔍 [currentMatchData] Team2:', matchData.team2);
+
+    return matchData;
   }
 
   // Método de teste para simular draft phase

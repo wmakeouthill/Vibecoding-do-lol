@@ -26,7 +26,7 @@ interface CustomPickBanSession {
 interface TeamSlot {
   player: any;
   champion?: Champion;
-  phaseIndex?: number;
+  phaseIndex: number;
 }
 
 @Component({
@@ -223,12 +223,12 @@ export class DraftConfirmationModalComponent {
     return teamPlayers.map((player, index) => ({
       player,
       champion: teamPicks[index] || undefined,
-      phaseIndex: this.getPhaseIndexForPlayer(player)
+      phaseIndex: this.getPhaseIndexForPlayer(player) || 0
     }));
   }
 
   private getPhaseIndexForPlayer(player: any): number {
-    if (!this.session) return -1;
+    if (!this.session) return 0;
 
     // Encontrar a fase onde este jogador fez pick
     for (let i = 0; i < this.session.phases.length; i++) {
@@ -238,7 +238,7 @@ export class DraftConfirmationModalComponent {
       }
     }
 
-    return -1;
+    return 0;
   }
 
   // MÉTODOS PARA SLOTS VAZIOS

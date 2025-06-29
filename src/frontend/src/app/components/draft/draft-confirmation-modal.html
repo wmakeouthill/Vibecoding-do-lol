@@ -46,7 +46,7 @@
                 </div>
                 <div class="champion-placeholder" *ngIf="!slot.champion">?</div>
                 <button class="edit-btn"
-                  (click)="isPlayerBot(slot.player) ? confirmBotPick(slot.player.id || slot.player.summonerName, slot.champion?.phaseIndex) : startEditingPick(slot.player.id || slot.player.summonerName, slot.champion?.phaseIndex || 0)">
+                  (click)="isPlayerBot(slot.player) ? confirmBotPick(slot.player.id || slot.player.summonerName, slot.phaseIndex) : startEditingPick(slot.player.id || slot.player.summonerName, slot.phaseIndex)">
                   {{ isPlayerBot(slot.player) ? 'Confirmar Bot' : 'Editar' }}
                 </button>
               </div>
@@ -89,7 +89,7 @@
                 </div>
                 <div class="champion-placeholder" *ngIf="!slot.champion">?</div>
                 <button class="edit-btn"
-                  (click)="isPlayerBot(slot.player) ? confirmBotPick(slot.player.id || slot.player.summonerName, slot.champion?.phaseIndex) : startEditingPick(slot.player.id || slot.player.summonerName, slot.champion?.phaseIndex || 0)">
+                  (click)="isPlayerBot(slot.player) ? confirmBotPick(slot.player.id || slot.player.summonerName, slot.phaseIndex) : startEditingPick(slot.player.id || slot.player.summonerName, slot.phaseIndex)">
                   {{ isPlayerBot(slot.player) ? 'Confirmar Bot' : 'Editar' }}
                 </button>
               </div>
