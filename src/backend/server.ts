@@ -27,6 +27,7 @@ import { RiotAPIService } from './services/RiotAPIService';
 import { LCUService } from './services/LCUService';
 import { MatchHistoryService } from './services/MatchHistoryService';
 import { DiscordService } from './services/DiscordService';
+import { DataDragonService } from './services/DataDragonService';
 
 const app = express();
 const server = createServer(app);
@@ -125,6 +126,7 @@ const playerService = new PlayerService(globalRiotAPI, dbManager);
 const lcuService = new LCUService(globalRiotAPI);
 const matchHistoryService = new MatchHistoryService(globalRiotAPI, dbManager);
 const discordService = new DiscordService(dbManager);
+const dataDragonService = new DataDragonService();
 
 // WebSocket para comunicação em tempo real
 wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
@@ -1880,13 +1882,39 @@ app.get('/api/matches/custom/:playerId', (req: Request, res: Response) => {
       const matches = await dbManager.getPlayerCustomMatches(playerIdentifier, limit);
       console.log('📊 [GET /api/matches/custom] Partidas personalizadas encontradas:', matches.length);
 
+      // Processar dados dos participantes usando DataDragonService
+      const processedMatches = matches.map(match => {
+        // Processar participants_data se existir
+        if (match.participants_data) {
+          try {
+            const participantsData = typeof match.participants_data === 'string' 
+              ? JSON.parse(match.participants_data) 
+              : match.participants_data;
+            
+            if (Array.isArray(participantsData)) {
+              // Processar participantes com DataDragonService
+              const processedParticipants = dataDragonService.processParticipants(participantsData);
+              
+              return {
+                ...match,
+                participants_data: processedParticipants
+              };
+            }
+          } catch (error) {
+            console.warn('⚠️ Erro ao processar participants_data da partida', match.id, ':', error);
+          }
+        }
+        
+        return match;
+      });
+
       res.json({
         success: true,
-        matches,
+        matches: processedMatches,
         pagination: {
           offset,
           limit,
-          total: matches.length
+          total: processedMatches.length
         }
       });
     } catch (error: any) {
@@ -2361,7 +2389,13 @@ async function initializeServices() {
 
     // Matchmaking
     await matchmakingService.initialize();
-    console.log('✅ Serviço de matchmaking inicializado');    // LCU
+    console.log('✅ Serviço de matchmaking inicializado');
+
+    // DataDragonService
+    await dataDragonService.loadChampions();
+    console.log('✅ DataDragonService inicializado');
+
+    // LCU
     await lcuService.initialize();
 
     // Conectar dependências aos serviços

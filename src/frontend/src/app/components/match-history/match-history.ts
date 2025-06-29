@@ -522,7 +522,8 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
 
         // Se temos dados reais, usar o campeão real
         if (playerRealData && playerRealData.championId) {
-          playerChampion = ChampionService.getChampionNameById(playerRealData.championId) || playerChampion;
+          // Usar championName processado pelo backend se disponível, senão converter ID
+          playerChampion = playerRealData.championName || ChampionService.getChampionNameById(playerRealData.championId) || playerChampion;
           currentPlayerTeam = playerRealData.teamId === 100 ? 1 : 2;
         }
       }
@@ -615,7 +616,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           const realData = getRealDataForPlayer(playerId.toString(), 100);
           if (realData) {
             // Se temos dados reais, usar eles como fonte principal
-            championName = ChampionService.getChampionNameById(realData.championId) || 'Unknown';
+            championName = realData.championName || ChampionService.getChampionNameById(realData.championId) || 'Unknown';
             playerName = realData.summonerName || 'Unknown Player';
           } else {
             // Fallback para dados de pick/ban se não temos dados reais
@@ -680,7 +681,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
           const realData = getRealDataForPlayer(playerId.toString(), 200);
           if (realData) {
             // Se temos dados reais, usar eles como fonte principal
-            championName = ChampionService.getChampionNameById(realData.championId) || 'Unknown';
+            championName = realData.championName || ChampionService.getChampionNameById(realData.championId) || 'Unknown';
             playerName = realData.summonerName || 'Unknown Player';
           } else {
             // Fallback para dados de pick/ban se não temos dados reais
