@@ -5,6 +5,7 @@ import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { DatabaseManager } from '../database/DatabaseManager';
+import { DataDragonService } from './DataDragonService';
 
 const execAsync = promisify(exec);
 
@@ -41,9 +42,11 @@ export class LCUService {
   private lastGameflowPhase: string | null = null;
   private currentGameId: string | null = null;
   private riotAPI: any = null; // Add RiotAPIService reference
+  private dataDragonService: DataDragonService; // Add DataDragonService
 
   constructor(riotAPI?: any) {
     this.riotAPI = riotAPI; // Store the global RiotAPIService instance
+    this.dataDragonService = new DataDragonService(); // Initialize DataDragonService
   }
 
   // Método para definir dependências
@@ -63,6 +66,11 @@ export class LCUService {
         console.log(`🚀 Tentativa ${retryCount + 1}/${maxRetries} de conectar ao LCU...`);
         await this.findLeagueClient();
         await this.connectToLCU();
+        
+        // Carregar dados dos campeões da Data Dragon
+        console.log('🔍 Carregando dados dos campeões da Data Dragon...');
+        await this.dataDragonService.loadChampions();
+        
         console.log('✅ Conectado ao League Client Update (LCU)');
         return;
       } catch (error) {
@@ -819,7 +827,9 @@ export class LCUService {
     try {
       if (!this.isConnected) {
         throw new Error('LCU não conectado');
-      }      // Tentar diferentes endpoints para obter dados completos da partida
+      }
+
+      // Tentar diferentes endpoints para obter dados completos da partida
       const endpoints = [
         `/lol-match-history/v1/games/${gameId}`,
         `/lol-match-history/v1/products/lol/current-summoner/matches/${gameId}`,
@@ -836,7 +846,14 @@ export class LCUService {
           
           if (response.data && response.data.participants) {
             console.log(`✅ Dados completos obtidos via ${endpoint}: ${response.data.participants.length} participantes`);
-            return response.data;
+            
+            // Processar participantes com dados da Data Dragon
+            const processedData = {
+              ...response.data,
+              participants: this.dataDragonService.processParticipants(response.data.participants)
+            };
+            
+            return processedData;
           }
         } catch (error) {
           console.log(`❌ Endpoint ${endpoint} falhou:`, error instanceof Error ? error.message : 'Erro desconhecido');
