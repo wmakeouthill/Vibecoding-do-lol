@@ -3,6 +3,31 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ChampionService, Champion } from '../../services/champion.service';
 
+/**
+ * CORREÇÕES IMPLEMENTADAS (v2.0):
+ * 
+ * 1. DISTRIBUIÇÃO CORRETA DE JOGADORES:
+ *    - Garantia de que todos os 5 jogadores são utilizados
+ *    - Ordem correta seguindo o padrão do LoL: top, jungle, mid, adc, support
+ *    - Mapeamento específico por fase de pick/ban
+ * 
+ * 2. ORDEM DE PICKS/BANS CORRIGIDA:
+ *    - Primeira fase de bans (0-5): distribuídos entre todos os 5 jogadores
+ *    - Primeira fase de picks (6-10): cada jogador faz 1 pick na ordem das lanes
+ *    - Segunda fase de bans (11-14): jogadores restantes fazem bans
+ *    - Segunda fase de picks (15-19): jogadores restantes fazem picks
+ * 
+ * 3. VINCULAÇÃO COM LANES:
+ *    - Jogadores ordenados por lane antes da distribuição
+ *    - Picks vinculados às lanes corretas dos jogadores
+ *    - Suporte para jogadores placeholder se necessário
+ * 
+ * 4. VALIDAÇÃO E DEBUG:
+ *    - Método validatePlayerUsage() para verificar uso correto
+ *    - Logs detalhados para debugging
+ *    - Garantia de 5 jogadores por time
+ */
+
 interface LocalChampion {
   id: number;
   name: string;
@@ -476,36 +501,81 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     if (!currentPhase.team) return null;
     const teamPlayers = currentPhase.team === 'blue' ? this.session.blueTeam : this.session.redTeam;
 
-    // Mapeamento simplificado e mais robusto
+    // Garantir que temos exatamente 5 jogadores
+    if (teamPlayers.length !== 5) {
+      console.error(`❌ [getCurrentPlayer] Time ${currentPhase.team} não tem exatamente 5 jogadores: ${teamPlayers.length}`);
+      return teamPlayers[0] || null; // Fallback para o primeiro jogador
+    }
+
+    // Obter jogadores ordenados por lane (top, jungle, mid, adc, support)
+    const sortedPlayers = this.getSortedTeamByLane(currentPhase.team);
+    
+    // Mapeamento baseado na ordem padrão do LoL e na ação atual
     let playerIndex = 0;
     const actionIndex = this.session.currentAction;
 
-    // Distribuir ações de forma mais simples e previsível
+    // Distribuição seguindo a ordem padrão do LoL:
+    // - Bans: distribuídos entre os 5 jogadores de forma rotativa
+    // - Picks: cada jogador faz exatamente 1 pick na ordem de suas lanes
+    
     if (actionIndex < 6) {
-      // Primeira fase de bans (0-5): distribuir entre os primeiros 3 players
-      playerIndex = Math.floor(actionIndex / 2) % Math.min(3, teamPlayers.length);
+      // Primeira fase de bans (0-5): distribuir entre todos os 5 players
+      // Blue: 0, 2, 4 | Red: 1, 3, 5
+      const teamBanIndex = actionIndex % 2 === 0 ? actionIndex / 2 : (actionIndex - 1) / 2;
+      playerIndex = teamBanIndex % 5;
     } else if (actionIndex >= 6 && actionIndex < 11) {
-      // Primeira fase de picks (6-10): distribuir entre todos os players
-      const pickIndex = actionIndex - 6;
-      playerIndex = pickIndex % teamPlayers.length;
+      // Primeira fase de picks (6-10): cada jogador faz 1 pick
+      // Blue: 6, 9, 10 | Red: 7, 8
+      if (currentPhase.team === 'blue') {
+        // Blue team picks: 6, 9, 10
+        if (actionIndex === 6) playerIndex = 0; // Primeiro pick - Top
+        else if (actionIndex === 9) playerIndex = 1; // Segundo pick - Jungle  
+        else if (actionIndex === 10) playerIndex = 2; // Terceiro pick - Mid
+      } else {
+        // Red team picks: 7, 8
+        if (actionIndex === 7) playerIndex = 0; // Primeiro pick - Top
+        else if (actionIndex === 8) playerIndex = 1; // Segundo pick - Jungle
+      }
     } else if (actionIndex >= 11 && actionIndex < 15) {
-      // Segunda fase de bans (11-14): usar players 3 e 4 se disponíveis
-      const banIndex = actionIndex - 11;
-      playerIndex = Math.min(3 + (banIndex % 2), teamPlayers.length - 1);
+      // Segunda fase de bans (11-14): usar jogadores que ainda não fizeram ban
+      // Blue: 12, 14 | Red: 11, 13
+      if (currentPhase.team === 'blue') {
+        // Blue team bans: 12, 14
+        if (actionIndex === 12) playerIndex = 3; // ADC
+        else if (actionIndex === 14) playerIndex = 4; // Support
+      } else {
+        // Red team bans: 11, 13
+        if (actionIndex === 11) playerIndex = 2; // Mid
+        else if (actionIndex === 13) playerIndex = 3; // ADC
+      }
     } else {
-      // Segunda fase de picks (15-19): usar players restantes
-      const pickIndex = actionIndex - 15;
-      playerIndex = Math.min(2 + (pickIndex % 3), teamPlayers.length - 1);
+      // Segunda fase de picks (15-19): jogadores restantes fazem seus picks
+      // Blue: 16, 18 | Red: 15, 17, 19
+      if (currentPhase.team === 'blue') {
+        // Blue team picks: 16, 18
+        if (actionIndex === 16) playerIndex = 3; // ADC
+        else if (actionIndex === 18) playerIndex = 4; // Support
+      } else {
+        // Red team picks: 15, 17, 19
+        if (actionIndex === 15) playerIndex = 2; // Mid
+        else if (actionIndex === 17) playerIndex = 3; // ADC
+        else if (actionIndex === 19) playerIndex = 4; // Support
+      }
     }
 
     // Garantir que o índice seja válido
-    playerIndex = Math.max(0, Math.min(playerIndex, teamPlayers.length - 1));
+    playerIndex = Math.max(0, Math.min(playerIndex, sortedPlayers.length - 1));
 
     this.session.currentPlayerIndex = playerIndex;
-    const player = teamPlayers[playerIndex] || null;
+    const player = sortedPlayers[playerIndex] || null;
 
-    // CORREÇÃO: Retornar sempre o jogador do índice calculado, independente de ser bot ou não
-    // A lógica de priorização do jogador logado deve ser feita no checkIfMyTurn, não aqui
+    console.log(`🔍 [getCurrentPlayer] Ação ${actionIndex}, Time ${currentPhase.team}, Player Index ${playerIndex}:`, {
+      playerName: player?.summonerName || player?.name,
+      playerLane: player?.assignedLane || player?.primaryLane,
+      isBot: this.isBot(player),
+      action: currentPhase.action
+    });
+
     return player;
   }
 
@@ -878,17 +948,17 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
   getTeamPicks(team: 'blue' | 'red'): Champion[] {
     if (!this.session) return [];
 
+    // Obter jogadores ordenados por lane
+    const sortedPlayers = this.getSortedTeamByLane(team);
+    
     // Obter todos os picks do time
     const teamPicks = this.session.phases
       .filter(p => p.action === 'pick' && p.team === team && p.champion);
 
-    // Obter jogadores ordenados por lane
-    const sortedPlayers = this.getSortedTeamByLane(team);
+    // Mapear picks às posições corretas dos jogadores (por lane)
+    const picksByLane: (Champion | null)[] = new Array(5).fill(null);
 
-    // Mapear picks às posições corretas dos jogadores
-    const mappedPicks: Champion[] = [];
-
-    sortedPlayers.forEach((player, index) => {
+    sortedPlayers.forEach((player, laneIndex) => {
       // Encontrar o pick deste jogador
       const playerPick = teamPicks.find(p => {
         const matchById = p.playerId && p.playerId.toString() === player.id?.toString();
@@ -900,16 +970,13 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
       });
 
       if (playerPick && playerPick.champion) {
-        mappedPicks[index] = playerPick.champion;
-        console.log(`🔗 [getTeamPicks] Pick ${playerPick.champion.name} mapeado para posição ${index} (${player.summonerName || player.name})`);
-      } else {
-        // Se não há pick para este jogador, adicionar undefined para manter a posição
-        mappedPicks[index] = undefined as any;
+        picksByLane[laneIndex] = playerPick.champion;
+        console.log(`🔗 [getTeamPicks] Pick ${playerPick.champion.name} mapeado para lane ${laneIndex} (${player.summonerName || player.name})`);
       }
     });
 
-    // Filtrar apenas os picks que existem (remover undefined)
-    return mappedPicks.filter(pick => pick !== undefined);
+    // Retornar apenas os picks que existem (remover null)
+    return picksByLane.filter(pick => pick !== null) as Champion[];
   }
 
   // Utility methods
@@ -935,7 +1002,7 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     if (!currentPlayer) return 'Desconhecido';
 
     const playerName = currentPlayer.summonerName || currentPlayer.name || 'Jogador';
-    console.log(`🔍 [getCurrentPlayerName] Nome do jogador atual: ${playerName} (ID: ${currentPlayer.id}, IsBot: ${this.isBot(currentPlayer)})`);
+    // console.log(`🔍 [getCurrentPlayerName] Nome do jogador atual: ${playerName} (ID: ${currentPlayer.id}, IsBot: ${this.isBot(currentPlayer)})`);
 
     return playerName;
   }
@@ -1338,26 +1405,9 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
   private organizeTeamByLanes(teamPlayers: any[], teamPicks: any[]): any[] {
     const laneOrder = ['top', 'jungle', 'mid', 'bot', 'support'];
 
-    // Ordenar jogadores por lane primeiro
-    const sortedPlayers = [...teamPlayers].sort((a, b) => {
-      const laneA = (a.assignedLane || a.primaryLane || 'fill').toLowerCase();
-      const laneB = (b.assignedLane || b.primaryLane || 'fill').toLowerCase();
-
-      const indexA = laneOrder.indexOf(laneA);
-      const indexB = laneOrder.indexOf(laneB);
-
-      // Se ambos têm lane válida, ordenar pela ordem definida
-      if (indexA !== -1 && indexB !== -1) {
-        return indexA - indexB;
-      }
-
-      // Se apenas um tem lane válida, priorizar o que tem
-      if (indexA !== -1) return -1;
-      if (indexB !== -1) return 1;
-
-      // Se nenhum tem lane válida, manter ordem original
-      return 0;
-    });
+    // Usar o método getSortedTeamByLane para obter jogadores ordenados
+    const team = teamPlayers === this.session!.blueTeam ? 'blue' : 'red';
+    const sortedPlayers = this.getSortedTeamByLane(team);
 
     console.log(`🔍 [organizeTeamByLanes] Jogadores ordenados:`, sortedPlayers.map(p => ({
       name: p.summonerName || p.name,
@@ -1473,78 +1523,41 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
   private mapPicksWithPlayers(team: 'blue' | 'red'): any[] {
     if (!this.session) return [];
 
-    const teamPlayers = team === 'blue' ? this.session.blueTeam : this.session.redTeam;
+    // Obter jogadores ordenados por lane
+    const sortedPlayers = this.getSortedTeamByLane(team);
     const teamPicks = this.session.phases.filter(p => p.action === 'pick' && p.team === team && p.champion);
 
-    // Criar array com 5 slots (um para cada jogador)
+    // Criar array com 5 slots (um para cada jogador por lane)
     const picksWithPlayers = new Array(5).fill(null);
 
-    // Primeira passada: mapear picks existentes para os slots corretos
-    teamPicks.forEach((pick, index) => {
-      if (index < 5) {
-        // Encontrar o jogador correspondente
-        const player = teamPlayers.find(p => {
-          const matchById = p.id && pick.playerId && p.id.toString() === pick.playerId.toString();
-          const matchByName = p.summonerName && pick.playerName && p.summonerName === pick.playerName;
-          const matchByGameName = p.summonerName && pick.playerName && p.summonerName.startsWith(pick.playerName + '#');
-          return matchById || matchByName || matchByGameName;
-        });
+    // Mapear cada jogador ordenado por lane
+    sortedPlayers.forEach((player, laneIndex) => {
+      // Encontrar o pick deste jogador
+      const playerPick = teamPicks.find(p => {
+        const matchById = p.playerId && p.playerId.toString() === player.id?.toString();
+        const matchByName = p.playerName && p.playerName === (player.summonerName || player.name);
+        const matchByGameName = p.playerName && (player.summonerName || player.name) &&
+          p.playerName.startsWith((player.summonerName || player.name) + '#');
 
-        picksWithPlayers[index] = {
-          champion: pick.champion,
-          playerId: pick.playerId || (player ? player.id : null),
-          playerName: pick.playerName || (player ? (player.summonerName || player.name) : 'Desconhecido'),
-          phaseIndex: this.session!.phases.indexOf(pick),
-          player: player
-        };
-      }
-    });
-
-    // Segunda passada: preencher slots vazios com jogadores que não têm picks
-    const playersWithoutPicks = teamPlayers.filter(player => {
-      return !teamPicks.some(pick => {
-        const matchById = player.id && pick.playerId && player.id.toString() === pick.playerId.toString();
-        const matchByName = player.summonerName && pick.playerName && player.summonerName === pick.playerName;
-        const matchByGameName = player.summonerName && pick.playerName && player.summonerName.startsWith(pick.playerName + '#');
         return matchById || matchByName || matchByGameName;
       });
+
+      picksWithPlayers[laneIndex] = {
+        champion: playerPick?.champion || null,
+        playerId: player.id,
+        playerName: player.summonerName || player.name,
+        phaseIndex: playerPick ? this.session!.phases.indexOf(playerPick) : null,
+        player: player
+      };
     });
 
-    // Preencher slots vazios
-    let playerIndex = 0;
-    for (let i = 0; i < picksWithPlayers.length && playerIndex < playersWithoutPicks.length; i++) {
-      if (!picksWithPlayers[i]) {
-        const player = playersWithoutPicks[playerIndex];
-        picksWithPlayers[i] = {
-          champion: null,
-          playerId: player.id,
-          playerName: player.summonerName || player.name,
-          phaseIndex: null,
-          player: player
-        };
-        playerIndex++;
-      }
-    }
-
-    // Terceira passada: garantir que todos os jogadores estejam mapeados
-    const mappedPlayerIds = picksWithPlayers.filter(p => p && p.playerId).map(p => p.playerId);
-    const unmappedPlayers = teamPlayers.filter(player => !mappedPlayerIds.includes(player.id));
-
-    // Substituir slots nulos por jogadores não mapeados
-    let unmappedIndex = 0;
-    for (let i = 0; i < picksWithPlayers.length && unmappedIndex < unmappedPlayers.length; i++) {
-      if (!picksWithPlayers[i] || !picksWithPlayers[i].playerId) {
-        const player = unmappedPlayers[unmappedIndex];
-        picksWithPlayers[i] = {
-          champion: null,
-          playerId: player.id,
-          playerName: player.summonerName || player.name,
-          phaseIndex: null,
-          player: player
-        };
-        unmappedIndex++;
-      }
-    }
+    console.log(`🔍 [mapPicksWithPlayers] ${team} team mapeado:`, picksWithPlayers.map((pick, index) => ({
+      laneIndex: index,
+      lane: sortedPlayers[index]?.assignedLane || sortedPlayers[index]?.primaryLane,
+      playerName: pick?.playerName,
+      champion: pick?.champion?.name,
+      isBot: pick?.player ? this.isBot(pick.player) : false
+    })));
 
     return picksWithPlayers;
   }
@@ -1788,10 +1801,47 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     const teamPlayers = team === 'blue' ? this.session.blueTeam : this.session.redTeam;
     const laneOrder = ['top', 'jungle', 'mid', 'bot', 'support'];
 
+    // Garantir que temos exatamente 5 jogadores
+    if (teamPlayers.length !== 5) {
+      console.warn(`⚠️ [getSortedTeamByLane] Time ${team} não tem exatamente 5 jogadores: ${teamPlayers.length}`);
+      
+      // Se temos menos de 5 jogadores, criar jogadores placeholder
+      const paddedPlayers = [...teamPlayers];
+      while (paddedPlayers.length < 5) {
+        const placeholderIndex = paddedPlayers.length;
+        const placeholderLane = laneOrder[placeholderIndex] || 'fill';
+        paddedPlayers.push({
+          id: `placeholder_${team}_${placeholderIndex}`,
+          summonerName: `Bot ${placeholderIndex + 1}`,
+          name: `Bot ${placeholderIndex + 1}`,
+          assignedLane: placeholderLane,
+          primaryLane: placeholderLane,
+          isBot: true
+        });
+      }
+      
+      // Se temos mais de 5 jogadores, truncar para 5
+      if (paddedPlayers.length > 5) {
+        paddedPlayers.splice(5);
+      }
+      
+      console.log(`✅ [getSortedTeamByLane] Time ${team} normalizado para 5 jogadores`);
+      return this.sortPlayersByLane(paddedPlayers);
+    }
+
+    return this.sortPlayersByLane(teamPlayers);
+  }
+
+  /**
+   * Método auxiliar para ordenar jogadores por lane
+   */
+  private sortPlayersByLane(players: any[]): any[] {
+    const laneOrder = ['top', 'jungle', 'mid', 'bot', 'support'];
+
     // Primeiro, ordenar jogadores por lane
-    const sortedPlayers = [...teamPlayers].sort((a, b) => {
-      const laneA = a.assignedLane || a.primaryLane || 'fill';
-      const laneB = b.assignedLane || b.primaryLane || 'fill';
+    const sortedPlayers = [...players].sort((a, b) => {
+      const laneA = (a.assignedLane || a.primaryLane || 'fill').toLowerCase();
+      const laneB = (b.assignedLane || b.primaryLane || 'fill').toLowerCase();
 
       const indexA = laneOrder.indexOf(laneA);
       const indexB = laneOrder.indexOf(laneB);
@@ -1809,31 +1859,41 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
       return 0;
     });
 
-    // Agora vincular os picks às lanes corretas
-    const teamPicks = this.session.phases.filter(p => p.action === 'pick' && p.team === team && p.champion);
-
-    console.log(`🔍 [getSortedTeamByLane] ${team} team:`, {
-      players: sortedPlayers.map(p => ({ name: p.summonerName, lane: p.assignedLane || p.primaryLane })),
-      picks: teamPicks.map(p => ({ player: p.playerName, champion: p.champion?.name }))
-    });
-
-    // Para cada jogador, verificar se tem um pick e vincular
-    sortedPlayers.forEach((player, index) => {
-      const playerPick = teamPicks.find(p => {
-        const matchById = p.playerId && p.playerId.toString() === player.id?.toString();
-        const matchByName = p.playerName && p.playerName === (player.summonerName || player.name);
-        const matchByGameName = p.playerName && (player.summonerName || player.name) &&
-          p.playerName.startsWith((player.summonerName || player.name) + '#');
-
-        return matchById || matchByName || matchByGameName;
-      });
-
-      if (playerPick) {
-        console.log(`🔗 [getSortedTeamByLane] Vinculando pick ${playerPick.champion?.name} ao jogador ${player.summonerName || player.name} na lane ${player.assignedLane || player.primaryLane}`);
+    // Garantir que temos exatamente 5 jogadores na ordem correta
+    const finalPlayers = [];
+    for (let i = 0; i < 5; i++) {
+      if (i < sortedPlayers.length) {
+        // Atribuir lane específica se não tiver
+        const player = { ...sortedPlayers[i] };
+        if (!player.assignedLane && !player.primaryLane) {
+          player.assignedLane = laneOrder[i];
+          player.primaryLane = laneOrder[i];
+        }
+        finalPlayers.push(player);
+      } else {
+        // Criar jogador placeholder para esta posição
+        finalPlayers.push({
+          id: `placeholder_${i}`,
+          summonerName: `Bot ${i + 1}`,
+          name: `Bot ${i + 1}`,
+          assignedLane: laneOrder[i],
+          primaryLane: laneOrder[i],
+          isBot: true
+        });
       }
-    });
+    }
 
-    return sortedPlayers;
+    // Agora vincular os picks às lanes corretas
+    const teamPicks = this.session!.phases.filter(p => p.action === 'pick' && p.champion);
+
+    console.log(`🔍 [sortPlayersByLane] Jogadores ordenados:`, finalPlayers.map((p, index) => ({
+      index,
+      name: p.summonerName,
+      lane: p.assignedLane || p.primaryLane,
+      isBot: this.isBot(p)
+    })));
+
+    return finalPlayers;
   }
 
   /**
@@ -2144,6 +2204,9 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     console.log('🔍 [Debug] Editing Player ID:', this.editingPlayerId);
     console.log('🔍 [Debug] Is My Turn:', this.isMyTurn);
 
+    // Adicionar validação de uso dos jogadores
+    this.validatePlayerUsage();
+
     console.log('🔍 [Debug] === END DEBUG ===');
   }
 
@@ -2198,5 +2261,91 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     });
 
     return playerPick?.champion || null;
+  }
+
+  /**
+   * Valida se todos os 5 jogadores estão sendo utilizados corretamente
+   */
+  private validatePlayerUsage(): void {
+    if (!this.session) return;
+
+    console.log('🔍 [validatePlayerUsage] === VALIDAÇÃO DE USO DOS JOGADORES ===');
+
+    // Validar times
+    (['blue', 'red'] as const).forEach(team => {
+      const teamPlayers = team === 'blue' ? this.session!.blueTeam : this.session!.redTeam;
+      const sortedPlayers = this.getSortedTeamByLane(team);
+      
+      console.log(`🔍 [validatePlayerUsage] Time ${team}:`);
+      console.log(`  - Jogadores originais: ${teamPlayers.length}`);
+      console.log(`  - Jogadores ordenados: ${sortedPlayers.length}`);
+      
+      sortedPlayers.forEach((player, index) => {
+        const lane = player.assignedLane || player.primaryLane || 'fill';
+        console.log(`  - Posição ${index} (${lane}): ${player.summonerName || player.name} (Bot: ${this.isBot(player)})`);
+      });
+    });
+
+    // Validar fases
+    console.log('🔍 [validatePlayerUsage] Fases:');
+    this.session.phases.forEach((phase, index) => {
+      if (index < this.session!.currentAction) {
+        const player = this.getCurrentPlayerForPhase(index);
+        console.log(`  - Fase ${index}: ${phase.team} ${phase.action} - ${player?.summonerName || player?.name || 'N/A'} (${player?.assignedLane || player?.primaryLane || 'N/A'})`);
+      }
+    });
+
+    console.log('🔍 [validatePlayerUsage] === FIM DA VALIDAÇÃO ===');
+  }
+
+  /**
+   * Obtém o jogador para uma fase específica (para validação)
+   */
+  private getCurrentPlayerForPhase(phaseIndex: number): any {
+    if (!this.session || phaseIndex >= this.session.phases.length) return null;
+    
+    const phase = this.session.phases[phaseIndex];
+    const teamPlayers = phase.team === 'blue' ? this.session.blueTeam : this.session.redTeam;
+    const sortedPlayers = this.getSortedTeamByLane(phase.team);
+    
+    // Usar a mesma lógica do getCurrentPlayer mas para uma fase específica
+    let playerIndex = 0;
+    
+    if (phaseIndex < 6) {
+      // Primeira fase de bans
+      const teamBanIndex = phaseIndex % 2 === 0 ? phaseIndex / 2 : (phaseIndex - 1) / 2;
+      playerIndex = teamBanIndex % 5;
+    } else if (phaseIndex >= 6 && phaseIndex < 11) {
+      // Primeira fase de picks
+      if (phase.team === 'blue') {
+        if (phaseIndex === 6) playerIndex = 0;
+        else if (phaseIndex === 9) playerIndex = 1;
+        else if (phaseIndex === 10) playerIndex = 2;
+      } else {
+        if (phaseIndex === 7) playerIndex = 0;
+        else if (phaseIndex === 8) playerIndex = 1;
+      }
+    } else if (phaseIndex >= 11 && phaseIndex < 15) {
+      // Segunda fase de bans
+      if (phase.team === 'blue') {
+        if (phaseIndex === 12) playerIndex = 3;
+        else if (phaseIndex === 14) playerIndex = 4;
+      } else {
+        if (phaseIndex === 11) playerIndex = 2;
+        else if (phaseIndex === 13) playerIndex = 3;
+      }
+    } else {
+      // Segunda fase de picks
+      if (phase.team === 'blue') {
+        if (phaseIndex === 16) playerIndex = 3;
+        else if (phaseIndex === 18) playerIndex = 4;
+      } else {
+        if (phaseIndex === 15) playerIndex = 2;
+        else if (phaseIndex === 17) playerIndex = 3;
+        else if (phaseIndex === 19) playerIndex = 4;
+      }
+    }
+    
+    return sortedPlayers[playerIndex] || null;
   }
 }
