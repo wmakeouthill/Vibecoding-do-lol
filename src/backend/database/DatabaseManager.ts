@@ -654,10 +654,22 @@ export class DatabaseManager {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
 
     try {
+      // Verificar se o jogador já está na fila ativa
+      const [existingRows] = await this.pool.execute(
+        'SELECT id FROM queue_players WHERE player_id = ? AND is_active = 1',
+        [playerId]
+      );
+
+      if ((existingRows as any[]).length > 0) {
+        console.log(`⚠️ [Database] Jogador ${summonerName} (ID: ${playerId}) já está na fila ativa`);
+        return; // Não adicionar duplicata
+      }
+
+      // Inserir novo jogador na fila
       await this.pool.execute(
         `INSERT INTO queue_players (
           player_id, summoner_name, region, custom_lp, primary_lane, secondary_lane, queue_position
-        ) VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(queue_position), 0) + 1 FROM queue_players qp))`,
+        ) VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(queue_position), 0) + 1 FROM queue_players qp WHERE is_active = 1))`,
         [
           playerId,
           summonerName,
@@ -667,8 +679,10 @@ export class DatabaseManager {
           preferences?.secondaryLane || null
         ]
       );
+
+      console.log(`✅ [Database] Jogador ${summonerName} (ID: ${playerId}) adicionado à fila`);
     } catch (error) {
-      console.error('Erro ao adicionar jogador à fila:', error);
+      console.error('❌ [Database] Erro ao adicionar jogador à fila:', error);
       throw error;
     }
   }

@@ -71,6 +71,13 @@ export class DiscordIntegrationService {
       return (window as any).WEBSOCKET_URL;
     }
 
+    // Verificar se há configuração de IP do servidor em produção
+    const serverIP = (window as any).SERVER_IP || localStorage.getItem('SERVER_IP');
+    if (serverIP) {
+      console.log(`🔗 [DiscordService #${this.instanceId}] WebSocket: Usando IP do servidor configurado:`, serverIP);
+      return `ws://${serverIP}:3000/ws`;
+    }
+
     // Função para detectar se está no Windows
     const isWindows = () => navigator.userAgent.indexOf('Windows') !== -1;
 
@@ -286,16 +293,10 @@ export class DiscordIntegrationService {
 
         this.isInDiscordChannel = data.inChannel || false;
 
-        // Buscar usuário atual real se estiver conectado
-        if (data.isConnected && data.inChannel && data.currentUser) {
-          this.currentDiscordUser = {
-            id: data.currentUser.id,
-            username: data.currentUser.username,
-            displayName: data.currentUser.displayName || data.currentUser.username
-          };
-        } else {
-          this.currentDiscordUser = null;
-        }
+        // Não definir currentDiscordUser baseado no backend
+        // O usuário atual será identificado pelo frontend baseado nos dados do LCU
+        // e comparando com os usuários online do Discord
+        this.currentDiscordUser = null;
 
         // Atualizar status de conexão baseado na resposta do backend
         if (data.isConnected !== undefined && data.isConnected !== null) {
@@ -574,6 +575,41 @@ export class DiscordIntegrationService {
   }
 
   getCurrentDiscordUser(): any {
+    return this.currentDiscordUser;
+  }
+
+  // NOVO: Método para identificar o usuário atual baseado nos dados do LCU
+  identifyCurrentUserFromLCU(lcuData?: { gameName: string, tagLine: string }): any {
+    if (!lcuData || !lcuData.gameName || !lcuData.tagLine) {
+      console.log('⚠️ [DiscordService] Dados do LCU não disponíveis para identificação do usuário atual');
+      this.currentDiscordUser = null;
+      return null;
+    }
+
+    const lcuFullName = `${lcuData.gameName}#${lcuData.tagLine}`;
+    console.log('🔍 [DiscordService] Identificando usuário atual para:', lcuFullName);
+
+    // Procurar nos usuários online do Discord que tenham o nick vinculado
+    const matchingUser = this.discordUsersOnline.find(user => {
+      if (user.linkedNickname) {
+        const discordFullName = `${user.linkedNickname.gameName}#${user.linkedNickname.tagLine}`;
+        return discordFullName === lcuFullName;
+      }
+      return false;
+    });
+
+    if (matchingUser) {
+      this.currentDiscordUser = {
+        id: matchingUser.id,
+        username: matchingUser.username,
+        displayName: matchingUser.displayName || matchingUser.username
+      };
+      console.log('✅ [DiscordService] Usuário atual identificado:', this.currentDiscordUser);
+    } else {
+      this.currentDiscordUser = null;
+      console.log('❌ [DiscordService] Usuário atual não encontrado nos usuários Discord online');
+    }
+
     return this.currentDiscordUser;
   }
 

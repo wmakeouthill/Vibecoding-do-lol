@@ -33,6 +33,13 @@ function getWebSocketURL(): string {
     return (window as any).WEBSOCKET_URL;
   }
 
+  // Verificar se há configuração de IP do servidor em produção
+  const serverIP = (window as any).SERVER_IP || localStorage.getItem('SERVER_IP');
+  if (serverIP) {
+    console.log('🔗 WebSocket: Usando IP do servidor configurado:', serverIP);
+    return `ws://${serverIP}:3000/ws`;
+  }
+
   // Em produção (Electron) no Windows, usar 127.0.0.1
   if (isElectron() && isWindows()) {
     console.log('🔗 WebSocket: Detectado Electron no Windows, usando 127.0.0.1');

@@ -1256,25 +1256,18 @@ export class DiscordService {
       return null;
     }
 
-    // Buscar o usuário atual baseado no bot (ou implementar lógica para identificar o usuário)
-    // Por enquanto, vamos retornar informações do primeiro usuário no canal
+    // Retornar informações sobre o canal em vez de um usuário específico
+    // O usuário atual será identificado pelo frontend baseado nos dados do LCU
     const voiceChannel = matchmakingChannel as any;
     const members = voiceChannel.members;
     
-    if (members && members.size > 0) {
-      const firstMember = members.first();
-      const user = firstMember.user;
-      
-      return {
-        id: user.id,
-        username: user.username,
-        displayName: firstMember.displayName || user.username,
-        discriminator: user.discriminator,
-        avatar: user.avatar
-      };
-    }
-    
-    return null;
+    return {
+      channelId: matchmakingChannel.id,
+      channelName: matchmakingChannel.name,
+      membersCount: members ? members.size : 0,
+      // Não retornar um usuário específico para evitar confusão
+      // O frontend deve identificar o usuário atual baseado nos dados do LCU
+    };
   }
 
   // Método para calcular hash dos usuários para detectar mudanças

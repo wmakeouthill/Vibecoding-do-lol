@@ -105,99 +105,136 @@ export class App implements OnInit, OnDestroy {
     this.isElectron = !!(window as any).electronAPI;
   }
   ngOnInit(): void {
+    // Recuperar estado do jogo (se estiver em uma partida)
+    this.recoverGameState();
+
+    // Detectar se está no Electron
     this.isElectron = !!(window as any).electronAPI;
 
-    console.log('🚀 [APP] Iniciando aplicação...');
+    // Carregar dados do jogador
+    this.loadPlayerData();
 
-    // Carregar configurações do banco de dados primeiro
-    this.loadConfigFromDatabase();
+    // Configurar listeners
+    this.setupDiscordStatusListener();
 
-    // Iniciar verificações de status primeiro
+    // Iniciar verificações de status
     this.startLCUStatusCheck();
     this.startQueueStatusCheck();
 
-    // Configurar listener do status do Discord
-    this.setupDiscordStatusListener();
+    // ✅ NOVO: Configurar integração QueueStateService
+    this.setupQueueStateIntegration();
 
-    // Assinar eventos de partida encontrada (match_found)
-    this.discordService.onMatchFound().pipe(takeUntil(this.destroy$)).subscribe((matchData) => {
-      if (matchData) {
-        console.log('[WebSocket] Mensagem recebida:', matchData);
+    // Verificar conexão com backend
+    this.checkBackendConnection();
 
-        // Verificar se é um cancelamento de partida
-        if (matchData.type === 'match_cancelled') {
-          console.log('[WebSocket] Partida cancelada:', matchData);
-          this.showMatchFound = false;
-          this.matchFoundData = null;
-          this.inDraftPhase = false;
-          this.draftData = null;
+    // Carregar configurações do banco de dados
+    this.loadConfigFromDatabase();
+  }
 
-          const reason = matchData.reason || 'Partida cancelada';
-          const declinedPlayer = matchData.declinedPlayer;
-          const message = declinedPlayer
-            ? `${reason} por ${declinedPlayer}`
-            : reason;
+  // ✅ NOVO: Configurar integração com QueueStateService
+  private setupQueueStateIntegration(): void {
+    console.log('🔗 [App] Configurando integração com QueueStateService...');
 
-          this.addNotification('info', 'Partida Cancelada', message);
-          return;
+    // Ouvir mudanças no estado da fila via MySQL
+    this.queueStateService.getQueueState().subscribe(queueState => {
+      console.log('📊 [App] Estado da fila MySQL atualizado:', queueState);
+
+      // Atualizar estado de se o usuário está na fila
+      const wasInQueue = this.isInQueue;
+      this.isInQueue = queueState.isInQueue;
+
+      if (wasInQueue !== this.isInQueue) {
+        console.log(`🔄 [App] Estado da fila mudou: ${wasInQueue} → ${this.isInQueue}`);
+        
+        if (this.isInQueue) {
+          console.log(`✅ [App] Usuário entrou na fila (posição: ${queueState.position})`);
+          this.currentQueueType = queueState.queueType === 'centralized' ? 'centralized' : 'discord';
+        } else {
+          console.log(`❌ [App] Usuário saiu da fila`);
+          this.currentQueueType = null;
         }
-
-        // Verificar se é cancelamento de draft
-        if (matchData.type === 'draft_cancelled') {
-          console.log('[WebSocket] Draft cancelado:', matchData);
-          this.showMatchFound = false;
-          this.matchFoundData = null;
-          this.inDraftPhase = false;
-          this.draftData = null;
-
-          const reason = matchData.reason || 'Draft cancelado';
-          this.addNotification('info', 'Draft Cancelado', reason);
-          return;
-        }
-
-        // Verificar se é cancelamento de partida em andamento
-        if (matchData.type === 'game_cancelled') {
-          console.log('[WebSocket] Partida em andamento cancelada:', matchData);
-          this.showMatchFound = false;
-          this.matchFoundData = null;
-          this.inDraftPhase = false;
-          this.draftData = null;
-          this.inGamePhase = false;
-          this.gameData = null;
-
-          const reason = matchData.reason || 'Partida em andamento cancelada';
-          this.addNotification('info', 'Partida Cancelada', reason);
-          return;
-        }
-
-        // Verificar se é início do draft
-        if (matchData.phase === 'draft_started') {
-          console.log('[WebSocket] Fase de draft iniciada:', matchData);
-          this.showMatchFound = false;
-          this.matchFoundData = null;
-          this.inDraftPhase = true;
-          this.draftData = matchData;
-          this.draftPhase = 'preview';
-          this.addNotification('success', 'Draft Iniciado', 'A fase de draft começou!');
-          return;
-        }
-
-        // Partida encontrada normal
-        this.matchFoundData = matchData;
-        this.showMatchFound = true;
-        this.inDraftPhase = false;
-        this.inGamePhase = false;
-        console.log('[WebSocket] Partida encontrada:', matchData);
       }
+
+      // ✅ CORREÇÃO: Atualizar queueStatus COMPLETO com dados do MySQL
+      console.log('🔄 [App] Atualizando queueStatus completo com dados MySQL...');
+      
+      // Buscar dados completos da fila via API
+      this.apiService.getQueueStatus().subscribe({
+        next: (fullQueueStatus) => {
+          console.log('📡 [App] Dados completos da fila recebidos:', {
+            playersInQueue: fullQueueStatus.playersInQueue,
+            playersListLength: fullQueueStatus.playersInQueueList?.length || 0,
+            playerNames: fullQueueStatus.playersInQueueList?.map(p => p.summonerName) || []
+          });
+
+          // Atualizar queueStatus completo
+          this.queueStatus = {
+            playersInQueue: fullQueueStatus.playersInQueue || 0,
+            averageWaitTime: fullQueueStatus.averageWaitTime || 0,
+            estimatedMatchTime: fullQueueStatus.estimatedMatchTime || 0,
+            isActive: fullQueueStatus.isActive !== false, // default true
+            playersInQueueList: fullQueueStatus.playersInQueueList || [],
+            recentActivities: fullQueueStatus.recentActivities || []
+          };
+
+          console.log('✅ [App] queueStatus atualizado:', {
+            playersInQueue: this.queueStatus.playersInQueue,
+            playersListLength: this.queueStatus.playersInQueueList?.length || 0,
+            isActive: this.queueStatus.isActive
+          });
+        },
+        error: (error) => {
+          console.error('❌ [App] Erro ao buscar dados completos da fila:', error);
+          
+          // Fallback: usar dados básicos do queueState
+          this.queueStatus.playersInQueue = queueState.playersInQueue || 0;
+          this.queueStatus.averageWaitTime = queueState.averageWaitTime || 0;
+        }
+      });
     });
 
+    // ✅ INICIAR: Sincronização quando tiver dados do jogador
+    this.startQueueSyncWhenPlayerReady();
+  }
 
-    // Aguardar um pouco para o LCU conectar e então carregar dados
-    setTimeout(() => {
-      this.loadPlayerData();
-      this.recoverGameState();
-      this.tryLoadRealPlayerData();
-    }, 2000); // Aguardar 2 segundos para o LCU conectar
+  // ✅ NOVO: Iniciar sincronização quando dados do jogador estiverem prontos
+  private startQueueSyncWhenPlayerReady(): void {
+    const checkAndStart = () => {
+      if (this.currentPlayer) {
+        console.log('👤 [App] Dados do jogador prontos, iniciando sincronização da fila...');
+        console.log('👤 [App] Jogador atual:', {
+          gameName: this.currentPlayer.gameName,
+          tagLine: this.currentPlayer.tagLine,
+          summonerName: this.currentPlayer.summonerName
+        });
+
+        // Informar dados do jogador ao QueueStateService
+        this.queueStateService.updateCurrentPlayer(this.currentPlayer);
+        
+        // Iniciar sincronização MySQL
+        this.queueStateService.startMySQLSync(this.currentPlayer);
+        
+        console.log('✅ [App] Sincronização da fila iniciada com dados do jogador');
+        return true;
+      }
+      return false;
+    };
+
+    // Tentar imediatamente
+    if (!checkAndStart()) {
+      // Se não tiver dados ainda, verificar periodicamente
+      const checkInterval = setInterval(() => {
+        if (checkAndStart()) {
+          clearInterval(checkInterval);
+        }
+      }, 1000); // Verificar a cada 1 segundo
+
+      // Timeout após 30 segundos
+      setTimeout(() => {
+        clearInterval(checkInterval);
+        console.log('⚠️ [App] Timeout: dados do jogador não disponíveis após 30s');
+      }, 30000);
+    }
   }
 
   private createPreliminaryParticipantsData(): any[] {
@@ -921,7 +958,102 @@ export class App implements OnInit, OnDestroy {
   }
 
   private handleWebSocketMessage(message: any): void {
-    // Método removido - não é mais necessário
+    try {
+      console.log('📨 [WebSocket] Mensagem recebida:', message);
+
+      switch (message.type) {
+        case 'queue_update':
+          console.log('🔄 [WebSocket] Atualização da fila recebida:', message.data);
+          
+          // Atualizar status da fila
+          this.queueStatus = message.data;
+          
+          // Verificar se o usuário atual está na fila
+          this.checkIfUserInUpdatedQueue(message.data);
+          
+          // Notificar QueueStateService para sincronizar
+          if (this.currentPlayer) {
+            this.queueStateService.updateCurrentPlayer(this.currentPlayer);
+            // Forçar sincronização para garantir estado consistente
+            setTimeout(() => {
+              this.queueStateService.forceSync();
+            }, 100);
+          }
+          break;
+
+        case 'queue_joined':
+          console.log('✅ [WebSocket] Confirmação de entrada na fila:', message.data);
+          this.isInQueue = true;
+          this.queueStatus = message.data.queueStatus || this.queueStatus;
+          
+          // Atualizar QueueStateService
+          this.queueStateService.updateCentralizedQueue({
+            isInQueue: true,
+            position: message.data.position,
+            waitTime: message.data.estimatedWait,
+            playersInQueue: this.queueStatus.playersInQueue,
+            averageWaitTime: this.queueStatus.averageWaitTime
+          });
+          break;
+
+        case 'match_found':
+          console.log('🎯 [WebSocket] Partida encontrada:', message.data);
+          this.handleMatchFound(message.data);
+          break;
+
+        case 'draft_phase':
+          console.log('🎨 [WebSocket] Fase de draft iniciada:', message.data);
+          this.handleDraftPhase(message.data);
+          break;
+
+        case 'game_phase':
+          console.log('🎮 [WebSocket] Fase de jogo iniciada:', message.data);
+          this.handleGamePhase(message.data);
+          break;
+
+        case 'error':
+          console.error('❌ [WebSocket] Erro recebido:', message.message);
+          this.addNotification('error', 'Erro', message.message);
+          break;
+
+        default:
+          console.log('🔍 [WebSocket] Tipo de mensagem não reconhecido:', message.type);
+      }
+    } catch (error) {
+      console.error('❌ [WebSocket] Erro ao processar mensagem:', error);
+    }
+  }
+
+  private handleMatchFound(matchData: any): void {
+    this.matchFoundData = matchData;
+    this.showMatchFound = true;
+    this.isInQueue = false; // Usuário sai da fila quando partida é encontrada
+    
+    // Tocar som de notificação se disponível
+    try {
+      const audio = new Audio('assets/sounds/match-found.mp3');
+      audio.play().catch(() => console.log('Som não disponível'));
+    } catch (error) {
+      console.log('Som de partida encontrada não disponível');
+    }
+    
+    this.addNotification('success', 'Partida Encontrada!', 'Uma partida foi encontrada. Você tem 30 segundos para aceitar.');
+  }
+
+  private handleDraftPhase(draftData: any): void {
+    this.draftData = draftData;
+    this.inDraftPhase = true;
+    this.showMatchFound = false;
+    
+    this.addNotification('info', 'Draft Iniciado', 'A fase de picks e bans começou!');
+  }
+
+  private handleGamePhase(gameData: any): void {
+    this.gameData = gameData;
+    this.inGamePhase = true;
+    this.inDraftPhase = false;
+    
+    this.addNotification('success', 'Jogo Iniciado', 'A partida começou! Boa sorte!');
   }
 
   private loadPlayerData(): void {
@@ -2404,12 +2536,19 @@ export class App implements OnInit, OnDestroy {
       }
     });
 
-    // NOVO: Listener para atualizações da fila em tempo real
+    // Listener para atualizações da fila em tempo real (incluindo todas as mensagens da fila)
     this.discordService.onQueueUpdate().subscribe(queueData => {
       console.log('🎯 [App] Fila atualizada via WebSocket:', queueData?.playersInQueue || 0, 'jogadores');
 
       if (queueData) {
-        // Atualizar estado da fila em tempo real
+        // Verificar se é uma mensagem de queue_update do backend
+        if (queueData.type === 'queue_update' && queueData.data) {
+          console.log('📨 [App] Processando queue_update do backend:', queueData.data);
+          this.handleWebSocketMessage(queueData);
+          return;
+        }
+
+        // Processar dados normais da fila
         this.queueStatus = {
           ...this.queueStatus,
           ...queueData,
@@ -2420,6 +2559,9 @@ export class App implements OnInit, OnDestroy {
           estimatedMatchTime: queueData.estimatedMatchTime || 0,
           isActive: queueData.isActive !== undefined ? queueData.isActive : this.queueStatus.isActive
         };
+
+        // Verificar se o usuário atual está na fila atualizada
+        this.checkIfUserInUpdatedQueue(queueData);
 
         console.log('✅ [App] Estado da fila atualizado em tempo real:', {
           playersInQueue: this.queueStatus.playersInQueue,
@@ -2726,6 +2868,107 @@ export class App implements OnInit, OnDestroy {
       error: (error) => {
         console.error('❌ Erro ao salvar canal do Discord:', error);
         this.addNotification('error', 'Erro do Discord', 'Erro ao configurar canal do Discord');
+      }
+    });
+  }
+
+  private checkIfUserInUpdatedQueue(queueData: any): void {
+    if (!this.currentPlayer || !queueData.playersInQueueList) {
+      return;
+    }
+
+    // Verificar se o usuário atual está na lista de jogadores da fila
+    const playersInQueue = queueData.playersInQueueList;
+    const isUserInQueue = playersInQueue.some((player: any) => {
+      // Obter dados do jogador atual
+      const currentSummonerName = this.currentPlayer!.summonerName;
+      const currentTagLine = this.currentPlayer!.tagLine;
+      const currentGameName = this.currentPlayer!.gameName;
+      
+      // Obter dados do jogador na fila
+      const playerSummonerName = player.summonerName;
+      const playerTagLine = player.tagLine;
+      
+      // Criar diferentes formatos possíveis para comparação
+      const currentFormats = [
+        currentSummonerName,
+        currentTagLine ? `${currentSummonerName}#${currentTagLine}` : null,
+        currentGameName && currentTagLine ? `${currentGameName}#${currentTagLine}` : null,
+        currentGameName ? currentGameName : null
+      ].filter(Boolean);
+      
+      const playerFormats = [
+        playerSummonerName,
+        playerTagLine ? `${playerSummonerName}#${playerTagLine}` : null
+      ].filter(Boolean);
+      
+      // Comparar usando diferentes formatos
+      return currentFormats.some(currentFormat => 
+        playerFormats.some(playerFormat => 
+          currentFormat && playerFormat && currentFormat.toLowerCase() === playerFormat.toLowerCase()
+        )
+      );
+    });
+
+    console.log('🔍 [App] Verificação de usuário na fila atualizada:', {
+      currentPlayer: {
+        summonerName: this.currentPlayer.summonerName,
+        tagLine: this.currentPlayer.tagLine,
+        gameName: this.currentPlayer.gameName
+      },
+      isUserInQueue,
+      wasInQueue: this.isInQueue,
+      playersInQueue: playersInQueue.length,
+      shouldUpdate: isUserInQueue !== this.isInQueue
+    });
+
+    // Atualizar estado se necessário
+    if (isUserInQueue !== this.isInQueue) {
+      console.log(`🔄 [App] Atualizando estado da fila: ${this.isInQueue} -> ${isUserInQueue}`);
+      this.isInQueue = isUserInQueue;
+      
+      if (isUserInQueue) {
+        console.log('✅ [App] Usuário encontrado na fila atualizada');
+      } else {
+        console.log('❌ [App] Usuário não está mais na fila');
+      }
+    }
+  }
+
+  // ✅ NOVO: Handler para evento de refresh dos dados
+  onRefreshData(): void {
+    console.log('🔄 [App] Refresh solicitado pelo componente Queue...');
+    
+    // Forçar sincronização imediata do QueueStateService
+    this.queueStateService.forceSync();
+    
+    // Buscar dados completos da fila e atualizar queueStatus
+    this.apiService.getQueueStatus().subscribe({
+      next: (fullQueueStatus) => {
+        console.log('📡 [App] Dados completos da fila recebidos via refresh:', {
+          playersInQueue: fullQueueStatus.playersInQueue,
+          playersListLength: fullQueueStatus.playersInQueueList?.length || 0,
+          playerNames: fullQueueStatus.playersInQueueList?.map(p => p.summonerName) || []
+        });
+
+        // Atualizar queueStatus completo
+        this.queueStatus = {
+          playersInQueue: fullQueueStatus.playersInQueue || 0,
+          averageWaitTime: fullQueueStatus.averageWaitTime || 0,
+          estimatedMatchTime: fullQueueStatus.estimatedMatchTime || 0,
+          isActive: fullQueueStatus.isActive !== false, // default true
+          playersInQueueList: fullQueueStatus.playersInQueueList || [],
+          recentActivities: fullQueueStatus.recentActivities || []
+        };
+
+        console.log('✅ [App] queueStatus atualizado via refresh:', {
+          playersInQueue: this.queueStatus.playersInQueue,
+          playersListLength: this.queueStatus.playersInQueueList?.length || 0,
+          isActive: this.queueStatus.isActive
+        });
+      },
+      error: (error) => {
+        console.error('❌ [App] Erro ao buscar dados da fila via refresh:', error);
       }
     });
   }

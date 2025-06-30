@@ -1129,6 +1129,33 @@ app.get('/api/queue/status', async (req: Request, res: Response) => {
   }
 });
 
+// ✅ NOVO: Endpoint para forçar sincronização MySQL (read-only)
+app.post('/api/queue/force-sync', async (req: Request, res: Response) => {
+  try {
+    console.log('🔄 [API] Sincronização MySQL manual solicitada...');
+    
+    // Chamar sincronização manual do MatchmakingService
+    await matchmakingService.forceMySQLSync();
+    
+    // Retornar status atualizado da fila
+    const queueStatus = await matchmakingService.getQueueStatus();
+    
+    console.log('✅ [API] Sincronização MySQL manual concluída');
+    
+    res.json({
+      success: true,
+      message: 'Sincronização MySQL concluída com sucesso',
+      queueStatus: queueStatus
+    });
+  } catch (error: any) {
+    console.error('❌ [API] Erro na sincronização MySQL manual:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // Endpoint para entrar na fila via HTTP
 app.post('/api/queue/join', (async (req: Request, res: Response) => {
   try {
@@ -1185,7 +1212,7 @@ app.post('/api/queue/leave', (async (req: Request, res: Response) => {
     console.log('🔍 [API] Fila atual:', matchmakingService.getQueue().map(p => ({ id: p.id, name: p.summonerName })));
 
     // Usar o método público do MatchmakingService
-    const removed = matchmakingService.removePlayerFromQueueById(playerId, summonerName);
+    const removed = await matchmakingService.removePlayerFromQueueById(playerId, summonerName);
 
     console.log('🔍 [API] Resultado da remoção:', removed);
 
@@ -1283,7 +1310,7 @@ app.post('/api/queue/leave-legacy', (async (req: Request, res: Response) => {
     }
 
     // Usar o método público do MatchmakingService
-    const removed = matchmakingService.removePlayerFromQueueById(playerId);
+    const removed = await matchmakingService.removePlayerFromQueueById(playerId);
 
     if (removed) {
       res.json({

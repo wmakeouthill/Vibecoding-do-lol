@@ -6,9 +6,35 @@ import { Player, RefreshPlayerResponse } from '../interfaces'; // Importar Playe
 
 interface QueueStatus {
   playersInQueue: number;
-  activeMatches: number;
   averageWaitTime: number;
-  queuedPlayers: any[];
+  estimatedMatchTime: number;
+  isActive: boolean;
+  playersInQueueList?: QueuedPlayerInfo[];
+  recentActivities?: QueueActivity[];
+  activeMatches?: number; // Backwards compatibility
+  queuedPlayers?: any[]; // Backwards compatibility (deprecated)
+}
+
+interface QueuedPlayerInfo {
+  summonerName: string;
+  tagLine?: string;
+  primaryLane: string;
+  secondaryLane: string;
+  primaryLaneDisplay: string;
+  secondaryLaneDisplay: string;
+  mmr: number;
+  queuePosition: number;
+  joinTime: Date;
+}
+
+interface QueueActivity {
+  id: string;
+  timestamp: Date;
+  type: 'player_joined' | 'player_left' | 'match_created' | 'system_update' | 'queue_cleared';
+  message: string;
+  playerName?: string;
+  playerTag?: string;
+  lane?: string;
 }
 
 interface LCUStatus {
@@ -333,11 +359,16 @@ export class ApiService {
 
   // Queue endpoints
   getQueueStatus(): Observable<QueueStatus> {
-    return this.http.get<QueueStatus>(`${this.baseUrl}/queue/status`)
-      .pipe(
-        catchError(this.handleError)
-      );
+    return this.http.get<QueueStatus>(`${this.baseUrl}/api/queue/status`)
+      .pipe(catchError(this.handleError));
   }
+
+  // ✅ NOVO: Forçar sincronização MySQL read-only
+  forceMySQLSync(): Observable<any> {
+    return this.http.post(`${this.baseUrl}/api/queue/force-sync`, {})
+      .pipe(catchError(this.handleError));
+  }
+
   getRecentMatches(): Observable<MatchHistory[]> {
     return this.http.get<MatchHistory[]>(`${this.baseUrl}/matches/recent`)
       .pipe(

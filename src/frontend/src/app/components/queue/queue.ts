@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Player, QueueStatus, QueuePreferences } from '../../interfaces';
 import { DiscordIntegrationService } from '../../services/discord-integration.service';
+import { QueueStateService } from '../../services/queue-state';
 import { LaneSelectorComponent } from '../lane-selector/lane-selector';
 
 @Component({
@@ -23,6 +24,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   @Output() joinQueue = new EventEmitter<QueuePreferences>();
   @Output() leaveQueue = new EventEmitter<void>();
   @Output() joinDiscordQueueWithFullData = new EventEmitter<{player: Player | null, preferences: QueuePreferences}>();
+  @Output() refreshData = new EventEmitter<void>();
   // Remover outputs para funcionalidade de bots
   // @Output() addBot = new EventEmitter<void>();
   // @Output() simulateLastMatch = new EventEmitter<void>();
@@ -54,42 +56,72 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   activeTab: 'queue' | 'lobby' | 'all' = 'all';
   isRefreshing = false;
   autoRefreshEnabled = true;
-  private autoRefreshInterval?: number;
 
-  constructor(public discordService: DiscordIntegrationService) {}
+  constructor(
+    public discordService: DiscordIntegrationService,
+    private queueStateService: QueueStateService
+  ) {}
 
-  ngOnInit() {
-    if (this.isInQueue) {
-      this.startTimer();
+  ngOnInit(): void {
+    console.log('🎯 [Queue] Componente inicializado');
+    
+    // Iniciar sincronização MySQL imediatamente
+    if (this.currentPlayer) {
+      this.queueStateService.updateCurrentPlayer(this.currentPlayer);
+      this.queueStateService.startMySQLSync(this.currentPlayer);
     }
 
-    // Setup Discord integration
+    // Configurar listeners do Discord
     this.setupDiscordListeners();
+    
+    // Configurar listener do estado da fila
+    this.setupQueueStateListener();
+    
+    // Verificar conexão inicial do Discord
     this.checkDiscordConnection();
     
-    // Verificar se o usuário já está na fila quando reconecta
-    this.checkIfUserInQueue();
+    // Iniciar timer se estiver na fila
+    if (this.isInQueue) {
+      this.startQueueTimer();
+    }
   }
 
-  ngOnDestroy() {
-    console.log('🛑 [Queue] Destruindo componente...');
+  ngOnDestroy(): void {
+    console.log('🛑 [Queue] Componente destruído');
     
-    // Parar timer da fila
+    // Parar sincronização MySQL
+    this.queueStateService.stopMySQLSync();
+    
+    // Parar timer
     if (this.timerInterval) {
       clearInterval(this.timerInterval);
-      this.timerInterval = undefined;
     }
-    
-    // REMOVIDO: Limpeza de autoRefreshInterval - não existe mais polling
-    // O DiscordService já cuida de limpar seus próprios recursos
   }
 
-  ngOnChanges() {
-    if (this.isInQueue && !this.timerInterval) {
-      this.startTimer();
-    } else if (!this.isInQueue && this.timerInterval) {
-      this.stopTimer();
+  ngOnChanges(changes: any): void {
+    if (changes.currentPlayer && changes.currentPlayer.currentValue) {
+      console.log('🔄 [Queue] CurrentPlayer atualizado, reiniciando sincronização MySQL');
+      this.queueStateService.updateCurrentPlayer(changes.currentPlayer.currentValue);
+      this.queueStateService.startMySQLSync(changes.currentPlayer.currentValue);
     }
+  }
+
+  // NOVO: Configurar listener do estado da fila
+  private setupQueueStateListener(): void {
+    this.queueStateService.getQueueState().subscribe(state => {
+      console.log('🔄 [Queue] Estado da fila atualizado via MySQL:', state);
+      
+      // SEMPRE atualizar estado local baseado na sincronização MySQL
+      this.isInQueue = state.isInQueue;
+      
+      // Atualizar timer se necessário
+      if (state.isInQueue && !this.timerInterval) {
+        this.startQueueTimer();
+      } else if (!state.isInQueue && this.timerInterval) {
+        this.stopQueueTimer();
+        this.queueTimer = 0;
+      }
+    });
   }
 
   onJoinQueue() {
@@ -102,7 +134,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     this.showLaneSelector = false;
     this.joinQueue.emit(preferences);
     this.queueTimer = 0;
-    this.startTimer();
+    this.startQueueTimer();
   }
 
   onCloseLaneSelector() {
@@ -112,13 +144,13 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   onLeaveQueue() {
     console.log('🔍 [Queue] Sair da fila solicitado');
     this.leaveQueue.emit();
-    this.stopTimer();
+    this.stopQueueTimer();
     this.queueTimer = 0;
   }
 
-  private startTimer() {
+  private startQueueTimer() {
     // Parar timer existente antes de iniciar novo
-    this.stopTimer();
+    this.stopQueueTimer();
     
     console.log('⏱️ [Queue] Iniciando timer da fila');
     this.timerInterval = window.setInterval(() => {
@@ -130,7 +162,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     }, 1000);
   }
 
-  private stopTimer() {
+  private stopQueueTimer() {
     if (this.timerInterval) {
       console.log('⏱️ [Queue] Parando timer da fila');
       clearInterval(this.timerInterval);
@@ -289,60 +321,54 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   private setupDiscordListeners() {
-    // Escutar atualizações de usuários Discord em tempo real
+    // Listener para atualizações de usuários Discord
     this.discordService.onUsersUpdate().subscribe(users => {
-      console.log('👥 [Queue] Usuários Discord atualizados:', users.length);
+      console.log('👥 [Queue] Usuários Discord atualizados:', users?.length || 0, 'usuários');
       this.discordUsersOnline = users || [];
       
-      // Forçar atualização da UI
-      this.refreshQueueData();
+      // Identificar usuário atual quando os usuários forem atualizados
+      if (this.currentPlayer && this.currentPlayer.gameName && this.currentPlayer.tagLine) {
+        this.discordService.identifyCurrentUserFromLCU({
+          gameName: this.currentPlayer.gameName,
+          tagLine: this.currentPlayer.tagLine
+        });
+      }
+      this.currentDiscordUser = this.discordService.getCurrentDiscordUser();
+      
+      console.log('✅ [Queue] Usuário atual atualizado:', this.currentDiscordUser);
     });
 
-    // Escutar mudanças de conexão Discord
+    // Listener para mudanças de conexão
     this.discordService.onConnectionChange().subscribe(isConnected => {
-      console.log('🔗 [Queue] Status de conexão Discord mudou:', isConnected);
+      console.log('🔗 [Queue] Status de conexão Discord alterado:', isConnected);
       this.isDiscordConnected = isConnected;
       this.showDiscordMode = isConnected;
-      
-      // Se conectou, verificar status imediatamente
-      if (isConnected) {
-        this.checkDiscordConnection();
-      }
     });
 
-    // Escutar atualizações da fila em tempo real
-    this.discordService.onQueueUpdate().subscribe(queueData => {
-      console.log('🎯 [Queue] Fila atualizada via WebSocket:', queueData?.playersInQueue || 0, 'jogadores');
-      if (queueData) {
-        this.discordQueue = queueData.playersInQueueList || [];
-        this.refreshQueueData();
-      }
-    });
-
-    // Escutar quando entrar na fila
+    // Listener para entrada na fila
     this.discordService.onQueueJoined().subscribe(data => {
-      console.log('✅ [Queue] Entrou na fila Discord:', data);
       if (data) {
+        console.log('✅ [Queue] Entrou na fila Discord com sucesso!', data);
         this.isInQueue = true;
         this.queueTimer = 0;
-        this.startTimer();
+        this.startQueueTimer();
       }
     });
-
-    // Escutar quando encontrar partida
-    this.discordService.onMatchFound().subscribe(matchData => {
-      console.log('🎮 [Queue] Partida encontrada via Discord:', matchData);
-      this.handleDiscordMatchFound(matchData);
-    });
-
-    // REMOVIDO: Polling desnecessário - WebSocket já fornece atualizações em tempo real
-    // O sistema de atualização automática do DiscordService já cuida de backups
   }
 
   private checkDiscordConnection() {
     // Verificar status inicial do Discord
     this.isDiscordConnected = this.discordService.isConnected();
     this.isInDiscordChannel = this.discordService.isInChannel();
+    
+    // Identificar usuário atual baseado nos dados do LCU
+    if (this.currentPlayer && this.currentPlayer.gameName && this.currentPlayer.tagLine) {
+      this.discordService.identifyCurrentUserFromLCU({
+        gameName: this.currentPlayer.gameName,
+        tagLine: this.currentPlayer.tagLine
+      });
+    }
+    
     this.currentDiscordUser = this.discordService.getCurrentDiscordUser();
     this.discordUsersOnline = this.discordService.getDiscordUsersOnline() || [];
     this.discordQueue = this.discordService.getQueueParticipants() || [];
@@ -356,7 +382,8 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       isInChannel: this.isInDiscordChannel,
       usersOnline: this.discordUsersOnline.length,
       queueSize: this.discordQueue.length,
-      showDiscordMode: this.showDiscordMode
+      showDiscordMode: this.showDiscordMode,
+      currentUser: this.currentDiscordUser
     });
   }
 
@@ -459,7 +486,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       this.queuePreferences = preferences;
       this.isInQueue = true;
       this.queueTimer = 0;
-      this.startTimer();
+      this.startQueueTimer();
     } else {
       alert('❌ Falha ao entrar na fila Discord. Verifique se está no canal correto e logado no LoL.');
     }
@@ -468,7 +495,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   onLeaveDiscordQueue() {
     this.discordService.leaveDiscordQueue();
     this.leaveQueue.emit();
-    this.stopTimer();
+    this.stopQueueTimer();
     this.queueTimer = 0;
     this.isInQueue = false;
   }
@@ -506,48 +533,130 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     
     console.log('🔄 [Queue] Atualizando dados dos jogadores...');
     
-    // Solicitar atualização completa do Discord
+    // PRIMEIRO: EMITIR evento para o App atualizar queueStatus
+    this.refreshData.emit();
+    
+    // SEGUNDO: FORÇAR sincronização com MySQL (prioridade máxima)
+    this.queueStateService.forceSync();
+    
+    // TERCEIRO: Solicitar atualização completa do Discord
     this.discordService.requestDiscordStatus();
     
-    // Atualizar dados locais imediatamente
+    // QUARTO: Atualizar dados locais imediatamente
     this.discordUsersOnline = this.discordService.getDiscordUsersOnline() || [];
     this.isDiscordConnected = this.discordService.isConnected();
     this.isInDiscordChannel = this.discordService.isInChannel();
     this.discordQueue = this.discordService.getQueueParticipants() || [];
     
-    // Atualizar status de conexão
+    // QUINTO: Identificar usuário atual baseado nos dados do LCU
+    if (this.currentPlayer && this.currentPlayer.gameName && this.currentPlayer.tagLine) {
+      this.discordService.identifyCurrentUserFromLCU({
+        gameName: this.currentPlayer.gameName,
+        tagLine: this.currentPlayer.tagLine
+      });
+    }
+    this.currentDiscordUser = this.discordService.getCurrentDiscordUser();
+    
+    // SEXTO: Atualizar status de conexão
     this.checkDiscordConnection();
     
-    console.log('✅ [Queue] Dados atualizados:', {
+    console.log('✅ [Queue] Primeira fase de atualização concluída:', {
       usersOnline: this.discordUsersOnline.length,
       queueSize: this.discordQueue.length,
       isDiscordConnected: this.isDiscordConnected,
-      isInChannel: this.isInDiscordChannel
+      isInChannel: this.isInDiscordChannel,
+      currentUser: this.currentDiscordUser
     });
     
-    // Aguardar um pouco e atualizar novamente para garantir dados mais recentes
+    // SÉTIMO: Aguardar e fazer segunda sincronização MySQL (garantir consistência)
     setTimeout(() => {
+      console.log('🔄 [Queue] Segunda fase: sincronização MySQL...');
+      
+      // Forçar segunda sincronização MySQL
+      this.queueStateService.forceSync();
+      
+      // Verificar estado atual da fila MySQL
+      this.queueStateService.getQueueState().subscribe(state => {
+        console.log('📊 [Queue] Estado MySQL verificado:', {
+          isInQueue: state.isInQueue,
+          position: state.position,
+          playersInQueue: state.playersInQueue
+        });
+        
+        // Atualizar estado do componente baseado no MySQL
+        if (state.isInQueue !== this.isInQueue) {
+          console.log(`🔄 [Queue] Atualizando estado local: ${this.isInQueue} → ${state.isInQueue}`);
+          this.isInQueue = state.isInQueue;
+          
+          // Atualizar timer se necessário
+          if (state.isInQueue && !this.timerInterval) {
+            console.log('⏱️ [Queue] Iniciando timer (usuário estava na fila)');
+            this.startQueueTimer();
+          } else if (!state.isInQueue && this.timerInterval) {
+            console.log('⏱️ [Queue] Parando timer (usuário não está na fila)');
+            this.stopQueueTimer();
+            this.queueTimer = 0;
+          }
+        }
+      });
+      
+      // Atualizar dados Discord finais
       this.discordUsersOnline = this.discordService.getDiscordUsersOnline() || [];
       this.discordQueue = this.discordService.getQueueParticipants() || [];
+      
+      // Re-identificar usuário atual
+      if (this.currentPlayer && this.currentPlayer.gameName && this.currentPlayer.tagLine) {
+        this.discordService.identifyCurrentUserFromLCU({
+          gameName: this.currentPlayer.gameName,
+          tagLine: this.currentPlayer.tagLine
+        });
+      }
+      this.currentDiscordUser = this.discordService.getCurrentDiscordUser();
+      
       this.isRefreshing = false;
       
-      console.log('✅ [Queue] Atualização finalizada:', {
+      console.log('✅ [Queue] Atualização completa finalizada:', {
         usersOnline: this.discordUsersOnline.length,
-        queueSize: this.discordQueue.length
+        queueSize: this.discordQueue.length,
+        currentUser: this.currentDiscordUser,
+        isInQueue: this.isInQueue,
+        timerActive: !!this.timerInterval
       });
-    }, 500);
+    }, 1000); // Aguardar 1 segundo para sincronização completa
   }
 
-  // Método para atualizar especificamente a fila
+  // Método para atualizar especificamente a fila (MySQL + estado)
   refreshQueueData(): void {
-    console.log('🔄 [Queue] Atualizando dados da fila...');
+    console.log('🔄 [Queue] Atualizando dados da fila MySQL...');
     
-    // Solicitar status atualizado da fila
+    // FORÇAR sincronização com MySQL (PRINCIPAL)
+    this.queueStateService.forceSync();
+    
+    // Solicitar status atualizado da fila do Discord (SECUNDÁRIO)
     this.discordService.requestDiscordStatus();
     
-    // Verificar se o usuário ainda está na fila após atualização
+    // Verificar estado da fila após sincronização
     setTimeout(() => {
-      this.checkIfUserInQueue();
+      console.log('🔍 [Queue] Verificando estado pós-sincronização...');
+      
+      // Segunda sincronização para garantir
+      this.queueStateService.forceSync();
+      
+      // Verificar se estado mudou
+      this.queueStateService.getQueueState().subscribe(state => {
+        console.log('📋 [Queue] Estado final da fila:', {
+          isInQueue: state.isInQueue,
+          position: state.position,
+          playersInQueue: state.playersInQueue,
+          averageWaitTime: state.averageWaitTime
+        });
+        
+        // Atualizar estado local se necessário
+        if (state.isInQueue !== this.isInQueue) {
+          console.log(`🔄 [Queue] Estado da fila atualizado: ${this.isInQueue} → ${state.isInQueue}`);
+          this.isInQueue = state.isInQueue;
+        }
+      });
     }, 500);
   }
 
@@ -560,7 +669,57 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   isCurrentPlayer(player: any): boolean {
-    return !!this.currentPlayer && player.summonerName === this.currentPlayer.summonerName;
+    if (!this.currentPlayer) return false;
+    
+    // Obter dados do jogador atual
+    const currentSummonerName = this.currentPlayer.summonerName;
+    const currentTagLine = this.currentPlayer.tagLine;
+    const currentGameName = this.currentPlayer.gameName;
+    
+    // Obter dados do jogador na fila
+    const playerSummonerName = player.summonerName;
+    const playerTagLine = player.tagLine;
+    
+    // Criar diferentes formatos possíveis para comparação
+    const currentFormats = [
+      currentSummonerName,
+      currentTagLine ? `${currentSummonerName}#${currentTagLine}` : null,
+      currentGameName && currentTagLine ? `${currentGameName}#${currentTagLine}` : null,
+      currentGameName ? currentGameName : null
+    ].filter(Boolean);
+    
+    const playerFormats = [
+      playerSummonerName,
+      playerTagLine ? `${playerSummonerName}#${playerTagLine}` : null
+    ].filter(Boolean);
+    
+    // Comparar usando diferentes formatos
+    const isMatch = currentFormats.some(currentFormat => 
+      playerFormats.some(playerFormat => 
+        currentFormat && playerFormat && currentFormat.toLowerCase() === playerFormat.toLowerCase()
+      )
+    );
+    
+    if (isMatch) {
+      console.log('✅ [Queue] Usuário atual identificado na fila:', {
+        currentPlayer: {
+          summonerName: currentSummonerName,
+          tagLine: currentTagLine,
+          gameName: currentGameName
+        },
+        queuePlayer: {
+          summonerName: playerSummonerName,
+          tagLine: playerTagLine
+        },
+        matchedFormat: currentFormats.find(currentFormat => 
+          playerFormats.some(playerFormat => 
+            currentFormat && playerFormat && currentFormat.toLowerCase() === playerFormat.toLowerCase()
+          )
+        )
+      });
+    }
+    
+    return isMatch;
   }
 
   getTimeInQueue(joinTime: Date | string): string {
@@ -663,64 +822,26 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       }
     });
     
-    // Verificar se o usuário está na lista de jogadores da fila
-    const userSummonerName = this.currentPlayer.summonerName;
-    const userTagLine = this.currentPlayer.tagLine;
-    const userGameName = this.currentPlayer.gameName;
-    
-    // Tentar diferentes formatos de nome
-    const possibleNames = [
-      userSummonerName,
-      userTagLine ? `${userSummonerName}#${userTagLine}` : null,
-      userGameName && userTagLine ? `${userGameName}#${userTagLine}` : null,
-      userGameName ? userGameName : null
-    ].filter(Boolean);
-    
-    console.log('🔍 [Queue] Possíveis nomes para busca:', possibleNames);
-    
+    // Verificar se o usuário está na lista de jogadores da fila usando a mesma lógica do isCurrentPlayer
     const playersInQueue = this.queueStatus.playersInQueueList || [];
-    const isUserInQueue = playersInQueue.some(player => {
-      const playerNames = [
-        player.summonerName,
-        player.tagLine ? `${player.summonerName}#${player.tagLine}` : null
-      ].filter(Boolean);
-      
-      const match = possibleNames.some(userName => 
-        playerNames.some(playerName => 
-          userName && playerName && userName.toLowerCase() === playerName.toLowerCase()
-        )
-      );
-      
-      if (match) {
-        console.log('✅ [Queue] Usuário encontrado na fila:', {
-          userName: possibleNames.find(name => 
-            playerNames.some(playerName => 
-              name && playerName && name.toLowerCase() === playerName.toLowerCase()
-            )
-          ),
-          playerName: player.summonerName,
-          playerTagLine: player.tagLine
-        });
-      }
-      
-      return match;
-    });
+    const isUserInQueue = playersInQueue.some(player => this.isCurrentPlayer(player));
     
     console.log('🔍 [Queue] Resultado da verificação:', {
       isUserInQueue,
       wasInQueue: this.isInQueue,
-      shouldUpdate: isUserInQueue !== this.isInQueue
+      shouldUpdate: isUserInQueue !== this.isInQueue,
+      playersChecked: playersInQueue.length
     });
     
     if (isUserInQueue && !this.isInQueue) {
       console.log('✅ [Queue] Usuário encontrado na fila, atualizando estado...');
       this.isInQueue = true;
       this.queueTimer = 0; // Resetar timer
-      this.startTimer();
+      this.startQueueTimer();
     } else if (!isUserInQueue && this.isInQueue) {
       console.log('❌ [Queue] Usuário não está mais na fila, atualizando estado...');
       this.isInQueue = false;
-      this.stopTimer();
+      this.stopQueueTimer();
       this.queueTimer = 0;
     } else {
       console.log('ℹ️ [Queue] Estado da fila não mudou:', {
@@ -734,10 +855,6 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   private checkUserInDiscordQueue() {
     if (!this.currentPlayer || !this.discordService.isConnected()) return;
     
-    const userSummonerName = this.currentPlayer.summonerName;
-    const userTagLine = this.currentPlayer.tagLine;
-    const userFullName = userTagLine ? `${userSummonerName}#${userTagLine}` : userSummonerName;
-    
     // Verificar se o usuário está na lista de participantes da fila Discord
     const queueParticipants = this.discordService.getQueueParticipants();
     
@@ -747,10 +864,15 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       return;
     }
     
+    // Usar a mesma lógica de identificação do isCurrentPlayer
     const isInDiscordQueue = queueParticipants.some(participant => {
       if (participant && participant.linkedNickname) {
-        const participantFullName = `${participant.linkedNickname.gameName}#${participant.linkedNickname.tagLine}`;
-        return participantFullName === userFullName;
+        // Criar um objeto temporário para usar com isCurrentPlayer
+        const tempPlayer = {
+          summonerName: participant.linkedNickname.gameName,
+          tagLine: participant.linkedNickname.tagLine
+        };
+        return this.isCurrentPlayer(tempPlayer);
       }
       return false;
     });
@@ -759,7 +881,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       console.log('✅ [Queue] Usuário encontrado na fila Discord, atualizando estado...');
       this.isInQueue = true;
       this.queueTimer = 0;
-      this.startTimer();
+      this.startQueueTimer();
     }
   }
 } 
