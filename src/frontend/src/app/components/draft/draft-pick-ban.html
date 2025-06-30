@@ -165,7 +165,7 @@
     [session]="session"
     [currentPlayer]="currentPlayer"
     (onConfirm)="completePickBan()"
-    (onEditPick)="onEditRequested()"
+    (onEditPick)="onEditRequested($event)"
     (onClose)="showConfirmationModal = false">
   </app-draft-confirmation-modal>
 </div>
