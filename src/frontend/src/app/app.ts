@@ -191,12 +191,84 @@ export class App implements OnInit, OnDestroy {
       }
     });
 
+
     // Aguardar um pouco para o LCU conectar e então carregar dados
     setTimeout(() => {
       this.loadPlayerData();
       this.recoverGameState();
       this.tryLoadRealPlayerData();
     }, 2000); // Aguardar 2 segundos para o LCU conectar
+  }
+
+  private createPreliminaryParticipantsData(): any[] {
+    console.log('\n🎯 [createPreliminaryParticipantsData] Criando dados preliminares dos participantes');
+    console.log('📊 Game data teams antes de criar participantes:');
+    console.log('Team1:', this.gameData.team1.map((p: any) => ({
+      name: p.summonerName,
+      champion: p.champion?.name,
+      championId: p.champion?.id,
+      hasChampion: !!p.champion
+    })));
+    console.log('Team2:', this.gameData.team2.map((p: any) => ({
+      name: p.summonerName,
+      champion: p.champion?.name,
+      championId: p.champion?.id,
+      hasChampion: !!p.champion
+    })));
+
+    const participants: any[] = [];
+    let participantId = 1;
+
+    // Team 1 (azul)
+    this.gameData.team1.forEach((player: any) => {
+      const participant = {
+        participantId: participantId++,
+        teamId: 100,
+        championId: player.champion?.id || 0,
+        championName: player.champion?.name || 'Unknown',
+        summonerName: player.summonerName,
+        lane: player.lane,
+        // ...outros campos zerados...
+        kills: 0, deaths: 0, assists: 0, champLevel: 0, goldEarned: 0,
+        totalMinionsKilled: 0, neutralMinionsKilled: 0, totalDamageDealt: 0,
+        totalDamageDealtToChampions: 0, totalDamageTaken: 0, wardsPlaced: 0,
+        wardsKilled: 0, visionScore: 0, firstBloodKill: false, doubleKills: 0,
+        tripleKills: 0, quadraKills: 0, pentaKills: 0, item0: 0, item1: 0,
+        item2: 0, item3: 0, item4: 0, item5: 0, item6: 0, summoner1Id: 0,
+        summoner2Id: 0, win: false
+      };
+
+      console.log(`👤 [Team1] ${player.summonerName}: championId=${participant.championId}, championName="${participant.championName}"`);
+      participants.push(participant);
+    });
+
+    // Team 2 (vermelho)
+    this.gameData.team2.forEach((player: any) => {
+      const participant = {
+        participantId: participantId++,
+        teamId: 200,
+        championId: player.champion?.id || 0,
+        championName: player.champion?.name || 'Unknown',
+        summonerName: player.summonerName,
+        lane: player.lane,
+        // ...outros campos zerados...
+        kills: 0, deaths: 0, assists: 0, champLevel: 0, goldEarned: 0,
+        totalMinionsKilled: 0, neutralMinionsKilled: 0, totalDamageDealt: 0,
+        totalDamageDealtToChampions: 0, totalDamageTaken: 0, wardsPlaced: 0,
+        wardsKilled: 0, visionScore: 0, firstBloodKill: false, doubleKills: 0,
+        tripleKills: 0, quadraKills: 0, pentaKills: 0, item0: 0, item1: 0,
+        item2: 0, item3: 0, item4: 0, item5: 0, item6: 0, summoner1Id: 0,
+        summoner2Id: 0, win: false
+      };
+
+      console.log(`👤 [Team2] ${player.summonerName}: championId=${participant.championId}, championName="${participant.championName}"`);
+      participants.push(participant);
+    });
+
+    console.log('\n📊 Dados preliminares criados:', participants.length, 'participantes');
+    console.log('📊 Resumo dos campeões:', participants.map(p => `${p.summonerName}: ${p.championName} (ID: ${p.championId})`));
+
+    return participants;
   }
 
   ngOnDestroy(): void {
@@ -284,109 +356,111 @@ export class App implements OnInit, OnDestroy {
       originalMatchId: this.draftData?.matchId // Adicionar matchId do draft para cancelamento
     };
 
+    // NOVO: cria os dados preliminares dos participantes
+    const participantsData = this.createPreliminaryParticipantsData();
+
+    // Mapeia os campeões corretamente
+    this.updatePlayersWithChampions(pickBanResult);
+
+    // NOVO: salva no backend (status: 'pending' para indicar que é preliminar)
+    this.apiService.saveCustomMatch({
+      title: this.gameData?.originalMatchId
+        ? `Simulação - Partida ${this.gameData.originalMatchId}`
+        : `Partida Customizada ${new Date().toLocaleDateString()}`,
+      description: this.gameData?.originalMatchId
+        ? `Simulação baseada na partida real ${this.gameData.originalMatchId}`
+        : `Partida entre ${this.gameData.team1.length}v${this.gameData.team2.length}`,
+      team1Players: this.gameData.team1.map((p: any) => p.summonerName),
+      team2Players: this.gameData.team2.map((p: any) => p.summonerName),
+      createdBy: this.currentPlayer?.summonerName,
+      gameMode: 'CLASSIC',
+      participantsData, // <-- aqui!
+      status: 'pending'
+    }).subscribe(
+      (response) => {
+        console.log('✅ Dados preliminares salvos:', response);
+        this.gameData.matchId = response.matchId; // Se quiser usar depois
+      },
+      (error) => {
+        console.error('❌ Erro ao salvar dados preliminares:', error);
+      }
+    );
+
     console.log('🔍 Game data criado com originalMatchId:', this.gameData.originalMatchId);
     console.log('🔍 Tipo do originalMatchId:', typeof this.gameData.originalMatchId);
 
-    this.updatePlayersWithChampions(pickBanResult);
     this.inGamePhase = true;
     this.persistGameState();
 
     console.log('✅ Dados do jogo preparados:', this.gameData);
   }
 
-  private updatePlayersWithChampions(pickBanResult: any): void {
-    if (!this.gameData || !pickBanResult.picks) return;
+  updatePlayersWithChampions(pickBanResult: any) {
+    console.log('🔄 [updatePlayersWithChampions] Iniciando mapeamento de campeões');
+    console.log('📊 Pick/Ban result completo:', JSON.stringify(pickBanResult, null, 2));
+    console.log('📊 Game data teams:', {
+      team1: this.gameData.team1.map((p: { id: any; summonerName: any; }) => ({ id: p.id, name: p.summonerName })),
+      team2: this.gameData.team2.map((p: { id: any; summonerName: any; }) => ({ id: p.id, name: p.summonerName }))
+    });
 
-    console.log('🎯 [updatePlayersWithChampions] Iniciando mapeamento de campeões aos jogadores');
-    console.log('📊 Pick/Ban result:', pickBanResult);
+    // Verificar se temos dados suficientes
+    if (!this.gameData || !pickBanResult?.session?.phases) {
+      console.log('❌ [updatePlayersWithChampions] Dados insuficientes para mapeamento');
+      console.log('❌ gameData existe:', !!this.gameData);
+      console.log('❌ pickBanResult.session.phases existe:', !!pickBanResult?.session?.phases);
+      return;
+    }
 
-    // CORREÇÃO: Mapear campeões aos jogadores específicos que os escolheram
-    // Buscar os picks com informações do jogador que escolheu
-    const picksWithPlayerInfo = pickBanResult.picks || [];
+    // Extrair picks das fases do draft
+    const picks = pickBanResult.session.phases
+      .filter((phase: any) => phase.action === 'pick' && phase.champion)
+      .map((phase: any) => ({
+        team: phase.team,
+        champion: phase.champion,
+        playerId: phase.playerId,
+        playerName: phase.playerName,
+        playerIndex: phase.playerIndex
+      }));
 
-    console.log('👥 Picks com informações de jogador:', picksWithPlayerInfo);
+    console.log('🎯 Picks extraídos das fases:', picks.length);
+    console.log('🎯 Picks detalhados:', picks.map((p: any) => ({
+      team: p.team,
+      champion: p.champion?.name,
+      playerId: p.playerId,
+      playerName: p.playerName,
+      playerIndex: p.playerIndex
+    })));
 
-    // Mapear campeões aos jogadores do time azul (team1)
-    this.gameData.team1.forEach((player: any, index: number) => {
-      // Buscar o pick correspondente a este jogador
-      const playerPick = picksWithPlayerInfo.find((pick: any) => {
-        // Verificar se o pick é do time azul e corresponde ao jogador
-        if (pick.team === 'blue') {
-          // Se temos informação do jogador que escolheu
-          if (pick.playerId && pick.playerId === player.id) {
-            return true;
-          }
-          if (pick.playerName && pick.playerName === player.summonerName) {
-            return true;
-          }
-          // Se não temos informação específica, usar ordem de index
-          if (!pick.playerId && !pick.playerName) {
-            return true; // Será filtrado por ordem
-          }
-        }
-        return false;
-      });
+    // Separar picks por time
+    const bluePicks = picks.filter((p: any) => p.team === 'blue');
+    const redPicks = picks.filter((p: any) => p.team === 'red');
 
-      if (playerPick && playerPick.champion) {
-        player.champion = playerPick.champion;
-        console.log(`✅ [Team1] ${player.summonerName} mapeado para ${playerPick.champion.name}`);
-      } else {
-        console.log(`⚠️ [Team1] ${player.summonerName} não encontrou pick correspondente`);
+    console.log('🔵 Blue picks:', bluePicks.length);
+    console.log('🔴 Red picks:', redPicks.length);
+
+    // Mapear campeões para jogadores do time 1 (blue)
+    bluePicks.forEach((pick: any, index: number) => {
+      if (this.gameData.team1[index]) {
+        this.gameData.team1[index].champion = pick.champion;
+        this.gameData.team1[index].championId = pick.champion.id;
+        this.gameData.team1[index].hasChampion = true;
+        console.log(`✅ [Team1] ${this.gameData.team1[index].name} -> ${pick.champion.name} (ID: ${pick.champion.id})`);
       }
     });
 
-    // Mapear campeões aos jogadores do time vermelho (team2)
-    this.gameData.team2.forEach((player: any, index: number) => {
-      // Buscar o pick correspondente a este jogador
-      const playerPick = picksWithPlayerInfo.find((pick: any) => {
-        // Verificar se o pick é do time vermelho e corresponde ao jogador
-        if (pick.team === 'red') {
-          // Se temos informação do jogador que escolheu
-          if (pick.playerId && pick.playerId === player.id) {
-            return true;
-          }
-          if (pick.playerName && pick.playerName === player.summonerName) {
-            return true;
-          }
-          // Se não temos informação específica, usar ordem de index
-          if (!pick.playerId && !pick.playerName) {
-            return true; // Será filtrado por ordem
-          }
-        }
-        return false;
-      });
-
-      if (playerPick && playerPick.champion) {
-        player.champion = playerPick.champion;
-        console.log(`✅ [Team2] ${player.summonerName} mapeado para ${playerPick.champion.name}`);
-      } else {
-        console.log(`⚠️ [Team2] ${player.summonerName} não encontrou pick correspondente`);
+    // Mapear campeões para jogadores do time 2 (red)
+    redPicks.forEach((pick: any, index: number) => {
+      if (this.gameData.team2[index]) {
+        this.gameData.team2[index].champion = pick.champion;
+        this.gameData.team2[index].championId = pick.champion.id;
+        this.gameData.team2[index].hasChampion = true;
+        console.log(`✅ [Team2] ${this.gameData.team2[index].name} -> ${pick.champion.name} (ID: ${pick.champion.id})`);
       }
     });
 
-    // Fallback: Se não conseguimos mapear por jogador específico, usar ordem sequencial
-    const bluePicks = pickBanResult.blueTeamPicks || pickBanResult.picks.filter((p: any) => p.team === 'blue');
-    const redPicks = pickBanResult.redTeamPicks || pickBanResult.picks.filter((p: any) => p.team === 'red');
-
-    // Aplicar fallback para time azul
-    this.gameData.team1.forEach((player: any, index: number) => {
-      if (!player.champion && bluePicks[index] && bluePicks[index].champion) {
-        player.champion = bluePicks[index].champion;
-        console.log(`🔄 [Fallback Team1] ${player.summonerName} mapeado para ${bluePicks[index].champion.name} (por ordem)`);
-      }
-    });
-
-    // Aplicar fallback para time vermelho
-    this.gameData.team2.forEach((player: any, index: number) => {
-      if (!player.champion && redPicks[index] && redPicks[index].champion) {
-        player.champion = redPicks[index].champion;
-        console.log(`🔄 [Fallback Team2] ${player.summonerName} mapeado para ${redPicks[index].champion.name} (por ordem)`);
-      }
-    });
-
-    console.log('✅ [updatePlayersWithChampions] Mapeamento concluído');
-    console.log('📊 Team1 com campeões:', this.gameData.team1.map((p: any) => ({ name: p.summonerName, champion: p.champion?.name })));
-    console.log('📊 Team2 com campeões:', this.gameData.team2.map((p: any) => ({ name: p.summonerName, champion: p.champion?.name })));
+    console.log('🎯 Mapeamento de campeões concluído');
+    console.log('📊 Team1 após mapeamento:', this.gameData.team1.map((p: any) => ({ name: p.name, champion: p.champion?.name, championId: p.championId })));
+    console.log('📊 Team2 após mapeamento:', this.gameData.team2.map((p: any) => ({ name: p.name, champion: p.champion?.name, championId: p.championId })));
   }
 
   onGameComplete(gameResult: any): void {
@@ -2348,7 +2422,7 @@ export class App implements OnInit, OnDestroy {
 
   // Add getter for currentMatchData to be compatible with CustomPickBanComponent
   private _lastMatchDataHash: string = '';
-  
+
   get currentMatchData() {
     if (!this.draftData) {
       return null;
@@ -2362,7 +2436,7 @@ export class App implements OnInit, OnDestroy {
 
     // Gerar hash dos dados para verificar se houve mudança
     const currentHash = JSON.stringify(matchData);
-    
+
     // Só fazer logs se os dados mudaram
     if (currentHash !== this._lastMatchDataHash) {
       console.log('🔍 [currentMatchData] Dados atualizados:', matchData);

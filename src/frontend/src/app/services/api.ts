@@ -776,6 +776,14 @@ export class ApiService {
       );
   }
 
+  // Método para atualizar partida customizada existente
+  updateCustomMatch(matchId: number, updateData: any): Observable<any> {
+    return this.http.put(`${this.baseUrl}/matches/custom/${matchId}`, updateData)
+      .pipe(
+        catchError(this.handleError)
+      );
+  }
+
   // Método para limpar partidas de teste do banco de dados
   cleanupTestMatches(): Observable<any> {
     return this.http.delete(`${this.baseUrl}/matches/cleanup-test-matches`)

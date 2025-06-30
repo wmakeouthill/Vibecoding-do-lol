@@ -1707,6 +1707,7 @@ app.post('/api/matches/custom', (async (req: Request, res: Response) => {
       winnerTeam,
       duration,
       pickBanData,
+      participantsData, // Adicionar campo participantsData
       riotGameId,
       detectedByLCU,
       status
@@ -1720,6 +1721,7 @@ app.post('/api/matches/custom', (async (req: Request, res: Response) => {
       winnerTeam,
       duration,
       hasPickBan: !!pickBanData,
+      hasParticipantsData: !!participantsData, // Log do novo campo
       riotGameId,
       detectedByLCU,
       status
@@ -1748,8 +1750,16 @@ app.post('/api/matches/custom', (async (req: Request, res: Response) => {
       await dbManager.completeCustomMatch(matchId, winnerTeam, {
         duration,
         pickBanData,
+        participantsData, // Incluir dados preliminares dos participantes
         riotGameId,
         detectedByLCU
+      });
+    } else if (participantsData) {
+      // Se não está finalizada mas tem dados preliminares, salvar apenas os dados preliminares
+      console.log('📝 Salvando dados preliminares dos participantes');
+      await dbManager.updateCustomMatchWithRealData(matchId, {
+        participantsData: participantsData,
+        notes: 'Dados preliminares salvos durante confirmação da partida'
       });
     }
 
@@ -1779,6 +1789,7 @@ app.post('/api/custom_matches', (async (req: Request, res: Response) => {
       winnerTeam,
       duration,
       pickBanData,
+      participantsData, // Adicionar campo participantsData
       riotGameId,
       detectedByLCU,
       status
@@ -1792,6 +1803,7 @@ app.post('/api/custom_matches', (async (req: Request, res: Response) => {
       winnerTeam,
       duration,
       hasPickBan: !!pickBanData,
+      hasParticipantsData: !!participantsData, // Log do novo campo
       riotGameId,
       detectedByLCU,
       status
@@ -1818,8 +1830,16 @@ app.post('/api/custom_matches', (async (req: Request, res: Response) => {
       await dbManager.completeCustomMatch(matchId, winnerTeam, {
         duration,
         pickBanData,
+        participantsData, // Incluir dados preliminares dos participantes
         riotGameId,
         detectedByLCU
+      });
+    } else if (participantsData) {
+      // Se não está finalizada mas tem dados preliminares, salvar apenas os dados preliminares
+      console.log('📝 Salvando dados preliminares dos participantes (rota de compatibilidade)');
+      await dbManager.updateCustomMatchWithRealData(matchId, {
+        participantsData: participantsData,
+        notes: 'Dados preliminares salvos durante confirmação da partida'
       });
     }
 
@@ -2656,3 +2676,42 @@ app.get('/api/champions/role/:role', (async (req: Request, res: Response) => {
 }) as RequestHandler);
 
 // Endpoint para corrigir status das partidas antigas
+app.put('/api/matches/custom/:matchId', (async (req: Request, res: Response) => {
+  try {
+    const matchId = parseInt(req.params.matchId);
+    const updateData = req.body;
+
+    console.log('🔄 [PUT /api/matches/custom/:matchId] Atualizando partida:', {
+      matchId,
+      updateFields: Object.keys(updateData)
+    });
+
+    if (!matchId || isNaN(matchId)) {
+      return res.status(400).json({
+        error: 'ID da partida inválido'
+      });
+    }
+
+    // Verificar se a partida existe
+    const existingMatch = await dbManager.getCustomMatchById(matchId);
+    if (!existingMatch) {
+      return res.status(404).json({
+        error: 'Partida não encontrada'
+      });
+    }
+
+    // Atualizar a partida
+    await dbManager.updateCustomMatch(matchId, updateData);
+
+    console.log('✅ [PUT /api/matches/custom/:matchId] Partida atualizada com sucesso:', matchId);
+
+    res.json({
+      success: true,
+      matchId,
+      message: 'Partida customizada atualizada com sucesso'
+    });
+  } catch (error: any) {
+    console.error('💥 [PUT /api/matches/custom/:matchId] Erro ao atualizar partida customizada:', error);
+    res.status(500).json({ error: error.message });
+  }
+}) as RequestHandler);
