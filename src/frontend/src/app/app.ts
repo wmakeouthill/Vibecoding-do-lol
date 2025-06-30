@@ -356,13 +356,13 @@ export class App implements OnInit, OnDestroy {
       originalMatchId: this.draftData?.matchId // Adicionar matchId do draft para cancelamento
     };
 
-    // NOVO: cria os dados preliminares dos participantes
-    const participantsData = this.createPreliminaryParticipantsData();
-
-    // Mapeia os campeões corretamente
+    // PRIMEIRO: Mapeia os campeões corretamente
     this.updatePlayersWithChampions(pickBanResult);
 
-    // NOVO: salva no backend (status: 'pending' para indicar que é preliminar)
+    // DEPOIS: cria os dados preliminares dos participantes (agora com campeões mapeados)
+    const participantsData = this.createPreliminaryParticipantsData();
+
+    // Salva no backend (status: 'pending' para indicar que é preliminar)
     this.apiService.saveCustomMatch({
       title: this.gameData?.originalMatchId
         ? `Simulação - Partida ${this.gameData.originalMatchId}`
@@ -374,7 +374,7 @@ export class App implements OnInit, OnDestroy {
       team2Players: this.gameData.team2.map((p: any) => p.summonerName),
       createdBy: this.currentPlayer?.summonerName,
       gameMode: 'CLASSIC',
-      participantsData, // <-- aqui!
+      participantsData, // <-- agora com campeões mapeados!
       status: 'pending'
     }).subscribe(
       (response) => {
