@@ -67,7 +67,7 @@
 
       <!-- Grid de Campeões -->
       <div class="modal-champions-grid">
-        <div class="champion-card" *ngFor="let champion of getModalFilteredChampions()"
+        <div class="modal-champion-card" *ngFor="let champion of getModalFilteredChampions()"
           [class.selected]="selectedChampion?.id === champion.id"
           [class.banned]="isChampionBanned(champion)"
           [class.picked]="isChampionPicked(champion)"

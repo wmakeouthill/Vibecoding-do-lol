@@ -1258,75 +1258,42 @@ export class MatchmakingService {
     return match;
   }
 
-  // Método para atribuir lanes baseado no MMR
+  // ✅ CORREÇÃO: Método para atribuir lanes em ordem fixa
   private assignLanesByMMR(team: QueuedPlayer[]): void {
     console.log(`🎯 [AssignLanes] Atribuindo lanes para time com ${team.length} jogadores`);
     
-    // Ordenar por MMR (maior MMR = prioridade na escolha de lane)
-    const sortedByMMR = [...team].sort((a, b) => b.currentMMR - a.currentMMR);
+    // ✅ CORREÇÃO: Ordem fixa de lanes (índice 0=top, 1=jungle, 2=mid, 3=adc, 4=support)
+    const laneOrder = ['top', 'jungle', 'mid', 'adc', 'support'];
     
-    console.log(`📊 [AssignLanes] Jogadores ordenados por MMR:`, sortedByMMR.map(p => ({
+    console.log(`📊 [AssignLanes] Jogadores antes da ordenação:`, team.map((p, i) => ({
+      index: i,
       name: p.summonerName,
       mmr: p.currentMMR,
       primary: p.preferences?.primaryLane,
       secondary: p.preferences?.secondaryLane
     })));
 
-    // Lanes disponíveis (em ordem de prioridade)
-    const availableLanes = ['mid', 'jungle', 'top', 'bot', 'support'];
-    const assignedLanes = new Set<string>();
-    const autofillPlayers: QueuedPlayer[] = [];
-
-    // Primeira passada: tentar atribuir lanes baseado nas preferências
-    sortedByMMR.forEach(player => {
-      const primaryLane = player.preferences?.primaryLane;
-      const secondaryLane = player.preferences?.secondaryLane;
+    // ✅ CORREÇÃO: Atribuir lanes baseado na posição no array, não no MMR
+    team.forEach((player, index) => {
+      const assignedLane = laneOrder[index] || 'fill';
       
-      // Tentar lane primária primeiro
-      if (primaryLane && availableLanes.includes(primaryLane) && !assignedLanes.has(primaryLane)) {
-        player.preferences = {
-          ...player.preferences,
-          assignedLane: primaryLane,
-          isAutofill: false
-        };
-        assignedLanes.add(primaryLane);
-        console.log(`✅ [AssignLanes] ${player.summonerName} recebeu lane primária: ${primaryLane}`);
-      }
-      // Tentar lane secundária
-      else if (secondaryLane && availableLanes.includes(secondaryLane) && !assignedLanes.has(secondaryLane)) {
-        player.preferences = {
-          ...player.preferences,
-          assignedLane: secondaryLane,
-          isAutofill: false
-        };
-        assignedLanes.add(secondaryLane);
-        console.log(`✅ [AssignLanes] ${player.summonerName} recebeu lane secundária: ${secondaryLane}`);
-      }
-      // Se não conseguiu nenhuma das preferências, vai para autofill
-      else {
-        autofillPlayers.push(player);
-        console.log(`⚠️ [AssignLanes] ${player.summonerName} não conseguiu suas preferências, será autofill`);
-      }
-    });
-
-    // Segunda passada: atribuir lanes restantes para autofill
-    const remainingLanes = availableLanes.filter(lane => !assignedLanes.has(lane));
-    console.log(`🎲 [AssignLanes] Lanes restantes para autofill:`, remainingLanes);
-
-    autofillPlayers.forEach((player, index) => {
-      if (index < remainingLanes.length) {
-        const assignedLane = remainingLanes[index];
-        player.preferences = {
-          ...player.preferences,
-          assignedLane: assignedLane,
-          isAutofill: true
-        };
-        console.log(`🎲 [AssignLanes] ${player.summonerName} recebeu autofill: ${assignedLane}`);
-      }
+      // Verificar se a lane atribuída corresponde às preferências
+      const isPreferred = player.preferences?.primaryLane === assignedLane || 
+                         player.preferences?.secondaryLane === assignedLane ||
+                         (assignedLane === 'adc' && (player.preferences?.primaryLane === 'bot' || player.preferences?.secondaryLane === 'bot'));
+      
+      player.preferences = {
+        ...player.preferences,
+        assignedLane: assignedLane,
+        isAutofill: !isPreferred
+      };
+      
+      console.log(`✅ [AssignLanes] Jogador [${index}] ${player.summonerName} -> ${assignedLane} ${isPreferred ? '(preferência)' : '(autofill)'}`);
     });
 
     // Log final das atribuições
-    console.log(`📋 [AssignLanes] Atribuições finais:`, team.map(p => ({
+    console.log(`📋 [AssignLanes] Atribuições finais (ordem fixa):`, team.map((p, i) => ({
+      index: i,
       name: p.summonerName,
       mmr: p.currentMMR,
       assignedLane: p.preferences?.assignedLane,
@@ -1357,8 +1324,8 @@ export class MatchmakingService {
       turnOrder: this.generateDraftTurnOrder(match),
       timeLimit: 30, // segundos por turno
       currentTurn: 0,
-      // Estrutura que o frontend espera
-      team1: match.team1.map(p => ({
+      // ✅ CORREÇÃO: Estrutura que o frontend espera com teamIndex correto
+      team1: match.team1.map((p, index) => ({
         id: p.id,
         summonerName: p.summonerName,
         name: p.summonerName, // Frontend espera 'name' também
@@ -1366,9 +1333,12 @@ export class MatchmakingService {
         primaryLane: p.preferences?.primaryLane || 'fill',
         secondaryLane: p.preferences?.secondaryLane || 'fill',
         assignedLane: p.preferences?.assignedLane || 'fill',
-        isAutofill: p.preferences?.isAutofill || false
+        lane: p.preferences?.assignedLane || 'fill', // ✅ NOVO: Frontend espera 'lane'
+        isAutofill: p.preferences?.isAutofill || false,
+        teamIndex: index, // ✅ CORREÇÃO: teamIndex baseado na posição no array (0-4)
+        originalIndex: index // ✅ NOVO: Manter índice original
       })),
-      team2: match.team2.map(p => ({
+      team2: match.team2.map((p, index) => ({
         id: p.id,
         summonerName: p.summonerName,
         name: p.summonerName, // Frontend espera 'name' também
@@ -1376,7 +1346,10 @@ export class MatchmakingService {
         primaryLane: p.preferences?.primaryLane || 'fill',
         secondaryLane: p.preferences?.secondaryLane || 'fill',
         assignedLane: p.preferences?.assignedLane || 'fill',
-        isAutofill: p.preferences?.isAutofill || false
+        lane: p.preferences?.assignedLane || 'fill', // ✅ NOVO: Frontend espera 'lane'
+        isAutofill: p.preferences?.isAutofill || false,
+        teamIndex: index, // ✅ CORREÇÃO: teamIndex baseado na posição no array (0-4)
+        originalIndex: index // ✅ NOVO: Manter índice original
       })),
       // Dados adicionais para o draft
       averageMMR: {
@@ -1387,7 +1360,11 @@ export class MatchmakingService {
       acceptTimeout: 30 // segundos para aceitar
     };
 
-    console.log(`🎯 [Draft] Dados do draft criados:`, draftData);
+    console.log(`🎯 [Draft] Dados do draft criados:`, {
+      matchId: draftData.matchId,
+      team1: draftData.team1.map(p => ({ index: p.teamIndex, name: p.summonerName, lane: p.lane })),
+      team2: draftData.team2.map(p => ({ index: p.teamIndex, name: p.summonerName, lane: p.lane }))
+    });
 
     // Notificar jogadores sobre o draft
     this.notifyDraftPhase(match, draftData);
