@@ -18,13 +18,63 @@ import { DataDragonService } from './services/DataDragonService';
 import { setupChampionRoutes } from './routes/champions';
 
 // Carregar variáveis de ambiente do arquivo .env
-const envPath = path.resolve(process.cwd(), '.env');
-if (fs.existsSync(envPath)) {
-  dotenv.config({ path: envPath });
-  console.log('✅ Arquivo .env carregado:', envPath);
-} else {
-  console.warn('⚠️ Arquivo .env não encontrado em:', envPath);
-  dotenv.config(); // Tentar carregar do diretório atual
+// Estratégia robusta para encontrar o .env em qualquer ambiente
+console.log('🔧 Iniciando carregamento do .env...');
+console.log('🔧 __dirname:', __dirname);
+console.log('🔧 process.cwd():', process.cwd());
+console.log('🔧 process.execPath:', process.execPath);
+console.log('🔧 NODE_ENV:', process.env.NODE_ENV);
+
+const resourcesPath = (process as any).resourcesPath;
+console.log('🔧 process.resourcesPath:', resourcesPath);
+
+// Lista de locais para procurar o .env (em ordem de prioridade)
+const envSearchPaths: string[] = [
+  // 2. Pasta dist (produção não empacotada)
+  path.join(__dirname, '..', '.env'), // backend está em dist/backend, .env em dist/
+  
+  // 3. Diretório atual
+  path.resolve(process.cwd(), '.env'),
+  
+  // 4. Relativo ao arquivo backend
+  path.join(__dirname, '.env'),
+  
+  // 5. Pasta raiz do projeto
+  path.join(__dirname, '..', '..', '.env'),
+  
+  // 6. Pasta pai do diretório atual
+  path.join(process.cwd(), '..', '.env')
+];
+
+// 1. Adicionar recursos do Electron se disponível (aplicação empacotada)
+if (resourcesPath) {
+  envSearchPaths.unshift(path.join(resourcesPath, '.env'));
+}
+
+console.log('🔍 Procurando .env nos seguintes locais:');
+envSearchPaths.forEach((envPath, index) => {
+  const exists = fs.existsSync(envPath);
+  console.log(`   ${index + 1}. ${exists ? '✅' : '❌'} ${envPath}`);
+});
+
+// Tentar carregar o primeiro .env encontrado
+let envLoaded = false;
+for (const envPath of envSearchPaths) {
+  if (fs.existsSync(envPath)) {
+    try {
+      dotenv.config({ path: envPath });
+      console.log('✅ Arquivo .env carregado com sucesso:', envPath);
+      envLoaded = true;
+      break;
+    } catch (error) {
+      console.warn('⚠️ Erro ao carregar .env de:', envPath, error);
+    }
+  }
+}
+
+if (!envLoaded) {
+  console.warn('⚠️ Nenhum arquivo .env encontrado, usando variáveis de ambiente do sistema');
+  dotenv.config(); // Tentar carregar do diretório atual como fallback
 }
 
 const app = express();

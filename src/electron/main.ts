@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, Menu } from 'electron';
 import * as path from 'path';
 import { spawn, exec } from 'child_process';
 import * as fs from 'fs';
+import * as http from 'http';
 
 let mainWindow: BrowserWindow;
 let backendProcess: any;
@@ -55,76 +56,120 @@ function getProductionPaths() {
   };
 }
 
-function createWindow(): void {
-  // Criar a janela principal do aplicativo
-  mainWindow = new BrowserWindow({
-    height: 800,
-    width: 1200,
-    minHeight: 600,
-    minWidth: 800, webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js'),
-      // Configurações básicas de segurança
-      webSecurity: true,
-      sandbox: false,
-    },
-    icon: path.join(__dirname, '../../assets/icon.ico'), // Adicionar ícone depois
-    titleBarStyle: 'default',
-    show: false, // Não mostrar até estar pronto
-  });  // Carregar o frontend Angular
+async function createWindow(): Promise<void> {
+  console.log('🎮 Criando janela principal do Electron...');
+  
+  try {
+    // Criar a janela principal do aplicativo
+    console.log('🔧 Configurando BrowserWindow...');
+    mainWindow = new BrowserWindow({
+      height: 800,
+      width: 1200,
+      minHeight: 600,
+      minWidth: 800,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, 'preload.js'),
+        // Configurações básicas de segurança
+        webSecurity: true,
+        sandbox: false,
+      },
+      icon: path.join(__dirname, '../../assets/icon.ico'), // Adicionar ícone depois
+      titleBarStyle: 'default',
+      show: true, // MUDANÇA: Mostrar imediatamente para debug
+    });
+
+    console.log('✅ BrowserWindow criado com sucesso');
+    console.log('🔧 ID da janela:', mainWindow.id);
+    console.log('🔧 Janela visível:', mainWindow.isVisible());
+  } catch (windowError) {
+    console.error('❌ Erro ao criar BrowserWindow:', windowError);
+    throw windowError;
+  }
+
+  // Carregar o frontend Angular
   if (isDev) {
     // Em desenvolvimento, tentar carregar do backend primeiro, depois Angular dev server
-    console.log('Carregando frontend do backend em desenvolvimento...');
-    const tryLoadBackend = (retries = 3) => {
-      mainWindow.loadURL('http://localhost:3000').catch((error: any) => {
-        console.log(`Tentativa de conexão ao backend falhou, tentativas restantes: ${retries}`);
-        if (retries > 0) {
-          setTimeout(() => tryLoadBackend(retries - 1), 1000);
-        } else {
-          console.log('Backend não disponível, tentando Angular dev server...');
-          // Fallback para Angular dev server
-          const tryLoadAngular = (angularRetries = 5) => {
-            mainWindow.loadURL('http://localhost:4200').catch((angularError: any) => {
-              console.log(`Tentativa de conexão ao Angular falhou, tentativas restantes: ${angularRetries}`);
-              if (angularRetries > 0) {
-                setTimeout(() => tryLoadAngular(angularRetries - 1), 1000);
-              } else {
-                console.error('Não foi possível conectar ao backend nem ao Angular dev server', angularError);
-              }
-            });
-          };
-          tryLoadAngular();
-        }
-      });
-    };
-
-    tryLoadBackend();
-    // Opcional: abrir DevTools em desenvolvimento
+    console.log('🔧 Modo desenvolvimento: carregando frontend...');
+    try {
+      await mainWindow.loadURL('http://localhost:3000');
+      console.log('✅ Frontend carregado do backend');
+    } catch (error) {
+      console.log('⚠️ Backend não disponível, tentando Angular dev server...');
+      try {
+        await mainWindow.loadURL('http://localhost:4200');
+        console.log('✅ Frontend carregado do Angular dev server');
+      } catch (angularError) {
+        console.error('❌ Não foi possível conectar ao backend nem ao Angular dev server', angularError);
+      }
+    }
+    
+    // Abrir DevTools em desenvolvimento
     mainWindow.webContents.openDevTools();
   } else {
-    // Em produção, carregar do backend que servirá os arquivos estáticos
-    console.log('Carregando frontend do backend em produção...');
-    const tryLoadProduction = (retries = 15) => {
-      mainWindow.loadURL('http://localhost:3000').catch((error: any) => {
-        console.log(`Tentativa de conexão ao backend falhou, tentativas restantes: ${retries}`);
-        if (retries > 0) {
-          setTimeout(() => tryLoadProduction(retries - 1), 1000);
-        } else {
-          console.error('Não foi possível conectar ao backend', error);
-          // Como último recurso, tentar carregar arquivo diretamente
-          const prodPaths = getProductionPaths();
-          if (fs.existsSync(prodPaths.frontend)) {
-            console.log('Tentando carregar arquivo diretamente como fallback:', prodPaths.frontend);
-            mainWindow.loadFile(prodPaths.frontend);
+    // Em produção, tentar carregar frontend
+    console.log('📦 Modo produção: carregando frontend do backend...');
+    let frontendLoaded = false;
+    
+    try {
+      await mainWindow.loadURL('http://127.0.0.1:3000');
+      console.log('✅ Frontend carregado com sucesso via 127.0.0.1');
+      frontendLoaded = true;
+    } catch (error) {
+      console.error('❌ Erro ao carregar via 127.0.0.1:', error);
+      
+      // Tentar localhost como fallback
+      try {
+        await mainWindow.loadURL('http://localhost:3000');
+        console.log('✅ Frontend carregado com sucesso via localhost');
+        frontendLoaded = true;
+      } catch (localhostError) {
+        console.error('❌ Erro ao carregar via localhost:', localhostError);
+        
+        // Como último recurso, tentar carregar arquivo diretamente
+        const prodPaths = getProductionPaths();
+        if (fs.existsSync(prodPaths.frontend)) {
+          console.log('🔄 Tentando carregar arquivo diretamente como fallback...');
+          try {
+            await mainWindow.loadFile(prodPaths.frontend);
+            console.log('✅ Frontend carregado do arquivo local');
+            frontendLoaded = true;
+          } catch (fileError) {
+            console.error('❌ Erro ao carregar arquivo local:', fileError);
           }
         }
-      });
-    };
-
-    // Aguardar um pouco mais para dar tempo do backend iniciar
-    setTimeout(() => tryLoadProduction(), 1000);
-
+      }
+    }
+    
+    // Se houve problemas no carregamento, abrir DevTools para debug
+    if (!frontendLoaded) {
+      console.log('🔧 Problemas no carregamento - abrindo DevTools para debug');
+      mainWindow.webContents.openDevTools();
+      
+      // Carregar uma página de erro simples
+      const errorHtml = `
+        <html>
+          <head><title>Debug - LoL Matchmaking</title></head>
+          <body style="font-family: Arial; padding: 20px; background: #1a1a1a; color: #fff;">
+            <h1>🔧 Modo Debug</h1>
+            <p>Houve problemas na inicialização:</p>
+            <ul>
+              <li>❌ Backend não está respondendo</li>
+              <li>❌ Frontend não pôde ser carregado</li>
+            </ul>
+            <p>Verifique o console (F12) para mais detalhes.</p>
+            <p>Tentativas realizadas:</p>
+            <ul>
+              <li>http://127.0.0.1:3000</li>
+              <li>http://localhost:3000</li>
+              <li>Arquivo local</li>
+            </ul>
+          </body>
+        </html>
+      `;
+      await mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(errorHtml)}`);
+    }
   }
 
   // Desabilitar CSP completamente para permitir P2P WebSocket
@@ -137,9 +182,37 @@ function createWindow(): void {
       cancel: false,
       responseHeaders: details.responseHeaders,
     });
-  });  // Mostrar quando estiver pronto
+  });  // Eventos de debug da janela
+  mainWindow.webContents.on('did-start-loading', () => {
+    console.log('🔄 Janela: Iniciou carregamento');
+  });
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('✅ Janela: Carregamento concluído');
+  });
+
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    console.error('❌ Janela: Falha no carregamento');
+    console.error('🔧 Código do erro:', errorCode);
+    console.error('🔧 Descrição:', errorDescription);
+    console.error('🔧 URL:', validatedURL);
+  });
+
+  mainWindow.on('ready-to-show', () => {
+    console.log('🎯 Evento: ready-to-show disparado');
+  });
+
+  mainWindow.on('show', () => {
+    console.log('👁️ Evento: show disparado');
+  });
+
+  mainWindow.on('focus', () => {
+    console.log('🎯 Evento: focus disparado');
+  });
+
+  // Mostrar quando estiver pronto
   mainWindow.once('ready-to-show', () => {
-    console.log('Janela Electron pronta para exibição');
+    console.log('🎮 Janela Electron pronta para exibição');
 
     // Desabilitar CSP completamente interceptando headers
     mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
@@ -157,7 +230,18 @@ function createWindow(): void {
       });
     });
 
+    console.log('📺 Tentando mostrar a janela...');
     mainWindow.show();
+    console.log('📺 Comando show() executado');
+    
+    // Verificar se a janela está realmente visível
+    setTimeout(() => {
+      console.log('🔍 Verificação pós-show:');
+      console.log('   - Janela visível:', mainWindow.isVisible());
+      console.log('   - Janela minimizada:', mainWindow.isMinimized());
+      console.log('   - Janela maximizada:', mainWindow.isMaximized());
+      console.log('   - Janela em foco:', mainWindow.isFocused());
+    }, 1000);
   });
 
   // Configurar menu da aplicação
@@ -252,30 +336,107 @@ async function startBackendServer(): Promise<void> {
     console.log('NODE_PATH:', nodeModulesPath);
     console.log('Node modules exists:', fs.existsSync(nodeModulesPath));
 
-    backendProcess = spawn('node', [prodPaths.backend], {
-      stdio: 'pipe',
-      env: env,
-      cwd: backendDir
-    });
+    console.log('🚀 Tentando iniciar processo Node.js...');
+    console.log('📂 Comando:', 'node', [prodPaths.backend]);
+    console.log('📁 Diretório de trabalho:', backendDir);
+    console.log('🌍 Variáveis de ambiente:', { NODE_PATH: nodeModulesPath, NODE_ENV: 'production' });
 
-    backendProcess.stdout.on('data', (data: any) => {
-      console.log(`Backend: ${data}`);
-    });
+    try {
+      backendProcess = spawn('node', [prodPaths.backend], {
+        stdio: 'pipe',
+        env: env,
+        cwd: backendDir
+      });
 
-    backendProcess.stderr.on('data', (data: any) => {
-      console.error(`Backend Error: ${data}`);
-    });
+      console.log('✅ Processo Node.js criado com PID:', backendProcess.pid);
 
-    backendProcess.on('close', (code: any) => {
-      console.log(`Backend process closed with code ${code}`);
-    });
+      backendProcess.stdout.on('data', (data: any) => {
+        const message = data.toString().trim();
+        console.log(`🔧 Backend: ${message}`);
+      });
 
-    backendProcess.on('error', (error: any) => {
-      console.error('Erro ao iniciar backend:', error);
-    });
+      backendProcess.stderr.on('data', (data: any) => {
+        const message = data.toString().trim();
+        console.error(`❌ Backend Error: ${message}`);
+      });
+
+      backendProcess.on('close', (code: any) => {
+        console.log(`🏁 Backend process closed with code ${code}`);
+        if (code !== 0) {
+          console.error(`❌ Backend fechou com código de erro: ${code}`);
+        }
+      });
+
+      backendProcess.on('error', (error: any) => {
+        console.error('❌ Erro ao iniciar backend:', error);
+        console.error('🔧 Detalhes do erro:', {
+          message: error.message,
+          code: error.code,
+          errno: error.errno,
+          syscall: error.syscall,
+          path: error.path
+        });
+      });
+
+      // Aguardar um pouco para ver se o processo inicia
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      if (backendProcess.killed) {
+        console.error('❌ Processo backend foi terminado prematuramente');
+      } else {
+        console.log('✅ Processo backend ainda está rodando após 2 segundos');
+      }
+
+    } catch (spawnError: any) {
+      console.error('❌ Erro crítico ao criar processo backend:', spawnError);
+      return;
+    }
   } else {
     console.log('Modo desenvolvimento: backend será iniciado separadamente');
   }
+}
+
+// Função para testar se o backend está respondendo
+async function testBackendConnectivity(maxRetries = 30, retryDelay = 1000): Promise<boolean> {
+  console.log(`🔍 Testando conectividade do backend (máximo ${maxRetries} tentativas)...`);
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await new Promise<boolean>((resolve) => {
+        const req = http.get('http://127.0.0.1:3000/api/health', (res) => {
+          console.log(`✅ Tentativa ${attempt}: Backend respondeu com status ${res.statusCode}`);
+          resolve(res.statusCode === 200);
+        });
+
+        req.on('error', (error) => {
+          console.log(`❌ Tentativa ${attempt}: ${error.message}`);
+          resolve(false);
+        });
+
+        req.setTimeout(2000, () => {
+          req.destroy();
+          console.log(`⏰ Tentativa ${attempt}: Timeout`);
+          resolve(false);
+        });
+      });
+
+      if (result) {
+        console.log(`🎉 Backend está pronto após ${attempt} tentativa(s)!`);
+        return true;
+      }
+
+      if (attempt < maxRetries) {
+        console.log(`⏳ Aguardando ${retryDelay}ms antes da próxima tentativa...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
+
+    } catch (error) {
+      console.log(`❌ Erro na tentativa ${attempt}:`, error);
+    }
+  }
+
+  console.log('❌ Backend não ficou pronto após todas as tentativas');
+  return false;
 }
 
 // Event Listeners do Electron
@@ -285,21 +446,33 @@ app.whenReady().then(async () => {
   if (isDev) {
     console.log('🔧 Modo desenvolvimento detectado');
     // Em dev, apenas criar a janela - backend roda separadamente
-    createWindow();
+    await createWindow();
   } else {
-    console.log('📦 Modo produção detectado');
+    console.log('📦 Modo produção detectado - Inicialização sequencial');
 
-    // Iniciar backend principal (porta 3000)
-    console.log('🔧 Iniciando Backend Principal...');
+    // ETAPA 1: Iniciar backend
+    console.log('🔧 ETAPA 1: Iniciando Backend...');
     await startBackendServer();
 
-    // Aguardar backend inicializar (reduzido para 2 segundos)
-    console.log('⏳ Aguardando Backend inicializar (2 segundos)...');
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // ETAPA 2: Tentar aguardar backend (mas não bloquear)
+    console.log('🔍 ETAPA 2: Verificando se Backend está pronto...');
+    const backendReady = await testBackendConnectivity(15, 1000); // Reduzido para 15 tentativas
+    
+    if (!backendReady) {
+      console.error('❌ Backend não ficou pronto após 15 tentativas!');
+      console.error('🔧 Abrindo janela mesmo assim para debug...');
+    }
 
-    // Criar a janela
-    console.log('🎮 Criando janela Electron...');
-    createWindow();
+    // ETAPA 3: SEMPRE criar a janela Electron para mostrar logs e debug
+    console.log('🎮 ETAPA 3: Criando janela Electron (SEMPRE)...');
+    await createWindow();
+    
+    if (backendReady) {
+      console.log('✅ Inicialização completa com sucesso!');
+    } else {
+      console.log('⚠️ Janela aberta para debug - backend pode ter problemas');
+      console.log('💡 Verifique os logs no DevTools para identificar o problema');
+    }
   }
 
   app.on('activate', () => {

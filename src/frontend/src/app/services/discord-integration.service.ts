@@ -65,6 +65,32 @@ export class DiscordIntegrationService {
     }, 500);
   }
 
+  private getWebSocketURL(): string {
+    // Se WebSocket URL foi definida manualmente, usar ela
+    if ((window as any).WEBSOCKET_URL) {
+      return (window as any).WEBSOCKET_URL;
+    }
+
+    // Função para detectar se está no Windows
+    const isWindows = () => navigator.userAgent.indexOf('Windows') !== -1;
+
+    // Função para detectar se está no Electron
+    const isElectron = () => !!(window as any).electronAPI || 
+           !!(window as any).require || 
+           navigator.userAgent.toLowerCase().indexOf('electron') > -1 ||
+           !!(window as any).process?.type;
+
+    // Em produção (Electron) no Windows, usar 127.0.0.1
+    if (isElectron() && isWindows()) {
+      console.log(`🔗 [DiscordService #${this.instanceId}] WebSocket: Detectado Electron no Windows, usando 127.0.0.1`);
+      return 'ws://127.0.0.1:3000/ws';
+    }
+    
+    // Em outros casos, usar localhost
+    console.log(`🔗 [DiscordService #${this.instanceId}] WebSocket: Usando localhost padrão`);
+    return 'ws://localhost:3000/ws';
+  }
+
   private connectToWebSocket() {
     // Verificar se já existe uma conexão ativa
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
@@ -84,8 +110,8 @@ export class DiscordIntegrationService {
     }
 
     try {
-      // Usar endereço customizável
-      const wsUrl = WEBSOCKET_URL;
+      // Usar endereço customizável com fallback
+      const wsUrl = this.getWebSocketURL();
       console.log(`🔗 [DiscordService #${this.instanceId}] Conectando WebSocket em: ${wsUrl}`);
       this.ws = new WebSocket(wsUrl);
 
