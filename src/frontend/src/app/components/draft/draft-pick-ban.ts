@@ -9,8 +9,6 @@ import { interval, Subscription } from 'rxjs';
 import { LaneDisplayPipe } from './lane-display.pipe';
 import { CurrentPhaseTextPipe } from './current-phase-text.pipe';
 import { PhaseProgressPipe } from './phase-progress.pipe';
-import { CurrentActionTextPipe } from './current-action-text.pipe';
-import { CurrentActionIconPipe } from './current-action-icon.pipe';
 
 @Component({
     selector: 'app-draft-pick-ban',
@@ -21,9 +19,7 @@ import { CurrentActionIconPipe } from './current-action-icon.pipe';
         DraftConfirmationModalComponent,
         LaneDisplayPipe,
         CurrentPhaseTextPipe,
-        PhaseProgressPipe,
-        CurrentActionTextPipe,
-        CurrentActionIconPipe
+        PhaseProgressPipe
     ],
     templateUrl: './draft-pick-ban.html',
     styleUrl: './draft-pick-ban.scss',
@@ -965,6 +961,20 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
     openConfirmationModal(): void {
         console.log('🎯 [openConfirmationModal] Abrindo modal de confirmação');
         this.showConfirmationModal = true;
+        this.cdr.markForCheck();
+    }
+
+    // ✅ NOVO: Método para lidar com solicitação de edição do modal de confirmação
+    onEditRequested(): void {
+        console.log('🎯 [onEditRequested] Solicitação de edição recebida do modal de confirmação');
+        
+        // Fechar modal de confirmação
+        this.showConfirmationModal = false;
+        
+        // Abrir modal de seleção de campeões para edição
+        this.openChampionModal();
+        
+        console.log('🎯 [onEditRequested] Modal de confirmação fechado e modal de seleção aberto');
     }
 
     // MÉTODO PARA RECEBER SELEÇÃO DO MODAL

@@ -33,16 +33,13 @@
       </div>
 
       <!-- Bans do Time Azul -->
-      <div class="team-bans">
-        <h4>🚫 Bans do Time Azul</h4>
-        <div class="banned-champions-row">
-          <div class="banned-champion" *ngFor="let ban of getTeamBans('blue')">
-            <img [src]="ban.image" [alt]="ban.name" class="banned-img">
-            <span class="banned-name">{{ ban.name }}</span>
+      <div class="team-bans compact">
+        <div class="banned-champions-row compact">
+          <div class="banned-champion compact" *ngFor="let ban of getTeamBans('blue')">
+            <img [src]="ban.image" [alt]="ban.name" class="banned-img compact">
           </div>
-          <div class="banned-placeholder" *ngFor="let i of [1,2,3,4,5].slice(getTeamBans('blue').length)">
-            <div class="ban-placeholder">?</div>
-            <span class="banned-name">Aguardando...</span>
+          <div class="banned-placeholder compact" *ngFor="let i of [1,2,3,4,5].slice(getTeamBans('blue').length)">
+            <div class="ban-placeholder compact">?</div>
           </div>
         </div>
       </div>
@@ -94,16 +91,13 @@
       </div>
 
       <!-- Bans do Time Vermelho -->
-      <div class="team-bans">
-        <h4>🚫 Bans do Time Vermelho</h4>
-        <div class="banned-champions-row">
-          <div class="banned-champion" *ngFor="let ban of getTeamBans('red')">
-            <img [src]="ban.image" [alt]="ban.name" class="banned-img">
-            <span class="banned-name">{{ ban.name }}</span>
+      <div class="team-bans compact">
+        <div class="banned-champions-row compact">
+          <div class="banned-champion compact" *ngFor="let ban of getTeamBans('red')">
+            <img [src]="ban.image" [alt]="ban.name" class="banned-img compact">
           </div>
-          <div class="banned-placeholder" *ngFor="let i of [1,2,3,4,5].slice(getTeamBans('red').length)">
-            <div class="ban-placeholder">?</div>
-            <span class="banned-name">Aguardando...</span>
+          <div class="banned-placeholder compact" *ngFor="let i of [1,2,3,4,5].slice(getTeamBans('red').length)">
+            <div class="ban-placeholder compact">?</div>
           </div>
         </div>
       </div>
@@ -138,95 +132,40 @@
     </div>
   </div>
 
-  <!-- Champion Selection -->
-  <div class="champion-selection" *ngIf="isMyTurn">
-    <div class="selection-header">
-      <h3>
-        {{ session.phases[session.currentAction] && session.phases[session.currentAction].action === 'ban' ? '🚫 Banir
-        Campeão' : '⭐ Escolher Campeão' }}
-      </h3>
-      <p class="selection-subtitle">
-        Sua vez de {{ session.phases[session.currentAction] && session.phases[session.currentAction].action === 'ban' ?
-        'banir' : 'escolher' }} um campeão
-      </p>
-    </div>
-
-    <!-- Botão para abrir modal -->
-    <div class="modal-trigger-section">
-      <button class="btn btn-primary btn-lg open-modal-btn" (click)="openChampionModal()">
-        <span class="btn-icon">{{ session | currentActionIcon }}</span>
-        <span class="btn-text">{{ session | currentActionText }}</span>
-        <span class="btn-hint">Clique para abrir seleção</span>
+  <!-- Action Buttons -->
+  <div class="action-buttons" *ngIf="session">
+    <div class="buttons-container">
+      <button class="btn btn-success btn-lg" 
+              (click)="openConfirmationModal()"
+              [disabled]="session.phase !== 'completed'">
+        <span class="btn-icon">✅</span>
+        <span class="btn-text">Ir para Confirmação</span>
       </button>
-    </div>
-  </div>
-
-  <!-- Waiting Message -->
-  <div class="waiting-message" *ngIf="!isMyTurn && session.phase !== 'completed'">
-    <div class="waiting-content">
-      <div class="waiting-icon">⏳</div>
-      <h3>Aguardando outros jogadores...</h3>
-      <p>{{ session | currentPhaseText }}</p>
-    </div>
-  </div>
-
-  <!-- Completion Message -->
-  <div class="completion-message" *ngIf="session.phase === 'completed'">
-    <div class="completion-content">
-      <div class="completion-icon">✅</div>
-      <h3>Seleção de Campeões Completa!</h3>
-      <p>A partida pode começar agora.</p>
-
-      <div class="final-teams">
-        <div class="final-team">
-          <h4>🔵 Time Azul</h4>
-          <div class="final-picks">
-            <div class="final-pick" *ngFor="let pick of getTeamPicks('blue')">
-              <img [src]="pick.image" [alt]="pick.name" class="final-champion-img">
-              <span class="final-champion-name">{{ pick.name }}</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="final-team">
-          <h4>🔴 Time Vermelho</h4>
-          <div class="final-picks">
-            <div class="final-pick" *ngFor="let pick of getTeamPicks('red')">
-              <img [src]="pick.image" [alt]="pick.name" class="final-champion-img">
-              <span class="final-champion-name">{{ pick.name }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="completion-actions">
-        <button class="btn btn-success btn-lg" (click)="completePickBan()">
-          ✅ Iniciar Partida
-        </button>
-        <button class="btn btn-secondary btn-lg" (click)="cancelPickBan()">
-          ❌ Cancelar
-        </button>
-      </div>
+      
+      <button class="btn btn-danger btn-lg" 
+              (click)="cancelPickBan()">
+        <span class="btn-icon">❌</span>
+        <span class="btn-text">Cancelar</span>
+      </button>
     </div>
   </div>
 
   <!-- Champion Selection Modal -->
   <app-draft-champion-modal
+    [isVisible]="showChampionModal"
     [session]="session"
     [currentPlayer]="currentPlayer"
-    [isVisible]="showChampionModal"
     (onChampionSelected)="onChampionSelected($event)"
     (onClose)="showChampionModal = false">
   </app-draft-champion-modal>
 
   <!-- Confirmation Modal -->
   <app-draft-confirmation-modal
+    [isVisible]="showConfirmationModal"
     [session]="session"
     [currentPlayer]="currentPlayer"
-    [isVisible]="showConfirmationModal"
     (onConfirm)="completePickBan()"
-    (onCancel)="cancelPickBan()"
-    (onClose)="showConfirmationModal = false"
-    (onEditPick)="openChampionModal()">
+    (onEditPick)="onEditRequested()"
+    (onClose)="showConfirmationModal = false">
   </app-draft-confirmation-modal>
 </div>
