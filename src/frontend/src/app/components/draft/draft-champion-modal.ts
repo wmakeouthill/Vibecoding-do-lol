@@ -313,8 +313,11 @@ export class DraftChampionModalComponent implements OnInit, OnDestroy, OnChanges
     this.onChampionSelected.emit(this.selectedChampion);
     
     this.selectedChampion = null;
+    this.invalidateCache();
     
     this.closeModal();
+    
+    this.changeDetectorRef.markForCheck();
   }
 
   cancelModalSelection(): void {

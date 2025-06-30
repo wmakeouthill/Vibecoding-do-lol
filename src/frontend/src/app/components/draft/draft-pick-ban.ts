@@ -106,8 +106,6 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
     }
 
     ngOnChanges(changes: SimpleChanges) {
-        console.log('🔄 [ngOnChanges] Mudanças detectadas:', changes);
-
         // ✅ CORREÇÃO: Verificar se a mudança é real e não apenas referência
         if (changes['matchData']) {
             const currentValue = changes['matchData'].currentValue;
@@ -136,21 +134,15 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
                 });
 
                 if (currentHash === previousHash) {
-                    console.log('🔄 [ngOnChanges] Mudança ignorada - dados idênticos');
                     return;
                 }
             }
 
-            console.log('🔄 [ngOnChanges] Mudança real detectada - atualizando session');
             this.session = currentValue;
             this.invalidateCache();
         }
 
         if (changes['currentPlayer']) {
-            console.log('🔄 [ngOnChanges] currentPlayer mudou:', {
-                previousValue: changes['currentPlayer'].previousValue,
-                currentValue: changes['currentPlayer'].currentValue
-            });
             this.checkCurrentPlayerChange();
         }
     }
@@ -1032,6 +1024,13 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
 
         console.log('✅ [onChampionSelected] Fase atualizada com campeão:', champion.name);
 
+        // ✅ CORREÇÃO: Invalidar cache IMEDIATAMENTE para forçar atualização da interface
+        this.invalidateCache();
+        
+        // ✅ CORREÇÃO: Forçar detecção de mudanças ANTES de incrementar currentAction
+        this.cdr.markForCheck();
+        this.cdr.detectChanges();
+
         // ✅ CORREÇÃO: Incrementar currentAction
         this.session.currentAction++;
 
@@ -1041,16 +1040,21 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         if (this.session.currentAction >= this.session.phases.length) {
             console.log('🎉 [onChampionSelected] Sessão completada!');
             this.session.phase = 'completed';
+            this.stopTimer();
         } else {
             console.log('🔄 [onChampionSelected] Próxima ação:', this.session.currentAction);
             // ✅ CORREÇÃO: Atualizar o turno atual para mostrar o próximo jogador
             this.updateCurrentTurn();
         }
 
-        // ✅ CORREÇÃO: Invalidar cache para forçar atualização
+        // ✅ CORREÇÃO: Invalidar cache novamente após todas as mudanças
         this.invalidateCache();
+        
+        // ✅ CORREÇÃO: Forçar detecção de mudanças final
+        this.cdr.markForCheck();
+        this.cdr.detectChanges();
 
-        console.log('✅ [onChampionSelected] Cache invalidado - atualização concluída');
+        console.log('✅ [onChampionSelected] Atualização completa - interface deve estar atualizada');
     }
 
     private stopTimer() {
@@ -1141,7 +1145,18 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
 
     // Método otimizado para verificar cache sem logs desnecessários
     private isCacheValidForDisplay(): boolean {
-        // Verificar se há mudanças reais nos dados (não timer)
+        // Se não há session, cache é inválido
+        if (!this.session) return false;
+
+        // Verificar se o cache expirou por tempo primeiro (mais rápido)
+        const timeSinceLastAction = Date.now() - this._lastRealActionTime;
+        const cacheExpired = Date.now() - this._lastCacheUpdate > this.CACHE_DURATION;
+
+        if (cacheExpired && timeSinceLastAction > this.CACHE_DURATION) {
+            return false;
+        }
+
+        // Só calcular hashes se o cache não expirou por tempo
         const newStateHash = this.generateSessionStateHash();
         const newActionHash = this.generateActionHash();
 
@@ -1153,14 +1168,6 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
             this._lastActionHash = newActionHash;
             this._lastStateUpdate = Date.now();
             this._lastRealActionTime = Date.now();
-            return false;
-        }
-
-        // Verificar se o cache expirou por tempo (apenas como fallback)
-        const timeSinceLastAction = Date.now() - this._lastRealActionTime;
-        const cacheExpired = Date.now() - this._lastCacheUpdate > this.CACHE_DURATION;
-
-        if (cacheExpired && timeSinceLastAction > this.CACHE_DURATION) {
             return false;
         }
 
@@ -1200,14 +1207,6 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
                 return null;
             })
             .filter(player => player !== null);
-
-        console.log(`🎯 [getSortedTeamByLaneForDisplay] === ${team.toUpperCase()} TEAM ===`);
-        console.log('🎯 [getSortedTeamByLaneForDisplay] Jogadores ordenados por lane:', sortedPlayers.map((p, i) => ({
-            index: i,
-            teamIndex: p.teamIndex,
-            name: p.summonerName,
-            lane: p.lane
-        })));
         
         return sortedPlayers;
     }
@@ -1240,7 +1239,10 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         const oldIsMyTurn = this.isMyTurn;
         this.isMyTurn = this.checkIfMyTurn(currentPhase);
 
-        console.log(`🔄 [forceUpdateMyTurn] isMyTurn mudou: ${oldIsMyTurn} -> ${this.isMyTurn}`);
+        // Só logar se realmente mudou
+        if (oldIsMyTurn !== this.isMyTurn) {
+            console.log(`🔄 [forceUpdateMyTurn] isMyTurn mudou: ${oldIsMyTurn} -> ${this.isMyTurn}`);
+        }
 
         // Forçar detecção de mudanças
         this.cdr.markForCheck();
@@ -1248,9 +1250,6 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
 
     // ✅ NOVO: Método para verificar se o currentPlayer mudou
     private checkCurrentPlayerChange(): void {
-        console.log('🔍 [checkCurrentPlayerChange] Verificando mudança no currentPlayer...');
-        console.log('🔍 [checkCurrentPlayerChange] currentPlayer atual:', this.currentPlayer);
-
         // Se temos uma sessão ativa, forçar atualização do isMyTurn
         if (this.session && this.session.phase !== 'completed') {
             this.forceUpdateMyTurn();
