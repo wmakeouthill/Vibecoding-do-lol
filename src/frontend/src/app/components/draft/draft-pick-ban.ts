@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, ChangeDetectorRef, ChangeDetectionStrategy, OnChanges, SimpleChanges } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, ChangeDetectorRef, ChangeDetectionStrategy, OnChanges, SimpleChanges, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ChampionService, Champion } from '../../services/champion.service';
@@ -68,6 +68,8 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
 
     public timer: Subscription | null = null;
     public botPickTimer: number | null = null;
+
+    @ViewChild('confirmationModal') confirmationModal!: DraftConfirmationModalComponent;
 
     constructor(
         public championService: ChampionService,
@@ -1147,6 +1149,19 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
             
             // Abrir modal de confirmação após um pequeno delay
             setTimeout(() => {
+                console.log('🔄 [onChampionSelected] Abrindo modal de confirmação após edição');
+                console.log('🔄 [onChampionSelected] Session antes de abrir modal:', {
+                    currentAction: this.session?.currentAction,
+                    phase: this.session?.phase,
+                    totalPhases: this.session?.phases.length
+                });
+                
+                // ✅ NOVO: Forçar atualização do modal antes de abrir
+                if (this.confirmationModal) {
+                    console.log('🔄 [onChampionSelected] Forçando refresh do modal de confirmação');
+                    this.confirmationModal.forceRefresh();
+                }
+                
                 this.openConfirmationModal();
             }, 200);
             

@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ChampionService, Champion } from '../../services/champion.service';
 
@@ -35,7 +35,7 @@ interface TeamSlot {
   templateUrl: './draft-confirmation-modal.html',
   styleUrl: './draft-confirmation-modal.scss'
 })
-export class DraftConfirmationModalComponent {
+export class DraftConfirmationModalComponent implements OnChanges {
   @Input() session: CustomPickBanSession | null = null;
   @Input() currentPlayer: any = null;
   @Input() isVisible: boolean = false;
@@ -54,6 +54,14 @@ export class DraftConfirmationModalComponent {
   private readonly CACHE_DURATION = 100;
 
   constructor(private championService: ChampionService) { }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    // ✅ NOVO: Invalidar cache quando session ou isVisible mudam
+    if (changes['session'] || changes['isVisible']) {
+      console.log('🔄 [ngOnChanges] Detectada mudança na session ou visibilidade');
+      this.forceRefresh();
+    }
+  }
 
   // MÉTODOS PARA COMPARAÇÃO DE JOGADORES
   private comparePlayerWithId(player: any, targetId: string): boolean {
@@ -572,5 +580,18 @@ export class DraftConfirmationModalComponent {
     if (this.isVisible) {
       this.invalidateCache();
     }
+  }
+
+  // ✅ NOVO: Método para forçar atualização completa
+  forceRefresh(): void {
+    console.log('🔄 [forceRefresh] Forçando atualização do modal de confirmação');
+    this.invalidateCache();
+    // Forçar recálculo de todos os dados
+    this._cachedBannedChampions = null;
+    this._cachedBlueTeamPicks = null;
+    this._cachedRedTeamPicks = null;
+    this._cachedBlueTeamByLane = null;
+    this._cachedRedTeamByLane = null;
+    this._lastCacheUpdate = 0; // Forçar recache
   }
 } 
