@@ -59,59 +59,97 @@ export class DraftConfirmationModalComponent {
   private comparePlayerWithId(player: any, targetId: string): boolean {
     if (!player || !targetId) return false;
 
+    // ✅ CORREÇÃO: Normalizar nome do player
+    const getNormalizedName = (player: any): string => {
+      if (player.gameName && player.tagLine) {
+        return `${player.gameName}#${player.tagLine}`;
+      }
+      return player.summonerName || player.name || '';
+    };
+
     const playerId = player.id?.toString();
-    const playerName = player.summonerName || player.name || '';
+    const playerName = getNormalizedName(player);
 
+    console.log('🔍 [comparePlayerWithId] Comparando:', {
+      playerId: playerId,
+      playerName: playerName,
+      targetId: targetId,
+      idMatch: playerId === targetId,
+      nameMatch: playerName === targetId
+    });
+
+    // Comparar por ID
     if (playerId === targetId) {
+      console.log('✅ [comparePlayerWithId] Match por ID');
       return true;
     }
 
+    // Comparar por nome completo
     if (playerName === targetId) {
+      console.log('✅ [comparePlayerWithId] Match por nome completo');
       return true;
     }
 
+    // Comparar apenas gameName (sem tagLine)
     if (playerName.includes('#')) {
       const gameName = playerName.split('#')[0];
       if (gameName === targetId) {
+        console.log('✅ [comparePlayerWithId] Match por gameName');
         return true;
       }
     }
 
+    console.log('❌ [comparePlayerWithId] Nenhum match encontrado');
     return false;
   }
 
   private comparePlayers(player1: any, player2: any): boolean {
     if (!player1 || !player2) return false;
 
+    // ✅ CORREÇÃO: Normalizar nomes para formato gameName#tagLine
+    const getNormalizedName = (player: any): string => {
+      if (player.gameName && player.tagLine) {
+        return `${player.gameName}#${player.tagLine}`;
+      }
+      return player.summonerName || player.name || '';
+    };
+
+    const name1 = getNormalizedName(player1);
+    const name2 = getNormalizedName(player2);
     const id1 = player1.id?.toString();
-    const name1 = player1.summonerName || player1.name || '';
     const id2 = player2.id?.toString();
-    const name2 = player2.summonerName || player2.name || '';
 
+    console.log('🔍 [comparePlayers] Comparando:', {
+      player1: { id: id1, name: name1, original: player1.summonerName || player1.name },
+      player2: { id: id2, name: name2, original: player2.summonerName || player2.name },
+      idsMatch: id1 && id2 && id1 === id2,
+      namesMatch: name1 && name2 && name1 === name2
+    });
+
+    // Comparar por ID primeiro
     if (id1 && id2 && id1 === id2) {
+      console.log('✅ [comparePlayers] Match por ID');
       return true;
     }
 
+    // Comparar por nome normalizado
     if (name1 && name2 && name1 === name2) {
+      console.log('✅ [comparePlayers] Match por nome normalizado');
       return true;
     }
 
-    if (name1 && name2 && name1.includes('#')) {
-      const gameName1 = name1.split('#')[0];
-      if (name2.includes('#')) {
-        const gameName2 = name2.split('#')[0];
-        if (gameName1 === gameName2) {
-          return true;
-        }
-      } else if (gameName1 === name2) {
+    // Comparar apenas parte do gameName (sem tagLine)
+    if (name1 && name2) {
+      const gameName1 = name1.includes('#') ? name1.split('#')[0] : name1;
+      const gameName2 = name2.includes('#') ? name2.split('#')[0] : name2;
+      
+      if (gameName1 === gameName2) {
+        console.log('✅ [comparePlayers] Match por gameName');
         return true;
       }
     }
 
-    if (name1 && name2 && name1.startsWith(name2 + '#')) {
-      return true;
-    }
-
+    console.log('❌ [comparePlayers] Nenhum match encontrado');
     return false;
   }
 
@@ -205,8 +243,17 @@ export class DraftConfirmationModalComponent {
 
     if (!this.session) return [];
 
+    console.log(`🎯 [getTeamByLane] Organizando time ${team}...`);
     const teamPlayers = this.getSortedTeamByLane(team);
     const teamPicks = this.getTeamPicks(team);
+    
+    console.log(`🎯 [getTeamByLane] Time ${team}:`, {
+      playersCount: teamPlayers.length,
+      picksCount: teamPicks.length,
+      players: teamPlayers.map(p => ({ name: p.summonerName || p.name, lane: p.lane })),
+      picks: teamPicks.map(c => c.name)
+    });
+    
     const organizedTeam = this.organizeTeamByLanes(teamPlayers, teamPicks);
 
     if (team === 'blue') {
@@ -220,24 +267,54 @@ export class DraftConfirmationModalComponent {
   }
 
   private organizeTeamByLanes(teamPlayers: any[], teamPicks: any[]): TeamSlot[] {
-    return teamPlayers.map((player, index) => ({
-      player,
-      champion: teamPicks[index] || undefined,
-      phaseIndex: this.getPhaseIndexForPlayer(player) || 0
-    }));
+    return teamPlayers.map((player, index) => {
+      const phaseIndex = this.getPhaseIndexForPlayer(player) || 0;
+      console.log('🎯 [organizeTeamByLanes] Criando slot para jogador:', {
+        playerIndex: index,
+        playerName: player.summonerName || player.name,
+        playerLane: player.lane,
+        phaseIndex: phaseIndex,
+        hasChampion: !!teamPicks[index]
+      });
+      
+      return {
+        player,
+        champion: teamPicks[index] || undefined,
+        phaseIndex: phaseIndex
+      };
+    });
   }
 
   private getPhaseIndexForPlayer(player: any): number {
     if (!this.session) return 0;
 
+    console.log('🔍 [getPhaseIndexForPlayer] Procurando fase para jogador:', {
+      id: player.id,
+      summonerName: player.summonerName,
+      name: player.name,
+      lane: player.lane
+    });
+
     // Encontrar a fase onde este jogador fez pick
     for (let i = 0; i < this.session.phases.length; i++) {
       const phase = this.session.phases[i];
-      if (phase.action === 'pick' && phase.champion && this.comparePlayerWithId(player, phase.playerId!)) {
-        return i;
+      if (phase.action === 'pick' && phase.champion && phase.playerId) {
+        const isMatch = this.comparePlayerWithId(player, phase.playerId);
+        console.log(`🔍 [getPhaseIndexForPlayer] Fase ${i}:`, {
+          phasePlayerId: phase.playerId,
+          phasePlayerName: phase.playerName,
+          champion: phase.champion?.name,
+          isMatch: isMatch
+        });
+        
+        if (isMatch) {
+          console.log(`✅ [getPhaseIndexForPlayer] Encontrada fase ${i} para jogador ${player.summonerName || player.name}`);
+          return i;
+        }
       }
     }
 
+    console.log(`❌ [getPhaseIndexForPlayer] Nenhuma fase encontrada para jogador ${player.summonerName || player.name}, retornando 0`);
     return 0;
   }
 
@@ -250,8 +327,21 @@ export class DraftConfirmationModalComponent {
 
   // MÉTODOS PARA VERIFICAR JOGADOR ATUAL
   isCurrentPlayer(player: any): boolean {
-    if (!this.currentPlayer || !player) return false;
-    return this.comparePlayers(this.currentPlayer, player);
+    console.log('🔍 [isCurrentPlayer] Verificando:', {
+      hasCurrentPlayer: !!this.currentPlayer,
+      currentPlayer: this.currentPlayer,
+      player: player,
+      playerName: player?.summonerName || player?.name
+    });
+    
+    if (!this.currentPlayer || !player) {
+      console.log('❌ [isCurrentPlayer] currentPlayer ou player é null');
+      return false;
+    }
+    
+    const result = this.comparePlayers(this.currentPlayer, player);
+    console.log('🔍 [isCurrentPlayer] Resultado:', result);
+    return result;
   }
 
   // MÉTODOS PARA VERIFICAR SE É BOT
@@ -261,7 +351,14 @@ export class DraftConfirmationModalComponent {
     const name = player.summonerName || player.name || '';
     const id = player.id;
 
+    console.log('🤖 [isPlayerBot] Verificando bot:', {
+      playerName: name,
+      playerId: id,
+      isNegativeId: id < 0
+    });
+
     if (id < 0) {
+      console.log('✅ [isPlayerBot] É bot (ID negativo)');
       return true;
     }
 
@@ -346,10 +443,105 @@ export class DraftConfirmationModalComponent {
     this.onCancel.emit();
   }
 
-  // MÉTODOS PARA EDIÇÃO
-  startEditingPick(playerId: string, phaseIndex: number): void {
-    this.onEditPick.emit({ playerId, phaseIndex });
+  // MÉTODO PARA VERIFICAR SE BOTÃO DEVE APARECER
+  shouldShowEditButton(slot: any): boolean {
+    const isCurrentPlayerResult = this.isCurrentPlayer(slot.player);
+    const isBotResult = this.isPlayerBot(slot.player);
+    
+    // ✅ CORREÇÃO: Mostrar botão APENAS para o jogador atual (não para bots)
+    const shouldShow = isCurrentPlayerResult && !isBotResult;
+    
+    console.log('🔍 [shouldShowEditButton] Verificando botão para:', {
+      playerName: slot.player.summonerName || slot.player.name,
+      isCurrentPlayer: isCurrentPlayerResult,
+      isBot: isBotResult,
+      shouldShow: shouldShow
+    });
+    
+    return shouldShow;
   }
+
+  // MÉTODO PARA DEBUG DE CLIQUE
+  onButtonClick(slot: any): void {
+    console.log('🎯 [onButtonClick] === BOTÃO CLICADO ===');
+    console.log('🎯 [onButtonClick] slot:', slot);
+    console.log('🎯 [onButtonClick] player:', slot.player);
+    console.log('🎯 [onButtonClick] phaseIndex:', slot.phaseIndex);
+    console.log('🎯 [onButtonClick] isBot:', this.isPlayerBot(slot.player));
+    
+    if (this.isPlayerBot(slot.player)) {
+      this.confirmBotPick(slot.player.id || slot.player.summonerName, slot.phaseIndex);
+    } else {
+      this.startEditingPick(slot.player.id || slot.player.summonerName, slot.phaseIndex);
+    }
+  }
+
+  // MÉTODOS PARA EDIÇÃO
+      startEditingPick(playerId: string, phaseIndex: number): void {
+        console.log('🎯 [startEditingPick] === INICIANDO EDIÇÃO ===');
+        console.log('🎯 [startEditingPick] playerId:', playerId);
+        console.log('🎯 [startEditingPick] phaseIndex:', phaseIndex);
+        console.log('🎯 [startEditingPick] currentPlayer:', this.currentPlayer);
+        console.log('🎯 [startEditingPick] session:', this.session);
+        
+        this.onEditPick.emit({ playerId, phaseIndex });
+        console.log('🎯 [startEditingPick] Evento emitido');
+    }
+
+    // ✅ NOVO: Método para editar o pick do jogador atual via botão principal
+    startEditingCurrentPlayer(): void {
+        console.log('🎯 [startEditingCurrentPlayer] === INICIANDO EDIÇÃO DO JOGADOR ATUAL ===');
+        console.log('🎯 [startEditingCurrentPlayer] currentPlayer:', this.currentPlayer);
+        console.log('🎯 [startEditingCurrentPlayer] session:', this.session);
+
+        if (!this.currentPlayer || !this.session) {
+            console.log('❌ [startEditingCurrentPlayer] currentPlayer ou session não disponível');
+            return;
+        }
+
+        // Procurar o pick do jogador atual
+        const currentPlayerFormatted = this.currentPlayer.gameName && this.currentPlayer.tagLine
+            ? `${this.currentPlayer.gameName}#${this.currentPlayer.tagLine}`
+            : this.currentPlayer.summonerName || this.currentPlayer.name;
+
+        console.log('🎯 [startEditingCurrentPlayer] currentPlayer formatado:', currentPlayerFormatted);
+
+        // Procurar a fase de pick do jogador atual
+        let playerPhaseIndex = -1;
+        for (let i = 0; i < this.session.phases.length; i++) {
+            const phase = this.session.phases[i];
+            if (phase.action === 'pick' && phase.locked && phase.champion) {
+                console.log('🔍 [startEditingCurrentPlayer] Verificando fase', i, ':', {
+                    playerId: phase.playerId,
+                    playerName: phase.playerName,
+                    champion: phase.champion?.name,
+                    isMatch: this.comparePlayerWithId(this.currentPlayer, phase.playerId || '')
+                });
+
+                if (this.comparePlayerWithId(this.currentPlayer, phase.playerId || '')) {
+                    playerPhaseIndex = i;
+                    console.log('✅ [startEditingCurrentPlayer] Encontrada fase do jogador atual:', i);
+                    break;
+                }
+            }
+        }
+
+        if (playerPhaseIndex === -1) {
+            console.log('❌ [startEditingCurrentPlayer] Fase de pick do jogador atual não encontrada');
+            return;
+        }
+
+        // Usar o ID formatado do currentPlayer para garantir consistência
+        const playerIdForEdit = this.currentPlayer.id?.toString() || currentPlayerFormatted;
+
+        console.log('🎯 [startEditingCurrentPlayer] Iniciando edição:', {
+            playerId: playerIdForEdit,
+            phaseIndex: playerPhaseIndex,
+            playerFormatted: currentPlayerFormatted
+        });
+
+        this.startEditingPick(playerIdForEdit, playerPhaseIndex);
+    }
 
   confirmBotPick(playerId: string, phaseIndex: number): void {
     // Para bots, apenas confirmar (não editar)

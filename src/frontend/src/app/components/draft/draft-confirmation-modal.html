@@ -45,8 +45,7 @@
                   <span class="champion-name">{{ slot.champion.name }}</span>
                 </div>
                 <div class="champion-placeholder" *ngIf="!slot.champion">?</div>
-                <button class="edit-btn"
-                  (click)="isPlayerBot(slot.player) ? confirmBotPick(slot.player.id || slot.player.summonerName, slot.phaseIndex) : startEditingPick(slot.player.id || slot.player.summonerName, slot.phaseIndex)">
+                <button class="edit-btn" *ngIf="shouldShowEditButton(slot)" (click)="onButtonClick(slot)">
                   {{ isPlayerBot(slot.player) ? 'Confirmar Bot' : 'Editar' }}
                 </button>
               </div>
@@ -88,8 +87,7 @@
                   <span class="champion-name">{{ slot.champion.name }}</span>
                 </div>
                 <div class="champion-placeholder" *ngIf="!slot.champion">?</div>
-                <button class="edit-btn"
-                  (click)="isPlayerBot(slot.player) ? confirmBotPick(slot.player.id || slot.player.summonerName, slot.phaseIndex) : startEditingPick(slot.player.id || slot.player.summonerName, slot.phaseIndex)">
+                <button class="edit-btn" *ngIf="shouldShowEditButton(slot)" (click)="onButtonClick(slot)">
                   {{ isPlayerBot(slot.player) ? 'Confirmar Bot' : 'Editar' }}
                 </button>
               </div>
@@ -104,8 +102,8 @@
       <button class="btn btn-danger btn-lg" (click)="cancelFinalDraft()">
         ❌ Cancelar Partida
       </button>
-      <button class="btn btn-secondary btn-lg" (click)="closeModal()">
-        ✏️ Editar Seleção
+      <button class="btn btn-secondary btn-lg" (click)="startEditingCurrentPlayer()">
+        ✏️ Editar Minha Seleção
       </button>
       <button class="btn btn-success btn-lg" (click)="confirmFinalDraft()">
         ✅ Confirmar e Continuar

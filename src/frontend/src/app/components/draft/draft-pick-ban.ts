@@ -974,14 +974,22 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
     }
 
     openConfirmationModal(): void {
-        console.log('🎯 [openConfirmationModal] Abrindo modal de confirmação');
+        console.log('🎯 [openConfirmationModal] === ABRINDO MODAL DE CONFIRMAÇÃO ===');
+        console.log('🎯 [openConfirmationModal] currentPlayer:', this.currentPlayer);
+        console.log('🎯 [openConfirmationModal] session:', this.session);
+        console.log('🎯 [openConfirmationModal] session.phase:', this.session?.phase);
+        
         this.showConfirmationModal = true;
         this.cdr.markForCheck();
     }
 
     // ✅ NOVO: Método para lidar com solicitação de edição do modal de confirmação
     onEditRequested(editData: { playerId: string, phaseIndex: number }): void {
-        console.log('🎯 [onEditRequested] Solicitação de edição recebida:', editData);
+        console.log('🎯 [onEditRequested] === SOLICITAÇÃO DE EDIÇÃO RECEBIDA ===');
+        console.log('🎯 [onEditRequested] editData:', editData);
+        console.log('🎯 [onEditRequested] currentPlayer:', this.currentPlayer);
+        console.log('🎯 [onEditRequested] session.currentAction:', this.session?.currentAction);
+        console.log('🎯 [onEditRequested] session.phase:', this.session?.phase);
         
         if (!this.session) {
             console.log('❌ [onEditRequested] Session não existe');
@@ -992,17 +1000,36 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         const phaseToEdit = this.session.phases[editData.phaseIndex];
         if (!phaseToEdit) {
             console.log('❌ [onEditRequested] Fase não encontrada para índice:', editData.phaseIndex);
+            console.log('❌ [onEditRequested] Total de fases:', this.session.phases.length);
             return;
         }
 
+        console.log('🎯 [onEditRequested] Fase encontrada:', {
+            phaseIndex: editData.phaseIndex,
+            team: phaseToEdit.team,
+            action: phaseToEdit.action,
+            playerId: phaseToEdit.playerId,
+            playerName: phaseToEdit.playerName,
+            champion: phaseToEdit.champion?.name,
+            locked: phaseToEdit.locked
+        });
+
         // Verificar se é o jogador atual tentando editar
         const isCurrentPlayerEdit = this.botService.comparePlayerWithId(this.currentPlayer, editData.playerId);
+        console.log('🎯 [onEditRequested] Verificação de jogador:', {
+            currentPlayerId: this.currentPlayer?.id,
+            currentPlayerName: this.currentPlayer?.summonerName || this.currentPlayer?.name,
+            editPlayerId: editData.playerId,
+            phasePlayerId: phaseToEdit.playerId,
+            isCurrentPlayerEdit: isCurrentPlayerEdit
+        });
+
         if (!isCurrentPlayerEdit) {
             console.log('❌ [onEditRequested] Apenas o próprio jogador pode editar seu pick');
             return;
         }
 
-        console.log('🎯 [onEditRequested] Configurando edição para fase:', {
+        console.log('✅ [onEditRequested] Configurando edição para fase:', {
             phaseIndex: editData.phaseIndex,
             playerId: editData.playerId,
             currentChampion: phaseToEdit.champion?.name,
@@ -1024,6 +1051,14 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         // Fechar modal de confirmação
         this.showConfirmationModal = false;
         
+        console.log('🎯 [onEditRequested] Estado após configuração:', {
+            isEditingMode: this.isEditingMode,
+            editingPhaseIndex: this.editingPhaseIndex,
+            sessionCurrentAction: this.session.currentAction,
+            showConfirmationModal: this.showConfirmationModal,
+            showChampionModal: this.showChampionModal
+        });
+
         // Forçar atualização da interface
         this.forceInterfaceUpdate();
 
@@ -1032,17 +1067,24 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         
         // ✅ CORREÇÃO: Abrir modal de seleção de campeões para edição com delay maior
         setTimeout(() => {
-            console.log('🎯 [onEditRequested] Tentando abrir modal de edição...');
+            console.log('🎯 [onEditRequested] === TENTANDO ABRIR MODAL DE EDIÇÃO ===');
             console.log('🎯 [onEditRequested] isEditingMode:', this.isEditingMode);
             console.log('🎯 [onEditRequested] showChampionModal:', this.showChampionModal);
             console.log('🎯 [onEditRequested] session.phase:', this.session?.phase);
+            console.log('🎯 [onEditRequested] session.currentAction:', this.session?.currentAction);
             
             if (this.isEditingMode && !this.showChampionModal) {
+                console.log('🎯 [onEditRequested] Abrindo modal de edição...');
                 this.openChampionModal();
+            } else {
+                console.log('❌ [onEditRequested] Condições não atendidas para abrir modal:', {
+                    isEditingMode: this.isEditingMode,
+                    showChampionModal: this.showChampionModal
+                });
             }
         }, 200);
         
-        console.log('🎯 [onEditRequested] Modal de confirmação fechado e modal de seleção aberto para edição');
+        console.log('🎯 [onEditRequested] === FIM DA CONFIGURAÇÃO DE EDIÇÃO ===');
     }
 
     // MÉTODO PARA RECEBER SELEÇÃO DO MODAL
