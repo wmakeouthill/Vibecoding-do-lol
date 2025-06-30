@@ -33,26 +33,45 @@ interface MatchHistory {
 })
 export class ApiService {
   private baseUrl = this.getBaseUrl();
+  private fallbackUrls: string[] = [];
 
   // Error suppression system to reduce spam when services are down
   private errorSuppressionCache = new Map<string, number>();
   private readonly ERROR_SUPPRESSION_DURATION = 30000; // 30 seconds
 
-  constructor(private http: HttpClient) {}  private getBaseUrl(): string {
+  constructor(private http: HttpClient) {
+    // Log de diagnóstico inicial
+    console.log('🔧 ApiService inicializado:', {
+      baseUrl: this.baseUrl,
+      isElectron: this.isElectron(),
+      isWindows: this.isWindows(),
+      fallbackUrls: this.fallbackUrls,
+      userAgent: navigator.userAgent.substring(0, 100)
+    });
+  }  private getBaseUrl(): string {
     // Detectar se está no Electron (tanto dev quanto produção)
     if (this.isElectron()) {
-      // Tanto em desenvolvimento quanto em produção instalada,
-      // o backend sempre roda em localhost:3000
+      // No Windows, o Electron muitas vezes resolve localhost para 127.0.0.1
+      // Configurar URL primária e fallbacks
+      if (this.isWindows()) {
+        this.fallbackUrls = ['http://localhost:3000/api', 'http://127.0.0.1:3000/api'];
+        console.log('🔧 Backend URL primária para Windows:', 'http://127.0.0.1:3000/api');
+        return 'http://127.0.0.1:3000/api';
+      } else {
+        this.fallbackUrls = ['http://127.0.0.1:3000/api', 'http://localhost:3000/api'];
+        console.log('🔧 Backend URL primária para não-Windows:', 'http://localhost:3000/api');
+        return 'http://localhost:3000/api';
+      }
+    }
+
+    // Em desenvolvimento web (Angular dev server)
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1') {
+      // Sempre usar localhost em desenvolvimento
       return 'http://localhost:3000/api';
     }
 
     // Em produção web (não Electron), usar URL relativa
-    const host = window.location.hostname;
-    if (host === 'localhost' || host === '127.0.0.1') {
-      return 'http://localhost:3000/api';
-    }
-
-    // URL da nuvem quando em produção web
     return `/api`;
   }
   public isElectron(): boolean {
@@ -61,18 +80,81 @@ export class ApiService {
     const hasRequire = !!(window as any).require;
     const hasProcess = !!(window as any).process?.type;
     const userAgentElectron = navigator.userAgent.toLowerCase().includes('electron');
+    const isFileProtocol = window.location.protocol === 'file:';
+    const hasElectronProcess = !!(window as any).process?.versions?.electron;
+
+    const isElectron = hasElectronAPI || hasRequire || hasProcess || userAgentElectron || isFileProtocol || hasElectronProcess;
 
     // Log para debug
-    console.log('Electron detection:', {
+    console.log('🔍 Electron detection:', {
       hasElectronAPI,
       hasRequire,
       hasProcess,
       userAgentElectron,
+      isFileProtocol,
+      hasElectronProcess,
+      isElectron,
+      protocol: window.location.protocol,
+      hostname: window.location.hostname,
       userAgent: navigator.userAgent
     });
 
-    return hasElectronAPI || hasRequire || hasProcess || userAgentElectron;
-  }private handleError = (error: HttpErrorResponse) => {
+    return isElectron;
+  }
+
+  private isWindows(): boolean {
+    const platform = (window as any).process?.platform || navigator.platform;
+    const userAgent = navigator.userAgent;
+    
+    const isWin = platform === 'win32' || 
+                  platform.toLowerCase().includes('win') ||
+                  userAgent.includes('Windows');
+    
+    console.log('🖥️ Platform detection:', { platform, userAgent, isWindows: isWin });
+    return isWin;
+  }  private tryWithFallback<T>(endpoint: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET', body?: any): Observable<T> {
+    const tryUrl = (url: string): Observable<T> => {
+      const fullUrl = `${url}${endpoint}`;
+      console.log(`🔄 Tentando requisição: ${method} ${fullUrl}`);
+      
+      switch (method) {
+        case 'GET':
+          return this.http.get<T>(fullUrl);
+        case 'POST':
+          return this.http.post<T>(fullUrl, body);
+        case 'PUT':
+          return this.http.put<T>(fullUrl, body);
+        case 'DELETE':
+          return this.http.delete<T>(fullUrl);
+        default:
+          return this.http.get<T>(fullUrl);
+      }
+    };
+
+    // Tentar URL primária primeiro
+    return tryUrl(this.baseUrl).pipe(
+      catchError((primaryError: HttpErrorResponse) => {
+        console.warn(`❌ Falha na URL primária (${this.baseUrl}):`, primaryError.message);
+        
+        // Se há URLs de fallback e estamos no Electron, tentar a primeira
+        if (this.fallbackUrls.length > 0 && this.isElectron()) {
+          console.log('🔄 Tentando primeira URL de fallback...');
+          return tryUrl(this.fallbackUrls[0]).pipe(
+            catchError((fallbackError: HttpErrorResponse) => {
+              console.warn(`❌ Falha na URL de fallback (${this.fallbackUrls[0]}):`, fallbackError.message);
+              // Retornar erro original para tratamento padrão
+              return throwError(() => primaryError);
+            })
+          );
+        }
+        
+        // Se não há fallbacks, retornar erro original
+        return throwError(() => primaryError);
+      })
+    );
+  }
+
+  private handleError = (error: HttpErrorResponse) => {
     let errorMessage = 'Erro desconhecido';
     const currentTime = Date.now();
 
@@ -121,6 +203,15 @@ export class ApiService {
 
   // Health check
   checkHealth(): Observable<any> {
+    // Se estamos no Electron, usar o método com fallback
+    if (this.isElectron()) {
+      return this.tryWithFallback('/health', 'GET').pipe(
+        retry(1),
+        catchError(this.handleError)
+      );
+    }
+    
+    // Caso contrário, usar método padrão
     return this.http.get(`${this.baseUrl}/health`)
       .pipe(
         retry(2),

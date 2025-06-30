@@ -57,6 +57,16 @@ const io = new SocketIOServer(server, {
 const PORT = process.env.PORT || 3000;
 const isDev = process.env.NODE_ENV === 'development';
 
+// Log detalhado do ambiente
+console.log('🔧 Configuração do servidor:', {
+  NODE_ENV: process.env.NODE_ENV,
+  isDev: isDev,
+  PORT: PORT,
+  platform: process.platform,
+  cwd: process.cwd(),
+  __dirname: __dirname
+});
+
 // Global shared instances
 const globalRiotAPI = new RiotAPIService();
 let frontendPath: string = '';
@@ -66,22 +76,33 @@ let frontendPath: string = '';
 
 app.use(cors({
   origin: function (origin, callback) {
+    console.log('🌐 CORS request from origin:', origin);
+    
     // Em desenvolvimento, permitir localhost:4200
     if (isDev) {
       const allowedOrigins = ['http://localhost:4200', 'http://localhost:3000'];
       if (!origin || allowedOrigins.includes(origin)) {
+        console.log('✅ CORS allowed for development origin');
         callback(null, true);
       } else {
+        console.log('❌ CORS denied for development origin');
         callback(new Error('Not allowed by CORS'));
       }
     } else {
       // Em produção (Electron), permitir qualquer origem local ou file://
-      if (!origin ||
-        origin.startsWith('file://') ||
-        origin.startsWith('http://localhost') ||
-        origin.startsWith('http://127.0.0.1')) {
+      const allowedProdOrigins = [
+        'file://',
+        'http://localhost',
+        'http://127.0.0.1',
+        'https://localhost',
+        'https://127.0.0.1'
+      ];
+      
+      if (!origin || allowedProdOrigins.some(allowed => origin.startsWith(allowed))) {
+        console.log('✅ CORS allowed for production origin');
         callback(null, true);
       } else {
+        console.log('❌ CORS denied for production origin');
         callback(new Error('Not allowed by CORS'));
       }
     }
@@ -115,6 +136,9 @@ app.use(express.urlencoded({ extended: true }));
 // Middleware para log de todas as requisições
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  console.log(`   Origin: ${req.get('origin') || 'none'}`);
+  console.log(`   Host: ${req.get('host')}`);
+  console.log(`   User-Agent: ${req.get('user-agent')?.substring(0, 100) || 'none'}`);
   next();
 });
 
@@ -2538,10 +2562,30 @@ async function startServer() {
     server.listen(PORT as number, '0.0.0.0', () => {
       console.log(`🚀 Servidor rodando na porta ${PORT}`);
       console.log(`🌐 WebSocket disponível em ws://localhost:${PORT}`);
-
+      console.log(`🔧 API disponível em: http://localhost:${PORT}/api`);
+      console.log(`🔧 Health check: http://localhost:${PORT}/api/health`);
+      
       if (isDev) {
         console.log(`📱 Frontend Angular: http://localhost:4200`);
-        console.log(`🔧 API Base URL: http://localhost:${PORT}/api`);
+      } else {
+        console.log(`📱 Frontend Electron: http://localhost:${PORT}`);
+      }
+
+      // Test de conectividade imediato
+      setTimeout(() => {
+        console.log('🧪 Testando conectividade interna...');
+        fetch(`http://localhost:${PORT}/api/health`)
+          .then(res => res.json())
+          .then(data => console.log('✅ Teste de conectividade bem-sucedido:', data))
+          .catch(err => console.error('❌ Teste de conectividade falhou:', err.message));
+      }, 1000);
+    });
+    
+    server.on('error', (error: any) => {
+      console.error('❌ Erro no servidor:', error);
+      if (error.code === 'EADDRINUSE') {
+        console.error(`💥 Porta ${PORT} já está em uso!`);
+        process.exit(1);
       }
     });
 
@@ -2553,7 +2597,10 @@ async function startServer() {
 
 async function initializeServices() {
   try {
+    console.log('🚀 Iniciando inicialização dos serviços...');
+    
     // Banco de dados
+    console.log('📊 Inicializando banco de dados...');
     await dbManager.initialize();
     console.log('✅ Banco de dados inicializado');
 
@@ -2596,7 +2643,14 @@ async function initializeServices() {
     console.log('✅ DataDragonService inicializado');
 
     // LCU
-    await lcuService.initialize();
+    console.log('🎮 Inicializando LCU Service...');
+    try {
+      await lcuService.initialize();
+      console.log('✅ LCU Service inicializado');
+    } catch (lcuError: any) {
+      console.warn('⚠️ LCU Service falhou na inicialização:', lcuError.message);
+      console.log('🔄 Continuando sem LCU...');
+    }
 
     // Conectar dependências aos serviços
     lcuService.setDatabaseManager(dbManager);
