@@ -1122,23 +1122,23 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         // ✅ CORREÇÃO: Fechar modal imediatamente
         this.showChampionModal = false;
 
-        // ✅ CORREÇÃO: Incrementar currentAction IMEDIATAMENTE após configurar a fase
-        this.session.currentAction++;
-
-        console.log('✅ [onChampionSelected] currentAction incrementado para:', this.session.currentAction);
-
         // ✅ CORREÇÃO: AGORA invalidar cache e forçar detecção de mudanças
         this.forceInterfaceUpdate();
 
-        // ✅ CORREÇÃO: Verificar se estamos em modo de edição
+        // ✅ CORREÇÃO: Verificar se estamos em modo de edição ANTES de incrementar currentAction
         if (this.isEditingMode) {
             console.log('🎯 [onChampionSelected] Modo de edição - voltando para modal de confirmação');
+            console.log('🎯 [onChampionSelected] Fase editada com sucesso:', {
+                phaseIndex: this.editingPhaseIndex,
+                newChampion: champion.name,
+                currentAction: this.session.currentAction
+            });
             
             // Resetar modo de edição
             this.isEditingMode = false;
             this.editingPhaseIndex = -1;
             
-            // Voltar para o final do draft
+            // Voltar para o final do draft (SEM incrementar currentAction)
             this.session.currentAction = this.session.phases.length;
             this.session.phase = 'completed';
             
@@ -1153,6 +1153,10 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
             console.log('✅ [onChampionSelected] Voltando para modal de confirmação após edição');
             return;
         }
+
+        // ✅ CORREÇÃO: Incrementar currentAction APENAS se NÃO estamos em modo de edição
+        this.session.currentAction++;
+        console.log('✅ [onChampionSelected] currentAction incrementado para:', this.session.currentAction);
 
         // ✅ CORREÇÃO: Verificar se a sessão foi completada (modo normal)
         if (this.session.currentAction >= this.session.phases.length) {
