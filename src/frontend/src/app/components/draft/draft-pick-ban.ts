@@ -6,14 +6,9 @@ import { BotService, PickBanPhase, CustomPickBanSession } from '../../services/b
 import { DraftChampionModalComponent } from './draft-champion-modal';
 import { DraftConfirmationModalComponent } from './draft-confirmation-modal';
 import { interval, Subscription } from 'rxjs';
-import { BannedChampionsPipe } from './banned-champions.pipe';
-import { TeamBansPipe } from './team-bans.pipe';
-import { TeamPicksPipe } from './team-picks.pipe';
-import { PlayerPickPipe } from './player-pick.pipe';
 import { LaneDisplayPipe } from './lane-display.pipe';
 import { CurrentPhaseTextPipe } from './current-phase-text.pipe';
 import { PhaseProgressPipe } from './phase-progress.pipe';
-import { CurrentPlayerNamePipe } from './current-player-name.pipe';
 import { CurrentActionTextPipe } from './current-action-text.pipe';
 import { CurrentActionIconPipe } from './current-action-icon.pipe';
 
@@ -24,14 +19,9 @@ import { CurrentActionIconPipe } from './current-action-icon.pipe';
         FormsModule,
         DraftChampionModalComponent,
         DraftConfirmationModalComponent,
-        BannedChampionsPipe,
-        TeamBansPipe,
-        TeamPicksPipe,
-        PlayerPickPipe,
         LaneDisplayPipe,
         CurrentPhaseTextPipe,
         PhaseProgressPipe,
-        CurrentPlayerNamePipe,
         CurrentActionTextPipe,
         CurrentActionIconPipe
     ],
@@ -484,8 +474,9 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         
         console.log(`🎯 [updateCurrentTurn] === FIM DA AÇÃO ${this.session.currentAction + 1} ===`);
         
-        // ✅ NOVO: Forçar detecção de mudanças após atualizar isMyTurn
+        // ✅ CORREÇÃO: Forçar detecção de mudanças após atualizar playerName e isMyTurn
         this.cdr.markForCheck();
+        this.cdr.detectChanges();
         
         // ✅ NOVO: Se é minha vez, abrir o modal automaticamente após um pequeno delay
         if (this.isMyTurn) {
@@ -541,6 +532,10 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
                     console.log(`🤖 [checkForBotAutoAction] currentAction após bot: ${this.session?.currentAction}`);
                     console.log(`🤖 [checkForBotAutoAction] total de fases: ${this.session?.phases.length}`);
 
+                    // ✅ CORREÇÃO: O BotService já incrementou currentAction e configurou a fase
+                    // Agora invalidar cache e forçar detecção de mudanças
+                    this.forceInterfaceUpdate();
+
                     if (this.session && this.session.currentAction >= this.session.phases.length) {
                         console.log('🤖 [checkForBotAutoAction] Sessão completada pelo bot');
                         this.session.phase = 'completed';
@@ -550,12 +545,10 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
                         this.updateCurrentTurn();
                     }
 
-                    // Invalidar cache apenas quando há uma ação real (pick/ban do bot)
-                    console.log('🔄 [checkForBotAutoAction] Invalidando cache devido a ação real do bot');
-                    this.invalidateCache();
-
-                    // Marcar para detecção de mudanças com OnPush
-                    this.cdr.markForCheck();
+                    // ✅ CORREÇÃO: Forçar atualização final da interface
+                    this.forceInterfaceUpdate();
+                    
+                    console.log('✅ [checkForBotAutoAction] Interface atualizada após ação do bot');
                 }
             );
             console.log(`🤖 [checkForBotAutoAction] Timer agendado: ${this.botPickTimer}`);
@@ -680,10 +673,12 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         // ✅ CORREÇÃO: Executar ação automática para TODOS quando o timer acaba
         console.log('⏰ [handleTimeOut] Executando ação automática (timeout)');
 
-        // Auto-pick/ban para o jogador atual usando o BotService
+        // ✅ CORREÇÃO: Auto-pick/ban para o jogador atual usando o BotService
+        // O BotService já configura a fase e incrementa currentAction
         this.botService.performBotAction(currentPhase, this.session, this.champions);
 
-        this.session.currentAction++;
+        // ✅ CORREÇÃO: AGORA invalidar cache e forçar detecção de mudanças
+        this.forceInterfaceUpdate();
 
         if (this.session.currentAction >= this.session.phases.length) {
             this.session.phase = 'completed';
@@ -692,12 +687,10 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
             this.updateCurrentTurn();
         }
 
-        // Invalidar cache apenas quando há uma ação real (timeout)
-        console.log('🔄 [handleTimeOut] Invalidando cache devido a timeout');
-        this.invalidateCache();
-
-        // Marcar para detecção de mudanças com OnPush
-        this.cdr.markForCheck();
+        // ✅ CORREÇÃO: Forçar atualização final da interface
+        this.forceInterfaceUpdate();
+        
+        console.log('✅ [handleTimeOut] Interface atualizada após timeout');
     }
 
     completePickBan() {
@@ -733,47 +726,26 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
     }
 
     getBannedChampions(): Champion[] {
-        // Verificar se o cache é válido antes de usar
-        if (this.isCacheValidForDisplay() && this._cachedBannedChampions) {
-            return this._cachedBannedChampions;
-        }
-
+        // ✅ CORREÇÃO: Não usar cache para garantir atualização em tempo real
         if (!this.session) return [];
 
         const bannedChampions = this.session.phases
-            .filter(phase => phase.action === 'ban' && phase.champion)
+            .filter(phase => phase.action === 'ban' && phase.champion && phase.locked)
             .map(phase => phase.champion!)
             .filter((champion, index, self) =>
                 index === self.findIndex(c => c.id === champion.id)
             );
 
-        this._cachedBannedChampions = bannedChampions;
-        this._lastCacheUpdate = Date.now();
-
         return bannedChampions;
     }
 
     getTeamPicks(team: 'blue' | 'red'): Champion[] {
-        // Verificar se o cache é válido antes de usar
-        if (team === 'blue' && this.isCacheValidForDisplay() && this._cachedBlueTeamPicks) {
-            return this._cachedBlueTeamPicks;
-        }
-        if (team === 'red' && this.isCacheValidForDisplay() && this._cachedRedTeamPicks) {
-            return this._cachedRedTeamPicks;
-        }
-
+        // ✅ CORREÇÃO: Não usar cache para garantir atualização em tempo real
         if (!this.session) return [];
 
         const teamPicks = this.session.phases
-            .filter(phase => phase.team === team && phase.action === 'pick' && phase.champion)
+            .filter(phase => phase.team === team && phase.action === 'pick' && phase.champion && phase.locked)
             .map(phase => phase.champion!);
-
-        if (team === 'blue') {
-            this._cachedBlueTeamPicks = teamPicks;
-        } else {
-            this._cachedRedTeamPicks = teamPicks;
-        }
-        this._lastCacheUpdate = Date.now();
 
         return teamPicks;
     }
@@ -857,10 +829,11 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
     }
 
     getTeamBans(team: 'blue' | 'red'): Champion[] {
+        // ✅ CORREÇÃO: Não usar cache para garantir atualização em tempo real
         if (!this.session) return [];
 
         return this.session.phases
-            .filter(phase => phase.team === team && phase.action === 'ban' && phase.champion)
+            .filter(phase => phase.team === team && phase.action === 'ban' && phase.champion && phase.locked)
             .map(phase => phase.champion!);
     }
 
@@ -925,12 +898,14 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
     }
 
     getCurrentPlayerName(): string {
+        // ✅ CORREÇÃO: Sempre retornar o nome atualizado sem cache
         if (!this.session) return '';
 
         const currentPhase = this.session.phases[this.session.currentAction];
         if (!currentPhase) return '';
 
-        return currentPhase.playerName || 'Jogador Desconhecido';
+        // ✅ CORREÇÃO: Garantir que o nome seja atualizado corretamente
+        return currentPhase.playerName || currentPhase.playerId || 'Jogador Desconhecido';
     }
 
     getCurrentActionText(): string {
@@ -1017,24 +992,23 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
             playerName: currentPhase.playerName
         });
 
-        // ✅ CORREÇÃO: Atualizar a fase corretamente
+        // ✅ CORREÇÃO: Atualizar a fase COMPLETAMENTE antes de qualquer detecção de mudanças
         currentPhase.champion = champion;
         currentPhase.locked = true;
         currentPhase.timeRemaining = 0;
 
         console.log('✅ [onChampionSelected] Fase atualizada com campeão:', champion.name);
 
-        // ✅ CORREÇÃO: Invalidar cache IMEDIATAMENTE para forçar atualização da interface
-        this.invalidateCache();
-        
-        // ✅ CORREÇÃO: Forçar detecção de mudanças ANTES de incrementar currentAction
-        this.cdr.markForCheck();
-        this.cdr.detectChanges();
+        // ✅ CORREÇÃO: Fechar modal imediatamente
+        this.showChampionModal = false;
 
-        // ✅ CORREÇÃO: Incrementar currentAction
+        // ✅ CORREÇÃO: Incrementar currentAction IMEDIATAMENTE após configurar a fase
         this.session.currentAction++;
 
         console.log('✅ [onChampionSelected] currentAction incrementado para:', this.session.currentAction);
+
+        // ✅ CORREÇÃO: AGORA invalidar cache e forçar detecção de mudanças
+        this.forceInterfaceUpdate();
 
         // ✅ CORREÇÃO: Verificar se a sessão foi completada
         if (this.session.currentAction >= this.session.phases.length) {
@@ -1047,12 +1021,8 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
             this.updateCurrentTurn();
         }
 
-        // ✅ CORREÇÃO: Invalidar cache novamente após todas as mudanças
-        this.invalidateCache();
-        
-        // ✅ CORREÇÃO: Forçar detecção de mudanças final
-        this.cdr.markForCheck();
-        this.cdr.detectChanges();
+        // ✅ CORREÇÃO: Forçar atualização final da interface
+        this.forceInterfaceUpdate();
 
         console.log('✅ [onChampionSelected] Atualização completa - interface deve estar atualizada');
     }
@@ -1254,5 +1224,21 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         if (this.session && this.session.phase !== 'completed') {
             this.forceUpdateMyTurn();
         }
+    }
+
+    // ✅ NOVO: Método para forçar atualização completa da interface
+    private forceInterfaceUpdate(): void {
+        // Invalidar todos os caches
+        this.invalidateCache();
+        
+        // Forçar detecção de mudanças múltiplas vezes para garantir
+        this.cdr.markForCheck();
+        this.cdr.detectChanges();
+        
+        // Usar setTimeout para forçar uma segunda atualização
+        setTimeout(() => {
+            this.cdr.markForCheck();
+            this.cdr.detectChanges();
+        }, 10);
     }
 } 

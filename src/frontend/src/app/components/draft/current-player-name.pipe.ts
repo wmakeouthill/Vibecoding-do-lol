@@ -3,11 +3,15 @@ import { Pipe, PipeTransform } from '@angular/core';
 @Pipe({ name: 'currentPlayerName', pure: true })
 export class CurrentPlayerNamePipe implements PipeTransform {
   transform(session: any): string {
-    if (!session) return '';
+    if (!session || !session.phases || session.currentAction === undefined) {
+      return '';
+    }
 
     const currentPhase = session.phases[session.currentAction];
-    if (!currentPhase) return '';
+    if (!currentPhase) {
+      return '';
+    }
 
-    return currentPhase.playerName || 'Jogador Desconhecido';
+    return currentPhase.playerName || currentPhase.playerId || 'Jogador Desconhecido';
   }
 } 
