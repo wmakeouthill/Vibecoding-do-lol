@@ -362,29 +362,36 @@ export class App implements OnInit, OnDestroy {
     // DEPOIS: cria os dados preliminares dos participantes (agora com campeões mapeados)
     const participantsData = this.createPreliminaryParticipantsData();
 
-    // Salva no backend (status: 'pending' para indicar que é preliminar)
-    this.apiService.saveCustomMatch({
-      title: this.gameData?.originalMatchId
-        ? `Simulação - Partida ${this.gameData.originalMatchId}`
-        : `Partida Customizada ${new Date().toLocaleDateString()}`,
-      description: this.gameData?.originalMatchId
-        ? `Simulação baseada na partida real ${this.gameData.originalMatchId}`
-        : `Partida entre ${this.gameData.team1.length}v${this.gameData.team2.length}`,
-      team1Players: this.gameData.team1.map((p: any) => p.summonerName),
-      team2Players: this.gameData.team2.map((p: any) => p.summonerName),
-      createdBy: this.currentPlayer?.summonerName,
-      gameMode: 'CLASSIC',
-      participantsData, // <-- agora com campeões mapeados!
-      status: 'pending'
-    }).subscribe(
-      (response) => {
-        console.log('✅ Dados preliminares salvos:', response);
-        this.gameData.matchId = response.matchId; // Se quiser usar depois
-      },
-      (error) => {
-        console.error('❌ Erro ao salvar dados preliminares:', error);
-      }
-    );
+    // ✅ VERIFICAÇÃO DE LEADER - apenas um jogador salva dados preliminares
+    if (this.isMatchSaveLeader()) {
+      console.log('👑 [Leader] Salvando dados preliminares da partida');
+      
+      // Salva no backend (status: 'pending' para indicar que é preliminar)
+      this.apiService.saveCustomMatch({
+        title: this.gameData?.originalMatchId
+          ? `Simulação - Partida ${this.gameData.originalMatchId}`
+          : `Partida Customizada ${new Date().toLocaleDateString()}`,
+        description: this.gameData?.originalMatchId
+          ? `Simulação baseada na partida real ${this.gameData.originalMatchId}`
+          : `Partida entre ${this.gameData.team1.length}v${this.gameData.team2.length}`,
+        team1Players: this.gameData.team1.map((p: any) => p.summonerName),
+        team2Players: this.gameData.team2.map((p: any) => p.summonerName),
+        createdBy: this.currentPlayer?.summonerName,
+        gameMode: 'CLASSIC',
+        participantsData, // <-- agora com campeões mapeados!
+        status: 'pending'
+      }).subscribe(
+        (response) => {
+          console.log('✅ Dados preliminares salvos:', response);
+          this.gameData.matchId = response.matchId; // Se quiser usar depois
+        },
+        (error) => {
+          console.error('❌ Erro ao salvar dados preliminares:', error);
+        }
+      );
+    } else {
+      console.log('🚫 [Leader] Não é o leader, pulando salvamento de dados preliminares');
+    }
 
     console.log('🔍 Game data criado com originalMatchId:', this.gameData.originalMatchId);
     console.log('🔍 Tipo do originalMatchId:', typeof this.gameData.originalMatchId);
@@ -513,6 +520,15 @@ export class App implements OnInit, OnDestroy {
 
   private async saveCustomMatch(gameResult: any): Promise<void> {
     try {
+      // ✅ VERIFICAÇÃO DE LEADER - apenas um jogador salva a partida
+      if (!this.isMatchSaveLeader()) {
+        console.log('🚫 [Leader] Não é o leader da partida, pulando salvamento para evitar duplicação');
+        console.log('👑 [Leader] O leader desta partida é responsável por salvar');
+        this.addNotification('info', 'Partida Finalizada', 'A partida foi finalizada! O histórico será atualizado automaticamente.');
+        return;
+      }
+
+      console.log('👑 [Leader] Este jogador é o leader - prosseguindo com salvamento');
       console.log('💾 Salvando partida customizada no banco de dados');
       console.log('🔍 Game Result:', gameResult);
       console.log('🔍 Game Data:', this.gameData);
@@ -528,6 +544,43 @@ export class App implements OnInit, OnDestroy {
       console.error('❌ Erro ao salvar partida customizada:', error);
       this.addNotification('error', 'Erro', 'Erro ao salvar a partida no banco de dados.');
     }
+  }
+
+  /**
+   * Determina se o jogador atual é o leader responsável por salvar a partida
+   * Usa critério determinístico: primeiro jogador alfabeticamente
+   */
+  private isMatchSaveLeader(): boolean {
+    if (!this.gameData || !this.currentPlayer) {
+      console.log('⚠️ [Leader] Dados insuficientes para determinar liderança');
+      return false;
+    }
+
+    // Coletar todos os jogadores da partida
+    const allPlayers = [...this.gameData.team1, ...this.gameData.team2];
+    const playerNames = allPlayers
+      .map(p => p.summonerName || p.name || p.id?.toString() || '')
+      .filter(Boolean);
+
+    if (playerNames.length === 0) {
+      console.log('⚠️ [Leader] Nenhum jogador encontrado, assumindo liderança por fallback');
+      return true; // Fallback seguro
+    }
+
+    // Determinar leader: primeiro jogador alfabeticamente
+    const sortedPlayers = playerNames.sort();
+    const leader = sortedPlayers[0];
+    
+    // Verificar se o jogador atual é o leader
+    const currentPlayerName = this.currentPlayer.summonerName;
+    const isLeader = currentPlayerName === leader;
+    
+    console.log('👥 [Leader] Todos os jogadores:', sortedPlayers);
+    console.log('👑 [Leader] Leader determinado:', leader);
+    console.log('👤 [Leader] Jogador atual:', currentPlayerName);
+    console.log('🔍 [Leader] É o leader?', isLeader);
+    
+    return isLeader;
   }
 
   private async saveCustomMatchWithRealData(gameResult: any): Promise<void> {
@@ -811,7 +864,7 @@ export class App implements OnInit, OnDestroy {
           isCustomGame: true
         };
 
-        // Save and complete
+        // Save and complete (já tem verificação de leader dentro do saveCustomMatch)
         await this.saveCustomMatch(gameResult);
         this.exitGame();
 
