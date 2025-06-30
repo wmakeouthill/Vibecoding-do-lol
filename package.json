@@ -10,22 +10,22 @@
   "private": true,
   "scripts": {
     "build": "npm run build:complete",
-    "build:complete": "npm run clean && npm run install:all-deps && npm run build:all && npm run copy:all-assets && npm run p2p:copy-scripts && npm run verify:build && npm run create:executable",
-    "build:quick": "npm run clean && npm run install:all-deps && npm run build:all && npm run copy:all-assets && npm run p2p:copy-scripts",
+    "build:complete": "npm run clean && npm run install:all-deps && npm run build:all && npm run copy:all-assets && npm run verify:build && npm run create:executable",
+    "build:quick": "npm run clean && npm run install:all-deps && npm run build:all && npm run copy:all-assets",
     "build:all": "npm run build:backend && npm run build:frontend && npm run build:electron",
     "build:backend": "tsc -p src/backend/tsconfig.json",
     "build:frontend": "cd src/frontend && ng build --configuration production",
     "build:electron": "tsc -p src/electron/tsconfig.json",
-    "create:executable": "echo '🚀 Criando executável Windows...' && electron-builder --win --publish=never && echo '✅ Executável criado em: release/'",
+    "create:executable": "electron-builder --win --publish=never",
     "clean": "node -e \"const fs=require('fs'); if(fs.existsSync('dist')){fs.rmSync('dist',{recursive:true,force:true}); console.log('🧹 Pasta dist limpa');} if(fs.existsSync('release')){fs.rmSync('release',{recursive:true,force:true}); console.log('🧹 Pasta release limpa');}\"",
     "install:all-deps": "npm run install:backend-deps && npm run install:frontend-deps",
-    "install:backend-deps": "echo '📦 Instalando dependências do backend...' && cd src/backend && npm install",
-    "install:frontend-deps": "echo '📦 Instalando dependências do frontend...' && cd src/frontend && npm install",
-    "copy:all-assets": "npm run copy:backend-deps && npm run copy:frontend-build && npm run copy:database",
-    "copy:backend-deps": "node -e \"const fs=require('fs'); const path=require('path'); console.log('🔄 Copiando dependências do backend...'); if(!fs.existsSync('dist/backend')){fs.mkdirSync('dist/backend',{recursive:true});} if(fs.existsSync('src/backend/node_modules')){fs.cp('src/backend/node_modules','dist/backend/node_modules',{recursive:true},(err)=>{if(err){console.error('❌ Erro ao copiar:',err);}else{console.log('✅ Dependências do backend copiadas');}});} else {console.error('❌ src/backend/node_modules não encontrado!');}\"",
-    "copy:frontend-build": "node -e \"const fs=require('fs'); console.log('🔄 Copiando build do frontend...'); if(!fs.existsSync('dist/frontend')){fs.mkdirSync('dist/frontend',{recursive:true});} if(fs.existsSync('src/frontend/dist/lol-matchmaking/browser')){fs.cp('src/frontend/dist/lol-matchmaking/browser','dist/frontend/dist/lol-matchmaking/browser',{recursive:true},(err)=>{if(err){console.error('❌ Erro ao copiar:',err);}else{console.log('✅ Build do frontend copiado');}});} else {console.error('❌ src/frontend/dist/lol-matchmaking/browser não encontrado!');}\"",
-    "copy:database": "node -e \"const fs=require('fs'); console.log('🔄 Copiando banco de dados...'); const sourcePath='src/backend/database/database.sqlite'; if(fs.existsSync(sourcePath)){if(!fs.existsSync('dist/backend/database')){fs.mkdirSync('dist/backend/database',{recursive:true});} fs.copyFileSync(sourcePath,'dist/backend/database/database.sqlite'); console.log('✅ Banco de dados copiado de src/backend/database/');} else {console.log('⚠️ src/backend/database/database.sqlite não encontrado, será criado automaticamente');}\"",
-    "verify:build": "node -e \"const fs=require('fs'); console.log('🔍 Verificando build completo...'); const checks=[{path:'dist/backend/server.js',name:'Backend JS'},{path:'dist/backend/signaling-server-standalone.js',name:'P2P Signaling Server'},{path:'dist/backend/services/signaling-server.js',name:'P2P Service'},{path:'dist/backend/node_modules',name:'Backend deps'},{path:'dist/backend/node_modules/socket.io',name:'Socket.IO for P2P'},{path:'dist/backend/node_modules/ws',name:'WebSocket for P2P'},{path:'dist/frontend/dist/lol-matchmaking/browser',name:'Frontend build'},{path:'dist/electron/main.js',name:'Electron main'},{path:'dist/start-p2p.bat',name:'P2P Start Script'},{path:'dist/P2P-README.txt',name:'P2P README'}]; let allOk=true; checks.forEach(check=>{const exists=fs.existsSync(check.path); console.log(`${exists?'✅':'❌'} ${check.name}: ${check.path}`); if(!exists)allOk=false;}); console.log(''); console.log('🎯 VERIFICAÇÃO P2P AUTOMÁTICO:'); const p2pChecks=[{path:'dist/electron/main.js',check:'startP2PSignalingServer',name:'P2P auto-start no Electron'},{path:'dist/backend/signaling-server-standalone.js',check:'SignalingServer',name:'P2P standalone server'}]; p2pChecks.forEach(check=>{if(fs.existsSync(check.path)){const content=fs.readFileSync(check.path,'utf8'); const hasFeature=content.includes(check.check); console.log(`${hasFeature?'✅':'❌'} ${check.name}: ${hasFeature?'OK':'MISSING'}`); if(!hasFeature)allOk=false;} else {console.log(`❌ ${check.name}: FILE NOT FOUND`); allOk=false;}}); console.log(''); if(allOk){console.log('🎉 Build verificado com sucesso!'); console.log('✨ P2P será iniciado automaticamente no executável!');}else{console.error('❌ Alguns arquivos ou recursos P2P estão faltando');}\"",
+    "install:backend-deps": "cd src/backend && npm install",
+    "install:frontend-deps": "cd src/frontend && npm install",
+    "copy:all-assets": "npm run copy:backend-deps && npm run copy:database && npm run copy:env-file",
+    "copy:backend-deps": "node -e \"const fs=require('fs'); console.log('📦 Copiando dependências do backend...'); const srcModules='src/backend/node_modules'; const destModules='dist/backend/node_modules'; if(fs.existsSync(srcModules)){if(fs.existsSync(destModules)){fs.rmSync(destModules,{recursive:true,force:true});} fs.cpSync(srcModules,destModules,{recursive:true}); console.log('✅ Dependências do backend copiadas para dist/backend/node_modules');} else {console.error('❌ src/backend/node_modules não encontrado! Execute npm run install:backend-deps primeiro');}\"",
+    "copy:database": "node -e \"const fs=require('fs'); const sourcePath='src/backend/database/database.sqlite'; if(fs.existsSync(sourcePath)){if(!fs.existsSync('dist/backend/database')){fs.mkdirSync('dist/backend/database',{recursive:true});} fs.copyFileSync(sourcePath,'dist/backend/database/database.sqlite'); console.log('✅ Banco de dados copiado');} else {console.log('⚠️ Banco de dados será criado automaticamente');}\"",
+    "copy:env-file": "node -e \"const fs=require('fs'); if(fs.existsSync('.env')){fs.copyFileSync('.env','dist/.env'); console.log('✅ Arquivo .env copiado');} else {console.log('⚠️ Arquivo .env não encontrado');}\"",
+    "verify:build": "node -e \"const fs=require('fs'); console.log('🔍 Verificando build...'); const checks=[{path:'dist/backend/server.js',name:'Backend JS'},{path:'dist/backend/node_modules',name:'Backend deps'},{path:'dist/backend/node_modules/mysql2',name:'MySQL2'},{path:'dist/backend/node_modules/discord.js',name:'Discord.js'},{path:'dist/frontend/browser/index.html',name:'Frontend build'},{path:'dist/electron/main.js',name:'Electron main'}]; let allOk=true; checks.forEach(check=>{const exists=fs.existsSync(check.path); console.log(`${exists?'✅':'❌'} ${check.name}: ${check.path}`); if(!exists)allOk=false;}); if(allOk){console.log('🎉 Build completo!');}else{console.error('❌ Arquivos faltando');}\"",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:electron:wait\"",
     "dev:full": "echo 🚀 Iniciando TUDO (Backend + Frontend + Electron)... && npm run dev",
     "dev:fast": "concurrently \"npm run dev:frontend\" \"npm run dev:electron:wait\"",
@@ -45,19 +45,10 @@
     "build:only": "npm run build:quick",
     "exe:only": "electron-builder --win --publish=never",
     "start": "npm run build && npm run electron",
-    "start:with-p2p": "npm run build && concurrently \"npm run p2p:signaling\" \"npm run electron\"",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "test:p2p": "concurrently \"npm run p2p:signaling\" \"npm run dev:frontend\" \"npm run test:p2p:instances\"",
-    "test:p2p:instances": "node scripts/wait-for-all-servers.js && concurrently \"npm run dev:electron\" \"npm run dev:electron\" \"npm run dev:electron\"",
-    "test:connectivity": "node scripts/test-p2p-connectivity.js",
-    "p2p:signaling": "cd src/backend && npm run signaling",
-    "p2p:install": "cd src/backend && npm install && cd ../frontend && npm install",
-    "p2p:build": "npm run build && npm run p2p:copy-scripts",
-    "p2p:copy-scripts": "node scripts/create-p2p-scripts.js",
-    "release:win": "npm run p2p:build && npm run verify:build && npm run pack:win && npm run installer:win",
-    "pack:win": "electron-builder --win --dir --publish=never",
-    "installer:win": "electron-builder --win --publish=never",
-    "release:complete": "npm run build && npm run release:win && echo '🎉 Release Windows completo com P2P! Executável em: release/win-unpacked/ | Instalador em: release/'"
+    "check:production": "node check-production-config.js",
+    "verify:build-complete": "node verify-build-complete.js",
+    "test:build": "node test-build-production.js"
   },
   "keywords": [
     "league of legends",
@@ -77,6 +68,8 @@
     },
     "files": [
       "dist/electron/**/*",
+      "dist/backend/**/*",
+      "dist/frontend/**/*",
       "package.json",
       "!node_modules/**/*",
       "!src/**/*"
@@ -90,13 +83,6 @@
         ]
       },
       {
-        "from": "dist/frontend/dist/lol-matchmaking/browser",
-        "to": "frontend/dist/lol-matchmaking/browser",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
         "from": "dist/backend/node_modules",
         "to": "backend/node_modules",
         "filter": [
@@ -104,20 +90,23 @@
         ]
       },
       {
-        "from": "dist/start-p2p.bat",
-        "to": "start-p2p.bat"
+        "from": "dist/frontend/browser",
+        "to": "frontend/browser",
+        "filter": [
+          "**/*"
+        ]
       },
       {
-        "from": "dist/start-normal.bat",
-        "to": "start-normal.bat"
-      },
-      {
-        "from": "dist/P2P-README.txt",
-        "to": "P2P-README.txt"
+        "from": "dist/.env",
+        "to": ".env",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "asarUnpack": [
-      "backend/**/*"
+      "resources/backend/node_modules/**/*",
+      "resources/backend/database/**/*"
     ],
     "asar": true,
     "npmRebuild": false,

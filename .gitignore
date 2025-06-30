@@ -12,6 +12,7 @@ out-tsc/
 bazel-out/
 tmp/
 ignore/
+documentação/
 
 # IDEs and editors
 .idea/

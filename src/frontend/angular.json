@@ -20,6 +20,7 @@
         "build": {
           "builder": "@angular/build:application",
           "options": {
+            "outputPath": "dist/frontend/dist/lol-matchmaking/browser",
             "browser": "src/main.ts",
             "polyfills": [
               "zone.js"
@@ -34,9 +35,12 @@
             ],
             "styles": [
               "src/styles.scss"
-            ]
-          },          "configurations": {
+            ],
+            "baseHref": "./"
+          },
+          "configurations": {
             "production": {
+              "outputPath": "../../dist/frontend",
               "optimization": {
                 "scripts": false,
                 "styles": {
@@ -63,6 +67,7 @@
               "sourceMap": false
             },
             "development": {
+              "outputPath": "../../dist/frontend",
               "optimization": false,
               "extractLicenses": false,
               "sourceMap": true

@@ -6,8 +6,8 @@ import * as fs from 'fs';
 let mainWindow: BrowserWindow;
 let backendProcess: any;
 
-const isDev = process.env.NODE_ENV === 'development' || 
-             (!app.isPackaged && !process.env.NODE_ENV);
+const isDev = process.env.NODE_ENV === 'development' ||
+  (!app.isPackaged && !process.env.NODE_ENV);
 
 // Permitir múltiplas instâncias para teste P2P
 if (isDev) {
@@ -18,25 +18,26 @@ function getProductionPaths() {
   // Detectar se estamos em um executável empacotado ou em desenvolvimento
   const isPackaged = app.isPackaged;
   const appPath = path.dirname(process.execPath);
-  
+
   let backendPath: string;
   let frontendPath: string;
   let nodeModulesPath: string;
-    if (isPackaged) {
+
+  if (isPackaged) {
     // Aplicação empacotada (instalador gerado)
     // Os arquivos estão em resources/ dentro do app
     backendPath = path.join(process.resourcesPath, 'backend', 'server.js');
-    frontendPath = path.join(process.resourcesPath, 'frontend', 'dist', 'lol-matchmaking', 'browser');
+    frontendPath = path.join(process.resourcesPath, 'frontend', 'browser', 'index.html');
     nodeModulesPath = path.join(process.resourcesPath, 'backend', 'node_modules');
   } else {
     // Desenvolvimento ou npm run electron
     // Os arquivos estão na pasta dist/ do projeto
     const projectRoot = path.join(appPath, '..', '..', '..');
     backendPath = path.join(projectRoot, 'dist', 'backend', 'server.js');
-    frontendPath = path.join(projectRoot, 'dist', 'frontend', 'dist', 'lol-matchmaking', 'browser', 'index.html');
+    frontendPath = path.join(projectRoot, 'dist', 'frontend', 'browser', 'index.html');
     nodeModulesPath = path.join(projectRoot, 'dist', 'backend', 'node_modules');
   }
-  
+
   console.log('Production paths:');
   console.log('- App path:', appPath);
   console.log('- Backend:', backendPath);
@@ -45,7 +46,9 @@ function getProductionPaths() {
   console.log('- Is packaged:', isPackaged);
   console.log('- Backend exists:', fs.existsSync(backendPath));
   console.log('- Frontend exists:', fs.existsSync(frontendPath));
-  console.log('- Node modules exists:', fs.existsSync(nodeModulesPath));    return {
+  console.log('- Node modules exists:', fs.existsSync(nodeModulesPath));
+
+  return {
     frontend: frontendPath,
     backend: backendPath,
     nodeModules: nodeModulesPath
@@ -58,7 +61,7 @@ function createWindow(): void {
     height: 800,
     width: 1200,
     minHeight: 600,
-    minWidth: 800,    webPreferences: {
+    minWidth: 800, webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
@@ -71,23 +74,35 @@ function createWindow(): void {
     show: false, // Não mostrar até estar pronto
   });  // Carregar o frontend Angular
   if (isDev) {
-    // Em desenvolvimento, carregar do servidor Angular
-    console.log('Carregando frontend do Angular...');
-      // Tentar conectar ao Angular com retry
-    const tryLoadAngular = (retries = 5) => {
-      mainWindow.loadURL('http://localhost:4200').catch((error: any) => {
-        console.log(`Tentativa de conexão falhou, tentativas restantes: ${retries}`);
+    // Em desenvolvimento, tentar carregar do backend primeiro, depois Angular dev server
+    console.log('Carregando frontend do backend em desenvolvimento...');
+    const tryLoadBackend = (retries = 3) => {
+      mainWindow.loadURL('http://localhost:3000').catch((error: any) => {
+        console.log(`Tentativa de conexão ao backend falhou, tentativas restantes: ${retries}`);
         if (retries > 0) {
-          setTimeout(() => tryLoadAngular(retries - 1), 1000);
+          setTimeout(() => tryLoadBackend(retries - 1), 1000);
         } else {
-          console.error('Não foi possível conectar ao servidor Angular', error);
+          console.log('Backend não disponível, tentando Angular dev server...');
+          // Fallback para Angular dev server
+          const tryLoadAngular = (angularRetries = 5) => {
+            mainWindow.loadURL('http://localhost:4200').catch((angularError: any) => {
+              console.log(`Tentativa de conexão ao Angular falhou, tentativas restantes: ${angularRetries}`);
+              if (angularRetries > 0) {
+                setTimeout(() => tryLoadAngular(angularRetries - 1), 1000);
+              } else {
+                console.error('Não foi possível conectar ao backend nem ao Angular dev server', angularError);
+              }
+            });
+          };
+          tryLoadAngular();
         }
       });
     };
-    
-    tryLoadAngular();
+
+    tryLoadBackend();
     // Opcional: abrir DevTools em desenvolvimento
-    mainWindow.webContents.openDevTools();  } else {
+    mainWindow.webContents.openDevTools();
+  } else {
     // Em produção, carregar do backend que servirá os arquivos estáticos
     console.log('Carregando frontend do backend em produção...');
     const tryLoadProduction = (retries = 15) => {
@@ -106,10 +121,10 @@ function createWindow(): void {
         }
       });
     };
-    
+
     // Aguardar um pouco mais para dar tempo do backend iniciar
     setTimeout(() => tryLoadProduction(), 1000);
-  
+
   }
 
   // Desabilitar CSP completamente para permitir P2P WebSocket
@@ -117,7 +132,7 @@ function createWindow(): void {
     // Remover todos os headers CSP
     delete details.responseHeaders?.['content-security-policy'];
     delete details.responseHeaders?.['content-security-policy-report-only'];
-    
+
     callback({
       cancel: false,
       responseHeaders: details.responseHeaders,
@@ -125,7 +140,7 @@ function createWindow(): void {
   });  // Mostrar quando estiver pronto
   mainWindow.once('ready-to-show', () => {
     console.log('Janela Electron pronta para exibição');
-    
+
     // Desabilitar CSP completamente interceptando headers
     mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
       // Remover todos os headers CSP
@@ -134,14 +149,14 @@ function createWindow(): void {
       delete responseHeaders['Content-Security-Policy'];
       delete responseHeaders['content-security-policy-report-only'];
       delete responseHeaders['Content-Security-Policy-Report-Only'];
-      
+
       console.log('🛡️ CSP headers removidos para:', details.url);
-      
+
       callback({
         responseHeaders
       });
     });
-    
+
     mainWindow.show();
   });
 
@@ -207,36 +222,36 @@ async function startBackendServer(): Promise<void> {
     console.log('Iniciando servidor backend em produção...');
     console.log('Process execPath:', process.execPath);
     console.log('__dirname:', __dirname);
-    
+
     // Em produção, iniciar o servidor backend buildado
     const prodPaths = getProductionPaths();
     console.log('Tentando iniciar backend em:', prodPaths.backend);
-    
+
     // Verificar se o arquivo existe
     if (!fs.existsSync(prodPaths.backend)) {
       console.error('Arquivo backend não encontrado:', prodPaths.backend);
       return;
     }
-    
+
     // Verificar se as dependências existem
     if (!fs.existsSync(prodPaths.nodeModules)) {
       console.error('Dependências do backend não encontradas:', prodPaths.nodeModules);
       return;
     }
-    
+
     // Definir NODE_PATH para que o Node encontre as dependências na pasta correta
     const backendDir = path.dirname(prodPaths.backend);
     const nodeModulesPath = prodPaths.nodeModules;
-    
+
     const env = {
       ...process.env,
       NODE_PATH: nodeModulesPath,
       NODE_ENV: 'production'
     };
-    
+
     console.log('NODE_PATH:', nodeModulesPath);
     console.log('Node modules exists:', fs.existsSync(nodeModulesPath));
-    
+
     backendProcess = spawn('node', [prodPaths.backend], {
       stdio: 'pipe',
       env: env,
@@ -266,22 +281,22 @@ async function startBackendServer(): Promise<void> {
 // Event Listeners do Electron
 app.whenReady().then(async () => {
   console.log('🚀 Electron app ready, iniciando aplicação...');
-  
+
   if (isDev) {
     console.log('🔧 Modo desenvolvimento detectado');
     // Em dev, apenas criar a janela - backend roda separadamente
     createWindow();
   } else {
     console.log('📦 Modo produção detectado');
-    
+
     // Iniciar backend principal (porta 3000)
     console.log('🔧 Iniciando Backend Principal...');
     await startBackendServer();
-    
+
     // Aguardar backend inicializar (reduzido para 2 segundos)
     console.log('⏳ Aguardando Backend inicializar (2 segundos)...');
     await new Promise(resolve => setTimeout(resolve, 2000));
-    
+
     // Criar a janela
     console.log('🎮 Criando janela Electron...');
     createWindow();
@@ -298,7 +313,7 @@ app.on('window-all-closed', () => {
   if (backendProcess) {
     backendProcess.kill();
   }
-  
+
   if (process.platform !== 'darwin') {
     app.quit();
   }

@@ -59,6 +59,7 @@ const isDev = process.env.NODE_ENV === 'development';
 
 // Global shared instances
 const globalRiotAPI = new RiotAPIService();
+let frontendPath: string = '';
 
 // Middleware de segurança - DESABILITADO para permitir P2P WebSocket
 // app.use(helmet({...})); // CSP desabilitado para Electron
@@ -419,23 +420,35 @@ io.on('connection', (socket) => {
   });
 });
 
-// Configuração de arquivos estáticos em produção
+// Configuração de arquivos estáticos (tanto dev quanto produção)
+console.log('Configurando servir arquivos estáticos...');
+
 if (!isDev) {
-  console.log('Configurando servir arquivos estáticos em produção...');
-  // Determinar o caminho para os arquivos do frontend
-  let frontendPath: string;
+  // Em produção, os arquivos estão em resources/frontend/browser
+  const electronFrontendPath = path.join((process as any).resourcesPath || '', 'frontend', 'browser');
+  const devFrontendPath = path.join(__dirname, '..', 'frontend', 'browser');
 
-  // Em produção, os arquivos estão diretamente em resources/
-  frontendPath = path.join(__dirname, '..', 'frontend', 'dist', 'lol-matchmaking', 'browser');
+  if (fs.existsSync(electronFrontendPath)) {
+    frontendPath = electronFrontendPath;
+    console.log('✅ Usando caminho do Electron empacotado:', frontendPath);
+  } else if (fs.existsSync(devFrontendPath)) {
+    frontendPath = devFrontendPath;
+    console.log('✅ Usando caminho de desenvolvimento:', frontendPath);
+  } else {
+    console.error('❌ Nenhum caminho do frontend encontrado!');
+    console.log('Tentou Electron path:', electronFrontendPath);
+    console.log('Tentou dev path:', devFrontendPath);
+    frontendPath = devFrontendPath; // Usar como fallback
+  }
 
-  console.log('Caminho do frontend:', frontendPath);
+  console.log('Caminho final do frontend:', frontendPath);
   console.log('Frontend exists:', fs.existsSync(frontendPath));
 
   // Verificar se o diretório existe
   if (fs.existsSync(frontendPath)) {
     // Servir arquivos estáticos do Angular
     app.use(express.static(frontendPath, {
-      maxAge: '1d', // Cache por 1 dia
+      maxAge: '1d',
       etag: true,
       lastModified: true
     }));
@@ -444,11 +457,12 @@ if (!isDev) {
   } else {
     console.error('❌ Diretório do frontend não encontrado:', frontendPath);
 
-    // Tentar caminhos alternativos baseados na estrutura do Electron
+    // Tentar caminhos alternativos
     const altPaths = [
-      path.join(process.cwd(), 'frontend', 'dist', 'lol-matchmaking', 'browser'),
-      path.join(__dirname, '..', '..', 'frontend', 'dist', 'lol-matchmaking', 'browser'),
-      path.join(__dirname, 'frontend', 'dist', 'lol-matchmaking', 'browser')
+      path.join(process.cwd(), 'frontend', 'browser'),
+      path.join(__dirname, '..', '..', 'frontend', 'browser'),
+      path.join(__dirname, 'frontend', 'browser'),
+      path.join(process.cwd(), 'dist', 'frontend', 'browser')
     ];
 
     for (const altPath of altPaths) {
@@ -456,11 +470,48 @@ if (!isDev) {
       if (fs.existsSync(altPath)) {
         app.use(express.static(altPath));
         console.log('✅ Arquivos estáticos configurados em caminho alternativo:', altPath);
+        frontendPath = altPath;
         break;
       }
     }
   }
+} else {
+  // Em desenvolvimento, tentar servir arquivos estáticos se disponíveis
+  // Isso permite que o Electron carregue do backend mesmo em dev
+  const devFrontendPath = path.join(__dirname, '..', 'frontend', 'browser');
+  const distFrontendPath = path.join(process.cwd(), 'dist', 'frontend', 'browser');
+
+  if (fs.existsSync(distFrontendPath)) {
+    frontendPath = distFrontendPath;
+    app.use(express.static(frontendPath));
+    console.log('✅ Arquivos estáticos configurados em desenvolvimento:', frontendPath);
+  } else if (fs.existsSync(devFrontendPath)) {
+    frontendPath = devFrontendPath;
+    app.use(express.static(frontendPath));
+    console.log('✅ Arquivos estáticos configurados em desenvolvimento (fallback):', frontendPath);
+  } else {
+    console.log('⚠️ Frontend não encontrado em desenvolvimento - usando Angular dev server');
+  }
 }
+
+// Rota raiz para servir o frontend
+app.get('/', (req: Request, res: Response) => {
+  if (frontendPath) {
+    const indexPath = path.join(frontendPath, 'index.html');
+    if (fs.existsSync(indexPath)) {
+      console.log('📱 Servindo index.html de:', indexPath);
+      return res.sendFile(indexPath);
+    }
+  }
+
+  if (isDev) {
+    // Em desenvolvimento, redirecionar para Angular dev server se disponível
+    console.log('🔄 Redirecionando para Angular dev server...');
+    return res.redirect('http://localhost:4200');
+  }
+
+  res.status(404).send('Frontend não encontrado');
+});
 
 // Rotas da API
 app.get('/api/health', (req: Request, res: Response) => {
@@ -2373,40 +2424,117 @@ async function startServer() {
     setupChampionRoutes(app, dataDragonService);
     console.log('✅ Rotas de campeões configuradas');
 
-    // 404 Handler - DEVE vir DEPOIS das rotas de API
-    app.use((req: Request, res: Response) => {  // Em produção, para rotas não API, tentar servir index.html (SPA routing)
-      if (!isDev && !req.path.startsWith('/api/')) {
-        // Determinar o caminho para o index.html
-        let indexPath: string;
+    // Inicializar serviços
+    await initializeServices();
 
-        // Em produção, os arquivos estão diretamente em resources/
-        indexPath = path.join(__dirname, '..', 'frontend', 'dist', 'lol-matchmaking', 'browser', 'index.html');
+    // Rota para atualizar partida após draft completado
+    app.post('/api/matches/:matchId/draft-completed', (async (req: Request, res: Response) => {
+      try {
+        const matchId = parseInt(req.params.matchId);
+        const { draftData } = req.body;
 
-        // Verificar se o arquivo existe
+        console.log(`🎯 [Draft] Atualizando partida ${matchId} após draft completado`);
+
+        await matchmakingService.updateMatchAfterDraft(matchId, draftData);
+
+        res.json({
+          success: true,
+          message: 'Partida atualizada após draft',
+          matchId: matchId
+        });
+      } catch (error: any) {
+        console.error('💥 [Draft] Erro ao atualizar partida após draft:', error);
+        res.status(500).json({ error: error.message });
+      }
+    }) as RequestHandler);
+
+    // Rota para finalizar partida após jogo completado
+    app.post('/api/matches/:matchId/game-completed', (async (req: Request, res: Response) => {
+      try {
+        const matchId = parseInt(req.params.matchId);
+        const { winnerTeam, gameData } = req.body;
+
+        console.log(`🏁 [Game] Finalizando partida ${matchId} após jogo - Vencedor: Time ${winnerTeam}`);
+
+        if (!winnerTeam || (winnerTeam !== 1 && winnerTeam !== 2)) {
+          return res.status(400).json({ error: 'winnerTeam deve ser 1 ou 2' });
+        }
+
+        await matchmakingService.completeMatchAfterGame(matchId, winnerTeam, gameData || {});
+
+        res.json({
+          success: true,
+          message: 'Partida finalizada com sucesso',
+          matchId: matchId,
+          winnerTeam: winnerTeam
+        });
+      } catch (error: any) {
+        console.error('💥 [Game] Erro ao finalizar partida:', error);
+        res.status(500).json({ error: error.message });
+      }
+    }) as RequestHandler);
+
+    // ROTAS DE CAMPEÕES REMOVIDAS - já definidas em routes/champions.ts
+
+
+    // Endpoint para corrigir status das partidas antigas
+    app.put('/api/matches/custom/:matchId', (async (req: Request, res: Response) => {
+      try {
+        const matchId = parseInt(req.params.matchId);
+        const updateData = req.body;
+
+        console.log('🔄 [PUT /api/matches/custom/:matchId] Atualizando partida:', {
+          matchId,
+          updateFields: Object.keys(updateData)
+        });
+
+        if (!matchId || isNaN(matchId)) {
+          return res.status(400).json({
+            error: 'ID da partida inválido'
+          });
+        }
+
+        // Verificar se a partida existe
+        const existingMatch = await dbManager.getCustomMatchById(matchId);
+        if (!existingMatch) {
+          return res.status(404).json({
+            error: 'Partida não encontrada'
+          });
+        }
+
+        // Atualizar a partida
+        await dbManager.updateCustomMatch(matchId, updateData);
+
+        console.log('✅ [PUT /api/matches/custom/:matchId] Partida atualizada com sucesso:', matchId);
+
+        res.json({
+          success: true,
+          matchId,
+          message: 'Partida customizada atualizada com sucesso'
+        });
+      } catch (error: any) {
+        console.error('💥 [PUT /api/matches/custom/:matchId] Erro ao atualizar partida customizada:', error);
+        res.status(500).json({ error: error.message });
+      }
+    }) as RequestHandler);
+
+    // SPA fallback handler - serve index.html para todas as rotas não-API
+    // IMPORTANTE: Esta rota deve vir DEPOIS de todas as outras rotas
+    // Usando regex ao invés de '*' para compatibilidade com path-to-regexp
+    app.get(/^(?!\/api\/).*/, (req: Request, res: Response) => {
+      if (frontendPath) {
+        const indexPath = path.join(frontendPath, 'index.html');
         if (fs.existsSync(indexPath)) {
+          console.log('📱 SPA fallback: servindo index.html para:', req.path);
           return res.sendFile(indexPath);
-        } else {
-          // Tentar caminhos alternativos
-          const altPaths = [
-            path.join(process.cwd(), 'frontend', 'dist', 'lol-matchmaking', 'browser', 'index.html'),
-            path.join(__dirname, '..', '..', 'frontend', 'dist', 'lol-matchmaking', 'browser', 'index.html'),
-            path.join(__dirname, 'frontend', 'dist', 'lol-matchmaking', 'browser', 'index.html')
-          ];
-
-          for (const altPath of altPaths) {
-            if (fs.existsSync(altPath)) {
-              return res.sendFile(altPath);
-            }
-          }
         }
       }
-
-      // Fallback para 404
+      
+      // 404 para outros casos
       res.status(404).json({ error: 'Rota não encontrada' });
     });
 
-    // Inicializar serviços
-    await initializeServices();    // Iniciar servidor
+    // Iniciar servidor
     server.listen(PORT as number, '0.0.0.0', () => {
       console.log(`🚀 Servidor rodando na porta ${PORT}`);
       console.log(`🌐 WebSocket disponível em ws://localhost:${PORT}`);
@@ -2560,158 +2688,3 @@ process.on('SIGTERM', async () => {
 
 // Iniciar aplicação
 startServer();
-
-// Rota para atualizar partida após draft completado
-app.post('/api/matches/:matchId/draft-completed', (async (req: Request, res: Response) => {
-  try {
-    const matchId = parseInt(req.params.matchId);
-    const { draftData } = req.body;
-
-    console.log(`🎯 [Draft] Atualizando partida ${matchId} após draft completado`);
-
-    await matchmakingService.updateMatchAfterDraft(matchId, draftData);
-
-    res.json({
-      success: true,
-      message: 'Partida atualizada após draft',
-      matchId: matchId
-    });
-  } catch (error: any) {
-    console.error('💥 [Draft] Erro ao atualizar partida após draft:', error);
-    res.status(500).json({ error: error.message });
-  }
-}) as RequestHandler);
-
-// Rota para finalizar partida após jogo completado
-app.post('/api/matches/:matchId/game-completed', (async (req: Request, res: Response) => {
-  try {
-    const matchId = parseInt(req.params.matchId);
-    const { winnerTeam, gameData } = req.body;
-
-    console.log(`🏁 [Game] Finalizando partida ${matchId} após jogo - Vencedor: Time ${winnerTeam}`);
-
-    if (!winnerTeam || (winnerTeam !== 1 && winnerTeam !== 2)) {
-      return res.status(400).json({ error: 'winnerTeam deve ser 1 ou 2' });
-    }
-
-    await matchmakingService.completeMatchAfterGame(matchId, winnerTeam, gameData || {});
-
-    res.json({
-      success: true,
-      message: 'Partida finalizada com sucesso',
-      matchId: matchId,
-      winnerTeam: winnerTeam
-    });
-  } catch (error: any) {
-    console.error('💥 [Game] Erro ao finalizar partida:', error);
-    res.status(500).json({ error: error.message });
-  }
-}) as RequestHandler);
-
-// === FIM CONFIGURAÇÕES APIs ===
-
-// Endpoint para obter todos os campeões do DataDragon
-app.get('/api/champions', (async (req: Request, res: Response) => {
-  try {
-    console.log('🏆 [GET /api/champions] Obtendo dados dos campeões...');
-
-    // Garantir que os campeões estejam carregados
-    if (!dataDragonService.isLoaded()) {
-      console.log('🔄 [GET /api/champions] Carregando campeões...');
-      await dataDragonService.loadChampions();
-    }
-
-    const champions = dataDragonService.getAllChampions();
-    const championsByRole = dataDragonService.getChampionsByRole();
-
-    console.log(`✅ [GET /api/champions] ${champions.length} campeões retornados`);
-
-    res.json({
-      success: true,
-      champions: champions,
-      championsByRole: championsByRole,
-      total: champions.length
-    });
-
-  } catch (error: any) {
-    console.error('❌ [GET /api/champions] Erro:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-}) as RequestHandler);
-
-// Endpoint para obter campeões por role
-app.get('/api/champions/role/:role', (async (req: Request, res: Response) => {
-  try {
-    const { role } = req.params;
-    console.log(`🏆 [GET /api/champions/role/${role}] Obtendo campeões da role...`);
-
-    // Garantir que os campeões estejam carregados
-    if (!dataDragonService.isLoaded()) {
-      console.log('🔄 [GET /api/champions/role] Carregando campeões...');
-      await dataDragonService.loadChampions();
-    }
-
-    const championsByRole = dataDragonService.getChampionsByRole();
-    const roleChampions = championsByRole[role as keyof typeof championsByRole] || [];
-
-    console.log(`✅ [GET /api/champions/role/${role}] ${roleChampions.length} campeões retornados`);
-
-    res.json({
-      success: true,
-      champions: roleChampions,
-      role: role,
-      total: roleChampions.length
-    });
-
-  } catch (error: any) {
-    console.error('❌ [GET /api/champions/role] Erro:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-}) as RequestHandler);
-
-// Endpoint para corrigir status das partidas antigas
-app.put('/api/matches/custom/:matchId', (async (req: Request, res: Response) => {
-  try {
-    const matchId = parseInt(req.params.matchId);
-    const updateData = req.body;
-
-    console.log('🔄 [PUT /api/matches/custom/:matchId] Atualizando partida:', {
-      matchId,
-      updateFields: Object.keys(updateData)
-    });
-
-    if (!matchId || isNaN(matchId)) {
-      return res.status(400).json({
-        error: 'ID da partida inválido'
-      });
-    }
-
-    // Verificar se a partida existe
-    const existingMatch = await dbManager.getCustomMatchById(matchId);
-    if (!existingMatch) {
-      return res.status(404).json({
-        error: 'Partida não encontrada'
-      });
-    }
-
-    // Atualizar a partida
-    await dbManager.updateCustomMatch(matchId, updateData);
-
-    console.log('✅ [PUT /api/matches/custom/:matchId] Partida atualizada com sucesso:', matchId);
-
-    res.json({
-      success: true,
-      matchId,
-      message: 'Partida customizada atualizada com sucesso'
-    });
-  } catch (error: any) {
-    console.error('💥 [PUT /api/matches/custom/:matchId] Erro ao atualizar partida customizada:', error);
-    res.status(500).json({ error: error.message });
-  }
-}) as RequestHandler);
