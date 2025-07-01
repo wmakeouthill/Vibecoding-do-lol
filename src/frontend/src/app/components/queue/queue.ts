@@ -790,6 +790,9 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
           
           console.log('🎮 [Queue] Match found criado com lanes balanceadas:', matchData);
           
+          // ✅ NOVO: Criar partida no backend antes de disparar o evento
+          this.createMatchInBackend(matchData.data);
+          
           // Disparar evento para o app
           const event = new CustomEvent('matchFound', { detail: matchData });
           document.dispatchEvent(event);
@@ -894,5 +897,25 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     });
     
     return playersWithLanes;
+  }
+
+  // ✅ NOVO: Criar partida no backend
+  private createMatchInBackend(matchData: any): void {
+    console.log('🎮 [Queue] Criando partida no backend:', matchData);
+    
+    this.apiService.createMatchFromFrontend(matchData).subscribe({
+      next: (response) => {
+        console.log('✅ [Queue] Partida criada no backend com sucesso:', response);
+        
+        // Atualizar o matchId com o ID real do banco
+        if (response.success && response.matchId) {
+          console.log(`✅ [Queue] Partida criada com ID: ${response.matchId}`);
+        }
+      },
+      error: (error) => {
+        console.error('❌ [Queue] Erro ao criar partida no backend:', error);
+        // Mesmo com erro, continuar o fluxo do match found
+      }
+    });
   }
 } 

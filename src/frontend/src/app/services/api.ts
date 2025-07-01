@@ -879,6 +879,17 @@ export class ApiService {
       );
   }
 
+  // ✅ NOVO: Criar partida a partir do frontend
+  createMatchFromFrontend(matchData: any): Observable<any> {
+    console.log('🎮 [API] Criando partida a partir do frontend:', matchData);
+    
+    return this.http.post(`${this.baseUrl}/match/create-from-frontend`, matchData)
+      .pipe(
+        retry(1),
+        catchError(this.handleError)
+      );
+  }
+
   // Método original do sistema antigo (manter para compatibilidade)
   joinLegacyQueue(playerId: number, mmr: number, role: string): Observable<any> {
     return this.http.post(`${this.baseUrl}/queue/join-legacy`, { playerId, mmr, role })

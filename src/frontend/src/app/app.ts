@@ -1849,6 +1849,9 @@ export class App implements OnInit, OnDestroy {
     try {
       console.log('✅ Aceitando partida...');
       
+      // ✅ NOVO: Aceitar partida no backend primeiro
+      await this.acceptMatchInBackend();
+      
       // ✅ NOVO: Remover os 10 jogadores da fila MySQL quando aceitar
       await this.removeAcceptedPlayersFromQueue();
       
@@ -1859,6 +1862,31 @@ export class App implements OnInit, OnDestroy {
     } catch (error) {
       console.error('Erro ao aceitar partida:', error);
       this.addNotification('error', 'Erro', 'Falha ao aceitar partida');
+    }
+  }
+
+  // ✅ NOVO: Aceitar partida no backend
+  private async acceptMatchInBackend(): Promise<void> {
+    if (!this.matchFoundData || !this.currentPlayer) return;
+
+    try {
+      console.log('🎮 [App] Aceitando partida no backend:', this.matchFoundData.matchId);
+      
+      const response = await this.apiService.acceptMatch(
+        this.matchFoundData.matchId,
+        this.currentPlayer.id,
+        this.currentPlayer.summonerName
+      ).toPromise();
+      
+      if (response && response.success) {
+        console.log('✅ [App] Partida aceita no backend com sucesso');
+      } else {
+        console.log('⚠️ [App] Falha ao aceitar partida no backend');
+      }
+      
+    } catch (error) {
+      console.error('❌ [App] Erro ao aceitar partida no backend:', error);
+      throw error;
     }
   }
 

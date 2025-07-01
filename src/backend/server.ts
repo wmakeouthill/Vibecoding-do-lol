@@ -1461,6 +1461,39 @@ app.post('/api/match/draft-action', (async (req: Request, res: Response) => {
   }
 }) as RequestHandler);
 
+// ✅ NOVO: Endpoint para criar partida a partir do frontend
+app.post('/api/match/create-from-frontend', (async (req: Request, res: Response) => {
+  try {
+    const matchData = req.body;
+
+    if (!matchData || !matchData.teammates || !matchData.enemies) {
+      return res.status(400).json({
+        success: false,
+        error: 'Dados da partida são obrigatórios (teammates, enemies)'
+      });
+    }
+
+    console.log('🎮 [API] Criando partida a partir do frontend:', {
+      teammatesCount: matchData.teammates.length,
+      enemiesCount: matchData.enemies.length
+    });
+
+    const matchId = await matchmakingService.createMatchFromFrontend(matchData);
+    
+    res.json({
+      success: true,
+      matchId: matchId,
+      message: 'Partida criada com sucesso'
+    });
+  } catch (error: any) {
+    console.error('❌ [API] Erro ao criar partida do frontend:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}) as RequestHandler);
+
 app.get('/api/matches/recent', async (req: Request, res: Response) => {
   try {
     const matches = await matchmakingService.getRecentMatches();
