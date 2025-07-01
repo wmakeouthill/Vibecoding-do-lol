@@ -737,11 +737,23 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
 
   // ✅ NOVO: Detectar quando há 10 jogadores e criar match found com lanes balanceadas
   private detectAndCreateMatch(): void {
+    console.log('🎮 [Queue] detectAndCreateMatch chamado:', {
+      playersInQueue: this.queueStatus.playersInQueue,
+      playersInQueueListLength: this.queueStatus.playersInQueueList?.length
+    });
+    
     if (this.queueStatus.playersInQueue >= 10) {
       console.log('🎮 [Queue] Detectados 10 jogadores! Criando match found...');
       
       // Pegar os primeiros 10 jogadores da fila
       const playersForMatch = this.queueStatus.playersInQueueList?.slice(0, 10) || [];
+      
+      console.log('🎮 [Queue] Jogadores para match:', playersForMatch.map(p => ({
+        name: p.summonerName,
+        mmr: p.mmr,
+        primaryLane: p.primaryLane,
+        secondaryLane: p.secondaryLane
+      })));
       
       if (playersForMatch.length === 10) {
         // ✅ NOVO: Implementar lógica de balanceamento de lanes
@@ -767,6 +779,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
                 primaryLane: p.primaryLane || 'fill',
                 secondaryLane: p.secondaryLane || 'fill',
                 assignedLane: p.assignedLane || p.primaryLane || 'fill',
+                teamIndex: p.teamIndex || 0, // ✅ NOVO: Índice para o draft
                 isAutofill: p.isAutofill || false
               })),
               enemies: team2.map(p => ({
@@ -776,6 +789,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
                 primaryLane: p.primaryLane || 'fill',
                 secondaryLane: p.secondaryLane || 'fill',
                 assignedLane: p.assignedLane || p.primaryLane || 'fill',
+                teamIndex: p.teamIndex || 0, // ✅ NOVO: Índice para o draft
                 isAutofill: p.isAutofill || false
               })),
               averageMMR: {
@@ -789,15 +803,41 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
           };
           
           console.log('🎮 [Queue] Match found criado com lanes balanceadas:', matchData);
+          console.log('🎮 [Queue] Team1 (teammates):', matchData.data.teammates.map(p => ({
+            name: p.summonerName,
+            lane: p.assignedLane,
+            teamIndex: p.teamIndex,
+            isAutofill: p.isAutofill
+          })));
+          console.log('🎮 [Queue] Team2 (enemies):', matchData.data.enemies.map(p => ({
+            name: p.summonerName,
+            lane: p.assignedLane,
+            teamIndex: p.teamIndex,
+            isAutofill: p.isAutofill
+          })));
           
-          // ✅ NOVO: Criar partida no backend antes de disparar o evento
-          this.createMatchInBackend(matchData.data);
-          
-          // Disparar evento para o app
-          const event = new CustomEvent('matchFound', { detail: matchData });
-          document.dispatchEvent(event);
-          
-          console.log('✅ [Queue] Evento matchFound disparado');
+          // ✅ CORREÇÃO: Criar partida no backend ANTES de disparar o evento
+          this.createMatchInBackend(matchData.data).then((matchId) => {
+            // Atualizar o matchId com o ID real do banco
+            if (matchId) {
+              matchData.data.matchId = matchId;
+              console.log(`✅ [Queue] MatchId atualizado para: ${matchId}`);
+            }
+            
+            // Disparar evento para o app APÓS criar a partida
+            const event = new CustomEvent('matchFound', { detail: matchData });
+            document.dispatchEvent(event);
+            
+            console.log('✅ [Queue] Evento matchFound disparado com matchId:', matchId);
+          }).catch((error) => {
+            console.error('❌ [Queue] Erro ao criar partida, mas continuando fluxo:', error);
+            
+            // Mesmo com erro, disparar o evento para não bloquear o fluxo
+            const event = new CustomEvent('matchFound', { detail: matchData });
+            document.dispatchEvent(event);
+            
+            console.log('✅ [Queue] Evento matchFound disparado (sem matchId do backend)');
+          });
         }
       }
     }
@@ -811,111 +851,251 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     return fullName;
   }
 
-  // ✅ NOVO: Balancear times por lanes baseado em MMR e preferências
+  // ✅ CORREÇÃO COMPLETA: Balancear times por MMR e lanes
   private balanceTeamsByLanes(players: any[]): { team1: any[], team2: any[] } | null {
     console.log('🎯 [Queue] Balanceando times por lanes...');
     
-    // Ordenar jogadores por MMR (maior primeiro)
+    // ✅ CORREÇÃO: Ordenar jogadores por MMR (maior primeiro)
     const sortedPlayers = [...players].sort((a, b) => b.mmr - a.mmr);
     
-    // Definir ordem de prioridade das lanes
-    const lanePriority = ['mid', 'jungle', 'top', 'bot', 'support'];
+    // ✅ CORREÇÃO: Atribuir lanes únicas baseado em MMR e preferências
+    const playersWithLanes = this.assignLanesByMMRAndPreferences(sortedPlayers, []);
     
-    // Mapear jogadores para lanes baseado em MMR e preferências
-    const playersWithLanes = this.assignLanesByMMRAndPreferences(sortedPlayers, lanePriority);
+    console.log('🎯 [Queue] Jogadores com lanes atribuídas:', playersWithLanes.length);
     
-    // Dividir em dois times balanceados
+    // ✅ VERIFICAÇÃO: Garantir que temos exatamente 10 jogadores
+    if (playersWithLanes.length !== 10) {
+      console.error('❌ [Queue] ERRO: Não temos 10 jogadores com lanes! Temos:', playersWithLanes.length);
+      return null;
+    }
+    
+    // ✅ CORREÇÃO: Verificar se temos exatamente 10 jogadores com lanes únicas
+    const uniqueLanes = new Set(playersWithLanes.map(p => p.assignedLane));
+    console.log('🎯 [Queue] Lanes únicas encontradas:', Array.from(uniqueLanes));
+    
+    if (uniqueLanes.size !== 5) {
+      console.error('❌ [Queue] ERRO: Não temos 5 lanes únicas! Temos:', uniqueLanes.size);
+      return null;
+    }
+    
+    if (playersWithLanes.length !== 10) {
+      console.error('❌ [Queue] ERRO: Não temos 10 jogadores! Temos:', playersWithLanes.length);
+      return null;
+    }
+    
+    // ✅ CORREÇÃO: Usar todos os jogadores (já têm lanes únicas garantidas pelo método anterior)
+    const playersWithUniqueLanes = playersWithLanes;
+    
+    // ✅ CORREÇÃO: Separar times baseado no teamIndex já atribuído (0-4 = time azul, 5-9 = time vermelho)
     const team1: any[] = [];
     const team2: any[] = [];
     
-    // Distribuir jogadores alternadamente para balancear MMR
-    playersWithLanes.forEach((player, index) => {
-      if (index % 2 === 0) {
+    playersWithUniqueLanes.forEach(player => {
+      if (player.teamIndex >= 0 && player.teamIndex <= 4) {
         team1.push(player);
-      } else {
+      } else if (player.teamIndex >= 5 && player.teamIndex <= 9) {
         team2.push(player);
+      } else {
+        console.error(`❌ [Queue] TeamIndex inválido para ${player.summonerName}: ${player.teamIndex}`);
       }
     });
     
-    console.log('✅ [Queue] Times balanceados:', {
-      team1: team1.map(p => ({ name: p.summonerName, lane: p.assignedLane, mmr: p.mmr, isAutofill: p.isAutofill })),
-      team2: team2.map(p => ({ name: p.summonerName, lane: p.assignedLane, mmr: p.mmr, isAutofill: p.isAutofill }))
+    console.log('🎯 [Queue] Times separados por teamIndex:', {
+      team1Size: team1.length,
+      team2Size: team2.length,
+      team1MMR: team1.reduce((sum, p) => sum + p.mmr, 0) / team1.length,
+      team2MMR: team2.reduce((sum, p) => sum + p.mmr, 0) / team2.length,
+      team1: team1.map(p => ({ name: p.summonerName, lane: p.assignedLane, teamIndex: p.teamIndex, mmr: p.mmr })),
+      team2: team2.map(p => ({ name: p.summonerName, lane: p.assignedLane, teamIndex: p.teamIndex, mmr: p.mmr }))
     });
+    
+    console.log('🎯 [Queue] Índices ajustados:', {
+      team1: team1.map(p => ({ name: p.summonerName, teamIndex: p.teamIndex, lane: p.assignedLane })),
+      team2: team2.map(p => ({ name: p.summonerName, teamIndex: p.teamIndex, lane: p.assignedLane }))
+    });
+    
+    // ✅ VERIFICAÇÃO: Garantir que cada time tem 5 jogadores com lanes únicas
+    const team1Lanes = new Set(team1.map(p => p.assignedLane));
+    const team2Lanes = new Set(team2.map(p => p.assignedLane));
+    
+    console.log('✅ [Queue] Verificação final:', {
+      team1Size: team1.length,
+      team2Size: team2.length,
+      team1Lanes: Array.from(team1Lanes),
+      team2Lanes: Array.from(team2Lanes),
+      team1LanesUnique: team1Lanes.size === 5,
+      team2LanesUnique: team2Lanes.size === 5
+    });
+    
+    // ✅ VERIFICAÇÃO: Garantir que cada time tem 5 jogadores
+    if (team1.length !== 5 || team2.length !== 5) {
+      console.error('❌ [Queue] ERRO: Times não têm 5 jogadores!', { team1Size: team1.length, team2Size: team2.length });
+      return null;
+    }
     
     return { team1, team2 };
   }
 
-  // ✅ NOVO: Atribuir lanes baseado em MMR e preferências
+
+
+  // ✅ CORREÇÃO COMPLETA: Atribuir lanes únicas baseado em MMR e preferências
   private assignLanesByMMRAndPreferences(players: any[], lanePriority: string[]): any[] {
-    const playersWithLanes = [...players];
-    const assignedLanes = new Set<string>();
+    console.log('🎯 [Queue] assignLanesByMMRAndPreferences iniciado com', players.length, 'jogadores');
     
-    // Primeira passada: atribuir lanes preferidas para jogadores com maior MMR
-    for (const player of playersWithLanes) {
+    // ✅ CORREÇÃO: Definir ordem exata das lanes conforme o draft espera
+    const laneOrder = ['top', 'jungle', 'mid', 'bot', 'support'];
+    const laneToIndex: { [key: string]: number } = { 'top': 0, 'jungle': 1, 'mid': 2, 'bot': 3, 'support': 4 };
+    
+    // ✅ CORREÇÃO: Ordenar jogadores por MMR (maior primeiro) para priorizar preferências
+    const sortedPlayers = [...players].sort((a, b) => b.mmr - a.mmr);
+    
+    console.log('🎯 [Queue] Jogadores ordenados por MMR:', sortedPlayers.map(p => ({
+      name: p.summonerName,
+      mmr: p.mmr,
+      primaryLane: p.primaryLane,
+      secondaryLane: p.secondaryLane
+    })));
+    
+    // ✅ CORREÇÃO: Sistema de atribuição de lanes único - cada lane só pode ser atribuída 2 vezes
+    const laneAssignments: { [key: string]: number } = { 'top': 0, 'jungle': 0, 'mid': 0, 'bot': 0, 'support': 0 };
+    const playersWithLanes: any[] = [];
+    
+    // ✅ PRIMEIRA PASSADA: Atribuir lanes preferidas para jogadores com maior MMR
+    for (const player of sortedPlayers) {
       const primaryLane = player.primaryLane || 'fill';
       const secondaryLane = player.secondaryLane || 'fill';
       
-      // Se a lane primária está disponível, usar ela
-      if (!assignedLanes.has(primaryLane) && primaryLane !== 'fill') {
-        player.assignedLane = primaryLane;
-        player.isAutofill = false;
-        assignedLanes.add(primaryLane);
-        console.log(`🎯 [Queue] ${player.summonerName} (MMR: ${player.mmr}) → ${primaryLane} (preferência 1)`);
+      let assignedLane = null;
+      let isAutofill = false;
+      let teamIndex = null;
+      
+      // Tentar lane primária primeiro (se não foi atribuída 2 vezes ainda)
+      if (primaryLane !== 'fill' && laneAssignments[primaryLane] < 2) {
+        assignedLane = primaryLane;
+        isAutofill = false;
+        laneAssignments[primaryLane]++;
+        teamIndex = laneAssignments[primaryLane] === 1 ? laneToIndex[primaryLane] : laneToIndex[primaryLane] + 5;
       }
-      // Se não, tentar lane secundária
-      else if (!assignedLanes.has(secondaryLane) && secondaryLane !== 'fill') {
-        player.assignedLane = secondaryLane;
-        player.isAutofill = false;
-        assignedLanes.add(secondaryLane);
-        console.log(`🎯 [Queue] ${player.summonerName} (MMR: ${player.mmr}) → ${secondaryLane} (preferência 2)`);
+      // Tentar lane secundária
+      else if (secondaryLane !== 'fill' && laneAssignments[secondaryLane] < 2) {
+        assignedLane = secondaryLane;
+        isAutofill = false;
+        laneAssignments[secondaryLane]++;
+        teamIndex = laneAssignments[secondaryLane] === 1 ? laneToIndex[secondaryLane] : laneToIndex[secondaryLane] + 5;
       }
-      // Se nenhuma preferência está disponível, marcar para autofill
+      // Se nenhuma preferência está disponível, encontrar uma lane disponível
       else {
-        player.assignedLane = 'fill';
-        player.isAutofill = true;
-        console.log(`🎯 [Queue] ${player.summonerName} (MMR: ${player.mmr}) → autofill (nenhuma preferência disponível)`);
+        // Encontrar primeira lane disponível
+        for (const lane of laneOrder) {
+          if (laneAssignments[lane] < 2) {
+            assignedLane = lane;
+            isAutofill = true;
+            laneAssignments[lane]++;
+            teamIndex = laneAssignments[lane] === 1 ? laneToIndex[lane] : laneToIndex[lane] + 5;
+            break;
+          }
+        }
       }
+      
+      // Atribuir lane ao jogador
+      const playerWithLane = {
+        ...player,
+        assignedLane: assignedLane,
+        isAutofill: isAutofill,
+        teamIndex: teamIndex
+      };
+      
+      playersWithLanes.push(playerWithLane);
+      
+      console.log(`🎯 [Queue] ${player.summonerName} (MMR: ${player.mmr}) → ${assignedLane} (${isAutofill ? 'autofill' : 'preferência'}, índice ${teamIndex})`);
     }
     
-    // Segunda passada: atribuir lanes restantes para jogadores em autofill
-    const autofillPlayers = playersWithLanes.filter(p => p.isAutofill);
-    const availableLanes = lanePriority.filter(lane => !assignedLanes.has(lane));
+    // ✅ VERIFICAÇÃO: Garantir que todas as lanes foram atribuídas exatamente 2 vezes
+    console.log(`🎯 [Queue] Contagem final de lanes:`, laneAssignments);
     
-    console.log(`🎯 [Queue] Jogadores em autofill: ${autofillPlayers.length}, Lanes disponíveis: ${availableLanes.join(', ')}`);
+    const allLanesAssigned = Object.values(laneAssignments).every(count => count === 2);
+    if (!allLanesAssigned) {
+      console.error('❌ [Queue] ERRO: Nem todas as lanes foram atribuídas 2 vezes!', laneAssignments);
+      return [];
+    }
     
-    // Distribuir lanes disponíveis para jogadores em autofill
-    autofillPlayers.forEach((player, index) => {
-      if (index < availableLanes.length) {
-        player.assignedLane = availableLanes[index];
-        console.log(`🎯 [Queue] ${player.summonerName} (MMR: ${player.mmr}) → ${availableLanes[index]} (autofill)`);
-      } else {
-        // Se não há lanes suficientes, usar uma aleatória
-        const randomLane = lanePriority[Math.floor(Math.random() * lanePriority.length)];
-        player.assignedLane = randomLane;
-        console.log(`🎯 [Queue] ${player.summonerName} (MMR: ${player.mmr}) → ${randomLane} (autofill aleatório)`);
+    // ✅ CORREÇÃO: Ordenar jogadores por teamIndex para garantir ordem correta
+    const orderedPlayers = playersWithLanes.sort((a, b) => {
+      if (a.teamIndex !== null && b.teamIndex !== null) {
+        return a.teamIndex - b.teamIndex;
       }
+      return 0;
     });
     
-    return playersWithLanes;
+    console.log('✅ [Queue] Jogadores finais ordenados por teamIndex:', orderedPlayers.map(p => ({
+      name: p.summonerName,
+      lane: p.assignedLane,
+      teamIndex: p.teamIndex,
+      isAutofill: p.isAutofill,
+      mmr: p.mmr
+    })));
+    
+    console.log('✅ [Queue] Total de jogadores processados:', orderedPlayers.length);
+    console.log('✅ [Queue] Lanes atribuídas:', orderedPlayers.map(p => p.assignedLane));
+    console.log('✅ [Queue] TeamIndexes:', orderedPlayers.map(p => p.teamIndex));
+    
+    // ✅ VERIFICAÇÃO: Garantir que temos exatamente 10 jogadores
+    if (orderedPlayers.length !== 10) {
+      console.error('❌ [Queue] ERRO: Não temos 10 jogadores! Temos:', orderedPlayers.length);
+      return [];
+    }
+    
+    // ✅ VERIFICAÇÃO: Garantir que temos teamIndexes únicos de 0-9
+    const teamIndexes = orderedPlayers.map(p => p.teamIndex).sort((a, b) => a - b);
+    const expectedIndexes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    const hasCorrectIndexes = JSON.stringify(teamIndexes) === JSON.stringify(expectedIndexes);
+    
+    if (!hasCorrectIndexes) {
+      console.error('❌ [Queue] ERRO: TeamIndexes incorretos!', teamIndexes);
+      return [];
+    }
+    
+    // ✅ VERIFICAÇÃO FINAL: Garantir que cada lane tem exatamente 2 jogadores
+    const laneCounts: { [key: string]: number } = {};
+    orderedPlayers.forEach(p => {
+      laneCounts[p.assignedLane] = (laneCounts[p.assignedLane] || 0) + 1;
+    });
+    
+    console.log('✅ [Queue] Contagem de jogadores por lane:', laneCounts);
+    
+    const hasCorrectDistribution = Object.values(laneCounts).every(count => count === 2);
+    if (!hasCorrectDistribution) {
+      console.error('❌ [Queue] ERRO: Distribuição incorreta de lanes!', laneCounts);
+      return [];
+    }
+    
+    console.log('✅ [Queue] Atribuição de lanes concluída com sucesso!');
+    return orderedPlayers;
   }
 
-  // ✅ NOVO: Criar partida no backend
-  private createMatchInBackend(matchData: any): void {
+  // ✅ CORREÇÃO: Criar partida no backend e retornar Promise
+  private createMatchInBackend(matchData: any): Promise<number | null> {
     console.log('🎮 [Queue] Criando partida no backend:', matchData);
     
-    this.apiService.createMatchFromFrontend(matchData).subscribe({
-      next: (response) => {
-        console.log('✅ [Queue] Partida criada no backend com sucesso:', response);
-        
-        // Atualizar o matchId com o ID real do banco
-        if (response.success && response.matchId) {
-          console.log(`✅ [Queue] Partida criada com ID: ${response.matchId}`);
+    return new Promise((resolve, reject) => {
+      this.apiService.createMatchFromFrontend(matchData).subscribe({
+        next: (response) => {
+          console.log('✅ [Queue] Partida criada no backend com sucesso:', response);
+          
+          // Retornar o matchId se disponível
+          if (response.success && response.matchId) {
+            console.log(`✅ [Queue] Partida criada com ID: ${response.matchId}`);
+            resolve(response.matchId);
+          } else {
+            console.warn('⚠️ [Queue] Partida criada mas sem matchId');
+            resolve(null);
+          }
+        },
+        error: (error) => {
+          console.error('❌ [Queue] Erro ao criar partida no backend:', error);
+          reject(error);
         }
-      },
-      error: (error) => {
-        console.error('❌ [Queue] Erro ao criar partida no backend:', error);
-        // Mesmo com erro, continuar o fluxo do match found
-      }
+      });
     });
   }
 } 

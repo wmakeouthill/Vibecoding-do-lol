@@ -23,6 +23,7 @@ export interface PlayerInfo {
   primaryLane: string;
   secondaryLane: string;
   assignedLane: string;
+  teamIndex?: number; // ✅ NOVO: Índice para o draft (0-4)
   isAutofill: boolean;
   riotIdGameName?: string;
   riotIdTagline?: string;
@@ -56,6 +57,20 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
   ngOnChanges(changes: SimpleChanges) {
     // Reinicia o timer quando uma nova partida é encontrada
     if (changes['matchData'] && changes['matchData'].currentValue) {
+      console.log('🎮 [MatchFound] Dados recebidos:', this.matchData);
+      console.log('🎮 [MatchFound] Teammates:', this.matchData?.teammates?.map(p => ({
+        name: p.summonerName,
+        lane: p.assignedLane,
+        teamIndex: p.teamIndex,
+        isAutofill: p.isAutofill
+      })));
+      console.log('🎮 [MatchFound] Enemies:', this.matchData?.enemies?.map(p => ({
+        name: p.summonerName,
+        lane: p.assignedLane,
+        teamIndex: p.teamIndex,
+        isAutofill: p.isAutofill
+      })));
+      
       if (this.countdownTimer) {
         clearInterval(this.countdownTimer);
       }
@@ -191,28 +206,31 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   /**
-   * Ordena jogadores por lane na ordem: top, jungle, mid, adc, support
+   * Ordena jogadores por teamIndex (0-4) conforme o draft espera
    */
   getSortedPlayersByLane(players: PlayerInfo[]): PlayerInfo[] {
-    const laneOrder = ['top', 'jungle', 'mid', 'bot', 'support'];
-    
+    // ✅ CORREÇÃO: Usar teamIndex se disponível, senão ordenar por lane
     return [...players].sort((a, b) => {
+      // Se ambos têm teamIndex, usar ele para ordenação
+      if (a.teamIndex !== undefined && b.teamIndex !== undefined) {
+        return a.teamIndex - b.teamIndex;
+      }
+      
+      // Fallback: ordenar por lane se teamIndex não estiver disponível
+      const laneOrder = ['top', 'jungle', 'mid', 'bot', 'support'];
       const laneA = a.assignedLane || a.primaryLane || 'fill';
       const laneB = b.assignedLane || b.primaryLane || 'fill';
       
       const indexA = laneOrder.indexOf(laneA);
       const indexB = laneOrder.indexOf(laneB);
       
-      // Se ambos têm lane válida, ordenar pela ordem definida
       if (indexA !== -1 && indexB !== -1) {
         return indexA - indexB;
       }
       
-      // Se apenas um tem lane válida, priorizar o que tem
       if (indexA !== -1) return -1;
       if (indexB !== -1) return 1;
       
-      // Se nenhum tem lane válida, manter ordem original
       return 0;
     });
   }
@@ -271,7 +289,17 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
     
     // Se o jogador está no time azul, teammates são azul, enemies são vermelho
     // Se o jogador está no time vermelho, teammates são vermelho, enemies são azul
-    return this.matchData.playerSide === 'blue' ? this.matchData.teammates : this.matchData.enemies;
+    const blueTeam = this.matchData.playerSide === 'blue' ? this.matchData.teammates : this.matchData.enemies;
+    
+    console.log('🎮 [MatchFound] getBlueTeamPlayers:', {
+      playerSide: this.matchData.playerSide,
+      teammatesCount: this.matchData.teammates?.length,
+      enemiesCount: this.matchData.enemies?.length,
+      blueTeamCount: blueTeam?.length,
+      blueTeam: blueTeam?.map(p => ({ name: p.summonerName, lane: p.assignedLane }))
+    });
+    
+    return blueTeam;
   }
 
   /**
@@ -282,7 +310,17 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
     
     // Se o jogador está no time azul, teammates são azul, enemies são vermelho
     // Se o jogador está no time vermelho, teammates são vermelho, enemies são azul
-    return this.matchData.playerSide === 'blue' ? this.matchData.enemies : this.matchData.teammates;
+    const redTeam = this.matchData.playerSide === 'blue' ? this.matchData.enemies : this.matchData.teammates;
+    
+    console.log('🎮 [MatchFound] getRedTeamPlayers:', {
+      playerSide: this.matchData.playerSide,
+      teammatesCount: this.matchData.teammates?.length,
+      enemiesCount: this.matchData.enemies?.length,
+      redTeamCount: redTeam?.length,
+      redTeam: redTeam?.map(p => ({ name: p.summonerName, lane: p.assignedLane }))
+    });
+    
+    return redTeam;
   }
 
   /**

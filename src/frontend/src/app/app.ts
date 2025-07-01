@@ -1855,6 +1855,9 @@ export class App implements OnInit, OnDestroy {
       // ✅ NOVO: Remover os 10 jogadores da fila MySQL quando aceitar
       await this.removeAcceptedPlayersFromQueue();
       
+      // ✅ NOVO: Iniciar draft phase com os dados do match found
+      this.startDraftPhaseFromMatchFound();
+      
       this.showMatchFound = false;
       this.matchFoundData = null;
       
@@ -1954,6 +1957,45 @@ export class App implements OnInit, OnDestroy {
         console.error('❌ [App] Erro ao atualizar status da fila:', error);
       }
     });
+  }
+
+  // ✅ NOVO: Iniciar draft phase com dados do match found
+  private startDraftPhaseFromMatchFound(): void {
+    if (!this.matchFoundData) {
+      console.error('❌ [App] Nenhum match found data disponível para iniciar draft');
+      return;
+    }
+
+    console.log('🎯 [App] Iniciando draft phase com dados do match found:', this.matchFoundData);
+
+    // Preparar dados do draft baseado no match found
+    const draftData = {
+      id: this.matchFoundData.matchId,
+      matchId: this.matchFoundData.matchId,
+      team1: this.matchFoundData.teammates, // Time azul (0-4)
+      team2: this.matchFoundData.enemies,   // Time vermelho (5-9)
+      blueTeam: this.matchFoundData.teammates,
+      redTeam: this.matchFoundData.enemies,
+      playerSide: this.matchFoundData.playerSide,
+      averageMMR: this.matchFoundData.averageMMR,
+      estimatedGameDuration: this.matchFoundData.estimatedGameDuration
+    };
+
+    console.log('🎯 [App] Draft data preparado:', {
+      id: draftData.id,
+      team1Size: draftData.team1?.length,
+      team2Size: draftData.team2?.length,
+      blueTeamSize: draftData.blueTeam?.length,
+      redTeamSize: draftData.redTeam?.length,
+      playerSide: draftData.playerSide
+    });
+
+    // Iniciar draft phase
+    this.draftData = draftData;
+    this.inDraftPhase = true;
+    this.draftPhase = 'preview';
+
+    console.log('✅ [App] Draft phase iniciado com sucesso');
   }
 
   // ✅ ATUALIZADO: Recusar partida e remover jogador da fila

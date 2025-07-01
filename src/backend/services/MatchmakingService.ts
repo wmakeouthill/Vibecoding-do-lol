@@ -698,9 +698,13 @@ export class MatchmakingService {
         throw new Error('Partida não encontrada no banco de dados');
       }
 
-      // TODO: Implementar lógica de cancelamento
-      // Por enquanto, apenas log
-      console.log(`❌ [Match] Recusa registrada para ${summonerName} na partida ${matchId}`);
+      // ✅ CORREÇÃO: Deletar partida quando recusada
+      await this.dbManager.deleteCustomMatch(matchId);
+      
+      console.log(`✅ [Match] Partida ${matchId} deletada após recusa`);
+      
+      // Adicionar atividade
+      this.addActivity('match_created', `Partida ${matchId} cancelada por ${summonerName || playerId}`);
       
     } catch (error) {
       console.error(`❌ [Match] Erro ao recusar partida:`, error);
@@ -717,11 +721,43 @@ export class MatchmakingService {
       const team1Players = matchData.teammates?.map((p: any) => p.summonerName) || [];
       const team2Players = matchData.enemies?.map((p: any) => p.summonerName) || [];
       
+      console.log('🎮 [Match] Dados extraídos:', {
+        team1Players,
+        team2Players,
+        team1Count: team1Players.length,
+        team2Count: team2Players.length
+      });
+      
       // Calcular MMR médio
       const allPlayers = [...matchData.teammates, ...matchData.enemies];
       const avgMMR = allPlayers.reduce((sum: number, p: any) => sum + (p.mmr || 0), 0) / allPlayers.length;
       
-      // Criar partida no banco de dados
+      console.log('🎮 [Match] MMR médio calculado:', avgMMR);
+      
+      // ✅ CORREÇÃO: Criar dados preliminares para o draft
+      const preliminaryData = {
+        team1Players: team1Players,
+        team2Players: team2Players,
+        averageMMR: avgMMR,
+        lanes: {
+          team1: matchData.teammates?.map((p: any) => ({
+            player: p.summonerName,
+            lane: p.assignedLane,
+            teamIndex: p.teamIndex,
+            mmr: p.mmr,
+            isAutofill: p.isAutofill
+          })) || [],
+          team2: matchData.enemies?.map((p: any) => ({
+            player: p.summonerName,
+            lane: p.assignedLane,
+            teamIndex: p.teamIndex,
+            mmr: p.mmr,
+            isAutofill: p.isAutofill
+          })) || []
+        }
+      };
+      
+      // Criar partida no banco de dados com dados preliminares
       const matchId = await this.dbManager.createCustomMatch({
         title: `Partida Frontend ${new Date().toLocaleString()}`,
         description: `Times balanceados - MMR médio: ${Math.round(avgMMR)}`,
@@ -730,8 +766,34 @@ export class MatchmakingService {
         createdBy: 'Frontend Matchmaking',
         gameMode: 'CLASSIC'
       });
+      
+      // ✅ CORREÇÃO: Atualizar partida com dados preliminares
+      await this.dbManager.updateCustomMatch(matchId, {
+        draft_data: JSON.stringify(preliminaryData),
+        pick_ban_data: JSON.stringify({
+          team1Picks: [],
+          team2Picks: [],
+          team1Bans: [],
+          team2Bans: [],
+          isReal: false,
+          source: 'FRONTEND_MATCHMAKING'
+        })
+      });
 
       console.log(`✅ [Match] Partida criada com ID: ${matchId}`);
+      
+      // ✅ VERIFICAÇÃO: Confirmar que a partida foi criada
+      const createdMatch = await this.dbManager.getCustomMatchById(matchId);
+      if (createdMatch) {
+        console.log('✅ [Match] Partida confirmada no banco:', {
+          id: createdMatch.id,
+          title: createdMatch.title,
+          team1Players: createdMatch.team1_players,
+          team2Players: createdMatch.team2_players
+        });
+      } else {
+        console.error('❌ [Match] Partida não encontrada no banco após criação!');
+      }
       
       // Adicionar atividade
       this.addActivity(

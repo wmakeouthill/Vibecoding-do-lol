@@ -193,8 +193,8 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
             return;
         }
 
-        const processTeamData = (teamData: any[]): any[] => {
-            console.log('🔄 [DraftPickBan] Processando teamData:', teamData);
+        const processTeamData = (teamData: any[], isRedTeam: boolean = false): any[] => {
+            console.log('🔄 [DraftPickBan] Processando teamData:', teamData, 'isRedTeam:', isRedTeam);
 
             return teamData.map((player, index) => {
                 // Se já é um objeto com dados completos, usar como está
@@ -206,7 +206,8 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
                         assignedLane: player.assignedLane,
                         lane: player.lane,
                         primaryLane: player.primaryLane,
-                        secondaryLane: player.secondaryLane
+                        secondaryLane: player.secondaryLane,
+                        teamIndex: player.teamIndex
                     });
 
                     // Garantir que summonerName está no formato correto
@@ -228,7 +229,14 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
                         lane = 'adc';
                     }
 
+                    // ✅ CORREÇÃO: Usar teamIndex do jogador se disponível, senão calcular baseado no time
+                    let teamIndex = player.teamIndex;
+                    if (teamIndex === undefined) {
+                        teamIndex = isRedTeam ? index + 5 : index; // Time vermelho: 5-9, Time azul: 0-4
+                    }
+
                     console.log(`🎯 [DraftPickBan] Lane final para jogador [${index}]: ${lane} (original: ${player.assignedLane}, fallback: ${this.getLaneForIndex(index)})`);
+                    console.log(`🎯 [DraftPickBan] TeamIndex para jogador [${index}]: ${teamIndex} (isRedTeam: ${isRedTeam})`);
 
                     const processedPlayer = {
                         ...player,
@@ -237,7 +245,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
                         id: player.id || player.summonerId || Math.random().toString(),
                         lane: lane, // Usar lane baseada no índice para garantir ordem
                         originalIndex: index, // ✅ CORREÇÃO: Manter índice original do array
-                        teamIndex: index // ✅ NOVO: Índice específico do time (0-4 para cada time)
+                        teamIndex: teamIndex // ✅ CORREÇÃO: Índice específico do time (0-4 para azul, 5-9 para vermelho)
                     };
 
                     console.log(`✅ [DraftPickBan] Jogador processado [${index}]:`, processedPlayer);
@@ -246,13 +254,14 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
 
                 // Se é string, criar objeto básico
                 const playerName = player.toString();
+                const teamIndex = isRedTeam ? index + 5 : index; // Time vermelho: 5-9, Time azul: 0-4
                 const processedPlayer = {
                     id: playerName,
                     name: playerName,
                     summonerName: playerName,
                     lane: this.getLaneForIndex(index), // Fallback apenas para strings
                     originalIndex: index, // ✅ CORREÇÃO: Manter índice original
-                    teamIndex: index // ✅ NOVO: Índice específico do time
+                    teamIndex: teamIndex // ✅ CORREÇÃO: Índice específico do time
                 };
 
                 console.log(`✅ [DraftPickBan] Jogador string processado [${index}]:`, processedPlayer);
@@ -267,8 +276,8 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         console.log('🔵 [DraftPickBan] Blue team data:', blueTeamData);
         console.log('🔴 [DraftPickBan] Red team data:', redTeamData);
 
-        const processedBlueTeam = processTeamData(blueTeamData);
-        const processedRedTeam = processTeamData(redTeamData);
+        const processedBlueTeam = processTeamData(blueTeamData, false); // Time azul: índices 0-4
+        const processedRedTeam = processTeamData(redTeamData, true);   // Time vermelho: índices 5-9
 
         console.log('✅ [DraftPickBan] Times processados:', {
             blueTeamSize: processedBlueTeam.length,
@@ -398,10 +407,22 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         }
 
         // ✅ CORREÇÃO: Usar o playerIndex pré-definido na fase diretamente no array do time
-        const playerIndex = currentPhase.playerIndex ?? 0;
-        const player = teamPlayers[playerIndex];
+        // Para o time vermelho, mapear playerIndex 0-4 para teamIndex 5-9
+        let playerIndex = currentPhase.playerIndex ?? 0;
+        
+        // Buscar o jogador correto baseado no teamIndex
+        const targetTeamIndex = currentPhase.team === 'red' ? playerIndex + 5 : playerIndex;
+        const player = teamPlayers.find(p => p.teamIndex === targetTeamIndex);
+        
+        if (!player) {
+            console.error(`❌ [updateCurrentTurn] Jogador não encontrado no time ${currentPhase.team} com teamIndex ${targetTeamIndex}`);
+            console.error(`❌ [updateCurrentTurn] Jogadores disponíveis:`, teamPlayers.map(p => ({ name: p.summonerName, teamIndex: p.teamIndex })));
+            return;
+        }
+        
+        console.log(`🎯 [updateCurrentTurn] Jogador encontrado no time ${currentPhase.team}: teamIndex ${targetTeamIndex} = ${player.summonerName}`);
 
-        console.log(`🎯 [updateCurrentTurn] PlayerIndex da fase: ${playerIndex}`);
+        console.log(`🎯 [updateCurrentTurn] PlayerIndex da fase: ${playerIndex}, TargetTeamIndex: ${targetTeamIndex}`);
         console.log(`🎯 [updateCurrentTurn] Jogadores do time ${currentPhase.team}:`, teamPlayers.map((p, i) => ({
             index: i,
             teamIndex: p.teamIndex,
@@ -451,7 +472,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         currentPhase.playerName = player?.summonerName || player?.name || `Jogador ${playerIndex}`;
 
         console.log(`🎯 [updateCurrentTurn] Ação ${this.session.currentAction + 1}: ${currentPhase.playerName} (${currentPhase.playerId}) - ${this.getLaneDisplayName(player.lane)}`);
-        console.log(`🎯 [updateCurrentTurn] Índice do jogador: ${playerIndex} (teamIndex: ${player.teamIndex})`);
+        console.log(`🎯 [updateCurrentTurn] Índice do jogador: ${playerIndex} -> teamIndex: ${player.teamIndex} (target: ${targetTeamIndex})`);
         console.log(`🎯 [updateCurrentTurn] É bot? ${this.botService.isBot(player)}`);
         console.log(`🎯 [updateCurrentTurn] Phase.playerId definido: ${currentPhase.playerId} (fonte: ${playerIdReason})`);
         console.log(`🎯 [updateCurrentTurn] Phase.playerIndex: ${currentPhase.playerIndex}`);
