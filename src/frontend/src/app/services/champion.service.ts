@@ -60,18 +60,21 @@ export class ChampionService {
   private getBaseUrl(): string {
     // Detectar se está no Electron (tanto dev quanto produção)
     if (this.isElectron()) {
-      // Tanto em desenvolvimento quanto em produção instalada,
-      // o backend sempre roda em localhost:3000
-      return 'http://localhost:3000/api';
+      // No Windows, o Electron muitas vezes resolve localhost para 127.0.0.1
+      if (this.isWindows()) {
+        return 'http://127.0.0.1:3000/api';
+      } else {
+        return 'http://localhost:3000/api';
+      }
     }
 
-    // Em produção web (não Electron), usar URL relativa
+    // Em desenvolvimento web (Angular dev server)
     const host = window.location.hostname;
     if (host === 'localhost' || host === '127.0.0.1') {
       return 'http://localhost:3000/api';
     }
 
-    // URL da nuvem quando em produção web
+    // Em produção web (não Electron), usar URL relativa
     return `/api`;
   }
 
@@ -83,6 +86,15 @@ export class ChampionService {
     const userAgentElectron = navigator.userAgent.toLowerCase().includes('electron');
 
     return hasElectronAPI || hasRequire || hasProcess || userAgentElectron;
+  }
+
+  private isWindows(): boolean {
+    const platform = (window as any).process?.platform || navigator.platform;
+    const userAgent = navigator.userAgent;
+    
+    return platform === 'win32' || 
+           platform.toLowerCase().includes('win') ||
+           userAgent.includes('Windows');
   }
 
   /**

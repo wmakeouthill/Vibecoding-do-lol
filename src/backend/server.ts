@@ -217,8 +217,11 @@ wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
 
   ws.on('close', () => {
     console.log('Cliente desconectado do WebSocket');
-    // Remover jogador da fila se estiver conectado
-    matchmakingService.removePlayerFromQueue(ws);
+    // ✅ CORREÇÃO: NÃO remover jogador automaticamente da fila quando WebSocket fechar
+    // O jogador só deve ser removido quando explicitamente clicar em "Sair da Fila"
+    // ou quando recusar uma partida
+    console.log('🔍 [WebSocket] Conexão fechada - jogador permanece na fila (se estiver)');
+    // matchmakingService.removePlayerFromQueue(ws); // REMOVIDO - não fazer remoção automática
   });
 });
 

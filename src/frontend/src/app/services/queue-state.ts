@@ -37,22 +37,21 @@ interface QueueActivity {
 }
 
 export interface QueueState {
-  // Estado global da fila (independente do sistema usado)
+  // REGRA: Estado baseado exclusivamente na tabela queue_players
   isInQueue: boolean;
-  queueType: 'centralized' | 'p2p' | 'none';
+  queueType: 'centralized' | 'none';  // Removido P2P pois só usamos centralizado
   position?: number;
   waitTime?: number;
   estimatedTime?: number;
   playersInQueue?: number;
   averageWaitTime?: number;
-  // Sistema que está sendo usado atualmente
-  activeSystem: 'centralized' | 'p2p' | 'none';
+  // Sistema sempre centralizado baseado no MySQL
+  activeSystem: 'centralized' | 'none';
 }
 
 /**
- * Serviço para sincronizar o estado da fila entre o sistema centralizado (WebSocket)
- * e o sistema P2P distribuído, garantindo que a interface exiba o estado correto
- * independente de qual sistema está sendo usado.
+ * Serviço para gerenciar o estado da fila baseado exclusivamente na tabela queue_players
+ * como única fonte de verdade, seguindo as regras estabelecidas.
  */
 @Injectable({
   providedIn: 'root'
@@ -64,16 +63,18 @@ export class QueueStateService {
     activeSystem: 'none'
   });
 
-  // NOVO: Sistema de sincronização via polling
+  // Sistema de sincronização via polling para consultar a tabela queue_players
   private pollingInterval: any = null;
   private readonly POLLING_INTERVAL_MS = 3000; // Polling a cada 3 segundos
   private currentPlayerData: any = null;
 
   constructor(private apiService: ApiService) {
-    console.log('🔄 QueueStateService inicializado com sincronização MySQL');
+    console.log('🔄 QueueStateService inicializado com sincronização MySQL (tabela queue_players)');
   }
 
-  // NOVO: Iniciar sincronização via polling
+  /**
+   * REGRA: Iniciar sincronização via polling para consultar a tabela queue_players
+   */
   startMySQLSync(currentPlayer?: any): void {
     this.currentPlayerData = currentPlayer;
     
@@ -89,10 +90,9 @@ export class QueueStateService {
       this.syncQueueFromDatabase();
     }, this.POLLING_INTERVAL_MS);
 
-    console.log(`🔄 [QueueState] Sincronização MySQL iniciada a cada ${this.POLLING_INTERVAL_MS}ms`);
+    console.log(`🔄 [QueueState] Sincronização MySQL iniciada a cada ${this.POLLING_INTERVAL_MS}ms (tabela queue_players)`);
   }
 
-  // NOVO: Parar sincronização
   stopMySQLSync(): void {
     if (this.pollingInterval) {
       clearInterval(this.pollingInterval);
@@ -101,45 +101,93 @@ export class QueueStateService {
     }
   }
 
-  // NOVO: Forçar sincronização imediata
+  /**
+   * REGRA: Forçar sincronização imediata com a tabela queue_players
+   */
   forceSync(): void {
-    console.log('🔄 [QueueState] Forçando sincronização imediata...');
+    console.log('🔄 [QueueState] Forçando sincronização imediata com tabela queue_players...');
     
-    // ✅ PRIMEIRO: Chamar sincronização MySQL no backend (read-only)
+    // Chamar sincronização MySQL no backend (read-only)
     this.apiService.forceMySQLSync().subscribe({
       next: (response) => {
         console.log('✅ [QueueState] Sincronização MySQL backend concluída:', response);
         
-        // ✅ SEGUNDO: Sincronizar dados do frontend com o backend atualizado
+        // Sincronizar dados do frontend com o backend atualizado
         this.syncQueueFromDatabase();
       },
       error: (error) => {
         console.error('❌ [QueueState] Erro na sincronização MySQL backend:', error);
         
-        // ✅ FALLBACK: Mesmo com erro no backend, tentar sincronizar frontend
+        // FALLBACK: Mesmo com erro no backend, tentar sincronizar frontend
         this.syncQueueFromDatabase();
       }
     });
   }
 
+  /**
+   * REGRA: Sincronizar estado local com a tabela queue_players (única fonte de verdade)
+   */
   private async syncQueueFromDatabase(): Promise<void> {
     try {
-      // SEMPRE buscar dados do MySQL - não usar cache
+      // SEMPRE buscar dados DIRETAMENTE da tabela queue_players via API
       const queueStatus = await this.apiService.getQueueStatus().toPromise();
       
+      // ✅ REMOÇÃO DE VALIDAÇÃO: A fila deve ser exibida SEMPRE, mesmo se vazia
+      console.log('📊 [QueueState] Status da fila obtido - exibindo independente de validações:', {
+        hasData: !!queueStatus,
+        playersInQueue: queueStatus?.playersInQueue || 0,
+        hasPlayersList: !!queueStatus?.playersInQueueList,
+        playersListLength: queueStatus?.playersInQueueList?.length || 0
+      });
+
+      // Se não há resposta da API, criar estado vazio mas ainda assim exibir
       if (!queueStatus) {
-        console.log('⚠️ [QueueState] Não foi possível obter status da fila do MySQL');
+        console.log('⚠️ [QueueState] Resposta nula da API - criando estado vazio para exibição');
+        const emptyState: QueueState = {
+          isInQueue: false,
+          queueType: 'centralized', // Manter como centralizado para exibir interface
+          position: undefined,
+          waitTime: 0,
+          estimatedTime: 0,
+          playersInQueue: 0,
+          averageWaitTime: 0,
+          activeSystem: 'centralized'
+        };
+        this.queueStateSubject.next(emptyState);
         return;
       }
 
-      console.log('📊 [QueueState] Dados da fila obtidos do MySQL:', {
+      console.log('📊 [QueueState] Dados da fila obtidos da tabela queue_players:', {
         playersInQueue: queueStatus.playersInQueue,
         hasPlayersList: !!queueStatus.playersInQueueList,
         playersListLength: queueStatus.playersInQueueList?.length || 0,
         playerNames: queueStatus.playersInQueueList?.map(p => p.summonerName) || []
       });
 
-      // Verificar se o usuário atual está na fila
+      // REGRA: Verificar se fila está vazia (contagem direta da tabela)
+      const isQueueEmpty = !queueStatus.playersInQueue || queueStatus.playersInQueue === 0;
+      
+      if (isQueueEmpty) {
+        console.log('📭 [QueueState] Fila está vazia na tabela queue_players');
+        
+        // Estado vazio confirmado pela tabela
+        const emptyState: QueueState = {
+          isInQueue: false,
+          queueType: 'none',
+          position: undefined,
+          waitTime: queueStatus.averageWaitTime || 0,
+          estimatedTime: queueStatus.estimatedMatchTime || 0,
+          playersInQueue: 0,
+          averageWaitTime: queueStatus.averageWaitTime || 0,
+          activeSystem: 'none'
+        };
+        
+        console.log('🔄 [QueueState] Estado atualizado para fila vazia:', emptyState);
+        this.queueStateSubject.next(emptyState);
+        return;
+      }
+
+      // REGRA: Verificar se o usuário atual está na fila (baseado na tabela queue_players)
       let isUserInQueue = false;
       let userPosition = 0;
       let queuedPlayer: any = null;
@@ -150,8 +198,8 @@ export class QueueStateService {
         
         console.log('🔍 [QueueState] Identificadores do jogador atual:', identifiers);
 
-        // Buscar na lista de jogadores da fila
-        if (queueStatus.playersInQueueList) {
+        // Buscar na lista de jogadores da fila (dados vindos da tabela queue_players)
+        if (queueStatus.playersInQueueList && queueStatus.playersInQueueList.length > 0) {
           queuedPlayer = queueStatus.playersInQueueList.find((player: any) => {
             return this.matchPlayerIdentifiers(player, identifiers);
           });
@@ -159,190 +207,160 @@ export class QueueStateService {
           if (queuedPlayer) {
             isUserInQueue = true;
             userPosition = queuedPlayer.queuePosition || 0;
-            console.log(`✅ [QueueState] Usuário encontrado na fila: ${JSON.stringify(queuedPlayer)} (posição: ${userPosition})`);
+            console.log(`✅ [QueueState] Usuário encontrado na tabela queue_players: ${JSON.stringify(queuedPlayer)} (posição: ${userPosition})`);
           } else {
-            console.log(`❌ [QueueState] Usuário não encontrado na fila`);
-            console.log('🔍 [QueueState] Jogadores na fila:', queueStatus.playersInQueueList.map((p: any) => ({
-              summonerName: p.summonerName,
-              tagLine: p.tagLine,
-              fullName: p.tagLine ? `${p.summonerName}#${p.tagLine}` : p.summonerName
-            })));
+            console.log('❌ [QueueState] Usuário não encontrado na tabela queue_players');
           }
         }
-      } else {
-        console.log('⚠️ [QueueState] Nenhum dado do jogador atual disponível para verificação');
       }
 
-      // Atualizar estado baseado nos dados do banco
+      // Atualizar estado baseado nos dados da tabela queue_players
       const newState: QueueState = {
         isInQueue: isUserInQueue,
         queueType: isUserInQueue ? 'centralized' : 'none',
-        position: isUserInQueue ? userPosition : undefined,
-        waitTime: queueStatus.averageWaitTime,
+        position: userPosition,
+        waitTime: queueStatus.averageWaitTime || 0,
         estimatedTime: queueStatus.estimatedMatchTime || 0,
         playersInQueue: queueStatus.playersInQueue,
-        averageWaitTime: queueStatus.averageWaitTime,
-        activeSystem: isUserInQueue ? 'centralized' : 'none'
+        averageWaitTime: queueStatus.averageWaitTime || 0,
+        activeSystem: 'centralized'
       };
 
-      // SEMPRE atualizar o estado - não verificar se mudou
-      console.log('🔄 [QueueState] Estado atualizado via MySQL:', newState);
+      console.log('🔄 [QueueState] Estado atualizado baseado na tabela queue_players:', newState);
       this.queueStateSubject.next(newState);
 
-      // Retornar informações adicionais para debug
-      return {
-        queueStatus,
-        isUserInQueue,
-        userPosition,
-        queuedPlayer
-      } as any;
-
-    } catch (error) {
-      console.error('❌ [QueueState] Erro ao sincronizar com banco:', error);
+    } catch (error: any) {
+      console.error('❌ [QueueState] Erro ao sincronizar com tabela queue_players:', error);
+      console.error('❌ [QueueState] Detalhes do erro:', {
+        message: error?.message || 'N/A',
+        stack: error?.stack || 'N/A',
+        url: error?.url || 'N/A'
+      });
+      
+      // ✅ CORREÇÃO: Verificar se erro é relacionado a URL incorreta
+      if (error?.message && error.message.includes('/api/api/')) {
+        console.error('🚨 [QueueState] DETECTADO ERRO DE URL DUPLICADA /api/api/ - isso não deveria acontecer após correções!');
+        console.error('🔍 [QueueState] Verifique se o rebuild foi feito corretamente');
+      }
+      
+      // Em caso de erro, definir estado vazio mas funcional para não travar interface
+      const errorState: QueueState = {
+        isInQueue: false,
+        queueType: 'centralized', // Manter como centralizado para exibir interface
+        position: undefined,
+        waitTime: 0,
+        estimatedTime: 0,
+        playersInQueue: 0,
+        averageWaitTime: 0,
+        activeSystem: 'centralized' // Manter ativo para não esconder interface
+      };
+      
+      console.log('🔄 [QueueState] Estado definido como vazio (erro):', errorState);
+      this.queueStateSubject.next(errorState);
     }
   }
 
-  // Novo método para construir identificadores do jogador
+  /**
+   * Construir identificadores possíveis para o jogador atual
+   */
   private buildPlayerIdentifiers(playerData: any): string[] {
     const identifiers: string[] = [];
     
-    // Formato completo gameName#tagLine (preferencial)
-    if (playerData.gameName && playerData.tagLine) {
-      identifiers.push(`${playerData.gameName}#${playerData.tagLine}`);
-    }
-    
-    // summonerName se disponível
+    // Nome completo do summoner se disponível
     if (playerData.summonerName) {
       identifiers.push(playerData.summonerName);
     }
     
-    // gameName sozinho (fallback)
+    // Formato gameName#tagLine se disponível
+    if (playerData.gameName && playerData.tagLine) {
+      identifiers.push(`${playerData.gameName}#${playerData.tagLine}`);
+    }
+    
+    // Apenas gameName se disponível
     if (playerData.gameName) {
       identifiers.push(playerData.gameName);
     }
-
-    return identifiers.filter(Boolean);
+    
+    // Formato de display name se disponível
+    if (playerData.displayName) {
+      identifiers.push(playerData.displayName);
+    }
+    
+    console.log('🔍 [QueueState] Identificadores construídos:', identifiers);
+    return identifiers.filter(Boolean); // Remover valores vazios
   }
 
-  // Novo método para verificar se um jogador na fila corresponde aos identificadores
+  /**
+   * Verificar se um jogador da fila corresponde aos identificadores do usuário atual
+   */
   private matchPlayerIdentifiers(queuePlayer: any, identifiers: string[]): boolean {
-    // Construir possíveis nomes do jogador na fila
-    const queuePlayerNames: string[] = [];
+    if (!queuePlayer || !identifiers.length) return false;
     
-    // Nome completo se tiver tagLine
-    if (queuePlayer.summonerName && queuePlayer.tagLine) {
-      queuePlayerNames.push(`${queuePlayer.summonerName}#${queuePlayer.tagLine}`);
+    // Nome completo do jogador na fila
+    const queuePlayerName = queuePlayer.summonerName;
+    
+    // Verificar correspondência exata
+    for (const identifier of identifiers) {
+      if (queuePlayerName === identifier) {
+        console.log(`✅ [QueueState] Correspondência exata encontrada: ${queuePlayerName} === ${identifier}`);
+        return true;
+      }
+      
+      // Verificar correspondência por base name (ignorando tag)
+      const queueBaseName = queuePlayerName.split('#')[0];
+      const identifierBaseName = identifier.split('#')[0];
+      
+      if (queueBaseName === identifierBaseName) {
+        console.log(`✅ [QueueState] Correspondência por base name: ${queueBaseName} === ${identifierBaseName}`);
+        return true;
+      }
     }
     
-    // summonerName direto
-    if (queuePlayer.summonerName) {
-      queuePlayerNames.push(queuePlayer.summonerName);
-    }
-
-    // Verificar correspondência (case-insensitive)
-    const match = identifiers.some(identifier => 
-      queuePlayerNames.some(queueName => 
-        identifier.toLowerCase() === queueName.toLowerCase()
-      )
-    );
-
-    if (match) {
-      console.log(`🎯 [QueueState] Match encontrado:`, {
-        identifiers,
-        queuePlayerNames,
-        matched: true
-      });
-    }
-
-    return match;
+    return false;
   }
 
-  // Método para atualizar dados do jogador atual
   updateCurrentPlayer(playerData: any): void {
     this.currentPlayerData = playerData;
-    console.log('👤 [QueueState] Dados do jogador atual atualizados:', playerData?.summonerName);
+    console.log('🔄 [QueueState] Dados do jogador atual atualizados:', playerData);
   }
 
-  // Método para obter estado atual
   getQueueState(): Observable<QueueState> {
     return this.queueStateSubject.asObservable();
   }
 
-  // Método para obter estado atual (síncrono)
   getCurrentState(): QueueState {
     return this.queueStateSubject.value;
   }
 
-  // Atualizar estado da fila centralizada (WebSocket)
-  updateCentralizedQueue(data: {
-    isInQueue: boolean;
-    position?: number;
-    waitTime?: number;
-    estimatedTime?: number;
-    playersInQueue?: number;
-    averageWaitTime?: number;
-  }): void {
-    const currentState = this.queueStateSubject.value;
+  /**
+   * REMOVIDO: updateCentralizedQueue e updateP2PQueue
+   * Agora apenas a tabela queue_players é a fonte de verdade
+   */
 
-    this.queueStateSubject.next({
-      ...currentState,
-      isInQueue: data.isInQueue,
-      queueType: data.isInQueue ? 'centralized' : 'none',
-      position: data.position,
-      waitTime: data.waitTime,
-      estimatedTime: data.estimatedTime,
-      playersInQueue: data.playersInQueue,
-      averageWaitTime: data.averageWaitTime,
-      activeSystem: data.isInQueue ? 'centralized' : currentState.activeSystem
-    });
-  }
-
-  // Atualizar estado da fila P2P
-  updateP2PQueue(data: {
-    isInQueue: boolean;
-    position?: number;
-    waitTime?: number;
-    peersInQueue?: number;
-  }): void {
-    const currentState = this.queueStateSubject.value;
-
-    this.queueStateSubject.next({
-      ...currentState,
-      isInQueue: data.isInQueue,
-      queueType: data.isInQueue ? 'p2p' : 'none',
-      position: data.position,
-      waitTime: data.waitTime,
-      playersInQueue: data.peersInQueue,
-      activeSystem: data.isInQueue ? 'p2p' : currentState.activeSystem
-    });
-  }
-
-  // Resetar estado
   resetState(): void {
-    this.queueStateSubject.next({
+    const resetState: QueueState = {
       isInQueue: false,
       queueType: 'none',
       activeSystem: 'none'
-    });
+    };
+    this.queueStateSubject.next(resetState);
+    console.log('🔄 [QueueState] Estado resetado');
   }
 
-  // Verificar qual sistema está ativo
-  getActiveSystem(): 'centralized' | 'p2p' | 'none' {
+  getActiveSystem(): 'centralized' | 'none' {
     return this.queueStateSubject.value.activeSystem;
   }
 
-  // Verificar se está na fila
   isInQueue(): boolean {
     return this.queueStateSubject.value.isInQueue;
   }
 
-  // Obter posição na fila
   getQueuePosition(): number | undefined {
     return this.queueStateSubject.value.position;
   }
 
-  // Obter número de jogadores na fila
   getPlayersInQueue(): number | undefined {
     return this.queueStateSubject.value.playersInQueue;
   }
 }
+

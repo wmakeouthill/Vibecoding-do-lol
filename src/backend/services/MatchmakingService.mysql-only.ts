@@ -35,6 +35,7 @@ interface QueueStatus {
 export class MatchmakingService {
   private dbManager: DatabaseManager;
   private wss: any; // WebSocketServer
+  // ✅ NÃO EXISTE FILA LOCAL - APENAS MYSQL
   private activeMatches: Map<number, any> = new Map();
   private matchmakingInterval: NodeJS.Timeout | null = null;
   private cleanupInterval: NodeJS.Timeout | null = null;
@@ -63,98 +64,16 @@ export class MatchmakingService {
     console.log('✅ MatchmakingService inicializado com sucesso (MySQL Only)');
   }
 
-  /**
-   * REGRA 1: Para entrar na fila, o sistema deve verificar se o jogador logado 
-   * é o mesmo usuário presente no lobby do Discord. Se positivo, uma única linha
-   * representando o jogador deve ser inserida na tabela queue_players.
-   */
-  async addPlayerToQueue(websocket: WebSocket, playerData: any, preferences?: any): Promise<void> {
-    try {
-      console.log('➕ [Matchmaking] Adicionando jogador à fila:', playerData);
-
-      // Construir o nome completo no formato gameName#tagLine
-      const fullSummonerName = playerData.gameName && playerData.tagLine 
-        ? `${playerData.gameName}#${playerData.tagLine}`
-        : playerData.summonerName;
-
-      console.log('🔍 [Matchmaking] Nome completo do jogador:', fullSummonerName);
-
-      // REGRA: Verificar se já está na fila - fonte de verdade é APENAS a tabela queue_players
-      const existingQueuePlayers = await this.dbManager.getActiveQueuePlayers();
-      const isAlreadyInQueue = existingQueuePlayers.some(dbPlayer => 
-        dbPlayer.summoner_name === fullSummonerName ||
-        dbPlayer.player_id === playerData.id
-      );
-
-      if (isAlreadyInQueue) {
-        console.log(`⚠️ [Matchmaking] Jogador ${fullSummonerName} já está na fila (único registro permitido)`);
-        websocket.send(JSON.stringify({
-          type: 'error',
-          message: 'Você já está na fila'
-        }));
-        return;
-      }
-
-      // REGRA: Garantir registro único - adicionar ao MySQL (única fonte de verdade)
-      await this.dbManager.addPlayerToQueue(
-        playerData.id,
-        fullSummonerName,
-        playerData.region,
-        playerData.customLp || 0,
-        preferences
-      );
-
-      // Atualizar posições na fila
-      await this.updateQueuePositions();
-
-      // Adicionar atividade
-      this.addActivity(
-        'player_joined',
-        `${fullSummonerName} entrou na fila`,
-        fullSummonerName,
-        preferences?.primaryLane
-      );
-
-      // Notificar jogador - baseado nos dados reais da tabela
-      const queueStatus = await this.getQueueStatus();
-      const playerPosition = this.findPlayerPosition(fullSummonerName, queueStatus.playersInQueueList);
-      
-      websocket.send(JSON.stringify({
-        type: 'queue_joined',
-        data: {
-          position: playerPosition,
-          estimatedWait: this.calculateEstimatedWaitTime(),
-          queueStatus: queueStatus
-        }
-      }));
-
-      // Broadcast atualização da fila
-      await this.broadcastQueueUpdate();
-
-      console.log(`✅ [Matchmaking] ${fullSummonerName} entrou na fila (registro único na tabela queue_players)`);
-
-    } catch (error: any) {
-      console.error('❌ [Matchmaking] Erro ao adicionar jogador à fila:', error);
-      websocket.send(JSON.stringify({
-        type: 'error',
-        message: 'Erro ao entrar na fila: ' + error.message
-      }));
-    }
-  }
-
-  /**
-   * REGRA 2: Estado da fila = presença de registro na tabela queue_players com is_active = 1
-   * A contagem total deve ser uma contagem direta de linhas (COUNT(*))
-   */
+  // Método para obter status da fila DIRETAMENTE do MySQL
   async getQueueStatus(): Promise<QueueStatus> {
     try {
-      // SEMPRE buscar dados DIRETAMENTE da tabela queue_players (única fonte de verdade)
+      // SEMPRE buscar dados atuais do MySQL
       const dbPlayers = await this.dbManager.getActiveQueuePlayers();
-      const playersCount = dbPlayers.length; // COUNT(*) direto
+      const actualPlayerCount = dbPlayers.length;
+      
+      console.log(`📊 [Queue Status] MySQL: ${actualPlayerCount} jogadores`);
 
-      console.log(`📊 [Queue Status] MySQL queue_players: ${playersCount} jogadores`);
-
-      // Construir lista de jogadores a partir da tabela
+      // Construir lista de jogadores a partir do MySQL
       const playersInQueueList: QueuedPlayerInfo[] = dbPlayers.map(dbPlayer => {
         const fullName = dbPlayer.summoner_name;
         const nameParts = fullName.split('#');
@@ -174,18 +93,18 @@ export class MatchmakingService {
         };
       });
 
-      console.log(`✅ [Queue Status] Retornando: ${playersCount} jogadores da tabela queue_players`);
+      console.log(`✅ [Queue Status] Retornando: ${actualPlayerCount} jogadores do MySQL`);
 
       return {
-        playersInQueue: playersCount,
+        playersInQueue: actualPlayerCount,
         averageWaitTime: this.calculateEstimatedWaitTime(),
-        estimatedMatchTime: playersCount >= 10 ? 60 : 120,
+        estimatedMatchTime: actualPlayerCount >= 10 ? 60 : 120,
         isActive: this.isActive,
         playersInQueueList,
         recentActivities: [...this.recentActivities]
       };
     } catch (error) {
-      console.error('❌ [Queue Status] Erro ao buscar da tabela queue_players:', error);
+      console.error('❌ [Queue Status] Erro ao buscar do MySQL:', error);
       return {
         playersInQueue: 0,
         averageWaitTime: 0,
@@ -197,23 +116,93 @@ export class MatchmakingService {
     }
   }
 
-  /**
-   * REGRA 3a: Saída da fila via botão "Sair da Fila" - deletar linha da tabela
-   */
-  async removePlayerFromQueue(websocket: WebSocket): Promise<void> {
-    console.log('🔍 [Matchmaking] removePlayerFromQueue chamado via WebSocket');
-    console.log('⚠️ [Matchmaking] Não é possível identificar jogador apenas pelo WebSocket');
-    console.log('💡 [Matchmaking] Use removePlayerFromQueueById() com ID específico');
+  async addPlayerToQueue(websocket: WebSocket, playerData: any, preferences?: any): Promise<void> {
+    try {
+      console.log('➕ [Matchmaking] Adicionando jogador à fila:', playerData);
+
+      // Construir o nome completo no formato gameName#tagLine
+      const fullSummonerName = playerData.gameName && playerData.tagLine 
+        ? `${playerData.gameName}#${playerData.tagLine}`
+        : playerData.summonerName;
+
+      console.log('🔍 [Matchmaking] Nome completo do jogador:', fullSummonerName);
+
+      // Verificar se já está na fila no MySQL
+      const existingInDB = await this.dbManager.getActiveQueuePlayers();
+      const isAlreadyInQueue = existingInDB.some(dbPlayer => 
+        dbPlayer.summoner_name === fullSummonerName ||
+        dbPlayer.player_id === playerData.id
+      );
+
+      if (isAlreadyInQueue) {
+        console.log(`⚠️ [Matchmaking] Jogador ${fullSummonerName} já está na fila (MySQL)`);
+        websocket.send(JSON.stringify({
+          type: 'error',
+          message: 'Você já está na fila'
+        }));
+        return;
+      }
+
+      // Adicionar ao MySQL
+      await this.dbManager.addPlayerToQueue(
+        playerData.id,
+        fullSummonerName,
+        playerData.region,
+        playerData.customLp || 0,
+        preferences
+      );
+
+      // Atualizar posições no MySQL
+      await this.updateQueuePositions();
+
+      // Adicionar atividade
+      this.addActivity(
+        'player_joined',
+        `${fullSummonerName} entrou na fila`,
+        fullSummonerName,
+        preferences?.primaryLane
+      );
+
+      // Notificar jogador
+      const queueStatus = await this.getQueueStatus();
+      websocket.send(JSON.stringify({
+        type: 'queue_joined',
+        data: {
+          position: queueStatus.playersInQueue,
+          estimatedWait: this.calculateEstimatedWaitTime(),
+          queueStatus: queueStatus
+        }
+      }));
+
+      // Broadcast atualização da fila
+      await this.broadcastQueueUpdate();
+
+      console.log(`✅ [Matchmaking] ${fullSummonerName} entrou na fila (MySQL Only)`);
+
+    } catch (error: any) {
+      console.error('❌ [Matchmaking] Erro ao adicionar jogador à fila:', error);
+      websocket.send(JSON.stringify({
+        type: 'error',
+        message: 'Erro ao entrar na fila: ' + error.message
+      }));
+    }
   }
 
-  /**
-   * REGRA 3: Remoção da fila - deletar linha da tabela queue_players
-   */
+  async removePlayerFromQueue(websocket: WebSocket): Promise<void> {
+    console.log('🔍 [Matchmaking] removePlayerFromQueue chamado via WebSocket - MySQL Only');
+    
+    // Como não temos fila local, não podemos identificar o jogador apenas pelo WebSocket
+    // Este método precisa ser chamado com dados específicos do jogador
+    console.log('⚠️ [Matchmaking] Não é possível remover jogador apenas pelo WebSocket em modo MySQL Only');
+    console.log('💡 [Matchmaking] Use removePlayerFromQueueById() com ID ou summonerName específico');
+  }
+
+  // Método para remover jogador da fila por ID ou nome
   public async removePlayerFromQueueById(playerId?: number, summonerName?: string): Promise<boolean> {
     console.log(`🔍 [Matchmaking] Tentando remover jogador da fila:`, { playerId, summonerName });
 
     try {
-      // Buscar jogador na tabela queue_players (única fonte de verdade)
+      // Buscar jogador no MySQL
       const dbPlayers = await this.dbManager.getActiveQueuePlayers();
       const dbPlayer = dbPlayers.find(p => 
         (playerId && p.player_id === playerId) ||
@@ -227,13 +216,13 @@ export class MatchmakingService {
       );
       
       if (!dbPlayer) {
-        console.log(`⚠️ [Matchmaking] Jogador não encontrado na tabela queue_players:`, { playerId, summonerName });
+        console.log(`⚠️ [Matchmaking] Jogador não encontrado no MySQL:`, { playerId, summonerName });
         return false;
       }
 
-      // REGRA: Deletar linha da tabela (não marcar como inativo)
+      // Remover do MySQL
       await this.dbManager.removePlayerFromQueue(dbPlayer.player_id);
-      console.log(`✅ [Matchmaking] Linha do jogador ${dbPlayer.summoner_name} deletada da tabela queue_players`);
+      console.log(`✅ [Matchmaking] Jogador ${dbPlayer.summoner_name} removido do MySQL`);
 
       // Adicionar atividade
       this.addActivity(
@@ -242,13 +231,13 @@ export class MatchmakingService {
         dbPlayer.summoner_name
       );
 
-      // Atualizar posições na fila
+      // Atualizar posições no MySQL
       await this.updateQueuePositions();
 
       // Broadcast atualização da fila
       await this.broadcastQueueUpdate();
 
-      console.log(`➖ [Matchmaking] ${dbPlayer.summoner_name} removido da fila (linha deletada)`);
+      console.log(`➖ [Matchmaking] ${dbPlayer.summoner_name} removido da fila (MySQL Only)`);
       return true;
 
     } catch (error) {
@@ -257,30 +246,16 @@ export class MatchmakingService {
     }
   }
 
-  /**
-   * REGRA 3b: Saída da fila por falha em aceitar partida - deletar linha da tabela
-   */
-  async declineMatch(playerId: number, matchId: number, summonerName?: string): Promise<void> {
-    console.log(`❌ [Match] Jogador ${playerId} (${summonerName}) recusou partida ${matchId}`);
-    
-    // REGRA: Remover jogador da fila quando recusar partida (deletar linha)
-    if (summonerName) {
-      await this.removePlayerFromQueueById(playerId, summonerName);
-    } else {
-      await this.removePlayerFromQueueById(playerId);
-    }
-  }
-
-  // Método para atualizar posições na fila (APENAS baseado na tabela queue_players)
+  // Método para atualizar posições na fila (APENAS MySQL)
   private async updateQueuePositions(): Promise<void> {
     try {
-      // Buscar todos os jogadores ativos da tabela queue_players
+      // Buscar todos os jogadores ativos do MySQL
       const dbPlayers = await this.dbManager.getActiveQueuePlayers();
       
       // Ordenar por tempo de entrada (join_time)
       dbPlayers.sort((a, b) => new Date(a.join_time).getTime() - new Date(b.join_time).getTime());
 
-      // Atualizar posições na tabela
+      // Atualizar posições no banco de dados
       for (let i = 0; i < dbPlayers.length; i++) {
         const player = dbPlayers[i];
         const newPosition = i + 1;
@@ -289,13 +264,13 @@ export class MatchmakingService {
         }
       }
 
-      console.log(`✅ [Matchmaking] Posições da fila atualizadas na tabela: ${dbPlayers.length} jogadores`);
+      console.log(`✅ [Matchmaking] Posições da fila atualizadas no MySQL: ${dbPlayers.length} jogadores`);
     } catch (error) {
       console.error('❌ [Matchmaking] Erro ao atualizar posições da fila:', error);
     }
   }
 
-  // Broadcast de atualização da fila baseado na tabela queue_players
+  // Broadcast de atualização da fila
   public async broadcastQueueUpdate(force: boolean = false): Promise<void> {
     if (!this.wss || !this.wss.clients) {
       return;
@@ -312,7 +287,6 @@ export class MatchmakingService {
     this.lastBroadcastTime = now;
 
     try {
-      // SEMPRE buscar dados da tabela queue_players
       const queueStatus = await this.getQueueStatus();
 
       console.log(`📡 [Matchmaking] Enviando broadcast para ${this.wss.clients.size} clientes:`, {
@@ -351,22 +325,22 @@ export class MatchmakingService {
         }
       });
 
-      console.log(`✅ [Matchmaking] Broadcast enviado para ${sentCount}/${this.wss.clients.size} clientes (tabela queue_players)`);
+      console.log(`✅ [Matchmaking] Broadcast enviado para ${sentCount}/${this.wss.clients.size} clientes (MySQL Only)`);
 
     } catch (error) {
       console.error('❌ [Matchmaking] Erro no broadcast da fila:', error);
     }
   }
 
-  // Limpeza automática de jogadores inativos baseada na tabela queue_players
+  // Limpeza automática de jogadores inativos
   private async cleanupInactivePlayers(): Promise<void> {
     try {
       const now = new Date();
       const timeoutMs = this.QUEUE_TIMEOUT_MINUTES * 60 * 1000;
 
-      console.log(`🔍 Verificando jogadores na tabela queue_players para limpeza...`);
+      console.log(`🔍 Verificando jogadores na fila MySQL para limpeza...`);
 
-      // Buscar diretamente da tabela queue_players
+      // Buscar diretamente do MySQL
       const dbPlayers = await this.dbManager.getActiveQueuePlayers();
       const playersToRemove: any[] = [];
 
@@ -379,7 +353,7 @@ export class MatchmakingService {
 
         console.log(`👤 ${dbPlayer.summoner_name}: ${timeInQueueMinutes}min na fila, Bot: ${isBot}`);
 
-        // Para bots: só remover se timeout muito longo
+        // Para bots: só remover se tempo for negativo ou timeout muito longo
         if (isBot) {
           if (timeInQueue < 0 || timeInQueue > (24 * 60 * 60 * 1000)) {
             let reason = timeInQueue < 0 ? 'Dados de tempo corrompidos' : 'Timeout de 24 horas';
@@ -389,7 +363,7 @@ export class MatchmakingService {
           continue;
         }
 
-        // Para jogadores reais: só remover se timeout ou dados corrompidos
+        // Para jogadores reais: só remover se timeout muito longo ou dados corrompidos
         const shouldRemove = 
           timeInQueue > timeoutMs ||
           timeInQueue < 0;
@@ -408,10 +382,10 @@ export class MatchmakingService {
         }
       }
 
-      // Remover jogadores inativos da tabela queue_players (deletar linhas)
+      // Remover jogadores inativos do MySQL
       for (const dbPlayer of playersToRemove) {
         if (dbPlayer.player_id > 0) {
-          console.log(`🗑️ Removendo ${dbPlayer.summoner_name} da tabela queue_players (DELETE)`);
+          console.log(`🗑️ Removendo ${dbPlayer.summoner_name} do MySQL (DELETE)`);
           await this.dbManager.removePlayerFromQueue(dbPlayer.player_id);
         }
 
@@ -451,12 +425,6 @@ export class MatchmakingService {
   private calculateEstimatedWaitTime(): number {
     // Tempo estimado simples baseado na quantidade de jogadores necessários
     return Math.max(30, 300); // Entre 30 segundos e 5 minutos
-  }
-
-  private findPlayerPosition(summonerName: string, playersList?: QueuedPlayerInfo[]): number {
-    if (!playersList) return 0;
-    const player = playersList.find(p => p.summonerName === summonerName);
-    return player?.queuePosition || 0;
   }
 
   private addActivity(type: QueueActivity['type'], message: string, playerName?: string, playerTag?: string, lane?: string): void {
@@ -528,142 +496,13 @@ export class MatchmakingService {
 
   // Método temporário para manter compatibilidade com outros métodos
   public getQueue(): any[] {
-    console.log('⚠️ getQueue() chamado - retornando array vazio (tabela queue_players é a única fonte)');
+    console.log('⚠️ getQueue() chamado - retornando array vazio (MySQL Only mode)');
     return [];
   }
 
-  // Método para adicionar jogador à fila via Discord (com verificação)
+  // Outros métodos necessários para compatibilidade
   async addPlayerToDiscordQueue(websocket: WebSocket, requestData: any): Promise<void> {
-    try {
-      console.log('📱 [Discord] addPlayerToDiscordQueue chamado:', requestData);
-      
-      // Validar dados da requisição
-      if (!requestData || !requestData.discordId || !requestData.gameName || !requestData.tagLine) {
-        throw new Error('Dados do Discord incompletos');
-      }
-
-      // REGRA: Verificar se o jogador Discord está vinculado ao LoL
-      const discordLink = await this.dbManager.getDiscordLink(requestData.discordId);
-      if (!discordLink) {
-        throw new Error('Conta Discord não vinculada ao LoL');
-      }
-
-      // Verificar se o link ainda é válido
-      const isValid = await this.dbManager.verifyDiscordLink(
-        requestData.discordId, 
-        requestData.gameName, 
-        requestData.tagLine
-      );
-
-      if (!isValid) {
-        throw new Error('Dados do LoL não correspondem ao link Discord');
-      }
-
-      // Buscar jogador no banco
-      const player = await this.dbManager.getPlayerBySummonerName(discordLink.summoner_name);
-      if (!player) {
-        throw new Error('Jogador não encontrado no banco de dados');
-      }
-
-      // Preparar dados do jogador para adicionar à fila
-      const playerData = {
-        id: player.id,
-        gameName: requestData.gameName,
-        tagLine: requestData.tagLine,
-        summonerName: discordLink.summoner_name,
-        region: player.region,
-        customLp: player.custom_lp || 0
-      };
-
-      // Redirecionar para addPlayerToQueue normal (que verifica a tabela queue_players)
-      await this.addPlayerToQueue(websocket, playerData, requestData.preferences);
-
-      console.log(`✅ [Discord] ${discordLink.summoner_name} entrou na fila via Discord`);
-
-    } catch (error: any) {
-      console.error('❌ [Discord] Erro ao adicionar jogador à fila via Discord:', error);
-      websocket.send(JSON.stringify({
-        type: 'error',
-        message: 'Falha ao entrar na fila via Discord: ' + error.message
-      }));
-    }
-  }
-
-  async forceMySQLSync(): Promise<void> {
-    console.log('🔄 forceMySQLSync chamado - tabela queue_players é sempre sincronizada');
-    // Em MySQL Only mode, não há sync necessário - tabela é sempre a única fonte
-  }
-
-  async addBotToQueue(): Promise<void> {
-    try {
-      const botNumber = Math.floor(Math.random() * 1000);
-      const botName = `Bot${botNumber}#BOT`;
-      const randomMMR = Math.floor(Math.random() * 1200) + 800;
-      const lanes = ['top', 'jungle', 'mid', 'bot', 'support'];
-      const primaryLane = lanes[Math.floor(Math.random() * lanes.length)];
-      const secondaryLane = lanes[Math.floor(Math.random() * lanes.length)];
-
-      await this.dbManager.addPlayerToQueue(
-        -botNumber, // ID negativo para bots
-        botName,
-        'br1',
-        randomMMR,
-        { primaryLane, secondaryLane }
-      );
-
-      await this.updateQueuePositions();
-      
-      this.addActivity(
-        'player_joined',
-        `🤖 ${botName} (Bot) entrou na fila como ${primaryLane}`,
-        botName,
-        undefined,
-        primaryLane
-      );
-
-      await this.broadcastQueueUpdate();
-      console.log(`🤖 Bot ${botName} adicionado à tabela queue_players - Lane: ${primaryLane}, MMR: ${randomMMR}`);
-    } catch (error) {
-      console.error('❌ Erro ao adicionar bot à fila:', error);
-    }
-  }
-
-  async acceptMatch(playerId: number, matchId: number, summonerName?: string): Promise<void> {
-    console.log(`✅ [Match] Jogador ${playerId} (${summonerName}) aceitou partida ${matchId}`);
-    // Implementar lógica de aceitação se necessário
-  }
-
-  async cancelGameInProgress(matchId: number, reason: string): Promise<void> {
-    console.log(`🚫 [Match] Partida ${matchId} cancelada: ${reason}`);
-    // Implementar lógica de cancelamento se necessário
-  }
-
-  async cancelDraft(matchId: number, reason: string): Promise<void> {
-    console.log(`🚫 [Draft] Draft ${matchId} cancelado: ${reason}`);
-    // Implementar lógica de cancelamento se necessário
-  }
-
-  async processDraftAction(matchId: number, playerId: number, championId: number, action: 'pick' | 'ban'): Promise<void> {
-    console.log(`🎯 [Draft] Jogador ${playerId} ${action === 'pick' ? 'escolheu' : 'baniu'} campeão ${championId} na partida ${matchId}`);
-    // Implementar lógica de draft se necessário
-  }
-
-  async getRecentMatches(): Promise<any[]> {
-    try {
-      return await this.dbManager.getCustomMatches(10);
-    } catch (error) {
-      console.error('❌ Erro ao buscar partidas recentes:', error);
-      return [];
-    }
-  }
-
-  async updateMatchAfterDraft(matchId: number, draftData: any): Promise<void> {
-    console.log(`🎯 [Draft] Partida ${matchId} atualizada após draft`);
-    // Implementar lógica de atualização se necessário
-  }
-
-  async completeMatchAfterGame(matchId: number, winnerTeam: number, gameData: any): Promise<void> {
-    console.log(`🏆 [Match] Partida ${matchId} completada - Time vencedor: ${winnerTeam}`);
-    // Implementar lógica de finalização se necessário
+    // Implementar se necessário
+    console.log('📱 addPlayerToDiscordQueue chamado (MySQL Only)');
   }
 } 

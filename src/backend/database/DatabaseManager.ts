@@ -247,7 +247,7 @@ export class DatabaseManager {
       CREATE TABLE IF NOT EXISTS queue_players (
         id INT AUTO_INCREMENT PRIMARY KEY,
         player_id INT NOT NULL,
-        summoner_name VARCHAR(255) NOT NULL,
+        summoner_name VARCHAR(255) NOT NULL UNIQUE,
         region VARCHAR(10) NOT NULL,
         custom_lp INT DEFAULT 0,
         primary_lane VARCHAR(20),
@@ -258,6 +258,22 @@ export class DatabaseManager {
         FOREIGN KEY (player_id) REFERENCES players (id)
       )
     `);
+
+    // ✅ CORREÇÃO: Garantir que a constraint UNIQUE existe na tabela queue_players
+    try {
+      await this.pool.execute(`
+        ALTER TABLE queue_players 
+        ADD CONSTRAINT unique_summoner_name UNIQUE (summoner_name)
+      `);
+      console.log('✅ Constraint UNIQUE adicionada para summoner_name na tabela queue_players');
+    } catch (error: any) {
+      // Se a constraint já existe, isso é normal
+      if (error.message.includes('Duplicate key name') || error.message.includes('already exists')) {
+        console.log('ℹ️ Constraint UNIQUE já existe para summoner_name na tabela queue_players');
+      } else {
+        console.warn('⚠️ Erro ao adicionar constraint UNIQUE (pode ser normal):', error.message);
+      }
+    }
 
     console.log('✅ Tabelas MySQL criadas/verificadas com sucesso');
   }
@@ -654,18 +670,14 @@ export class DatabaseManager {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
 
     try {
-      // Verificar se o jogador já está na fila ativa
-      const [existingRows] = await this.pool.execute(
-        'SELECT id FROM queue_players WHERE player_id = ? AND is_active = 1',
+      // ✅ PRIMEIRO: Remover qualquer entrada anterior (ativa ou inativa) do mesmo jogador
+      await this.pool.execute(
+        'DELETE FROM queue_players WHERE player_id = ?',
         [playerId]
       );
+      console.log(`🧹 [Database] Limpeza: removidas entradas anteriores de ${summonerName} (ID: ${playerId})`);
 
-      if ((existingRows as any[]).length > 0) {
-        console.log(`⚠️ [Database] Jogador ${summonerName} (ID: ${playerId}) já está na fila ativa`);
-        return; // Não adicionar duplicata
-      }
-
-      // Inserir novo jogador na fila
+      // ✅ SEGUNDO: Inserir novo jogador na fila
       await this.pool.execute(
         `INSERT INTO queue_players (
           player_id, summoner_name, region, custom_lp, primary_lane, secondary_lane, queue_position
@@ -680,7 +692,7 @@ export class DatabaseManager {
         ]
       );
 
-      console.log(`✅ [Database] Jogador ${summonerName} (ID: ${playerId}) adicionado à fila`);
+      console.log(`✅ [Database] Jogador ${summonerName} (ID: ${playerId}) adicionado à fila (única entrada)`);
     } catch (error) {
       console.error('❌ [Database] Erro ao adicionar jogador à fila:', error);
       throw error;
@@ -691,12 +703,20 @@ export class DatabaseManager {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
 
     try {
-      await this.pool.execute(
-        'UPDATE queue_players SET is_active = 0 WHERE player_id = ?',
+      // ✅ CORREÇÃO: Deletar linha ao invés de marcar is_active = 0
+      const [result] = await this.pool.execute(
+        'DELETE FROM queue_players WHERE player_id = ?',
         [playerId]
       );
+
+      const affectedRows = (result as any).affectedRows;
+      if (affectedRows > 0) {
+        console.log(`✅ [Database] Jogador (ID: ${playerId}) removido da fila - linha deletada`);
+      } else {
+        console.log(`⚠️ [Database] Nenhuma linha encontrada para remover (ID: ${playerId})`);
+      }
     } catch (error) {
-      console.error('Erro ao remover jogador da fila:', error);
+      console.error('❌ [Database] Erro ao remover jogador da fila:', error);
       throw error;
     }
   }
@@ -720,9 +740,13 @@ export class DatabaseManager {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
 
     try {
-      await this.pool.execute('UPDATE queue_players SET is_active = 0');
+      // ✅ CORREÇÃO: Deletar todas as entradas ao invés de marcar is_active = 0
+      const [result] = await this.pool.execute('DELETE FROM queue_players');
+      
+      const affectedRows = (result as any).affectedRows;
+      console.log(`✅ [Database] Fila limpa - ${affectedRows} jogadores removidos`);
     } catch (error) {
-      console.error('Erro ao limpar fila:', error);
+      console.error('❌ [Database] Erro ao limpar fila:', error);
       throw error;
     }
   }

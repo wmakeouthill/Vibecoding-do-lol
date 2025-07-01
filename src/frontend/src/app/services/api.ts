@@ -72,15 +72,23 @@ export class ApiService {
       isElectron: this.isElectron(),
       isWindows: this.isWindows(),
       fallbackUrls: this.fallbackUrls,
-      userAgent: navigator.userAgent.substring(0, 100)
+      userAgent: navigator.userAgent.substring(0, 100),
+      hostname: window.location.hostname,
+      protocol: window.location.protocol
     });
-  }  private getBaseUrl(): string {
+
+
+  }
+
+
+
+  private getBaseUrl(): string {
     // Detectar se está no Electron (tanto dev quanto produção)
     if (this.isElectron()) {
       // No Windows, o Electron muitas vezes resolve localhost para 127.0.0.1
       // Configurar URL primária e fallbacks
       if (this.isWindows()) {
-        this.fallbackUrls = ['http://localhost:3000/api', 'http://127.0.0.1:3000/api'];
+        this.fallbackUrls = ['http://localhost:3000/api', 'http://127.0.0.1:3000'];
         console.log('🔧 Backend URL primária para Windows:', 'http://127.0.0.1:3000/api');
         return 'http://127.0.0.1:3000/api';
       } else {
@@ -359,13 +367,12 @@ export class ApiService {
 
   // Queue endpoints
   getQueueStatus(): Observable<QueueStatus> {
-    return this.http.get<QueueStatus>(`${this.baseUrl}/api/queue/status`)
+    return this.http.get<QueueStatus>(`${this.baseUrl}/queue/status`)
       .pipe(catchError(this.handleError));
   }
 
-  // ✅ NOVO: Forçar sincronização MySQL read-only
   forceMySQLSync(): Observable<any> {
-    return this.http.post(`${this.baseUrl}/api/queue/force-sync`, {})
+    return this.http.post(`${this.baseUrl}/queue/force-sync`, {})
       .pipe(catchError(this.handleError));
   }
 
@@ -448,9 +455,8 @@ export class ApiService {
       );
   }
 
-  // Método para configurar o Canal do Discord
   setDiscordChannel(channelName: string): Observable<any> {
-    return this.http.post(`http://localhost:3000/api/config/discord-channel`, { channelName })
+    return this.http.post(`${this.baseUrl}/config/discord-channel`, { channelName })
       .pipe(
         catchError(this.handleError)
       );

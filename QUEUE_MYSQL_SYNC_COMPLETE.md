@@ -202,13 +202,15 @@ is_active: tinyint(4)
 ## 🔧 CORREÇÃO FINAL: Botão Atualizar + Cache MySQL
 
 ### ❌ **PROBLEMA FINAL IDENTIFICADO:**
+
 - Jogador detectado via LCU está na tabela `queue_players` ✅
-- Pode entrar na fila normalmente ✅ 
+- Pode entrar na fila normalmente ✅
 - **MAS** ao clicar "Atualizar" ou refresh da página ❌
 - **Fila mostrava 0 jogadores** mesmo com dados no MySQL ❌
 - **Botão Atualizar** só atualizava Discord, não MySQL ❌
 
 ### 🔍 **CAUSA RAIZ FINAL:**
+
 1. **App.ts** não estava atualizando `queueStatus.playersInQueueList` com dados do MySQL
 2. **QueueStateService** sincronizava apenas `isInQueue`, não a lista completa
 3. **Botão "Atualizar"** não disparava atualização do `queueStatus` no App.ts
@@ -217,6 +219,7 @@ is_active: tinyint(4)
 ### ✅ **CORREÇÃO COMPLETA IMPLEMENTADA:**
 
 #### 1. **App.ts - Sincronização Completa do queueStatus**
+
 ```typescript
 private setupQueueStateIntegration(): void {
   this.queueStateService.getQueueState().subscribe(queueState => {
@@ -239,6 +242,7 @@ private setupQueueStateIntegration(): void {
 ```
 
 #### 2. **Queue Component - Evento de Refresh**
+
 ```typescript
 @Output() refreshData = new EventEmitter<void>(); // ✅ NOVO
 
@@ -254,6 +258,7 @@ refreshPlayersData(): void {
 ```
 
 #### 3. **App.ts - Handler de Refresh**
+
 ```typescript
 onRefreshData(): void {
   // ✅ Forçar sincronização imediata
@@ -271,6 +276,7 @@ onRefreshData(): void {
 ```
 
 #### 4. **Template Update**
+
 ```html
 <app-queue [queueStatus]="queueStatus"
            (refreshData)="onRefreshData()"> <!-- ✅ NOVO -->
@@ -279,6 +285,7 @@ onRefreshData(): void {
 ### 🧪 **TESTE DE VALIDAÇÃO FINAL**
 
 ✅ **Script**: `test-queue-refresh-fix.js`
+
 ```javascript
 // Resultado do teste:
 // • Jogadores na fila: 1
@@ -300,6 +307,7 @@ onRefreshData(): void {
 ### 🏆 **RESULTADO FINAL:**
 
 ✅ **PROBLEMA RESOLVIDO 100%:**
+
 - ✅ Detecção LCU funcional
 - ✅ Entry/Exit da fila funcional  
 - ✅ Estado persiste após refresh da página
@@ -315,6 +323,7 @@ onRefreshData(): void {
 ## 🛡️ CORREÇÃO CRÍTICA: Sincronização Read-Only + Preservação de Dados
 
 ### ❌ **PROBLEMA CRÍTICO IDENTIFICADO:**
+
 - ✅ Refresh funcionava, mas **modificava dados** ❌
 - ✅ `is_active` sendo alterado de 1 → 0 durante consultas ❌  
 - ✅ `custom_lp` (MMR) sendo **sobrescrito** ❌
@@ -322,6 +331,7 @@ onRefreshData(): void {
 - ✅ **Dados originais da entrada na fila perdidos** ❌
 
 ### 🔍 **CAUSA RAIZ CRÍTICA:**
+
 1. **Cleanup automático** removendo jogadores sem WebSocket (via HTTP/LCU)
 2. **Sincronização automática** recriando jogadores e sobrescrevendo dados
 3. **Falta de distinção** entre consulta e modificação
@@ -330,6 +340,7 @@ onRefreshData(): void {
 ### ✅ **CORREÇÃO DEFINITIVA IMPLEMENTADA:**
 
 #### 1. **Cleanup Corrigido - Preservar Jogadores HTTP/LCU**
+
 ```typescript
 // ✅ ANTES: Removia qualquer jogador sem WebSocket ativo
 const isWebSocketDead = !player.websocket || /* ... */
@@ -349,6 +360,7 @@ const shouldRemove =
 ```
 
 #### 2. **Sincronização Read-Only - Preservar Dados Originais**
+
 ```typescript
 // ✅ ANTES: Buscava dados da tabela players e sobrescrevia
 const player = await this.dbManager.getPlayerBySummonerName(dbPlayer.summoner_name);
@@ -365,6 +377,7 @@ const queuedPlayer: QueuedPlayer = {
 ```
 
 #### 3. **Sincronização Automática Desabilitada**
+
 ```typescript
 // ✅ ANTES: Sync automático a cada 2 segundos (modificava dados)
 setInterval(() => syncQueueWithDatabase(), 2000); // ❌
@@ -375,6 +388,7 @@ console.log('⚠️ Sincronização automática DESABILITADA para preservar dado
 ```
 
 #### 4. **Método de Sync Manual Adicionado**
+
 ```typescript
 // ✅ NOVO: Para refreshs do frontend sem modificar dados
 public async forceMySQLSync(): Promise<void> {
@@ -394,6 +408,7 @@ public async forceMySQLSync(): Promise<void> {
 ### 🏆 **RESULTADO FINAL GARANTIDO:**
 
 ✅ **DADOS PROTEGIDOS:**
+
 - ✅ `custom_lp` (MMR) **nunca sobrescrito**
 - ✅ `primary_lane`/`secondary_lane` **nunca sobrescritos**  
 - ✅ `is_active` **nunca alterado** por consultas
@@ -401,6 +416,7 @@ public async forceMySQLSync(): Promise<void> {
 - ✅ Refresh **100% read-only**
 
 ✅ **FUNCIONALIDADE MANTIDA:**
+
 - ✅ Entrada/saída da fila funcional
 - ✅ Estado persiste entre sessões  
 - ✅ Botão "Atualizar" funciona sem modificar dados

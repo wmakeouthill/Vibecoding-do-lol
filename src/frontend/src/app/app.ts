@@ -986,14 +986,9 @@ export class App implements OnInit, OnDestroy {
           this.isInQueue = true;
           this.queueStatus = message.data.queueStatus || this.queueStatus;
           
-          // Atualizar QueueStateService
-          this.queueStateService.updateCentralizedQueue({
-            isInQueue: true,
-            position: message.data.position,
-            waitTime: message.data.estimatedWait,
-            playersInQueue: this.queueStatus.playersInQueue,
-            averageWaitTime: this.queueStatus.averageWaitTime
-          });
+          // REGRA: QueueStateService agora sincroniza automaticamente com a tabela queue_players
+          // Não é necessário atualizar manualmente - o polling cuida da sincronização
+          console.log('🔄 [WebSocket] Estado da fila será sincronizado automaticamente via QueueStateService');
           break;
 
         case 'match_found':
@@ -2951,7 +2946,7 @@ export class App implements OnInit, OnDestroy {
           playerNames: fullQueueStatus.playersInQueueList?.map(p => p.summonerName) || []
         });
 
-        // Atualizar queueStatus completo
+        // ✅ CORREÇÃO: Sempre atualizar queueStatus, mesmo se estiver vazio
         this.queueStatus = {
           playersInQueue: fullQueueStatus.playersInQueue || 0,
           averageWaitTime: fullQueueStatus.averageWaitTime || 0,
@@ -2961,14 +2956,50 @@ export class App implements OnInit, OnDestroy {
           recentActivities: fullQueueStatus.recentActivities || []
         };
 
+        // ✅ VERIFICAR se fila está vazia e garantir que interface reflete isso
+        const isQueueEmpty = this.queueStatus.playersInQueue === 0;
+        
+        if (isQueueEmpty) {
+          console.log('📭 [App] Fila está vazia - garantindo que interface reflete estado vazio');
+          
+          // Garantir que usuário não está marcado como na fila se fila está vazia
+          if (this.isInQueue) {
+            console.log('🔄 [App] Usuário estava marcado na fila, mas fila está vazia - corrigindo estado');
+            this.isInQueue = false;
+          }
+        }
+
         console.log('✅ [App] queueStatus atualizado via refresh:', {
           playersInQueue: this.queueStatus.playersInQueue,
           playersListLength: this.queueStatus.playersInQueueList?.length || 0,
-          isActive: this.queueStatus.isActive
+          isActive: this.queueStatus.isActive,
+          isEmpty: isQueueEmpty,
+          userInQueue: this.isInQueue
         });
+
+        // Verificar se usuário atual está na fila atualizada
+        this.checkIfUserInUpdatedQueue(this.queueStatus);
       },
       error: (error) => {
         console.error('❌ [App] Erro ao buscar dados da fila via refresh:', error);
+        
+        // ✅ CORREÇÃO: Em caso de erro, definir estado vazio para evitar interface travada
+        this.queueStatus = {
+          playersInQueue: 0,
+          averageWaitTime: 0,
+          estimatedMatchTime: 0,
+          isActive: true,
+          playersInQueueList: [],
+          recentActivities: []
+        };
+        
+        // Garantir que usuário não está marcado como na fila se houve erro
+        if (this.isInQueue) {
+          console.log('🔄 [App] Erro na busca - marcando usuário como fora da fila por segurança');
+          this.isInQueue = false;
+        }
+        
+        console.log('📭 [App] queueStatus definido como vazio devido ao erro');
       }
     });
   }

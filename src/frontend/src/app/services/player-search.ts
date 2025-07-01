@@ -13,18 +13,40 @@ export class PlayerSearchService {
   constructor(private http: HttpClient) {}
 
   private getBaseUrl(): string {
+    // Detectar se está no Electron (tanto dev quanto produção)
     if (this.isElectron()) {
-      return 'http://localhost:3000/api';
+      // No Windows, o Electron muitas vezes resolve localhost para 127.0.0.1
+      if (this.isWindows()) {
+        return 'http://127.0.0.1:3000/api';
+      } else {
+        return 'http://localhost:3000/api';
+      }
     }
+
+    // Em desenvolvimento web (Angular dev server)
     const host = window.location.hostname;
     if (host === 'localhost' || host === '127.0.0.1') {
       return 'http://localhost:3000/api';
     }
+
+    // Em produção web (não Electron), usar URL relativa
     return `/api`;
   }
 
   private isElectron(): boolean {
-    return !!(window as any).electronAPI;
+    return !!(window as any).electronAPI || 
+           !!(window as any).require || 
+           navigator.userAgent.toLowerCase().includes('electron') ||
+           !!(window as any).process?.type;
+  }
+
+  private isWindows(): boolean {
+    const platform = (window as any).process?.platform || navigator.platform;
+    const userAgent = navigator.userAgent;
+    
+    return platform === 'win32' || 
+           platform.toLowerCase().includes('win') ||
+           userAgent.includes('Windows');
   }
 
   private handleError(error: HttpErrorResponse) {
