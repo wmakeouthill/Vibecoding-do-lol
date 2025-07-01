@@ -37,16 +37,13 @@ interface QueueActivity {
 }
 
 export interface QueueState {
-  // REGRA: Estado baseado exclusivamente na tabela queue_players
+  // ✅ SIMPLIFICAÇÃO: Só existe fila Discord/MySQL
   isInQueue: boolean;
-  queueType: 'centralized' | 'none';  // Removido P2P pois só usamos centralizado
   position?: number;
   waitTime?: number;
   estimatedTime?: number;
   playersInQueue?: number;
   averageWaitTime?: number;
-  // Sistema sempre centralizado baseado no MySQL
-  activeSystem: 'centralized' | 'none';
 }
 
 /**
@@ -59,8 +56,11 @@ export interface QueueState {
 export class QueueStateService {
   private queueStateSubject = new BehaviorSubject<QueueState>({
     isInQueue: false,
-    queueType: 'none',
-    activeSystem: 'none'
+    position: undefined,
+    waitTime: 0,
+    estimatedTime: 0,
+    playersInQueue: 0,
+    averageWaitTime: 0
   });
 
   // Sistema de sincronização via polling para consultar a tabela queue_players
@@ -74,6 +74,7 @@ export class QueueStateService {
 
   /**
    * REGRA: Iniciar sincronização via polling para consultar a tabela queue_players
+   * ✅ MUDANÇA: Só fazer polling se explicitamente solicitado
    */
   startMySQLSync(currentPlayer?: any): void {
     this.currentPlayerData = currentPlayer;
@@ -85,12 +86,25 @@ export class QueueStateService {
     // Executar sincronização imediatamente
     this.syncQueueFromDatabase();
 
+    // ✅ MUDANÇA: Só configurar polling se explicitamente habilitado
+    // O controle de polling será feito pelo componente Queue
+    console.log(`🔄 [QueueState] Sincronização MySQL iniciada (sem polling automático)`);
+  }
+
+  /**
+   * ✅ NOVO: Método para iniciar polling manualmente
+   */
+  startPolling(): void {
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+    }
+
     // Configurar polling
     this.pollingInterval = setInterval(() => {
       this.syncQueueFromDatabase();
     }, this.POLLING_INTERVAL_MS);
 
-    console.log(`🔄 [QueueState] Sincronização MySQL iniciada a cada ${this.POLLING_INTERVAL_MS}ms (tabela queue_players)`);
+    console.log(`🔄 [QueueState] Polling MySQL iniciado a cada ${this.POLLING_INTERVAL_MS}ms`);
   }
 
   stopMySQLSync(): void {
@@ -145,13 +159,11 @@ export class QueueStateService {
         console.log('⚠️ [QueueState] Resposta nula da API - criando estado vazio para exibição');
         const emptyState: QueueState = {
           isInQueue: false,
-          queueType: 'centralized', // Manter como centralizado para exibir interface
           position: undefined,
           waitTime: 0,
           estimatedTime: 0,
           playersInQueue: 0,
-          averageWaitTime: 0,
-          activeSystem: 'centralized'
+          averageWaitTime: 0
         };
         this.queueStateSubject.next(emptyState);
         return;
@@ -173,13 +185,11 @@ export class QueueStateService {
         // Estado vazio confirmado pela tabela
         const emptyState: QueueState = {
           isInQueue: false,
-          queueType: 'none',
           position: undefined,
           waitTime: queueStatus.averageWaitTime || 0,
           estimatedTime: queueStatus.estimatedMatchTime || 0,
           playersInQueue: 0,
-          averageWaitTime: queueStatus.averageWaitTime || 0,
-          activeSystem: 'none'
+          averageWaitTime: queueStatus.averageWaitTime || 0
         };
         
         console.log('🔄 [QueueState] Estado atualizado para fila vazia:', emptyState);
@@ -217,13 +227,11 @@ export class QueueStateService {
       // Atualizar estado baseado nos dados da tabela queue_players
       const newState: QueueState = {
         isInQueue: isUserInQueue,
-        queueType: isUserInQueue ? 'centralized' : 'none',
         position: userPosition,
         waitTime: queueStatus.averageWaitTime || 0,
         estimatedTime: queueStatus.estimatedMatchTime || 0,
         playersInQueue: queueStatus.playersInQueue,
-        averageWaitTime: queueStatus.averageWaitTime || 0,
-        activeSystem: 'centralized'
+        averageWaitTime: queueStatus.averageWaitTime || 0
       };
 
       console.log('🔄 [QueueState] Estado atualizado baseado na tabela queue_players:', newState);
@@ -246,13 +254,11 @@ export class QueueStateService {
       // Em caso de erro, definir estado vazio mas funcional para não travar interface
       const errorState: QueueState = {
         isInQueue: false,
-        queueType: 'centralized', // Manter como centralizado para exibir interface
         position: undefined,
         waitTime: 0,
         estimatedTime: 0,
         playersInQueue: 0,
-        averageWaitTime: 0,
-        activeSystem: 'centralized' // Manter ativo para não esconder interface
+        averageWaitTime: 0
       };
       
       console.log('🔄 [QueueState] Estado definido como vazio (erro):', errorState);
@@ -340,15 +346,18 @@ export class QueueStateService {
   resetState(): void {
     const resetState: QueueState = {
       isInQueue: false,
-      queueType: 'none',
-      activeSystem: 'none'
+      position: undefined,
+      waitTime: 0,
+      estimatedTime: 0,
+      playersInQueue: 0,
+      averageWaitTime: 0
     };
     this.queueStateSubject.next(resetState);
     console.log('🔄 [QueueState] Estado resetado');
   }
 
   getActiveSystem(): 'centralized' | 'none' {
-    return this.queueStateSubject.value.activeSystem;
+    return 'centralized'; // Assuming centralized system
   }
 
   isInQueue(): boolean {

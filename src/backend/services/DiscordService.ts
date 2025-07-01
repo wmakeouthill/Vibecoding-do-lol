@@ -35,14 +35,21 @@ export class DiscordService {
   // WebSocket principal do servidor
   private wss: any = null;
 
-  // Throttling para broadcast de usuários - REDUZIDO PARA TEMPO REAL
+  // Throttling para broadcasts - OTIMIZADO PARA TEMPO REAL
   private lastBroadcastTime = 0;
-  private readonly BROADCAST_COOLDOWN = 1000; // Reduzido para 1 segundo entre broadcasts (era 10 segundos)
-  private readonly IMMEDIATE_BROADCAST_COOLDOWN = 100; // 100ms para broadcasts imediatos (entrada/saída)
+  private readonly BROADCAST_COOLDOWN = 500; // Reduzido para 500ms entre broadcasts normais
+  private readonly IMMEDIATE_BROADCAST_COOLDOWN = 50; // Reduzido para 50ms para broadcasts imediatos (entrada/saída)
 
   // Cache de usuários para evitar broadcasts desnecessários
   private lastBroadcastedUsers: any[] = [];
   private lastBroadcastHash = '';
+
+  // NOVO: Sistema de broadcast automático para eventos críticos
+  private readonly CRITICAL_EVENT_COOLDOWN = 0; // Sem throttling para eventos críticos
+  private lastCriticalEventTime = 0;
+
+  // NOVO: Cache dos últimos dados do LCU conhecidos
+  private lastKnownLCUData?: { gameName: string, tagLine: string };
 
   constructor(databaseManager: DatabaseManager) {
     this.databaseManager = databaseManager;
@@ -68,6 +75,12 @@ export class DiscordService {
       
       // Teste inicial de detecção
       this.performInitialChannelCheck();
+      
+      // NOVO: Broadcast inicial para todos os clientes conectados
+      setTimeout(async () => {
+        console.log('🚀 [DiscordService] Enviando broadcast inicial...');
+        await this.broadcastUsersInChannelCritical();
+      }, 3000); // Aguardar 3 segundos para garantir que tudo esteja carregado
     });
 
     // Detectar quando alguém entra/sai do canal
@@ -190,7 +203,12 @@ export class DiscordService {
     setTimeout(async () => {
       const usersInChannel = await this.getUsersInMatchmakingChannel();
       console.log(`👥 [INIT] Usuários encontrados no canal: ${usersInChannel.length}`);
-      await this.broadcastUsersInChannel();
+      
+      // NOVO: Broadcast inicial para todos os clientes
+      if (usersInChannel.length > 0) {
+        console.log('🚀 [INIT] Enviando broadcast inicial com usuários encontrados...');
+        await this.broadcastUsersInChannelCritical();
+      }
     }, 2000);
   }
 
@@ -292,8 +310,8 @@ export class DiscordService {
       const action = isInTargetChannel ? 'entrou' : 'saiu';
       console.log(`👤 [DiscordService] ${user.username} ${action} do canal ${this.targetChannelName}`);
       
-      // Broadcast IMEDIATO para entrada/saída (sem throttling)
-      await this.broadcastUsersInChannelImmediate();
+      // BROADCAST IMEDIATO para entrada/saída (SEM throttling para eventos críticos)
+      await this.broadcastUsersInChannelCritical();
       
       // Verificar se o usuário tem nick vinculado e está na fila
       if (isInTargetChannel) {
@@ -1178,10 +1196,10 @@ export class DiscordService {
       return;
     }
 
-    await this.performBroadcast();
+    await this.performBroadcast(false); // Broadcast normal
   }
 
-  // Enviar lista de usuários online IMEDIATAMENTE (sem throttling para eventos críticos)
+  // Enviar lista de usuários online IMEDIATAMENTE (com throttling mínimo)
   async broadcastUsersInChannelImmediate(): Promise<void> {
     // Verificar throttling mínimo para evitar spam extremo
     const now = Date.now();
@@ -1191,33 +1209,48 @@ export class DiscordService {
     }
 
     console.log(`🚀 [DiscordService] Broadcast IMEDIATO de usuários no canal...`);
-    await this.performBroadcast();
+    await this.performBroadcast(false); // Broadcast imediato (não crítico)
   }
 
   // Método privado para executar o broadcast real
-  private async performBroadcast(): Promise<void> {
+  private async performBroadcast(isCritical: boolean = false): Promise<void> {
     const now = Date.now();
     this.lastBroadcastTime = now;
     
     console.log('📡 [DiscordService] Iniciando broadcast de usuários no canal...');
     const usersInChannel = await this.getUsersInMatchmakingChannel();
     
-    // Verificar se houve mudança real nos usuários
-    if (!this.hasUsersChanged(usersInChannel)) {
+    // Verificar se houve mudança real nos usuários (exceto para broadcasts críticos)
+    if (!isCritical && !this.hasUsersChanged(usersInChannel)) {
       console.log(`📡 [DiscordService] Nenhuma mudança nos usuários, broadcast ignorado`);
       return;
     }
     
     console.log(`📡 [DiscordService] Broadcast enviando ${usersInChannel.length} usuários`);
     
-    this.broadcastToClients({
+    // Preparar dados do broadcast
+    const broadcastData: any = {
       type: 'discord_users_online',
       users: usersInChannel,
-      timestamp: now
-    });
+      timestamp: now,
+      critical: isCritical
+    };
+    
+    // NOVO: Incluir informações do usuário atual se disponível
+    // Isso será preenchido pelo frontend quando enviar dados do LCU
+    if (this.lastKnownLCUData) {
+      const currentUser = await this.identifyCurrentUserFromLCU(this.lastKnownLCUData);
+      if (currentUser) {
+        broadcastData.currentUser = currentUser;
+        console.log('✅ [DiscordService] Incluindo usuário atual no broadcast:', currentUser.displayName);
+      }
+    }
+    
+    this.broadcastToClients(broadcastData);
     
     // Atualizar cache
     this.lastBroadcastedUsers = [...usersInChannel];
+    this.lastBroadcastHash = this.calculateUsersHash(usersInChannel);
   }
 
   setWebSocketServer(wss: any): void {
@@ -1287,5 +1320,76 @@ export class DiscordService {
     }
     
     return hasChanged;
+  }
+
+  // NOVO: Broadcast crítico sem throttling
+  async broadcastUsersInChannelCritical(): Promise<void> {
+    console.log(`🚨 [DiscordService] Broadcast CRÍTICO de usuários no canal (sem throttling)...`);
+    
+    // SEM throttling para eventos críticos - sempre enviar
+    await this.performBroadcast(true); // Broadcast crítico
+  }
+
+  // NOVO: Método para identificar o usuário atual no Discord baseado nos dados do LCU
+  async identifyCurrentUserFromLCU(lcuData?: { gameName: string, tagLine: string }): Promise<any> {
+    if (!lcuData || !lcuData.gameName || !lcuData.tagLine) {
+      console.log('⚠️ [DiscordService] Dados do LCU não disponíveis para identificação do usuário atual');
+      return null;
+    }
+
+    const lcuFullName = `${lcuData.gameName}#${lcuData.tagLine}`;
+    console.log('🔍 [DiscordService] Identificando usuário atual para:', lcuFullName);
+
+    // Buscar usuários no canal
+    const usersInChannel = await this.getUsersInMatchmakingChannel();
+    
+    // Procurar nos usuários online do Discord que tenham o nick vinculado
+    const matchingUser = usersInChannel.find(user => {
+      if (user.linkedNickname) {
+        const discordFullName = `${user.linkedNickname.gameName}#${user.linkedNickname.tagLine}`;
+        return discordFullName === lcuFullName;
+      }
+      return false;
+    });
+
+    if (matchingUser) {
+      const currentUser = {
+        id: matchingUser.id,
+        username: matchingUser.username,
+        displayName: matchingUser.displayName || matchingUser.username,
+        linkedNickname: matchingUser.linkedNickname,
+        isInChannel: true
+      };
+      console.log('✅ [DiscordService] Usuário atual identificado:', currentUser);
+      return currentUser;
+    } else {
+      console.log('❌ [DiscordService] Usuário atual não encontrado nos usuários Discord online');
+      return null;
+    }
+  }
+
+  // NOVO: Método para broadcast do usuário atual
+  async broadcastCurrentUser(lcuData?: { gameName: string, tagLine: string }): Promise<void> {
+    const currentUser = await this.identifyCurrentUserFromLCU(lcuData);
+    
+    this.broadcastToClients({
+      type: 'discord_current_user',
+      currentUser: currentUser,
+      timestamp: Date.now()
+    });
+  }
+
+  // NOVO: Método para atualizar dados do LCU e fazer broadcast
+  async updateLCUDataAndBroadcast(lcuData: { gameName: string, tagLine: string }): Promise<void> {
+    console.log('🔄 [DiscordService] Atualizando dados do LCU:', lcuData);
+    
+    // Atualizar cache dos dados do LCU
+    this.lastKnownLCUData = lcuData;
+    
+    // Fazer broadcast do usuário atual
+    await this.broadcastCurrentUser(lcuData);
+    
+    // Também fazer broadcast dos usuários no canal com informações do usuário atual
+    await this.performBroadcast(true); // Broadcast crítico para incluir usuário atual
   }
 }

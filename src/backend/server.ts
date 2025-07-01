@@ -298,6 +298,23 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
         users: usersInChannel2
       }));
       break;
+    case 'update_lcu_data':
+      console.log('🎮 Atualizando dados do LCU para identificação do usuário Discord...');
+      if (data.lcuData) {
+        await discordService.updateLCUDataAndBroadcast(data.lcuData);
+        ws.send(JSON.stringify({
+          type: 'lcu_data_updated',
+          success: true,
+          timestamp: Date.now()
+        }));
+      } else {
+        ws.send(JSON.stringify({
+          type: 'error',
+          message: 'Dados do LCU não fornecidos',
+          timestamp: Date.now()
+        }));
+      }
+      break;
     case 'get_discord_links':
       console.log('🔗 Solicitando vinculações Discord...');
       try {
@@ -2755,9 +2772,6 @@ async function initializeServices() {
         console.warn('⚠️ [Server] Falha ao inicializar Discord Bot');
         console.log('🔍 [Server] Status após falha:', discordService.isDiscordConnected());
       }
-      // SEMPRE conectar ao WebSocket, independente do status do bot
-      discordService.setWebSocketServer(wss);
-      console.log('🔗 [Server] DiscordService conectado ao WebSocket');
     } else {
       // Fallback para .env
       const envDiscordToken = process.env.DISCORD_BOT_TOKEN;
@@ -2774,16 +2788,14 @@ async function initializeServices() {
         } else {
           console.warn('⚠️ [Server] Falha ao inicializar Discord Bot com token do .env');
         }
-        // SEMPRE conectar ao WebSocket, independente do status do bot
-        discordService.setWebSocketServer(wss);
-        console.log('🔗 [Server] DiscordService conectado ao WebSocket');
       } else {
         console.log('⚠️ [Server] Token do Discord Bot não configurado no banco ou .env. Discord será desabilitado.');
-        // Mesmo sem token, conectar ao WebSocket para responder com status de desconectado
-        discordService.setWebSocketServer(wss);
-        console.log('🔗 [Server] DiscordService conectado ao WebSocket (modo desconectado)');
       }
     }
+    
+    // SEMPRE conectar ao WebSocket, independente do status do bot
+    discordService.setWebSocketServer(wss);
+    console.log('🔗 [Server] DiscordService conectado ao WebSocket (modo ativo)');
 
     // Log final do status do Discord Bot
     console.log('🔍 [Server] Status final do Discord Bot após inicialização:', {

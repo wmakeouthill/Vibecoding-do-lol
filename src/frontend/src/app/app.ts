@@ -39,8 +39,7 @@ export class App implements OnInit, OnDestroy {
   currentView: 'dashboard' | 'queue' | 'history' | 'leaderboard' | 'settings' = 'dashboard';
   isElectron = false;
   isConnected = false;
-  isInQueue = false;
-  currentQueueType: 'centralized' | 'discord' | null = null;
+  isInQueue: boolean = false;
 
   // Dados do jogador
   currentPlayer: Player | null = null;
@@ -148,10 +147,8 @@ export class App implements OnInit, OnDestroy {
         
         if (this.isInQueue) {
           console.log(`✅ [App] Usuário entrou na fila (posição: ${queueState.position})`);
-          this.currentQueueType = queueState.queueType === 'centralized' ? 'centralized' : 'discord';
         } else {
           console.log(`❌ [App] Usuário saiu da fila`);
-          this.currentQueueType = null;
         }
       }
 
@@ -1072,7 +1069,6 @@ export class App implements OnInit, OnDestroy {
     try {
       console.log('🎯 Entrando na fila com preferências:', preferences);
       this.isInQueue = true;
-      this.currentQueueType = 'centralized';
 
       // PRIMEIRO: Entrar na fila centralizada via API HTTP
       const playerData = {
@@ -1111,7 +1107,6 @@ export class App implements OnInit, OnDestroy {
 
           if (discordSuccess) {
             this.addNotification('info', 'Discord', 'Também conectado à fila Discord!');
-            this.currentQueueType = 'discord';
           }
         }
       } else {
@@ -1134,7 +1129,6 @@ export class App implements OnInit, OnDestroy {
     try {
       console.log('🎮 Entrando na fila Discord com dados completos:', data);
       this.isInQueue = true;
-      this.currentQueueType = 'discord';
 
       // Usar o DiscordService para entrar na fila Discord
       const primaryLane = data.preferences?.primaryLane || 'fill';
@@ -1215,7 +1209,6 @@ export class App implements OnInit, OnDestroy {
 
       // QUARTO: Limpar estado local (sempre)
       this.isInQueue = false;
-      this.currentQueueType = null;
 
       if (httpSuccess) {
         this.addNotification('success', 'Saiu da Fila', 'Você saiu da fila com sucesso');
@@ -1228,7 +1221,6 @@ export class App implements OnInit, OnDestroy {
 
       // Mesmo com erro, limpar estado local
       this.isInQueue = false;
-      this.currentQueueType = null;
     }
   }
 

@@ -576,6 +576,23 @@
               }
             }
 
+            .discord-info {
+              display: flex;
+              align-items: center;
+              gap: var(--spacing-sm);
+              margin-bottom: var(--spacing-sm);
+
+              .label {
+                font-weight: 600;
+                color: var(--text-primary);
+              }
+
+              .value {
+                color: var(--discord-purple, #7289da);
+                font-weight: 600;
+              }
+            }
+
             .status-info {
               display: flex;
               align-items: center;

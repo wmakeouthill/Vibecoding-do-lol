@@ -49,7 +49,7 @@ export class DiscordIntegrationService {
 
   // NOVO: Sistema de atualizações automáticas via WebSocket
   private autoUpdateInterval?: number;
-  private readonly AUTO_UPDATE_INTERVAL = 30000; // Atualização automática a cada 30 segundos (backup)
+  private readonly AUTO_UPDATE_INTERVAL = 60000; // Aumentado para 60 segundos (era 30s) - menos polling, mais broadcasts
   private lastAutoUpdate = 0;
 
   private matchFoundSubject = new Subject<any>();
@@ -279,6 +279,29 @@ export class DiscordIntegrationService {
 
         // Atualizar timestamp da última atualização automática
         this.lastAutoUpdate = Date.now();
+        
+        // Se for um broadcast crítico, logar como evento importante
+        if (data.critical) {
+          console.log(`🚨 [DiscordService #${this.instanceId}] Broadcast CRÍTICO recebido - atualização imediata`);
+        }
+        
+        // NOVO: Se incluir informações do usuário atual, atualizar
+        if (data.currentUser) {
+          console.log(`👤 [DiscordService #${this.instanceId}] Usuário atual recebido via WebSocket:`, data.currentUser);
+          this.currentDiscordUser = data.currentUser;
+        }
+        
+        // NOVO: Tentar identificar o usuário atual automaticamente
+        this.tryIdentifyCurrentUser();
+        break;
+
+      case 'discord_current_user':
+        console.log(`👤 [DiscordService #${this.instanceId}] Usuário atual recebido:`, data.currentUser);
+        this.currentDiscordUser = data.currentUser;
+        break;
+
+      case 'lcu_data_updated':
+        console.log(`✅ [DiscordService #${this.instanceId}] Dados do LCU atualizados com sucesso`);
         break;
 
       case 'discord_links_update':
@@ -414,8 +437,8 @@ export class DiscordIntegrationService {
         const now = Date.now();
         const timeSinceLastUpdate = now - this.lastAutoUpdate;
 
-        // Só fazer atualização automática se não recebeu atualização recente
-        if (timeSinceLastUpdate > this.AUTO_UPDATE_INTERVAL) {
+        // Só fazer atualização automática se não recebeu atualização há muito tempo (2 minutos)
+        if (timeSinceLastUpdate > 120000) { // 2 minutos sem atualização
           console.log(`🔄 [DiscordService #${this.instanceId}] Atualização automática (backup) - última atualização há ${Math.floor(timeSinceLastUpdate / 1000)}s`);
           this.requestDiscordStatus();
         }
@@ -727,5 +750,39 @@ export class DiscordIntegrationService {
   // Observable para match_found
   onMatchFound(): Observable<any> {
     return this.matchFoundSubject.asObservable();
+  }
+
+  // NOVO: Método para tentar identificar o usuário atual automaticamente
+  private tryIdentifyCurrentUser() {
+    // Se já temos um usuário identificado, não fazer nada
+    if (this.currentDiscordUser) {
+      return;
+    }
+
+    // Tentar identificar baseado nos dados do LCU se disponíveis
+    // Isso pode ser chamado quando o LCU fornece dados do usuário atual
+    console.log(`🔍 [DiscordService #${this.instanceId}] Tentando identificar usuário atual automaticamente...`);
+    
+    // Por enquanto, não fazer identificação automática
+    // O usuário será identificado quando o método identifyCurrentUserFromLCU for chamado explicitamente
+    // ou quando o componente queue chamar a verificação
+  }
+
+  // NOVO: Método para enviar dados do LCU e identificar usuário atual
+  sendLCUData(lcuData: { gameName: string, tagLine: string }): boolean {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.error('❌ WebSocket não conectado para enviar dados do LCU');
+      return false;
+    }
+
+    console.log('🎮 [DiscordService] Enviando dados do LCU para identificação:', lcuData);
+    
+    const message = {
+      type: 'update_lcu_data',
+      lcuData: lcuData
+    };
+
+    this.ws.send(JSON.stringify(message));
+    return true;
   }
 }

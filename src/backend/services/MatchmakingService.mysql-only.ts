@@ -38,12 +38,9 @@ export class MatchmakingService {
   // ✅ NÃO EXISTE FILA LOCAL - APENAS MYSQL
   private activeMatches: Map<number, any> = new Map();
   private matchmakingInterval: NodeJS.Timeout | null = null;
-  private cleanupInterval: NodeJS.Timeout | null = null;
   private isActive = true;
   private recentActivities: QueueActivity[] = [];
   private readonly MAX_ACTIVITIES = 20;
-  private readonly QUEUE_TIMEOUT_MINUTES = 120; // Timeout para jogadores inativos (2 horas)
-  private readonly CLEANUP_INTERVAL_MS = 30000; // Limpeza a cada 30 segundos
   private nextMatchId = 1;
 
   // Throttling para broadcasts
@@ -59,7 +56,6 @@ export class MatchmakingService {
     console.log('🚀 Inicializando MatchmakingService (MySQL Only)...');
     
     this.startMatchmakingInterval();
-    this.startCleanupInterval();
     
     console.log('✅ MatchmakingService inicializado com sucesso (MySQL Only)');
   }
@@ -332,82 +328,6 @@ export class MatchmakingService {
     }
   }
 
-  // Limpeza automática de jogadores inativos
-  private async cleanupInactivePlayers(): Promise<void> {
-    try {
-      const now = new Date();
-      const timeoutMs = this.QUEUE_TIMEOUT_MINUTES * 60 * 1000;
-
-      console.log(`🔍 Verificando jogadores na fila MySQL para limpeza...`);
-
-      // Buscar diretamente do MySQL
-      const dbPlayers = await this.dbManager.getActiveQueuePlayers();
-      const playersToRemove: any[] = [];
-
-      // Verificar jogadores inativos
-      for (const dbPlayer of dbPlayers) {
-        const timeInQueue = now.getTime() - new Date(dbPlayer.join_time).getTime();
-        const timeInQueueMinutes = Math.floor(timeInQueue / (1000 * 60));
-
-        const isBot = dbPlayer.player_id < 0;
-
-        console.log(`👤 ${dbPlayer.summoner_name}: ${timeInQueueMinutes}min na fila, Bot: ${isBot}`);
-
-        // Para bots: só remover se tempo for negativo ou timeout muito longo
-        if (isBot) {
-          if (timeInQueue < 0 || timeInQueue > (24 * 60 * 60 * 1000)) {
-            let reason = timeInQueue < 0 ? 'Dados de tempo corrompidos' : 'Timeout de 24 horas';
-            console.log(`⚠️ Marcando bot ${dbPlayer.summoner_name} para remoção: ${reason}`);
-            playersToRemove.push(dbPlayer);
-          }
-          continue;
-        }
-
-        // Para jogadores reais: só remover se timeout muito longo ou dados corrompidos
-        const shouldRemove = 
-          timeInQueue > timeoutMs ||
-          timeInQueue < 0;
-
-        if (shouldRemove) {
-          let reason = '';
-          if (timeInQueue < 0) {
-            reason = 'Dados de tempo corrompidos';
-          } else if (timeInQueue > timeoutMs) {
-            reason = 'Timeout de 2 horas';
-          }
-          console.log(`⚠️ Marcando ${dbPlayer.summoner_name} para remoção: ${reason}`);
-          playersToRemove.push(dbPlayer);
-        } else {
-          console.log(`✅ ${dbPlayer.summoner_name} mantido na fila (${timeInQueueMinutes}min)`);
-        }
-      }
-
-      // Remover jogadores inativos do MySQL
-      for (const dbPlayer of playersToRemove) {
-        if (dbPlayer.player_id > 0) {
-          console.log(`🗑️ Removendo ${dbPlayer.summoner_name} do MySQL (DELETE)`);
-          await this.dbManager.removePlayerFromQueue(dbPlayer.player_id);
-        }
-
-        this.addActivity(
-          'player_left',
-          `${dbPlayer.summoner_name} removido automaticamente da fila (inativo)`,
-          dbPlayer.summoner_name
-        );
-      }
-
-      // Atualizar posições se houve remoções
-      if (playersToRemove.length > 0) {
-        console.log(`🔄 ${playersToRemove.length} jogadores removidos, atualizando posições...`);
-        await this.updateQueuePositions();
-        await this.broadcastQueueUpdate();
-      }
-
-    } catch (error) {
-      console.error('Erro na limpeza de jogadores inativos:', error);
-    }
-  }
-
   // Métodos auxiliares
   private getLaneDisplayName(laneId?: string): string {
     const lanes: { [key: string]: string } = {
@@ -454,22 +374,6 @@ export class MatchmakingService {
     console.log('🎯 Matchmaking interval iniciado (placeholder)');
   }
 
-  private startCleanupInterval(): void {
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
-    }
-
-    this.cleanupInterval = setInterval(async () => {
-      try {
-        await this.cleanupInactivePlayers();
-      } catch (error) {
-        console.error('❌ Erro na limpeza automática:', error);
-      }
-    }, this.CLEANUP_INTERVAL_MS);
-
-    console.log(`🧹 Limpeza automática iniciada a cada ${this.CLEANUP_INTERVAL_MS}ms`);
-  }
-
   public async forceQueueUpdate(): Promise<void> {
     await this.broadcastQueueUpdate(true);
   }
@@ -480,11 +384,6 @@ export class MatchmakingService {
     if (this.matchmakingInterval) {
       clearInterval(this.matchmakingInterval);
       this.matchmakingInterval = null;
-    }
-
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
-      this.cleanupInterval = null;
     }
 
     console.log('🛑 MatchmakingService desligado (MySQL Only)');

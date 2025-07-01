@@ -99,7 +99,7 @@
         </button>
         <div class="auto-refresh">
           <label>
-            <input type="checkbox" [(ngModel)]="autoRefreshEnabled">
+            <input type="checkbox" [(ngModel)]="autoRefreshEnabled" (change)="onAutoRefreshChange()">
             Auto-atualizar
           </label>
         </div>
@@ -292,6 +292,10 @@
             <div class="lol-info">
               <span class="label">LoL:</span>
               <span class="value">{{ currentPlayer.gameName }}#{{ currentPlayer.tagLine }}</span>
+            </div>
+            <div class="discord-info" *ngIf="currentDiscordUser">
+              <span class="label">Discord:</span>
+              <span class="value">{{ currentDiscordUser.displayName || currentDiscordUser.username }} (vinculado para {{ currentPlayer.gameName }}#{{ currentPlayer.tagLine }})</span>
             </div>
             <div class="status-info">
               <i class="fas fa-check-circle"></i>
