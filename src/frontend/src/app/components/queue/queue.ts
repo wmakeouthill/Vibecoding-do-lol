@@ -421,7 +421,12 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       return;
     }
 
-    console.log('🔍 [Queue] Tentando identificar usuário Discord atual...');
+    console.log('🔍 [Queue] === IDENTIFICAÇÃO DE USUÁRIO DISCORD ===');
+    console.log('🔍 [Queue] Dados do LCU:', {
+      gameName: this.currentPlayer.gameName,
+      tagLine: this.currentPlayer.tagLine,
+      summonerName: this.currentPlayer.summonerName
+    });
     
     // Usar o método do DiscordService para identificar o usuário
     const identifiedUser = this.discordService.identifyCurrentUserFromLCU({
@@ -431,9 +436,11 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
 
     if (identifiedUser) {
       this.currentDiscordUser = identifiedUser;
-      console.log('✅ [Queue] Usuário Discord identificado:', this.currentDiscordUser);
+      console.log('✅ [Queue] Usuário Discord identificado com sucesso:', this.currentDiscordUser);
     } else {
       console.log('❌ [Queue] Usuário Discord não identificado');
+      console.log('❌ [Queue] Verificando se há usuários Discord online:', this.discordUsersOnline.length);
+      console.log('❌ [Queue] Usuários com nick vinculado:', this.discordUsersOnline.filter(u => u.linkedNickname).length);
       this.currentDiscordUser = null;
     }
   }
@@ -457,19 +464,30 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       return;
     }
 
-    // NOVO: Tentar identificar o usuário Discord se não estiver identificado
+    // ✅ MELHORIA: Tentar identificar o usuário Discord se não estiver identificado
     if (!this.currentDiscordUser) {
       console.log('🔍 [Queue] Usuário Discord não identificado, tentando identificar...');
       this.tryIdentifyCurrentDiscordUser();
+      
+      // Aguardar um pouco para a identificação ser processada
+      setTimeout(() => {
+        this.performDiscordValidation();
+      }, 100);
+      return;
     }
 
-    // ✅ CORREÇÃO: Verificar se a conta está vinculada com logs detalhados
-    console.log('🔍 [Queue] Verificando vinculação Discord...');
+    // Se já temos o usuário identificado, fazer validação imediatamente
+    this.performDiscordValidation();
+  }
+
+  // ✅ NOVO: Método separado para validação Discord
+  private performDiscordValidation() {
+    console.log('🔍 [Queue] === VALIDAÇÃO DISCORD INICIADA ===');
     console.log('🔍 [Queue] Current Discord User:', this.currentDiscordUser);
     console.log('🔍 [Queue] Current Player:', {
-      gameName: this.currentPlayer.gameName,
-      tagLine: this.currentPlayer.tagLine,
-      summonerName: this.currentPlayer.summonerName
+      gameName: this.currentPlayer?.gameName,
+      tagLine: this.currentPlayer?.tagLine,
+      summonerName: this.currentPlayer?.summonerName
     });
     console.log('🔍 [Queue] Discord Users Online:', this.discordUsersOnline);
 
@@ -492,26 +510,32 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       return;
     }
 
-    // ✅ CORREÇÃO: Comparar corretamente o nick do LoL com o vinculado
-    const linkedGameName = currentDiscordUser.linkedNickname.gameName;
-    const linkedTagLine = currentDiscordUser.linkedNickname.tagLine;
-    const currentGameName = this.currentPlayer.gameName;
-    const currentTagLine = this.currentPlayer.tagLine;
+    // ✅ MELHORIA: Comparação mais robusta dos nicks
+    const linkedGameName = currentDiscordUser.linkedNickname.gameName?.trim();
+    const linkedTagLine = currentDiscordUser.linkedNickname.tagLine?.trim();
+    const currentGameName = this.currentPlayer?.gameName?.trim();
+    const currentTagLine = this.currentPlayer?.tagLine?.trim();
 
-    console.log('🔍 [Queue] Comparando nicks:');
-    console.log('  - Vinculado no Discord:', `${linkedGameName}#${linkedTagLine}`);
-    console.log('  - Detectado no LoL:', `${currentGameName}#${currentTagLine}`);
+    console.log('🔍 [Queue] === COMPARAÇÃO DE NICKS ===');
+    console.log('  - Vinculado no Discord:', `"${linkedGameName}#${linkedTagLine}"`);
+    console.log('  - Detectado no LoL:', `"${currentGameName}#${currentTagLine}"`);
+    console.log('  - Comparação gameName:', `"${linkedGameName}" === "${currentGameName}" = ${linkedGameName === currentGameName}`);
+    console.log('  - Comparação tagLine:', `"${linkedTagLine}" === "${currentTagLine}" = ${linkedTagLine === currentTagLine}`);
 
-    // Verificar se os nicks coincidem
-    const nickMatch = linkedGameName === currentGameName && linkedTagLine === currentTagLine;
+    // Verificar se os nicks coincidem (case-insensitive para maior compatibilidade)
+    const nickMatch = linkedGameName?.toLowerCase() === currentGameName?.toLowerCase() && 
+                     linkedTagLine?.toLowerCase() === currentTagLine?.toLowerCase();
+
+    console.log('🔍 [Queue] Resultado da comparação:', nickMatch);
 
     if (!nickMatch) {
       console.log('⚠️ [Queue] Nicks não coincidem');
-      alert(`Nicks não coincidem!\nDiscord: ${linkedGameName}#${linkedTagLine}\nLoL: ${currentGameName}#${currentTagLine}\n\nUse /vincular no Discord para corrigir.`);
+      alert(`Nicks não coincidem!\n\nDiscord: ${linkedGameName}#${linkedTagLine}\nLoL: ${currentGameName}#${currentTagLine}\n\nUse /vincular no Discord para corrigir.`);
       return;
     }
 
-    console.log('✅ [Queue] Verificações Discord passaram, iniciando entrada na fila');
+    console.log('✅ [Queue] === VERIFICAÇÕES DISCORD APROVADAS ===');
+    console.log('✅ [Queue] Iniciando entrada na fila...');
     this.showLaneSelector = true;
   }
 
