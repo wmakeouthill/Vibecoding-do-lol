@@ -246,7 +246,7 @@ export class DatabaseManager {
     await this.pool.execute(`
       CREATE TABLE IF NOT EXISTS queue_players (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        player_id INT NOT NULL,
+        player_id BIGINT NOT NULL,
         summoner_name VARCHAR(255) NOT NULL UNIQUE,
         region VARCHAR(10) NOT NULL,
         custom_lp INT DEFAULT 0,
@@ -254,8 +254,8 @@ export class DatabaseManager {
         secondary_lane VARCHAR(20),
         join_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         queue_position INT,
-        is_active TINYINT DEFAULT 1,
-        FOREIGN KEY (player_id) REFERENCES players (id)
+        is_active TINYINT DEFAULT 1
+        -- ✅ REMOVIDO: FOREIGN KEY (player_id) REFERENCES players (id) - permite bots sem registro na tabela players
       )
     `);
 
@@ -276,6 +276,128 @@ export class DatabaseManager {
     }
 
     console.log('✅ Tabelas MySQL criadas/verificadas com sucesso');
+    
+    // ✅ CORREÇÃO: Alterar estrutura da tabela queue_players se necessário
+    await this.ensureQueuePlayersStructure();
+  }
+
+  private async ensureQueuePlayersStructure(): Promise<void> {
+    if (!this.pool) return;
+
+    try {
+      // ✅ PRIMEIRO: Remover FOREIGN KEY constraint se existir
+      await this.removeQueuePlayersForeignKey();
+      
+      // ✅ SEGUNDO: Verificar se a tabela queue_players existe e alterar player_id para BIGINT se necessário
+      const [columns] = await this.pool.execute(`
+        SELECT COLUMN_NAME, DATA_TYPE 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_NAME = 'queue_players' AND COLUMN_NAME = 'player_id'
+      `);
+      
+      const columnInfo = columns as any[];
+      if (columnInfo.length > 0 && columnInfo[0].DATA_TYPE === 'int') {
+        console.log('🔄 [Database] Alterando player_id para BIGINT na tabela queue_players...');
+        await this.pool.execute(`
+          ALTER TABLE queue_players 
+          MODIFY COLUMN player_id BIGINT NOT NULL
+        `);
+        console.log('✅ [Database] player_id alterado para BIGINT com sucesso');
+      } else {
+        console.log('ℹ️ [Database] player_id já é BIGINT ou tabela não existe');
+      }
+    } catch (error: any) {
+      console.warn('⚠️ [Database] Erro ao verificar/alterar estrutura da tabela queue_players:', error.message);
+    }
+  }
+
+  private async removeQueuePlayersForeignKey(): Promise<void> {
+    if (!this.pool) return;
+
+    try {
+      // Verificar se existe FOREIGN KEY constraint
+      const [constraints] = await this.pool.execute(`
+        SELECT CONSTRAINT_NAME 
+        FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE 
+        WHERE TABLE_NAME = 'queue_players' 
+        AND REFERENCED_TABLE_NAME = 'players'
+        AND CONSTRAINT_SCHEMA = DATABASE()
+      `);
+      
+      const constraintList = constraints as any[];
+      if (constraintList.length > 0) {
+        const constraintName = constraintList[0].CONSTRAINT_NAME;
+        console.log(`🔄 [Database] Removendo FOREIGN KEY constraint: ${constraintName}`);
+        
+        await this.pool.execute(`
+          ALTER TABLE queue_players 
+          DROP FOREIGN KEY ${constraintName}
+        `);
+        
+        console.log('✅ [Database] FOREIGN KEY constraint removida com sucesso');
+      } else {
+        console.log('ℹ️ [Database] Nenhuma FOREIGN KEY constraint encontrada');
+      }
+    } catch (error: any) {
+      console.warn('⚠️ [Database] Erro ao remover FOREIGN KEY constraint:', error.message);
+      
+      // ✅ FALLBACK: Se não conseguir remover a constraint, recriar a tabela
+      console.log('🔄 [Database] Tentando recriar tabela queue_players...');
+      await this.recreateQueuePlayersTable();
+    }
+  }
+
+  private async recreateQueuePlayersTable(): Promise<void> {
+    if (!this.pool) return;
+
+    try {
+      console.log('🔄 [Database] Recriando tabela queue_players...');
+      
+      // Fazer backup dos dados existentes
+      const [existingData] = await this.pool.execute('SELECT * FROM queue_players');
+      const data = existingData as any[];
+      
+      // Dropar tabela antiga
+      await this.pool.execute('DROP TABLE IF EXISTS queue_players');
+      
+      // Recriar tabela sem FOREIGN KEY
+      await this.pool.execute(`
+        CREATE TABLE queue_players (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          player_id BIGINT NOT NULL,
+          summoner_name VARCHAR(255) NOT NULL UNIQUE,
+          region VARCHAR(10) NOT NULL,
+          custom_lp INT DEFAULT 0,
+          primary_lane VARCHAR(20),
+          secondary_lane VARCHAR(20),
+          join_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          queue_position INT,
+          is_active TINYINT DEFAULT 1
+        )
+      `);
+      
+      console.log('✅ [Database] Tabela queue_players recriada com sucesso');
+      
+      // Restaurar dados se existiam
+      if (data.length > 0) {
+        console.log(`🔄 [Database] Restaurando ${data.length} registros...`);
+        for (const row of data) {
+          await this.pool.execute(`
+            INSERT INTO queue_players (
+              player_id, summoner_name, region, custom_lp, primary_lane, secondary_lane, 
+              join_time, queue_position, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            row.player_id, row.summoner_name, row.region, row.custom_lp,
+            row.primary_lane, row.secondary_lane, row.join_time,
+            row.queue_position, row.is_active
+          ]);
+        }
+        console.log('✅ [Database] Dados restaurados com sucesso');
+      }
+    } catch (error: any) {
+      console.error('❌ [Database] Erro ao recriar tabela queue_players:', error.message);
+    }
   }
 
   private async insertDefaultSettings(): Promise<void> {

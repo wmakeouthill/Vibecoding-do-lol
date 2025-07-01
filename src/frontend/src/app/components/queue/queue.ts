@@ -126,6 +126,17 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
         this.tryIdentifyCurrentDiscordUser();
       }
     }
+
+    // ✅ NOVO: Verificar match found quando queueStatus mudar
+    if (changes.queueStatus && changes.queueStatus.currentValue) {
+      console.log('🔄 [Queue] QueueStatus atualizado:', {
+        playersInQueue: changes.queueStatus.currentValue.playersInQueue,
+        playersListLength: changes.queueStatus.currentValue.playersInQueueList?.length || 0
+      });
+      
+      // Verificar se há 10 jogadores para criar match found
+      this.checkForMatchFound();
+    }
   }
 
   // ✅ NOVO: Configurar controle de auto-refresh
@@ -180,6 +191,16 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     }
   }
 
+  // ✅ ATUALIZADO: Detectar quando há 10 jogadores e disparar match found
+  private checkForMatchFound(): void {
+    if (this.queueStatus.playersInQueue >= 10) {
+      console.log('🎮 [Queue] 10 jogadores detectados! Disparando match found...');
+      this.detectAndCreateMatch();
+    }
+  }
+
+
+
   // Configurar listener do estado da fila
   private setupQueueStateListener(): void {
     this.queueStateService.getQueueState().subscribe(state => {
@@ -197,6 +218,8 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       }
     });
   }
+
+
 
   /**
    * REGRA: Entrada na fila com verificação Discord
@@ -699,5 +722,177 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     console.log('📝 [Queue] Convidando usuário para a fila:', user);
     // Implementar lógica de convite para fila
     alert(`Funcionalidade em desenvolvimento: Convidar ${user.displayName || user.username} para a fila`);
+  }
+
+  // ✅ NOVO: Verificar mudanças no status da fila
+  private onQueueStatusChange(): void {
+    console.log('🔄 [Queue] Status da fila atualizado:', {
+      playersInQueue: this.queueStatus.playersInQueue,
+      playersList: this.queueStatus.playersInQueueList?.map(p => p.summonerName)
+    });
+    
+    // ✅ NOVO: Detectar quando há 10 jogadores
+    this.detectAndCreateMatch();
+  }
+
+  // ✅ NOVO: Detectar quando há 10 jogadores e criar match found com lanes balanceadas
+  private detectAndCreateMatch(): void {
+    if (this.queueStatus.playersInQueue >= 10) {
+      console.log('🎮 [Queue] Detectados 10 jogadores! Criando match found...');
+      
+      // Pegar os primeiros 10 jogadores da fila
+      const playersForMatch = this.queueStatus.playersInQueueList?.slice(0, 10) || [];
+      
+      if (playersForMatch.length === 10) {
+        // ✅ NOVO: Implementar lógica de balanceamento de lanes
+        const balancedTeams = this.balanceTeamsByLanes(playersForMatch);
+        
+        if (balancedTeams) {
+          const { team1, team2 } = balancedTeams;
+          
+          // Calcular MMR médio dos times
+          const avgMMR1 = team1.reduce((sum, p) => sum + p.mmr, 0) / team1.length;
+          const avgMMR2 = team2.reduce((sum, p) => sum + p.mmr, 0) / team2.length;
+          
+          // ✅ CORREÇÃO: Usar apenas gameName (sem tagLine) para summonerName
+          const matchData = {
+            type: 'match_found',
+            data: {
+              matchId: Date.now(),
+              playerSide: 'blue', // Será ajustado para cada jogador
+              teammates: team1.map(p => ({
+                id: p.queuePosition || 0,
+                summonerName: this.extractGameName(p.summonerName), // ✅ CORREÇÃO: Apenas gameName
+                mmr: p.mmr,
+                primaryLane: p.primaryLane || 'fill',
+                secondaryLane: p.secondaryLane || 'fill',
+                assignedLane: p.assignedLane || p.primaryLane || 'fill',
+                isAutofill: p.isAutofill || false
+              })),
+              enemies: team2.map(p => ({
+                id: p.queuePosition || 0,
+                summonerName: this.extractGameName(p.summonerName), // ✅ CORREÇÃO: Apenas gameName
+                mmr: p.mmr,
+                primaryLane: p.primaryLane || 'fill',
+                secondaryLane: p.secondaryLane || 'fill',
+                assignedLane: p.assignedLane || p.primaryLane || 'fill',
+                isAutofill: p.isAutofill || false
+              })),
+              averageMMR: {
+                yourTeam: avgMMR1,
+                enemyTeam: avgMMR2
+              },
+              estimatedGameDuration: 25,
+              phase: 'accept',
+              acceptTimeout: 30
+            }
+          };
+          
+          console.log('🎮 [Queue] Match found criado com lanes balanceadas:', matchData);
+          
+          // Disparar evento para o app
+          const event = new CustomEvent('matchFound', { detail: matchData });
+          document.dispatchEvent(event);
+          
+          console.log('✅ [Queue] Evento matchFound disparado');
+        }
+      }
+    }
+  }
+
+  // ✅ NOVO: Extrair apenas o gameName (sem tagLine)
+  private extractGameName(fullName: string): string {
+    if (fullName.includes('#')) {
+      return fullName.split('#')[0];
+    }
+    return fullName;
+  }
+
+  // ✅ NOVO: Balancear times por lanes baseado em MMR e preferências
+  private balanceTeamsByLanes(players: any[]): { team1: any[], team2: any[] } | null {
+    console.log('🎯 [Queue] Balanceando times por lanes...');
+    
+    // Ordenar jogadores por MMR (maior primeiro)
+    const sortedPlayers = [...players].sort((a, b) => b.mmr - a.mmr);
+    
+    // Definir ordem de prioridade das lanes
+    const lanePriority = ['mid', 'jungle', 'top', 'bot', 'support'];
+    
+    // Mapear jogadores para lanes baseado em MMR e preferências
+    const playersWithLanes = this.assignLanesByMMRAndPreferences(sortedPlayers, lanePriority);
+    
+    // Dividir em dois times balanceados
+    const team1: any[] = [];
+    const team2: any[] = [];
+    
+    // Distribuir jogadores alternadamente para balancear MMR
+    playersWithLanes.forEach((player, index) => {
+      if (index % 2 === 0) {
+        team1.push(player);
+      } else {
+        team2.push(player);
+      }
+    });
+    
+    console.log('✅ [Queue] Times balanceados:', {
+      team1: team1.map(p => ({ name: p.summonerName, lane: p.assignedLane, mmr: p.mmr, isAutofill: p.isAutofill })),
+      team2: team2.map(p => ({ name: p.summonerName, lane: p.assignedLane, mmr: p.mmr, isAutofill: p.isAutofill }))
+    });
+    
+    return { team1, team2 };
+  }
+
+  // ✅ NOVO: Atribuir lanes baseado em MMR e preferências
+  private assignLanesByMMRAndPreferences(players: any[], lanePriority: string[]): any[] {
+    const playersWithLanes = [...players];
+    const assignedLanes = new Set<string>();
+    
+    // Primeira passada: atribuir lanes preferidas para jogadores com maior MMR
+    for (const player of playersWithLanes) {
+      const primaryLane = player.primaryLane || 'fill';
+      const secondaryLane = player.secondaryLane || 'fill';
+      
+      // Se a lane primária está disponível, usar ela
+      if (!assignedLanes.has(primaryLane) && primaryLane !== 'fill') {
+        player.assignedLane = primaryLane;
+        player.isAutofill = false;
+        assignedLanes.add(primaryLane);
+        console.log(`🎯 [Queue] ${player.summonerName} (MMR: ${player.mmr}) → ${primaryLane} (preferência 1)`);
+      }
+      // Se não, tentar lane secundária
+      else if (!assignedLanes.has(secondaryLane) && secondaryLane !== 'fill') {
+        player.assignedLane = secondaryLane;
+        player.isAutofill = false;
+        assignedLanes.add(secondaryLane);
+        console.log(`🎯 [Queue] ${player.summonerName} (MMR: ${player.mmr}) → ${secondaryLane} (preferência 2)`);
+      }
+      // Se nenhuma preferência está disponível, marcar para autofill
+      else {
+        player.assignedLane = 'fill';
+        player.isAutofill = true;
+        console.log(`🎯 [Queue] ${player.summonerName} (MMR: ${player.mmr}) → autofill (nenhuma preferência disponível)`);
+      }
+    }
+    
+    // Segunda passada: atribuir lanes restantes para jogadores em autofill
+    const autofillPlayers = playersWithLanes.filter(p => p.isAutofill);
+    const availableLanes = lanePriority.filter(lane => !assignedLanes.has(lane));
+    
+    console.log(`🎯 [Queue] Jogadores em autofill: ${autofillPlayers.length}, Lanes disponíveis: ${availableLanes.join(', ')}`);
+    
+    // Distribuir lanes disponíveis para jogadores em autofill
+    autofillPlayers.forEach((player, index) => {
+      if (index < availableLanes.length) {
+        player.assignedLane = availableLanes[index];
+        console.log(`🎯 [Queue] ${player.summonerName} (MMR: ${player.mmr}) → ${availableLanes[index]} (autofill)`);
+      } else {
+        // Se não há lanes suficientes, usar uma aleatória
+        const randomLane = lanePriority[Math.floor(Math.random() * lanePriority.length)];
+        player.assignedLane = randomLane;
+        console.log(`🎯 [Queue] ${player.summonerName} (MMR: ${player.mmr}) → ${randomLane} (autofill aleatório)`);
+      }
+    });
+    
+    return playersWithLanes;
   }
 } 

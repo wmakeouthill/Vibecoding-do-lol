@@ -1356,13 +1356,28 @@ app.post('/api/queue/leave-legacy', (async (req: Request, res: Response) => {
 // Rota temporária para adicionar bot na fila (apenas para testes)
 app.post('/api/queue/add-bot', async (req: Request, res: Response) => {
   try {
+    console.log('🤖 [API] Adicionando bot à fila...');
     await matchmakingService.addBotToQueue();
+    
+    // Buscar status atualizado da fila
+    const queueStatus = await matchmakingService.getQueueStatus();
+    
     res.json({
       success: true,
-      message: 'Bot adicionado à fila com sucesso'
+      message: 'Bot adicionado à fila com sucesso',
+      queueStatus: {
+        playersInQueue: queueStatus.playersInQueue,
+        playersList: queueStatus.playersInQueueList?.map(p => ({
+          summonerName: p.summonerName,
+          tagLine: p.tagLine,
+          primaryLane: p.primaryLane,
+          mmr: p.mmr,
+          queuePosition: p.queuePosition
+        })) || []
+      }
     });
   } catch (error: any) {
-    console.error('Erro ao adicionar bot:', error);
+    console.error('❌ [API] Erro ao adicionar bot:', error);
     res.status(500).json({
       success: false,
       error: error.message

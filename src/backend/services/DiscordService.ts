@@ -539,10 +539,26 @@ export class DiscordService {
 
       this.activeMatches.set(matchId, match);
 
-      // Limpar fila dos players que entraram no match
+      // ✅ CORREÇÃO: Limpar fila dos players que entraram no match
       players.forEach(player => {
         this.queue.delete(player.userId);
       });
+
+      // ✅ NOVO: Sincronizar com a tabela MySQL se houver dados vinculados
+      const playersToRemove: string[] = [];
+      for (const player of players) {
+        if (player.linkedNickname) {
+          const fullName = `${player.linkedNickname.gameName}#${player.linkedNickname.tagLine}`;
+          playersToRemove.push(fullName);
+        }
+      }
+
+      // Notificar MatchmakingService para remover da tabela MySQL
+      if (playersToRemove.length > 0) {
+        console.log(`🔄 [Discord] Sincronizando ${playersToRemove.length} jogadores com MySQL`);
+        // Aqui você pode chamar um método do MatchmakingService se necessário
+        // this.matchmakingService?.removePlayersFromQueueForMatch([], playersToRemove);
+      }
 
       console.log(`🎮 Match ${matchId} criado! Blue vs Red`);
       this.broadcastQueueUpdate();

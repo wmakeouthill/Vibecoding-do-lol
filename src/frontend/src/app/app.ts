@@ -123,6 +123,9 @@ export class App implements OnInit, OnDestroy {
     // ✅ NOVO: Configurar integração QueueStateService
     this.setupQueueStateIntegration();
 
+    // ✅ NOVO: Configurar listener para match found do componente queue
+    this.setupMatchFoundListener();
+
     // Verificar conexão com backend
     this.checkBackendConnection();
 
@@ -232,6 +235,54 @@ export class App implements OnInit, OnDestroy {
         console.log('⚠️ [App] Timeout: dados do jogador não disponíveis após 30s');
       }, 30000);
     }
+  }
+
+  // ✅ NOVO: Configurar listener para match found do componente queue
+  private setupMatchFoundListener(): void {
+    document.addEventListener('matchFound', (event: any) => {
+      console.log('🎮 [App] Evento matchFound recebido do componente queue:', event.detail);
+      
+      if (event.detail && event.detail.type === 'match_found') {
+        this.handleMatchFoundFromQueue(event.detail.data);
+      }
+    });
+  }
+
+  // ✅ ATUALIZADO: Processar match found criado pelo componente queue
+  private handleMatchFoundFromQueue(matchData: any): void {
+    console.log('🎮 [App] Processando match found do componente queue:', matchData);
+    
+    // Armazenar dados do match found
+    this.matchFoundData = matchData;
+    this.showMatchFound = true;
+    this.isInQueue = false; // Usuário sai da fila quando partida é encontrada
+    
+    // ✅ NOVO: Configurar timeout para auto-decline
+    this.setupMatchAcceptTimeout();
+    
+    // Tocar som de notificação se disponível
+    try {
+      const audio = new Audio('assets/sounds/match-found.mp3');
+      audio.play().catch(() => console.log('Som não disponível'));
+    } catch (error) {
+      console.log('Som de partida encontrada não disponível');
+    }
+    
+    this.addNotification('success', 'Partida Encontrada!', 'Uma partida foi encontrada. Você tem 30 segundos para aceitar.');
+  }
+
+  // ✅ NOVO: Configurar timeout para aceitação da partida
+  private setupMatchAcceptTimeout(): void {
+    const timeoutMs = (this.matchFoundData?.acceptTimeout || 30) * 1000;
+    
+    console.log(`⏰ [App] Configurando timeout de ${timeoutMs}ms para aceitação da partida`);
+    
+    setTimeout(() => {
+      if (this.showMatchFound && this.matchFoundData) {
+        console.log('⏰ [App] Timeout da partida! Auto-declining...');
+        this.declineMatch();
+      }
+    }, timeoutMs);
   }
 
   private createPreliminaryParticipantsData(): any[] {
@@ -1791,28 +1842,141 @@ export class App implements OnInit, OnDestroy {
     }
   }
 
-  // Métodos de partida
+  // ✅ ATUALIZADO: Métodos de partida
   async acceptMatch(): Promise<void> {
-    if (!this.matchFound) return;
+    if (!this.matchFoundData) return;
 
     try {
-      this.apiService.createLobby().subscribe({
-        next: () => {
-          this.addNotification('success', 'Partida Aceita', 'Lobby criado no League of Legends');
-          this.matchFound = null;
-        },
-        error: (error) => {
-          this.addNotification('error', 'Erro', 'Não foi possível criar o lobby');
-        }
-      });
+      console.log('✅ Aceitando partida...');
+      
+      // ✅ NOVO: Remover os 10 jogadores da fila MySQL quando aceitar
+      await this.removeAcceptedPlayersFromQueue();
+      
+      this.showMatchFound = false;
+      this.matchFoundData = null;
+      
+      this.addNotification('success', 'Partida Aceita', 'Você aceitou a partida!');
     } catch (error) {
-      this.addNotification('error', 'Erro', 'Não foi possível criar o lobby');
+      console.error('Erro ao aceitar partida:', error);
+      this.addNotification('error', 'Erro', 'Falha ao aceitar partida');
     }
   }
 
-  declineMatch(): void {
-    this.matchFound = null;
-    this.addNotification('info', 'Partida Recusada', 'Você recusou a partida');
+  // ✅ NOVO: Remover jogadores aceitos da fila MySQL
+  private async removeAcceptedPlayersFromQueue(): Promise<void> {
+    if (!this.matchFoundData) {
+      console.log('⚠️ [App] Nenhum match found data disponível');
+      return;
+    }
+
+    try {
+      console.log('🗑️ [App] Removendo jogadores aceitos da fila MySQL...');
+      
+      // Pegar todos os jogadores do match found (team1 + team2)
+      const allPlayers = [
+        ...this.matchFoundData.teammates,
+        ...this.matchFoundData.enemies
+      ];
+
+      console.log(`🗑️ [App] Removendo ${allPlayers.length} jogadores da fila:`, 
+        allPlayers.map(p => p.summonerName));
+
+      // Remover cada jogador da fila usando o método existente
+      for (const player of allPlayers) {
+        try {
+          // Construir o nome completo (gameName#tagLine)
+          const fullSummonerName = player.summonerName;
+          
+          console.log(`🗑️ [App] Removendo jogador: ${fullSummonerName}`);
+          
+          // Usar o método existente para remover por nome completo
+          const response = await this.apiService.leaveQueue(undefined, fullSummonerName).toPromise();
+          
+          if (response && response.success) {
+            console.log(`✅ [App] Jogador ${fullSummonerName} removido da fila`);
+          } else {
+            console.log(`⚠️ [App] Falha ao remover jogador ${fullSummonerName}`);
+          }
+        } catch (error) {
+          console.error(`❌ [App] Erro ao remover jogador ${player.summonerName}:`, error);
+        }
+      }
+
+      console.log('✅ [App] Processo de remoção dos jogadores concluído');
+      
+      // Atualizar status da fila
+      this.refreshQueueStatus();
+      
+    } catch (error) {
+      console.error('❌ [App] Erro ao remover jogadores da fila:', error);
+      throw error;
+    }
+  }
+
+  // ✅ NOVO: Atualizar status da fila após remoção
+  private refreshQueueStatus(): void {
+    this.apiService.getQueueStatus().subscribe({
+      next: (queueStatus) => {
+        this.queueStatus = queueStatus;
+        console.log('🔄 [App] Status da fila atualizado após remoção:', {
+          playersInQueue: queueStatus.playersInQueue
+        });
+      },
+      error: (error) => {
+        console.error('❌ [App] Erro ao atualizar status da fila:', error);
+      }
+    });
+  }
+
+  // ✅ ATUALIZADO: Recusar partida e remover jogador da fila
+  async declineMatch(): Promise<void> {
+    if (!this.matchFoundData) return;
+
+    try {
+      console.log('❌ Recusando partida...');
+      
+      // ✅ NOVO: Remover jogador atual da fila quando recusar
+      await this.removeCurrentPlayerFromQueue();
+      
+      this.showMatchFound = false;
+      this.matchFoundData = null;
+      
+      this.addNotification('info', 'Partida Recusada', 'Você recusou a partida e foi removido da fila');
+    } catch (error) {
+      console.error('Erro ao recusar partida:', error);
+      this.addNotification('error', 'Erro', 'Falha ao recusar partida');
+    }
+  }
+
+  // ✅ NOVO: Remover jogador atual da fila
+  private async removeCurrentPlayerFromQueue(): Promise<void> {
+    if (!this.currentPlayer) {
+      console.log('⚠️ [App] Nenhum jogador atual disponível para remoção');
+      return;
+    }
+
+    try {
+      console.log('🗑️ [App] Removendo jogador atual da fila:', this.currentPlayer.summonerName);
+      
+      // Construir o nome completo (gameName#tagLine)
+      const fullSummonerName = this.currentPlayer.summonerName;
+      
+      // Usar o método existente para remover por nome completo
+      const response = await this.apiService.leaveQueue(undefined, fullSummonerName).toPromise();
+      
+      if (response && response.success) {
+        console.log(`✅ [App] Jogador ${fullSummonerName} removido da fila`);
+      } else {
+        console.log(`⚠️ [App] Falha ao remover jogador ${fullSummonerName}`);
+      }
+      
+      // Atualizar status da fila
+      this.refreshQueueStatus();
+      
+    } catch (error) {
+      console.error('❌ [App] Erro ao remover jogador atual da fila:', error);
+      throw error;
+    }
   }
 
   // Métodos de configurações
