@@ -1494,9 +1494,57 @@ app.post('/api/match/create-from-frontend', (async (req: Request, res: Response)
   }
 }) as RequestHandler);
 
+// ✅ ATUALIZADO: Endpoint para processar matchmaking completo no backend (agora automático)
+app.post('/api/matchmaking/process-complete', (async (req: Request, res: Response) => {
+  try {
+    console.log('🎯 [API] O matchmaking agora é automático - processado quando há 10 jogadores');
+    
+    // O matchmaking agora é automático, então apenas retornamos o status
+    const queueStatus = await matchmakingService.getQueueStatus();
+    
+    res.json({
+      success: true,
+      message: 'O matchmaking é processado automaticamente quando há 10 jogadores na fila',
+      queueStatus: queueStatus
+    });
+  } catch (error: any) {
+    console.error('❌ [API] Erro ao verificar status da fila:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}) as RequestHandler);
+
+// ✅ ATUALIZADO: Verificação de aceitação agora é automática via WebSocket
+app.get('/api/matchmaking/check-acceptance', (async (req: Request, res: Response) => {
+  try {
+    console.log('🔍 [API] A verificação de aceitação agora é automática via WebSocket');
+    
+    // Buscar partidas pendentes de aceitação
+    const pendingMatches = await dbManager.getCustomMatchesByStatus('pending');
+    
+    res.json({ 
+      success: true, 
+      message: 'A verificação de aceitação é automática via WebSocket',
+      pendingMatches: pendingMatches.length,
+      info: 'Use WebSocket para monitorar aceitações em tempo real'
+    });
+  } catch (error: any) {
+    console.error('❌ [API] Erro ao verificar partidas pendentes:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message
+    });
+  }
+}) as RequestHandler);
+
+// ✅ REMOVIDO: Finalização de partida agora é automática nos serviços especializados
+// ✅ REMOVIDO: Processamento de recusa agora é automático nos serviços especializados
+
 app.get('/api/matches/recent', async (req: Request, res: Response) => {
   try {
-    const matches = await matchmakingService.getRecentMatches();
+    const matches = await dbManager.getRecentMatches();
     res.json(matches);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -2604,7 +2652,10 @@ async function startServer() {
 
         console.log(`🎯 [Draft] Atualizando partida ${matchId} após draft completado`);
 
-        await matchmakingService.updateMatchAfterDraft(matchId, draftData);
+        await dbManager.updateCustomMatch(matchId, { 
+          pick_ban_data: JSON.stringify(draftData),
+          status: 'draft_completed'
+        });
 
         res.json({
           success: true,
@@ -2629,7 +2680,7 @@ async function startServer() {
           return res.status(400).json({ error: 'winnerTeam deve ser 1 ou 2' });
         }
 
-        await matchmakingService.completeMatchAfterGame(matchId, winnerTeam, gameData || {});
+        await dbManager.completeCustomMatch(matchId, winnerTeam, gameData || {});
 
         res.json({
           success: true,

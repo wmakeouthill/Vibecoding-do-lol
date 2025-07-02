@@ -1,5 +1,8 @@
 import { WebSocket } from 'ws';
 import { DatabaseManager } from '../database/DatabaseManager';
+import { MatchFoundService } from './MatchFoundService';
+import { DraftService } from './DraftService';
+import { GameInProgressService } from './GameInProgressService';
 
 // Interfaces para jogadores na fila
 interface QueuedPlayer {
@@ -66,13 +69,23 @@ export class MatchmakingService {
   private lastBroadcastTime = 0;
   private readonly MIN_BROADCAST_INTERVAL = 100; // Mínimo 100ms entre broadcasts para evitar spam
 
+  // ✅ NOVO: Serviços separados
+  private matchFoundService: MatchFoundService;
+  private draftService: DraftService;
+  private gameInProgressService: GameInProgressService;
+
   constructor(dbManager: DatabaseManager, wss?: any) {
     this.dbManager = dbManager;
     this.wss = wss;
+    
+    // ✅ NOVO: Inicializar serviços separados
+    this.matchFoundService = new MatchFoundService(dbManager, wss);
+    this.draftService = new DraftService(dbManager, wss);
+    this.gameInProgressService = new GameInProgressService(dbManager, wss);
   }
 
   async initialize(): Promise<void> {
-    console.log('🚀 Inicializando MatchmakingService (MySQL Only)...');
+    console.log('🚀 Inicializando MatchmakingService (Refatorado)...');
     
     // ✅ ADICIONADO: Carregar jogadores da fila persistente
     await this.loadQueueFromDatabase();
@@ -81,10 +94,15 @@ export class MatchmakingService {
     this.addActivity('system_update', 'Sistema de matchmaking inicializado');
     this.addActivity('system_update', 'Aguardando jogadores para a fila');
     
+    // ✅ NOVO: Inicializar serviços separados
+    await this.matchFoundService.initialize();
+    await this.draftService.initialize();
+    await this.gameInProgressService.initialize();
+    
     // ✅ ADICIONADO: Iniciar processamento de matchmaking a cada 5 segundos
     this.startMatchmakingInterval();
     
-    console.log('✅ MatchmakingService inicializado com sucesso (MySQL Only)');
+    console.log('✅ MatchmakingService inicializado com sucesso (Refatorado)');
   }
 
   // ✅ ADICIONADO: Método para carregar fila do banco de dados
@@ -295,41 +313,65 @@ export class MatchmakingService {
     console.log(`🔍 [Matchmaking] Tentando remover jogador da fila:`, { playerId, summonerName });
 
     try {
-      // ✅ ATUALIZADO: Buscar jogador na fila local primeiro
-      let playerIndex = -1;
+      let removed = false;
 
       if (playerId) {
-        playerIndex = this.queue.findIndex(p => p.id === playerId);
+        // ✅ ATUALIZADO: Buscar jogador na fila local primeiro
+        const playerIndex = this.queue.findIndex(p => p.id === playerId);
+        
+        if (playerIndex !== -1) {
+          const player = this.queue[playerIndex];
+          
+          // ✅ ATUALIZADO: Remover da fila local
+          this.queue.splice(playerIndex, 1);
+
+          // REGRA: Deletar linha da tabela (não marcar como inativo)
+          await this.dbManager.removePlayerFromQueue(player.id);
+          console.log(`✅ [Matchmaking] Linha do jogador ${player.summonerName} deletada da tabela queue_players`);
+
+          // Adicionar atividade
+          this.addActivity(
+            'player_left',
+            `${player.summonerName} saiu da fila`,
+            player.summonerName
+          );
+
+          removed = true;
+        }
       } else if (summonerName) {
-        playerIndex = this.queue.findIndex(p => 
-          p.summonerName === summonerName ||
-          (p.summonerName.includes('#') && summonerName.includes('#') && 
-           p.summonerName === summonerName) ||
-          (p.summonerName.includes('#') && !summonerName.includes('#') &&
-           p.summonerName.startsWith(summonerName + '#'))
-        );
+        // ✅ NOVO: Remover diretamente por summoner_name no banco
+        console.log(`🔍 [Matchmaking] Removendo por summoner_name: ${summonerName}`);
+        
+        removed = await this.dbManager.removePlayerFromQueueBySummonerName(summonerName);
+        
+        if (removed) {
+          // ✅ ATUALIZADO: Remover da fila local também
+          const playerIndex = this.queue.findIndex(p => 
+            p.summonerName === summonerName ||
+            (p.summonerName.includes('#') && summonerName.includes('#') && 
+             p.summonerName === summonerName) ||
+            (p.summonerName.includes('#') && !summonerName.includes('#') &&
+             p.summonerName.startsWith(summonerName + '#'))
+          );
+          
+          if (playerIndex !== -1) {
+            const player = this.queue[playerIndex];
+            this.queue.splice(playerIndex, 1);
+            
+            // Adicionar atividade
+            this.addActivity(
+              'player_left',
+              `${player.summonerName} saiu da fila`,
+              player.summonerName
+            );
+          }
+        }
       }
       
-      if (playerIndex === -1) {
-        console.log(`⚠️ [Matchmaking] Jogador não encontrado na fila local:`, { playerId, summonerName });
+      if (!removed) {
+        console.log(`⚠️ [Matchmaking] Jogador não encontrado na fila:`, { playerId, summonerName });
         return false;
       }
-
-      const player = this.queue[playerIndex];
-      
-      // ✅ ATUALIZADO: Remover da fila local
-      this.queue.splice(playerIndex, 1);
-
-      // REGRA: Deletar linha da tabela (não marcar como inativo)
-      await this.dbManager.removePlayerFromQueue(player.id);
-      console.log(`✅ [Matchmaking] Linha do jogador ${player.summonerName} deletada da tabela queue_players`);
-
-      // Adicionar atividade
-      this.addActivity(
-        'player_left',
-        `${player.summonerName} saiu da fila`,
-        player.summonerName
-      );
 
       // ✅ ATUALIZADO: Atualizar posições na fila local
       this.queue.forEach((p, index) => {
@@ -339,7 +381,7 @@ export class MatchmakingService {
       // Broadcast atualização da fila
       await this.broadcastQueueUpdate();
 
-      console.log(`➖ [Matchmaking] ${player.summonerName} removido da fila (linha deletada)`);
+      console.log(`➖ [Matchmaking] Jogador removido da fila com sucesso`);
       return true;
 
     } catch (error) {
@@ -490,8 +532,29 @@ export class MatchmakingService {
 
   // ✅ ATUALIZADO: Métodos de sistema
   private startMatchmakingInterval(): void {
-    // ✅ REMOVIDO: Processamento automático de matchmaking (agora é responsabilidade do frontend)
-    console.log('🎯 Matchmaking interval iniciado (sem processamento automático - frontend responsável)');
+    // ✅ NOVO: Processamento automático de matchmaking a cada 5 segundos
+    this.matchmakingInterval = setInterval(async () => {
+      if (this.isActive) {
+        await this.processMatchmaking();
+      }
+    }, 5000);
+    console.log('🎯 Matchmaking interval iniciado com processamento automático');
+  }
+
+  // ✅ NOVO: Processar matchmaking automaticamente
+  private async processMatchmaking(): Promise<void> {
+    try {
+      const queueStatus = await this.getQueueStatus();
+      
+      // Se há 10 ou mais jogadores, processar matchmaking
+      if (queueStatus.playersInQueue >= 10) {
+        console.log(`🎯 [Matchmaking] ${queueStatus.playersInQueue} jogadores detectados! Processando matchmaking...`);
+        // Backend processa automaticamente quando há 10 jogadores
+        await this.processMatchmaking();
+      }
+    } catch (error) {
+      console.error('❌ [Matchmaking] Erro no processamento automático:', error);
+    }
   }
 
   public async forceQueueUpdate(): Promise<void> {
@@ -506,7 +569,12 @@ export class MatchmakingService {
       this.matchmakingInterval = null;
     }
 
-    console.log('🛑 MatchmakingService desligado (MySQL Only)');
+    // ✅ NOVO: Desligar serviços separados
+    this.matchFoundService.shutdown();
+    this.draftService.shutdown();
+    this.gameInProgressService.shutdown();
+
+    console.log('🛑 MatchmakingService desligado (Refatorado)');
   }
 
   public isServiceActive(): boolean {
@@ -637,82 +705,97 @@ export class MatchmakingService {
 
 
 
-  async cancelGameInProgress(matchId: number, reason: string): Promise<void> {
-    console.log(`🚫 [Match] Partida ${matchId} cancelada: ${reason}`);
-    // Implementar lógica de cancelamento se necessário
-  }
-
   async cancelDraft(matchId: number, reason: string): Promise<void> {
     console.log(`🚫 [Draft] Draft ${matchId} cancelado: ${reason}`);
     // Implementar lógica de cancelamento se necessário
   }
 
   async processDraftAction(matchId: number, playerId: number, championId: number, action: 'pick' | 'ban'): Promise<void> {
-    console.log(`🎯 [Draft] Jogador ${playerId} ${action === 'pick' ? 'escolheu' : 'baniu'} campeão ${championId} na partida ${matchId}`);
-    // Implementar lógica de draft se necessário
+    console.log(`🎯 [Matchmaking] Redirecionando ação de draft para DraftService`);
+    await this.draftService.processDraftAction(matchId, playerId, championId, action);
   }
 
-  // ✅ ADICIONADO: Métodos para gerenciar partidas criadas pelo frontend
+  // ✅ NOVO: Finalizar draft usando DraftService
+  async finalizeDraft(matchId: number, draftResults: any): Promise<void> {
+    try {
+      console.log(`🏁 [Matchmaking] Redirecionando finalização de draft para DraftService`);
+      await this.draftService.finalizeDraft(matchId, draftResults);
+    } catch (error) {
+      console.error('❌ [Matchmaking] Erro ao finalizar draft:', error);
+      throw error;
+    }
+  }
+
+  // ✅ NOVO: Finalizar jogo usando GameInProgressService
+  async finishGame(matchId: number, gameResult: any): Promise<void> {
+    try {
+      console.log(`🏁 [Matchmaking] Redirecionando finalização de jogo para GameInProgressService`);
+      await this.gameInProgressService.finishGame(matchId, gameResult);
+    } catch (error) {
+      console.error('❌ [Matchmaking] Erro ao finalizar jogo:', error);
+      throw error;
+    }
+  }
+
+  // ✅ NOVO: Cancelar jogo usando GameInProgressService
+  async cancelGameInProgress(matchId: number, reason: string): Promise<void> {
+    try {
+      console.log(`🚫 [Matchmaking] Redirecionando cancelamento para GameInProgressService`);
+      await this.gameInProgressService.cancelGame(matchId, reason);
+    } catch (error) {
+      console.error('❌ [Matchmaking] Erro ao cancelar jogo:', error);
+      throw error;
+    }
+  }
+
+  // ✅ NOVO: Métodos de consulta dos serviços
+  getActiveGame(matchId: number): any {
+    return this.gameInProgressService.getActiveGame(matchId);
+  }
+
+  getActiveGamesCount(): number {
+    return this.gameInProgressService.getActiveGamesCount();
+  }
+
+  getActiveGamesList(): any[] {
+    return this.gameInProgressService.getActiveGamesList();
+  }
+
+  // ✅ NOVO: Aceitar partida usando MatchFoundService
   async acceptMatch(playerId: number, matchId: number, summonerName?: string): Promise<void> {
-    console.log(`✅ [Match] Jogador ${summonerName || playerId} aceitou partida ${matchId}`);
-    
     try {
-      // Buscar partida no banco de dados
-      const match = await this.dbManager.getCustomMatchById(matchId);
-      if (!match) {
-        throw new Error('Partida não encontrada no banco de dados');
-      }
-
-      // Verificar se o jogador está na partida
-      const allPlayers = [
-        ...(match.team1_players || []),
-        ...(match.team2_players || [])
-      ];
+      console.log(`✅ [Matchmaking] Redirecionando aceitação para MatchFoundService: ${summonerName || playerId}`);
       
-      const playerInMatch = allPlayers.some(player => 
-        player === summonerName || 
-        (summonerName && player.includes(summonerName))
-      );
-
-      if (!playerInMatch) {
-        throw new Error('Jogador não está nesta partida');
+      if (!summonerName) {
+        throw new Error('summonerName é obrigatório para aceitar partida');
       }
-
-      // TODO: Implementar lógica de tracking de aceitação
-      // Por enquanto, apenas log
-      console.log(`✅ [Match] Aceitação registrada para ${summonerName} na partida ${matchId}`);
+      
+      await this.matchFoundService.acceptMatch(matchId, summonerName);
       
     } catch (error) {
-      console.error(`❌ [Match] Erro ao aceitar partida:`, error);
+      console.error('❌ [Matchmaking] Erro ao aceitar partida:', error);
       throw error;
     }
   }
 
+  // ✅ ATUALIZADO: Recusar partida usando MatchFoundService
   async declineMatch(playerId: number, matchId: number, summonerName?: string): Promise<void> {
-    console.log(`❌ [Match] Jogador ${summonerName || playerId} recusou partida ${matchId}`);
-    
     try {
-      // Buscar partida no banco de dados
-      const match = await this.dbManager.getCustomMatchById(matchId);
-      if (!match) {
-        throw new Error('Partida não encontrada no banco de dados');
+      console.log(`❌ [Matchmaking] Redirecionando recusa para MatchFoundService: ${summonerName || playerId}`);
+      
+      if (!summonerName) {
+        throw new Error('summonerName é obrigatório para recusar partida');
       }
-
-      // ✅ CORREÇÃO: Deletar partida quando recusada
-      await this.dbManager.deleteCustomMatch(matchId);
       
-      console.log(`✅ [Match] Partida ${matchId} deletada após recusa`);
-      
-      // Adicionar atividade
-      this.addActivity('match_created', `Partida ${matchId} cancelada por ${summonerName || playerId}`);
+      await this.matchFoundService.declineMatch(matchId, summonerName);
       
     } catch (error) {
-      console.error(`❌ [Match] Erro ao recusar partida:`, error);
+      console.error('❌ [Matchmaking] Erro ao recusar partida:', error);
       throw error;
     }
   }
 
-  // ✅ ADICIONADO: Método para criar partida quando frontend detecta 10 jogadores
+  // ✅ NOVO: Método para criar partida quando frontend detecta 10 jogadores
   async createMatchFromFrontend(matchData: any): Promise<number> {
     console.log('🎮 [Match] Criando partida a partir do frontend:', matchData);
     
@@ -801,6 +884,9 @@ export class MatchmakingService {
         `Partida criada pelo frontend! ${team1Players.length}v${team2Players.length} - MMR médio: ${Math.round(avgMMR)}`
       );
 
+      // ✅ NOVO: Aceitar automaticamente a partida para bots
+      await this.autoAcceptMatchForBots(matchId, team1Players, team2Players);
+
       return matchId;
       
     } catch (error) {
@@ -809,54 +895,566 @@ export class MatchmakingService {
     }
   }
 
-  // ✅ ADICIONADO: Método para iniciar draft phase
-  async startDraftPhase(matchId: number): Promise<void> {
-    console.log(`🎯 [Draft] Iniciando fase de draft para partida ${matchId}`);
+  // ✅ NOVO: Aceitar automaticamente a partida para bots
+  private async autoAcceptMatchForBots(matchId: number, team1Players: string[], team2Players: string[]): Promise<void> {
+    console.log(`🤖 [AutoAccept] Verificando bots para aceitação automática da partida ${matchId}`);
     
     try {
-      // Buscar partida no banco
-      const match = await this.dbManager.getCustomMatchById(matchId);
-      if (!match) {
-        throw new Error('Partida não encontrada');
+      const allPlayers = [...team1Players, ...team2Players];
+      let acceptedBots = 0;
+      
+      for (const playerName of allPlayers) {
+        // Verificar se é um bot baseado no nome
+        const isBot = playerName.toLowerCase().includes('bot') || 
+                     playerName.toLowerCase().includes('ai') ||
+                     playerName.toLowerCase().includes('computer') ||
+                     playerName.toLowerCase().includes('cpu');
+        
+        if (isBot) {
+          try {
+            console.log(`🤖 [AutoAccept] Aceitando automaticamente partida ${matchId} para bot: ${playerName}`);
+            
+            // Aceitar a partida para o bot
+            await this.acceptMatch(-1, matchId, playerName);
+            acceptedBots++;
+            
+            // Aguardar um pouco entre aceitações para não sobrecarregar
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+          } catch (error) {
+            console.error(`❌ [AutoAccept] Erro ao aceitar partida para bot ${playerName}:`, error);
+          }
+        }
       }
+      
+      console.log(`✅ [AutoAccept] ${acceptedBots} bots aceitaram automaticamente a partida ${matchId}`);
+      
+      // Se todos os jogadores são bots, iniciar o draft automaticamente após um delay
+      if (acceptedBots === allPlayers.length && allPlayers.length > 0) {
+        console.log(`🤖 [AutoAccept] Todos os jogadores são bots, iniciando draft automaticamente em 3 segundos...`);
+        setTimeout(async () => {
+          try {
+            await this.draftService.startDraft(matchId);
+            console.log(`🎯 [AutoAccept] Draft iniciado automaticamente para partida ${matchId}`);
+          } catch (error) {
+            console.error(`❌ [AutoAccept] Erro ao iniciar draft automaticamente:`, error);
+          }
+        }, 3000);
+      }
+      
+         } catch (error) {
+       console.error(`❌ [AutoAccept] Erro ao processar aceitação automática para bots:`, error);
+     }
+   }
 
-      // TODO: Implementar lógica de draft
-      // Por enquanto, apenas log
-      console.log(`🎯 [Draft] Draft iniciado para partida ${matchId}`);
+   // ✅ NOVO: Notificar frontend que partida foi cancelada
+   private notifyMatchCancelled(matchId?: number, declinedPlayers?: string[]): void {
+    if (this.wss) {
+      const message = {
+        type: 'match_cancelled',
+        data: {
+          matchId,
+          declinedPlayers,
+          message: 'Partida cancelada devido a recusas. Jogadores que recusaram foram removidos da fila.',
+          timestamp: Date.now()
+        }
+      };
       
-      // Adicionar atividade
-      this.addActivity('match_created', `Fase de draft iniciada para partida ${matchId}`);
+      this.wss.clients.forEach((client: any) => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify(message));
+        }
+      });
       
-    } catch (error) {
-      console.error('❌ [Draft] Erro ao iniciar draft:', error);
-      throw error;
+      console.log(`📢 [AcceptanceMonitor] Notificação de cancelamento enviada para partida ${matchId}`);
     }
   }
 
-  async getRecentMatches(): Promise<any[]> {
+  // ✅ NOVO: Notificar frontend que draft iniciou com dados completos
+  private notifyDraftStarted(matchId: number, teams: any): void {
+    if (this.wss) {
+      const message = {
+        type: 'draft_started',
+        data: {
+          matchId,
+          teams,
+          message: 'Draft iniciado! Todos os jogadores aceitaram a partida.',
+          timestamp: Date.now()
+        }
+      };
+      
+      this.wss.clients.forEach((client: any) => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify(message));
+        }
+      });
+      
+      console.log(`📢 [AcceptanceMonitor] Notificação de draft iniciado enviada para partida ${matchId}`);
+    }
+  }
+
+  // ✅ NOVO: Balancear times por MMR e lanes
+  private balanceTeamsByMMRAndLanes(players: any[]): { team1: any[], team2: any[] } | null {
+    console.log('🎯 [Matchmaking] Balanceando times por MMR e lanes...');
+    
+    // Ordenar jogadores por MMR (maior primeiro)
+    const sortedPlayers = [...players].sort((a: any, b: any) => b.mmr - a.mmr);
+    
+    // Atribuir lanes únicas baseado em MMR e preferências
+    const playersWithLanes = this.assignLanesByMMRAndPreferences(sortedPlayers, []);
+    
+    if (playersWithLanes.length !== 10) {
+      console.error('❌ [Matchmaking] ERRO: Não temos 10 jogadores com lanes! Temos:', playersWithLanes.length);
+      return null;
+    }
+    
+    // Verificar se temos exatamente 5 lanes únicas
+    const uniqueLanes = new Set(playersWithLanes.map((p: any) => p.assignedLane));
+    if (uniqueLanes.size !== 5) {
+      console.error('❌ [Matchmaking] ERRO: Não temos 5 lanes únicas! Temos:', uniqueLanes.size);
+      return null;
+    }
+    
+    // Balancear times por MMR mantendo lanes únicas
+    const team1: any[] = [];
+    const team2: any[] = [];
+    
+    // Distribuir jogadores alternadamente para balancear MMR
+    for (let i = 0; i < playersWithLanes.length; i++) {
+      const player = playersWithLanes[i];
+      
+      if (i % 2 === 0) {
+        team1.push(player);
+      } else {
+        team2.push(player);
+      }
+    }
+    
+    console.log('✅ [Matchmaking] Times balanceados:', {
+      team1: team1.map((p: any) => ({ name: p.summonerName, lane: p.assignedLane, mmr: p.mmr })),
+      team2: team2.map((p: any) => ({ name: p.summonerName, lane: p.assignedLane, mmr: p.mmr }))
+    });
+    
+    return { team1, team2 };
+  }
+
+  // ✅ NOVO: Criar partida completa no banco
+  private async createCompleteMatch(team1: any[], team2: any[], avgMMR1: number, avgMMR2: number): Promise<number | null> {
     try {
-      return await this.dbManager.getCustomMatches(10);
+      // Preparar dados dos times
+      const team1Players = team1.map(p => p.summonerName);
+      const team2Players = team2.map(p => p.summonerName);
+      
+      // Preparar dados do pick/ban
+      const pickBanData = {
+        team1: team1.map(p => ({
+          summonerName: p.summonerName,
+          assignedLane: p.assignedLane,
+          teamIndex: p.teamIndex || 0,
+          isAutofill: p.isAutofill || false
+        })),
+        team2: team2.map(p => ({
+          summonerName: p.summonerName,
+          assignedLane: p.assignedLane,
+          teamIndex: p.teamIndex || 0,
+          isAutofill: p.isAutofill || false
+        })),
+        currentAction: 0,
+        phase: 'bans',
+        phases: []
+      };
+      
+      // Criar partida no banco com dados completos
+      const matchId = await this.dbManager.createCustomMatch({
+        title: `Partida ${Date.now()}`,
+        description: `Partida balanceada - MMR médio: ${Math.round((avgMMR1 + avgMMR2) / 2)}`,
+        team1Players,
+        team2Players,
+        createdBy: 'system',
+        gameMode: '5v5'
+      });
+      
+      // Atualizar a partida com dados adicionais
+      if (matchId) {
+        await this.dbManager.updateCustomMatch(matchId, {
+          pick_ban_data: JSON.stringify(pickBanData),
+          average_mmr_team1: avgMMR1,
+          average_mmr_team2: avgMMR2
+        });
+      }
+      
+      console.log(`✅ [Matchmaking] Partida ${matchId} criada no banco com dados completos`);
+      return matchId;
+      
     } catch (error) {
-      console.error('❌ Erro ao buscar partidas recentes:', error);
+      console.error('❌ [Matchmaking] Erro ao criar partida completa:', error);
+      return null;
+    }
+  }
+
+  // ✅ NOVO: Remover jogadores da fila
+  private async removePlayersFromQueue(players: any[]): Promise<void> {
+    console.log(`🗑️ [Matchmaking] Removendo ${players.length} jogadores da fila...`);
+    
+    for (const player of players) {
+      try {
+        await this.removePlayerFromQueueById(undefined, player.summonerName);
+        console.log(`✅ [Matchmaking] Jogador ${player.summonerName} removido da fila`);
+      } catch (error) {
+        console.error(`❌ [Matchmaking] Erro ao remover jogador ${player.summonerName}:`, error);
+      }
+    }
+  }
+
+  // ✅ NOVO: Atribuir lanes únicas baseado em MMR e preferências
+  private assignLanesByMMRAndPreferences(players: any[], lanePriority: string[]): any[] {
+    console.log('🎯 [Matchmaking] assignLanesByMMRAndPreferences iniciado com', players.length, 'jogadores');
+    
+    // Definir ordem exata das lanes conforme o draft espera
+    const laneOrder = ['top', 'jungle', 'mid', 'bot', 'support'];
+    const laneToIndex: { [key: string]: number } = { 'top': 0, 'jungle': 1, 'mid': 2, 'bot': 3, 'support': 4 };
+    
+    // Ordenar jogadores por MMR (maior primeiro) para priorizar preferências
+    const sortedPlayers = [...players].sort((a: any, b: any) => b.mmr - a.mmr);
+    
+    console.log('🎯 [Matchmaking] Jogadores ordenados por MMR:', sortedPlayers.map((p: any) => ({
+      name: p.summonerName,
+      mmr: p.mmr,
+      primaryLane: p.primaryLane,
+      secondaryLane: p.secondaryLane
+    })));
+    
+    // Sistema de atribuição de lanes único - cada lane só pode ser atribuída 2 vezes
+    const laneAssignments: { [key: string]: number } = { 'top': 0, 'jungle': 0, 'mid': 0, 'bot': 0, 'support': 0 };
+    const playersWithLanes: any[] = [];
+    
+    // PRIMEIRA PASSADA: Atribuir lanes preferidas para jogadores com maior MMR
+    for (const player of sortedPlayers) {
+      const primaryLane = player.primaryLane || 'fill';
+      const secondaryLane = player.secondaryLane || 'fill';
+      
+      let assignedLane = null;
+      let isAutofill = false;
+      let teamIndex = null;
+      
+      // Tentar lane primária primeiro (se não foi atribuída 2 vezes ainda)
+      if (primaryLane !== 'fill' && laneAssignments[primaryLane] < 2) {
+        assignedLane = primaryLane;
+        isAutofill = false;
+        laneAssignments[primaryLane]++;
+        teamIndex = laneAssignments[primaryLane] === 1 ? laneToIndex[primaryLane] : laneToIndex[primaryLane] + 5;
+      }
+      // Tentar lane secundária
+      else if (secondaryLane !== 'fill' && laneAssignments[secondaryLane] < 2) {
+        assignedLane = secondaryLane;
+        isAutofill = false;
+        laneAssignments[secondaryLane]++;
+        teamIndex = laneAssignments[secondaryLane] === 1 ? laneToIndex[secondaryLane] : laneToIndex[secondaryLane] + 5;
+      }
+      // Se nenhuma preferência está disponível, encontrar uma lane disponível
+      else {
+        // Encontrar primeira lane disponível
+        for (const lane of laneOrder) {
+          if (laneAssignments[lane] < 2) {
+            assignedLane = lane;
+            isAutofill = true;
+            laneAssignments[lane]++;
+            teamIndex = laneAssignments[lane] === 1 ? laneToIndex[lane] : laneToIndex[lane] + 5;
+            break;
+          }
+        }
+      }
+      
+      // Atribuir lane ao jogador
+      const playerWithLane = {
+        ...player,
+        assignedLane: assignedLane,
+        isAutofill: isAutofill,
+        teamIndex: teamIndex
+      };
+      
+      playersWithLanes.push(playerWithLane);
+      
+      console.log(`🎯 [Matchmaking] ${player.summonerName} (MMR: ${player.mmr}) → ${assignedLane} (${isAutofill ? 'autofill' : 'preferência'}, índice ${teamIndex})`);
+    }
+    
+    // VERIFICAÇÃO: Garantir que todas as lanes foram atribuídas exatamente 2 vezes
+    console.log(`🎯 [Matchmaking] Contagem final de lanes:`, laneAssignments);
+    
+    const allLanesAssigned = Object.values(laneAssignments).every(count => count === 2);
+    if (!allLanesAssigned) {
+      console.error('❌ [Matchmaking] ERRO: Nem todas as lanes foram atribuídas 2 vezes!', laneAssignments);
       return [];
     }
+    
+    // Ordenar jogadores por teamIndex para garantir ordem correta
+    const orderedPlayers = playersWithLanes.sort((a: any, b: any) => {
+      if (a.teamIndex !== null && b.teamIndex !== null) {
+        return a.teamIndex - b.teamIndex;
+      }
+      return 0;
+    });
+    
+    console.log('✅ [Matchmaking] Jogadores finais ordenados por teamIndex:', orderedPlayers.map((p: any) => ({
+      name: p.summonerName,
+      lane: p.assignedLane,
+      teamIndex: p.teamIndex,
+      isAutofill: p.isAutofill,
+      mmr: p.mmr
+    })));
+    
+    console.log('✅ [Matchmaking] Total de jogadores processados:', orderedPlayers.length);
+    console.log('✅ [Matchmaking] Lanes atribuídas:', orderedPlayers.map((p: any) => p.assignedLane));
+    console.log('✅ [Matchmaking] TeamIndexes:', orderedPlayers.map((p: any) => p.teamIndex));
+    
+    // VERIFICAÇÃO: Garantir que temos exatamente 10 jogadores
+    if (orderedPlayers.length !== 10) {
+      console.error('❌ [Matchmaking] ERRO: Não temos 10 jogadores! Temos:', orderedPlayers.length);
+      return [];
+    }
+    
+    // VERIFICAÇÃO: Garantir que temos teamIndexes únicos de 0-9
+    const teamIndexes = orderedPlayers.map((p: any) => p.teamIndex).sort((a: any, b: any) => a - b);
+    const expectedIndexes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    const hasCorrectIndexes = JSON.stringify(teamIndexes) === JSON.stringify(expectedIndexes);
+    
+    if (!hasCorrectIndexes) {
+      console.error('❌ [Matchmaking] ERRO: TeamIndexes incorretos!', teamIndexes);
+      return [];
+    }
+    
+    // VERIFICAÇÃO FINAL: Garantir que cada lane tem exatamente 2 jogadores
+    const laneCounts: { [key: string]: number } = {};
+    orderedPlayers.forEach((p: any) => {
+      laneCounts[p.assignedLane] = (laneCounts[p.assignedLane] || 0) + 1;
+    });
+    
+    console.log('✅ [Matchmaking] Contagem de jogadores por lane:', laneCounts);
+    
+    const hasCorrectDistribution = Object.values(laneCounts).every(count => count === 2);
+    if (!hasCorrectDistribution) {
+      console.error('❌ [Matchmaking] ERRO: Distribuição incorreta de lanes!', laneCounts);
+      return [];
+    }
+    
+    console.log('✅ [Matchmaking] Atribuição de lanes concluída com sucesso!');
+    return orderedPlayers;
   }
 
-  async updateMatchAfterDraft(matchId: number, draftData: any): Promise<void> {
-    console.log(`🎯 [Draft] Partida ${matchId} atualizada após draft`);
-    // Implementar lógica de atualização se necessário
+  // ✅ NOVO: Preparar dados completos para o draft
+  private async prepareDraftData(matchId: number, team1Players: string[], team2Players: string[], queuePlayers: any[]): Promise<any | null> {
+    console.log(`🎯 [DraftPrep] Preparando dados do draft para partida ${matchId}...`);
+    
+    try {
+      // Criar mapa de dados dos jogadores
+      const playerDataMap = new Map<string, any>();
+      
+      for (const queuePlayer of queuePlayers) {
+        const playerData = {
+          summonerName: queuePlayer.summoner_name,
+          mmr: queuePlayer.custom_lp || 0,
+          primaryLane: queuePlayer.primary_lane || 'fill',
+          secondaryLane: queuePlayer.secondary_lane || 'fill'
+        };
+        playerDataMap.set(queuePlayer.summoner_name, playerData);
+      }
+
+      // Preparar dados dos times com informações completas
+      const team1Data = team1Players.map(playerName => {
+        const data = playerDataMap.get(playerName);
+        if (!data) {
+          console.warn(`⚠️ [DraftPrep] Dados não encontrados para jogador: ${playerName}`);
+          return {
+            summonerName: playerName,
+            mmr: 1000,
+            primaryLane: 'fill',
+            secondaryLane: 'fill'
+          };
+        }
+        return data;
+      });
+
+      const team2Data = team2Players.map(playerName => {
+        const data = playerDataMap.get(playerName);
+        if (!data) {
+          console.warn(`⚠️ [DraftPrep] Dados não encontrados para jogador: ${playerName}`);
+          return {
+            summonerName: playerName,
+            mmr: 1000,
+            primaryLane: 'fill',
+            secondaryLane: 'fill'
+          };
+        }
+        return data;
+      });
+
+      // Balancear times e atribuir lanes baseado em MMR e preferências
+      const balancedData = this.balanceTeamsAndAssignLanes([...team1Data, ...team2Data]);
+      
+      if (!balancedData) {
+        console.error('❌ [DraftPrep] Erro ao balancear times e atribuir lanes');
+        return null;
+      }
+
+      // Calcular MMR médio dos times
+      const team1MMR = balancedData.team1.reduce((sum, p) => sum + p.mmr, 0) / balancedData.team1.length;
+      const team2MMR = balancedData.team2.reduce((sum, p) => sum + p.mmr, 0) / balancedData.team2.length;
+
+      // Preparar dados completos do draft
+      const draftData = {
+        matchId,
+        team1: balancedData.team1.map((p, index) => ({
+          summonerName: p.summonerName,
+          assignedLane: p.assignedLane,
+          teamIndex: index, // 0-4 para team1
+          mmr: p.mmr,
+          primaryLane: p.primaryLane,
+          secondaryLane: p.secondaryLane,
+          isAutofill: p.isAutofill
+        })),
+        team2: balancedData.team2.map((p, index) => ({
+          summonerName: p.summonerName,
+          assignedLane: p.assignedLane,
+          teamIndex: index + 5, // 5-9 para team2
+          mmr: p.mmr,
+          primaryLane: p.primaryLane,
+          secondaryLane: p.secondaryLane,
+          isAutofill: p.isAutofill
+        })),
+        averageMMR: {
+          team1: team1MMR,
+          team2: team2MMR
+        },
+        balanceQuality: Math.abs(team1MMR - team2MMR), // Diferença de MMR entre times
+        autofillCount: balancedData.team1.filter(p => p.isAutofill).length + 
+                       balancedData.team2.filter(p => p.isAutofill).length,
+        createdAt: new Date().toISOString()
+      };
+
+      console.log(`✅ [DraftPrep] Dados do draft preparados:`, {
+        matchId,
+        team1MMR: Math.round(team1MMR),
+        team2MMR: Math.round(team2MMR),
+        balanceQuality: Math.round(draftData.balanceQuality),
+        autofillCount: draftData.autofillCount,
+        team1Lanes: draftData.team1.map(p => p.assignedLane),
+        team2Lanes: draftData.team2.map(p => p.assignedLane)
+      });
+
+      return draftData;
+
+    } catch (error) {
+      console.error(`❌ [DraftPrep] Erro ao preparar dados do draft:`, error);
+      return null;
+    }
   }
 
-  async completeMatchAfterGame(matchId: number, winnerTeam: number, gameData: any): Promise<void> {
-    console.log(`🏆 [Match] Partida ${matchId} completada - Time vencedor: ${winnerTeam}`);
-    // Implementar lógica de finalização se necessário
+  // ✅ NOVO: Balancear times e atribuir lanes baseado em MMR e preferências
+  private balanceTeamsAndAssignLanes(players: any[]): { team1: any[], team2: any[] } | null {
+    console.log('🎯 [TeamBalance] Balanceando times e atribuindo lanes...');
+    
+    if (players.length !== 10) {
+      console.error(`❌ [TeamBalance] Número incorreto de jogadores: ${players.length}`);
+      return null;
+    }
+
+    // Ordenar jogadores por MMR (maior primeiro)
+    const sortedPlayers = [...players].sort((a, b) => b.mmr - a.mmr);
+    
+    // Atribuir lanes únicas baseado em MMR e preferências
+    const playersWithLanes = this.assignLanesOptimized(sortedPlayers);
+    
+    if (playersWithLanes.length !== 10) {
+      console.error('❌ [TeamBalance] Erro na atribuição de lanes');
+      return null;
+    }
+    
+    // Verificar se temos exatamente 5 lanes únicas (2 de cada)
+    const laneCount: { [key: string]: number } = {};
+    playersWithLanes.forEach(p => {
+      laneCount[p.assignedLane] = (laneCount[p.assignedLane] || 0) + 1;
+    });
+    
+    const hasCorrectDistribution = Object.values(laneCount).every(count => count === 2);
+    if (!hasCorrectDistribution) {
+      console.error('❌ [TeamBalance] Distribuição incorreta de lanes:', laneCount);
+      return null;
+    }
+    
+    // Balancear times por MMR mantendo lanes únicas
+    const team1: any[] = [];
+    const team2: any[] = [];
+    
+    // Distribuir alternadamente para balancear MMR
+    for (let i = 0; i < playersWithLanes.length; i++) {
+      const player = playersWithLanes[i];
+      
+      if (i % 2 === 0) {
+        team1.push(player);
+      } else {
+        team2.push(player);
+      }
+    }
+    
+    console.log('✅ [TeamBalance] Times balanceados:', {
+      team1: team1.map(p => ({ name: p.summonerName, lane: p.assignedLane, mmr: p.mmr, autofill: p.isAutofill })),
+      team2: team2.map(p => ({ name: p.summonerName, lane: p.assignedLane, mmr: p.mmr, autofill: p.isAutofill }))
+    });
+    
+    return { team1, team2 };
   }
 
-
-
-
-
-
-
+  // ✅ NOVO: Atribuir lanes otimizado
+  private assignLanesOptimized(players: any[]): any[] {
+    const laneOrder = ['top', 'jungle', 'mid', 'bot', 'support'];
+    const laneAssignments: { [key: string]: number } = { 'top': 0, 'jungle': 0, 'mid': 0, 'bot': 0, 'support': 0 };
+    const playersWithLanes: any[] = [];
+    
+    // Primeira passada: atribuir lanes preferidas para jogadores com maior MMR
+    for (const player of players) {
+      const primaryLane = player.primaryLane || 'fill';
+      const secondaryLane = player.secondaryLane || 'fill';
+      
+      let assignedLane = null;
+      let isAutofill = false;
+      
+      // Tentar lane primária
+      if (primaryLane !== 'fill' && laneAssignments[primaryLane] < 2) {
+        assignedLane = primaryLane;
+        isAutofill = false;
+        laneAssignments[primaryLane]++;
+      }
+      // Tentar lane secundária
+      else if (secondaryLane !== 'fill' && laneAssignments[secondaryLane] < 2) {
+        assignedLane = secondaryLane;
+        isAutofill = false;
+        laneAssignments[secondaryLane]++;
+      }
+      // Autofill: encontrar primeira lane disponível
+      else {
+        for (const lane of laneOrder) {
+          if (laneAssignments[lane] < 2) {
+            assignedLane = lane;
+            isAutofill = true;
+            laneAssignments[lane]++;
+            break;
+          }
+        }
+      }
+      
+      const playerWithLane = {
+        ...player,
+        assignedLane,
+        isAutofill
+      };
+      
+      playersWithLanes.push(playerWithLane);
+      
+      console.log(`🎯 [LaneAssign] ${player.summonerName} (MMR: ${player.mmr}) → ${assignedLane} ${isAutofill ? '(autofill)' : '(preferência)'}`);
+    }
+    
+    console.log('✅ [LaneAssign] Atribuição final:', laneAssignments);
+    return playersWithLanes;
+  }
 
 } 

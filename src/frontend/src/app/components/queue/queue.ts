@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, OnChanges } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, OnChanges, ChangeDetectorRef, NgZone, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Player, QueueStatus, QueuePreferences } from '../../interfaces';
@@ -12,7 +12,8 @@ import { ProfileIconService } from '../../services/profile-icon.service';
   selector: 'app-queue',
   imports: [CommonModule, FormsModule, LaneSelectorComponent],
   templateUrl: './queue.html',
-  styleUrl: './queue.scss'
+  styleUrl: './queue.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   @Input() isInQueue: boolean = false;
@@ -52,7 +53,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   isRefreshing = false;
   autoRefreshEnabled = false;
 
-  // ✅ NOVO: Controle de auto-refresh
+  // Auto-refresh
   private autoRefreshInterval?: number;
   private readonly AUTO_REFRESH_INTERVAL_MS = 2000; // 2 segundos
 
@@ -60,19 +61,18 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     public discordService: DiscordIntegrationService,
     private queueStateService: QueueStateService,
     private apiService: ApiService,
-    private profileIconService: ProfileIconService
+    private profileIconService: ProfileIconService,
+    private cdr: ChangeDetectorRef,
+    private ngZone: NgZone
   ) {}
 
   ngOnInit(): void {
-    console.log('🎯 [Queue] Componente inicializado');
-    
-    // ✅ MUDANÇA: Não iniciar sincronização MySQL automaticamente
-    // Só será iniciada se auto-refresh estiver habilitado ou manualmente
+    console.log('🎯 [Queue] Componente inicializado (Frontend Interface Only)');
     
     // Configurar listeners do Discord
     this.setupDiscordListeners();
     
-    // ✅ MUDANÇA: Configurar listener do estado da fila (sem polling automático)
+    // Configurar listener do estado da fila (sem polling automático)
     this.setupQueueStateListener();
     
     // Verificar conexão inicial do Discord
@@ -83,17 +83,17 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       this.startQueueTimer();
     }
 
-    // ✅ NOVO: Configurar listener para auto-refresh
+    // Configurar listener para auto-refresh
     this.setupAutoRefreshControl();
   }
 
   ngOnDestroy(): void {
     console.log('🛑 [Queue] Componente destruído');
     
-    // ✅ MUDANÇA: Parar sincronização MySQL
+    // Parar sincronização MySQL
     this.queueStateService.stopMySQLSync();
     
-    // ✅ NOVO: Parar auto-refresh
+    // Parar auto-refresh
     this.stopAutoRefresh();
     
     // Parar timer
@@ -107,12 +107,12 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       console.log('🔄 [Queue] CurrentPlayer atualizado');
       this.queueStateService.updateCurrentPlayer(changes.currentPlayer.currentValue);
       
-      // ✅ MUDANÇA: Só iniciar sincronização se auto-refresh estiver habilitado
+      // Só iniciar sincronização se auto-refresh estiver habilitado
       if (this.autoRefreshEnabled) {
         this.queueStateService.startMySQLSync(changes.currentPlayer.currentValue);
       }
       
-      // NOVO: Enviar dados do LCU para identificação automática do usuário Discord
+      // Enviar dados do LCU para identificação automática do usuário Discord
       if (this.currentPlayer && this.currentPlayer.gameName && this.currentPlayer.tagLine) {
         console.log('🎮 [Queue] Enviando dados do LCU para identificação Discord...');
         this.discordService.sendLCUData({
@@ -121,34 +121,31 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
         });
       }
       
-      // NOVO: Tentar identificar o usuário Discord quando o currentPlayer for atualizado
+      // Tentar identificar o usuário Discord quando o currentPlayer for atualizado
       if (this.discordUsersOnline.length > 0) {
         this.tryIdentifyCurrentDiscordUser();
       }
+      
+      this.cdr.detectChanges();
     }
 
-    // ✅ NOVO: Verificar match found quando queueStatus mudar
+    // Backend processa automaticamente quando há 10 jogadores
     if (changes.queueStatus && changes.queueStatus.currentValue) {
-      console.log('🔄 [Queue] QueueStatus atualizado:', {
-        playersInQueue: changes.queueStatus.currentValue.playersInQueue,
-        playersListLength: changes.queueStatus.currentValue.playersInQueueList?.length || 0
-      });
-      
-      // Verificar se há 10 jogadores para criar match found
-      this.checkForMatchFound();
+      console.log('🔄 [Queue] QueueStatus atualizado - Backend processa matchmaking automaticamente');
+      this.cdr.detectChanges();
     }
   }
 
-  // ✅ NOVO: Configurar controle de auto-refresh
+  // Configurar controle de auto-refresh
   private setupAutoRefreshControl(): void {
     // Fazer refresh inicial manual
     this.refreshPlayersData();
     
-    // ✅ NOVO: Buscar profile icon do backend se necessário
+    // Buscar profile icon do backend se necessário
     this.fetchProfileIconFromBackend();
   }
 
-  // ✅ NOVO: Iniciar auto-refresh
+  // Iniciar auto-refresh
   private startAutoRefresh(): void {
     if (this.autoRefreshInterval) {
       clearInterval(this.autoRefreshInterval);
@@ -164,7 +161,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     }, this.AUTO_REFRESH_INTERVAL_MS);
   }
 
-  // ✅ NOVO: Parar auto-refresh
+  // Parar auto-refresh
   private stopAutoRefresh(): void {
     if (this.autoRefreshInterval) {
       clearInterval(this.autoRefreshInterval);
@@ -173,7 +170,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     }
   }
 
-  // ✅ NOVO: Listener para mudanças no auto-refresh
+  // Listener para mudanças no auto-refresh
   onAutoRefreshChange(): void {
     console.log(`🔄 [Queue] Auto-refresh ${this.autoRefreshEnabled ? 'habilitado' : 'desabilitado'}`);
     
@@ -181,7 +178,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       // Iniciar sincronização MySQL e polling
       if (this.currentPlayer) {
         this.queueStateService.updateCurrentPlayer(this.currentPlayer);
-        this.queueStateService.startPolling(); // ✅ MUDANÇA: Usar polling específico
+        this.queueStateService.startPolling();
       }
       this.startAutoRefresh();
     } else {
@@ -190,16 +187,6 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       this.stopAutoRefresh();
     }
   }
-
-  // ✅ ATUALIZADO: Detectar quando há 10 jogadores e disparar match found
-  private checkForMatchFound(): void {
-    if (this.queueStatus.playersInQueue >= 10) {
-      console.log('🎮 [Queue] 10 jogadores detectados! Disparando match found...');
-      this.detectAndCreateMatch();
-    }
-  }
-
-
 
   // Configurar listener do estado da fila
   private setupQueueStateListener(): void {
@@ -219,16 +206,12 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     });
   }
 
-
-
   /**
-   * REGRA: Entrada na fila com verificação Discord
-   * Verifica se o jogador está presente no lobby Discord antes de permitir entrada
+   * ENTRADA NA FILA - Sempre usar Discord
    */
   onJoinQueue() {
     if (!this.queueStatus.isActive) return;
     
-    // ✅ CORREÇÃO: Usar a verificação de vinculação Discord
     // Como só existe fila Discord, sempre usar onJoinDiscordQueue
     this.onJoinDiscordQueue();
   }
@@ -246,7 +229,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   /**
-   * REGRA: Saída da fila via botão "Sair da Fila" - remove linha da tabela queue_players
+   * SAÍDA DA FILA - Remove linha da tabela queue_players
    */
   onLeaveQueue() {
     console.log('🔍 [Queue] Sair da fila solicitado');
@@ -260,13 +243,18 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     this.stopQueueTimer();
     
     console.log('⏱️ [Queue] Iniciando timer da fila');
-    this.timerInterval = window.setInterval(() => {
-      this.queueTimer++;
-      // Log a cada minuto para debug
-      if (this.queueTimer % 60 === 0) {
-        console.log(`⏱️ [Queue] Timer: ${this.getTimerDisplay()}`);
-      }
-    }, 1000);
+    this.timerInterval = this.ngZone.runOutsideAngular(() => {
+      return window.setInterval(() => {
+        this.ngZone.run(() => {
+          this.queueTimer++;
+          // Log a cada minuto para debug
+          if (this.queueTimer % 60 === 0) {
+            console.log(`⏱️ [Queue] Timer: ${this.getTimerDisplay()}`);
+          }
+          this.cdr.detectChanges();
+        });
+      }, 1000);
+    });
   }
 
   private stopQueueTimer() {
@@ -329,58 +317,48 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   getPlayerRankDisplay(): string {
-    if (!this.currentPlayer?.rank) return 'Sem Rank';
-    if (typeof this.currentPlayer.rank === 'string') return this.currentPlayer.rank;
-    return this.currentPlayer.rank.display || 'Sem Rank';
+    return this.currentPlayer?.customLp ? `${this.currentPlayer.customLp} LP` : '0 LP';
   }
 
   getPlayerTag(): string {
-    if (!this.currentPlayer) return '';
-    
-    const tagLine = this.currentPlayer.tagLine;
-    return tagLine ? `#${tagLine}` : '';
+    return this.currentPlayer?.tagLine ? `#${this.currentPlayer.tagLine}` : '';
   }
 
   onProfileIconError(event: Event): void {
-    const img = event.target as HTMLImageElement;
-    console.log('❌ Erro ao carregar ícone do perfil, usando placeholder');
-    img.src = 'assets/images/champion-placeholder.svg';
+    console.warn('❌ [Queue] Erro ao carregar ícone de perfil, usando placeholder');
+    (event.target as HTMLImageElement).src = '/assets/images/champion-placeholder.svg';
   }
 
   getProfileIconUrl(): string {
-    if (!this.currentPlayer) {
-      return 'assets/images/champion-placeholder.svg';
+    if (this.currentPlayer?.profileIconId && Number(this.currentPlayer.profileIconId) > 0) {
+      return this.profileIconService.getProfileIconUrl(String(this.currentPlayer.profileIconId));
     }
-
-    // ✅ CORREÇÃO: Usar ProfileIconService que se conecta ao backend
-    const iconId = this.currentPlayer.profileIconId || 29;
-    
-    // ✅ MUDANÇA: Usar Community Dragon (mais confiável) em vez de Data Dragon
-    return `https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/${iconId}.jpg`;
+    return '/assets/images/champion-placeholder.svg';
   }
 
-  // ✅ NOVO: Método para buscar profile icon do backend se necessário
   async fetchProfileIconFromBackend(): Promise<void> {
-    if (!this.currentPlayer) return;
+    if (!this.currentPlayer?.summonerName) {
+      console.warn('⚠️ [Queue] Não é possível buscar ícone de perfil sem summonerName');
+      return;
+    }
 
     try {
-      // Se temos gameName e tagLine, buscar do backend
-      if (this.currentPlayer.gameName && this.currentPlayer.tagLine) {
-        const riotId = `${this.currentPlayer.gameName}#${this.currentPlayer.tagLine}`;
-        const iconId = await this.profileIconService.fetchProfileIcon(
-          this.currentPlayer.summonerName || '',
-          this.currentPlayer.gameName,
-          this.currentPlayer.tagLine
-        );
-        
-        if (iconId) {
-          console.log(`✅ [Queue] Profile icon obtido do backend: ${iconId}`);
-          // Atualizar o currentPlayer com o iconId correto
-          this.currentPlayer.profileIconId = iconId;
+      console.log('🎮 [Queue] Buscando dados do jogador do backend...');
+      
+      this.apiService.getCurrentPlayerDetails().subscribe({
+        next: (response: any) => {
+          if (response.profileIconId && this.currentPlayer) {
+            console.log('✅ [Queue] Ícone de perfil atualizado:', response.profileIconId);
+            this.currentPlayer.profileIconId = response.profileIconId;
+            this.cdr.detectChanges();
+          }
+        },
+        error: (error: any) => {
+          console.warn('⚠️ [Queue] Erro ao buscar dados do jogador do backend:', error);
         }
-      }
+      });
     } catch (error) {
-      console.log('⚠️ [Queue] Erro ao buscar profile icon do backend:', error);
+      console.error('❌ [Queue] Erro ao buscar dados do jogador:', error);
     }
   }
 
@@ -397,705 +375,286 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     return lanes[laneId] || 'Qualquer';
   }
 
-  // ✅ REMOVIDO: Métodos desnecessários que não estão sendo usados no template
-
+  // ✅ MANTIDO: Discord Integration (Interface)
   private setupDiscordListeners() {
-    // Listener para conexão Discord
-    this.discordService.onConnectionChange().subscribe((isConnected: boolean) => {
-      console.log('🎮 [Queue] Status Discord atualizado:', isConnected);
-      this.isDiscordConnected = isConnected;
-      this.isInDiscordChannel = this.discordService.isInChannel();
-      this.currentDiscordUser = this.discordService.getCurrentDiscordUser();
-    });
-
-    // Listener para usuários online
-    this.discordService.onUsersUpdate().subscribe((users: any[]) => {
-      console.log('👥 [Queue] Usuários Discord atualizados:', users);
-      this.discordUsersOnline = users || [];
-      
-      // NOVO: Tentar identificar o usuário atual quando receber atualizações
-      if (this.currentPlayer && this.discordUsersOnline.length > 0) {
-        this.tryIdentifyCurrentDiscordUser();
+    // Discord connection status
+    setInterval(() => {
+      const connected = this.discordService.isConnected();
+      if (this.isDiscordConnected !== connected) {
+        this.isDiscordConnected = connected;
+        console.log(`🔗 [Queue] Discord connection status: ${connected}`);
+        this.cdr.detectChanges();
       }
-    });
+    }, 2000);
 
-    // Listener para fila Discord
-    this.discordService.onQueueUpdate().subscribe((queue: any) => {
-      console.log('📝 [Queue] Fila Discord atualizada:', queue);
-      this.discordQueue = queue || [];
-    });
+    // Discord users online
+    setInterval(() => {
+      const users = this.discordService.getDiscordUsersOnline();
+      if (JSON.stringify(this.discordUsersOnline) !== JSON.stringify(users)) {
+        this.discordUsersOnline = users;
+        console.log(`👥 [Queue] Discord users online: ${users.length}`);
+        
+        // Tentar identificar o usuário atual quando a lista for atualizada
+        this.tryIdentifyCurrentDiscordUser();
+        
+        this.cdr.detectChanges();
+      }
+    }, 3000);
 
-    // NOVO: Listener para atualizações do usuário atual
-    // Isso será atualizado quando o DiscordService receber informações do usuário atual via WebSocket
-    // O currentDiscordUser será atualizado automaticamente no DiscordService
-
-    // ✅ REMOVIDO: Listener para match found - não implementado ainda
+    // Current Discord user
+    setInterval(() => {
+      const user = this.discordService.getCurrentDiscordUser();
+      if (JSON.stringify(this.currentDiscordUser) !== JSON.stringify(user)) {
+        this.currentDiscordUser = user;
+        console.log('👤 [Queue] Current Discord user updated:', user);
+        this.cdr.detectChanges();
+      }
+    }, 2000);
   }
 
   private checkDiscordConnection() {
-    console.log('🔍 [Queue] Verificando conexão Discord inicial');
-    this.discordService.requestDiscordStatus();
+    this.discordService.checkConnection();
   }
 
-  // NOVO: Método para tentar identificar o usuário Discord atual
   private tryIdentifyCurrentDiscordUser() {
-    if (!this.currentPlayer) {
-      console.log('⚠️ [Queue] CurrentPlayer não disponível para identificação');
+    if (!this.currentPlayer || !this.currentPlayer.gameName || !this.currentPlayer.tagLine) {
+      console.log('⚠️ [Queue] Não é possível identificar usuário Discord: dados do LCU incompletos');
       return;
     }
 
-    console.log('🔍 [Queue] === IDENTIFICAÇÃO DE USUÁRIO DISCORD ===');
-    console.log('🔍 [Queue] Dados do LCU:', {
-      gameName: this.currentPlayer.gameName,
-      tagLine: this.currentPlayer.tagLine,
-      summonerName: this.currentPlayer.summonerName
-    });
-    
-    // Usar o método do DiscordService para identificar o usuário
-    const identifiedUser = this.discordService.identifyCurrentUserFromLCU({
-      gameName: this.currentPlayer.gameName || this.currentPlayer.summonerName?.split('#')[0],
-      tagLine: this.currentPlayer.tagLine || this.currentPlayer.summonerName?.split('#')[1]
+    const expectedRiotId = `${this.currentPlayer.gameName}#${this.currentPlayer.tagLine}`;
+    console.log('🔍 [Queue] Procurando usuário Discord com Riot ID:', expectedRiotId);
+
+    const matchingUser = this.discordUsersOnline.find(user => {
+      const userRiotId = user.riotId || user.riot_id;
+      const matches = userRiotId === expectedRiotId;
+      if (matches) {
+        console.log('✅ [Queue] Usuário Discord encontrado:', user);
+      }
+      return matches;
     });
 
-    if (identifiedUser) {
-      this.currentDiscordUser = identifiedUser;
-      console.log('✅ [Queue] Usuário Discord identificado com sucesso:', this.currentDiscordUser);
-    } else {
-      console.log('❌ [Queue] Usuário Discord não identificado');
-      console.log('❌ [Queue] Verificando se há usuários Discord online:', this.discordUsersOnline.length);
-      console.log('❌ [Queue] Usuários com nick vinculado:', this.discordUsersOnline.filter(u => u.linkedNickname).length);
-      this.currentDiscordUser = null;
+    if (matchingUser && !this.currentDiscordUser) {
+      console.log('🎯 [Queue] Identificando usuário Discord automaticamente:', matchingUser);
+      // Atualizar localmente (sem método updateCurrentDiscordUser)
+      this.currentDiscordUser = matchingUser;
+    } else if (!matchingUser) {
+      console.log('❌ [Queue] Usuário Discord não encontrado para Riot ID:', expectedRiotId);
+      console.log('📋 [Queue] Usuários disponíveis:', this.discordUsersOnline.map(u => ({
+        name: u.displayName || u.username,
+        riotId: u.riotId || u.riot_id
+      })));
     }
   }
 
   onJoinDiscordQueue() {
+    if (!this.queueStatus.isActive) {
+      console.warn('⚠️ [Queue] Fila não está ativa');
+      return;
+    }
+
+    console.log('🎮 [Queue] Tentando entrar na fila Discord...');
+
+    // Verificar se o Discord está conectado
     if (!this.isDiscordConnected) {
-      console.log('⚠️ [Queue] Discord não conectado');
-      alert('Discord não está conectado!');
+      alert('❌ Discord não está conectado. Conecte-se ao Discord primeiro.');
       return;
     }
 
-    if (!this.isInDiscordChannel) {
-      console.log('⚠️ [Queue] Usuário não está no canal necessário');
-      alert('Você precisa estar no canal Discord para entrar na fila!');
-      return;
-    }
-
-    if (!this.currentPlayer) {
-      console.log('⚠️ [Queue] Dados do jogador não disponíveis');
-      alert('Dados do jogador não disponíveis!');
-      return;
-    }
-
-    // ✅ MELHORIA: Tentar identificar o usuário Discord se não estiver identificado
+    // Verificar se há um usuário Discord identificado
     if (!this.currentDiscordUser) {
-      console.log('🔍 [Queue] Usuário Discord não identificado, tentando identificar...');
-      this.tryIdentifyCurrentDiscordUser();
-      
-      // Aguardar um pouco para a identificação ser processada
-      setTimeout(() => {
-        this.performDiscordValidation();
-      }, 100);
+      console.warn('⚠️ [Queue] Usuário Discord não identificado');
+      this.performDiscordValidation();
       return;
     }
 
-    // Se já temos o usuário identificado, fazer validação imediatamente
-    this.performDiscordValidation();
-  }
-
-  // ✅ NOVO: Método separado para validação Discord
-  private performDiscordValidation() {
-    console.log('🔍 [Queue] === VALIDAÇÃO DISCORD INICIADA ===');
-    console.log('🔍 [Queue] Current Discord User:', this.currentDiscordUser);
-    console.log('🔍 [Queue] Current Player:', {
-      gameName: this.currentPlayer?.gameName,
-      tagLine: this.currentPlayer?.tagLine,
-      summonerName: this.currentPlayer?.summonerName
-    });
-    console.log('🔍 [Queue] Discord Users Online:', this.discordUsersOnline);
-
-    // Buscar usuário Discord atual na lista de usuários online
-    const currentDiscordUser = this.discordUsersOnline.find(user => 
-      user.id === this.currentDiscordUser?.id
-    );
-
-    console.log('🔍 [Queue] Current Discord User found:', currentDiscordUser);
-
-    if (!currentDiscordUser) {
-      console.log('⚠️ [Queue] Usuário Discord não encontrado na lista de usuários online');
-      alert('Usuário Discord não encontrado na lista de usuários online!');
+    // Verificar se o usuário tem Riot ID vinculado
+    const userRiotId = this.currentDiscordUser.riotId || this.currentDiscordUser.riot_id;
+    if (!userRiotId) {
+      alert('❌ Sua conta Discord não está vinculada ao League of Legends. Use o comando !vincular no Discord.');
       return;
     }
 
-    if (!currentDiscordUser.linkedNickname) {
-      console.log('⚠️ [Queue] Usuário Discord não tem nickname vinculado');
-      alert('Sua conta Discord não está vinculada ao League of Legends! Use /vincular no Discord.');
+    // Verificar se o Riot ID confere com o jogador atual
+    const expectedRiotId = this.currentPlayer ? `${this.currentPlayer.gameName}#${this.currentPlayer.tagLine}` : '';
+    if (userRiotId !== expectedRiotId) {
+      alert(`❌ Discordância de contas:\n- Discord: ${userRiotId}\n- LoL: ${expectedRiotId}\n\nUse o comando !desvincular e !vincular no Discord.`);
       return;
     }
 
-    // ✅ MELHORIA: Comparação mais robusta dos nicks
-    const linkedGameName = currentDiscordUser.linkedNickname.gameName?.trim();
-    const linkedTagLine = currentDiscordUser.linkedNickname.tagLine?.trim();
-    const currentGameName = this.currentPlayer?.gameName?.trim();
-    const currentTagLine = this.currentPlayer?.tagLine?.trim();
-
-    console.log('🔍 [Queue] === COMPARAÇÃO DE NICKS ===');
-    console.log('  - Vinculado no Discord:', `"${linkedGameName}#${linkedTagLine}"`);
-    console.log('  - Detectado no LoL:', `"${currentGameName}#${currentTagLine}"`);
-    console.log('  - Comparação gameName:', `"${linkedGameName}" === "${currentGameName}" = ${linkedGameName === currentGameName}`);
-    console.log('  - Comparação tagLine:', `"${linkedTagLine}" === "${currentTagLine}" = ${linkedTagLine === currentTagLine}`);
-
-    // Verificar se os nicks coincidem (case-insensitive para maior compatibilidade)
-    const nickMatch = linkedGameName?.toLowerCase() === currentGameName?.toLowerCase() && 
-                     linkedTagLine?.toLowerCase() === currentTagLine?.toLowerCase();
-
-    console.log('🔍 [Queue] Resultado da comparação:', nickMatch);
-
-    if (!nickMatch) {
-      console.log('⚠️ [Queue] Nicks não coincidem');
-      alert(`Nicks não coincidem!\n\nDiscord: ${linkedGameName}#${linkedTagLine}\nLoL: ${currentGameName}#${currentTagLine}\n\nUse /vincular no Discord para corrigir.`);
-      return;
-    }
-
-    console.log('✅ [Queue] === VERIFICAÇÕES DISCORD APROVADAS ===');
-    console.log('✅ [Queue] Iniciando entrada na fila...');
+    console.log('✅ [Queue] Validação Discord passou, abrindo seletor de lanes...');
     this.showLaneSelector = true;
   }
 
-  onConfirmDiscordQueue(preferences: QueuePreferences) {
-    if (!this.currentPlayer || !this.currentDiscordUser) {
-      console.log('⚠️ [Queue] Dados necessários não disponíveis');
+  private performDiscordValidation() {
+    console.log('🔍 [Queue] Realizando validação Discord...');
+
+    if (!this.currentPlayer || !this.currentPlayer.gameName || !this.currentPlayer.tagLine) {
+      alert('❌ Dados do jogador incompletos. Reinicie o cliente LoL.');
       return;
     }
 
-    console.log('🎮 [Queue] Confirmando entrada na fila Discord com preferências:', preferences);
+    const expectedRiotId = `${this.currentPlayer.gameName}#${this.currentPlayer.tagLine}`;
+    console.log('🔍 [Queue] Procurando usuário Discord com Riot ID:', expectedRiotId);
 
-    // Preparar dados completos para a fila Discord
-    const discordQueueData = {
-      player: this.currentPlayer,
-      preferences: preferences,
-      discordId: this.currentDiscordUser.id,
-      gameName: this.currentPlayer.gameName || this.currentPlayer.summonerName?.split('#')[0],
-      tagLine: this.currentPlayer.tagLine || this.currentPlayer.summonerName?.split('#')[1]
-    };
+    // Procurar usuário Discord baseado no Riot ID
+    const matchingUser = this.discordUsersOnline.find(user => {
+      const userRiotId = user.riotId || user.riot_id;
+      return userRiotId === expectedRiotId;
+    });
 
-    // Usar emitter para notificar parent component
-    this.joinDiscordQueueWithFullData.emit(discordQueueData);
+    if (matchingUser) {
+      console.log('✅ [Queue] Usuário Discord encontrado:', matchingUser);
+      // Atualizar localmente (sem método updateCurrentDiscordUser)
+      this.currentDiscordUser = matchingUser;
+      
+      // Tentar novamente
+      this.onJoinDiscordQueue();
+    } else {
+      console.log('❌ [Queue] Usuário Discord não encontrado');
+      
+      const availableUsers = this.discordUsersOnline
+        .filter(u => u.riotId || u.riot_id)
+        .map(u => `${u.displayName || u.username}: ${u.riotId || u.riot_id}`)
+        .join('\n');
+
+      alert(`❌ Conta Discord não encontrada ou não vinculada.\n\nSua conta LoL: ${expectedRiotId}\n\nContas Discord vinculadas:\n${availableUsers || 'Nenhuma'}\n\nUse o comando !vincular no Discord.`);
+    }
+  }
+
+  onConfirmDiscordQueue(preferences: QueuePreferences) {
+    console.log('✅ [Queue] Confirmando entrada na fila Discord com preferências:', preferences);
+    
+    if (!this.currentPlayer || !this.currentDiscordUser) {
+      console.error('❌ [Queue] Dados incompletos para entrar na fila Discord');
+      return;
+    }
 
     this.queuePreferences = preferences;
     this.showLaneSelector = false;
+    
+    // Emitir evento com dados completos
+    this.joinDiscordQueueWithFullData.emit({
+      player: this.currentPlayer,
+      preferences: preferences
+    });
+    
     this.queueTimer = 0;
     this.startQueueTimer();
   }
 
   onLeaveDiscordQueue() {
-    console.log('🔍 [Queue] Saindo da fila Discord');
+    console.log('🔍 [Queue] Saindo da fila Discord...');
     this.leaveQueue.emit();
     this.stopQueueTimer();
     this.queueTimer = 0;
   }
 
-  // ✅ REMOVIDO: Métodos desnecessários que não estão sendo usados
-
+  // ✅ MANTIDO: Interface Utilities
   setActiveTab(tab: 'queue' | 'lobby' | 'all'): void {
     this.activeTab = tab;
+    console.log(`🔄 [Queue] Tab ativa alterada para: ${tab}`);
+    this.cdr.detectChanges();
   }
 
-  /**
-   * REGRA: Visualização e Atualização - fazer nova consulta ao banco MySQL
-   * Ao clicar no botão "Atualizar", buscar dados mais recentes da tabela queue_players
-   */
   refreshPlayersData(): void {
-    if (this.isRefreshing) return;
-    
-    console.log('🔄 [Queue] Atualizando dados dos jogadores da tabela queue_players');
-    this.isRefreshing = true;
-    
-    // REGRA: Fazer nova consulta ao banco de dados MySQL para buscar registros atuais
-    this.apiService.getQueueStatus().subscribe({
-      next: (queueStatus) => {
-        console.log('✅ [Queue] Dados atualizados da tabela queue_players:', queueStatus);
-        
-        // Atualizar dados locais com os dados frescos da tabela
-        this.queueStatus = queueStatus;
-        
-        // ✅ MUDANÇA: Só forçar sincronização se auto-refresh estiver habilitado
-        if (this.autoRefreshEnabled) {
-          this.queueStateService.forceSync();
-        }
-        
-        this.isRefreshing = false;
-        
-        // Log detalhado dos dados obtidos
-        console.log('📊 [Queue] Status da fila atualizado:', {
-          playersInQueue: this.queueStatus.playersInQueue,
-          playersList: this.queueStatus.playersInQueueList?.map(p => ({
-            name: p.summonerName,
-            position: p.queuePosition,
-            primaryLane: p.primaryLane
-          })) || []
-        });
-      },
-      error: (error) => {
-        console.error('❌ [Queue] Erro ao atualizar dados da tabela queue_players:', error);
-        this.isRefreshing = false;
-      }
-    });
-    
-    // Também atualizar dados do Discord
-    if (this.isDiscordConnected) {
-      this.discordService.requestDiscordStatus();
+    if (this.isRefreshing) {
+      console.log('⏳ [Queue] Refresh já em andamento, ignorando...');
+      return;
     }
+
+    this.isRefreshing = true;
+    console.log('🔄 [Queue] Atualizando dados dos jogadores...');
+
+    this.refreshData.emit();
+
+    // Reset isRefreshing após um delay
+    setTimeout(() => {
+      this.isRefreshing = false;
+      this.cdr.detectChanges();
+    }, 1000);
   }
 
   refreshQueueData(): void {
-    console.log('🔄 [Queue] Atualizando dados da fila...');
-    
-    // Emitir evento para o componente pai atualizar os dados
-    this.refreshData.emit();
-    
-    // Também forçar sincronização local
-    this.queueStateService.forceSync();
+    console.log('🔄 [Queue] Refresh manual da fila solicitado');
+    this.refreshPlayersData();
   }
 
+  // Track functions for *ngFor performance
   trackByPlayerId(index: number, player: any): string {
-    return player.summonerName + '_' + player.queuePosition;
+    return player?.id?.toString() || index.toString();
   }
 
   trackByDiscordUserId(index: number, user: any): string {
-    return user.id;
+    return user?.id?.toString() || index.toString();
   }
 
   isCurrentPlayer(player: any): boolean {
     if (!this.currentPlayer || !player) return false;
     
-    // Verificar por nome do invocador
-    const currentName = this.currentPlayer.summonerName || '';
-    const playerName = player.summonerName || '';
+    // Tentar múltiplas formas de comparação
+    if (this.currentPlayer.id && player.id) {
+      return this.currentPlayer.id === player.id;
+    }
     
-    // Comparar nomes (com e sem tag)
-    if (currentName === playerName) return true;
+    if (this.currentPlayer.summonerName && player.summonerName) {
+      return this.currentPlayer.summonerName === player.summonerName;
+    }
     
-    // Se um tem tag e outro não, comparar apenas a parte do nome
-    const currentBaseName = currentName.split('#')[0];
-    const playerBaseName = playerName.split('#')[0];
+    if (this.currentPlayer.gameName && player.gameName) {
+      return this.currentPlayer.gameName === player.gameName;
+    }
     
-    return currentBaseName === playerBaseName;
+    return false;
   }
 
   getTimeInQueue(joinTime: Date | string): string {
-    if (!joinTime) return '0min';
+    if (!joinTime) return '0s';
     
-    const now = new Date();
-    const join = new Date(joinTime);
-    const diffMs = now.getTime() - join.getTime();
-    const diffMinutes = Math.floor(diffMs / (1000 * 60));
-    
-    if (diffMinutes < 1) return '<1min';
-    if (diffMinutes < 60) return `${diffMinutes}min`;
-    
-    const hours = Math.floor(diffMinutes / 60);
-    const minutes = diffMinutes % 60;
-    return `${hours}h ${minutes}min`;
-  }
-
-  isUserInQueue(user: any): boolean {
-    if (!user.linkedNickname || !this.queueStatus.playersInQueueList) return false;
-    
-    return this.queueStatus.playersInQueueList.some(player => 
-      player.summonerName === user.linkedNickname ||
-      player.summonerName.startsWith(user.linkedNickname + '#')
-    );
-  }
-
-  inviteToLink(user: any): void {
-    if (!user) return;
-    
-    console.log('🔗 [Queue] Convidando usuário para vincular conta:', user);
-    // Implementar lógica de convite para vinculação
-    alert(`Funcionalidade em desenvolvimento: Convidar ${user.displayName || user.username} para vincular conta LoL`);
-  }
-
-  inviteToQueue(user: any): void {
-    if (!user) return;
-    
-    console.log('📝 [Queue] Convidando usuário para a fila:', user);
-    // Implementar lógica de convite para fila
-    alert(`Funcionalidade em desenvolvimento: Convidar ${user.displayName || user.username} para a fila`);
-  }
-
-  // ✅ NOVO: Verificar mudanças no status da fila
-  private onQueueStatusChange(): void {
-    console.log('🔄 [Queue] Status da fila atualizado:', {
-      playersInQueue: this.queueStatus.playersInQueue,
-      playersList: this.queueStatus.playersInQueueList?.map(p => p.summonerName)
-    });
-    
-    // ✅ NOVO: Detectar quando há 10 jogadores
-    this.detectAndCreateMatch();
-  }
-
-  // ✅ NOVO: Detectar quando há 10 jogadores e criar match found com lanes balanceadas
-  private detectAndCreateMatch(): void {
-    console.log('🎮 [Queue] detectAndCreateMatch chamado:', {
-      playersInQueue: this.queueStatus.playersInQueue,
-      playersInQueueListLength: this.queueStatus.playersInQueueList?.length
-    });
-    
-    if (this.queueStatus.playersInQueue >= 10) {
-      console.log('🎮 [Queue] Detectados 10 jogadores! Criando match found...');
+    try {
+      const now = new Date();
+      const start = new Date(joinTime);
+      const diffMs = now.getTime() - start.getTime();
+      const diffSeconds = Math.floor(diffMs / 1000);
       
-      // Pegar os primeiros 10 jogadores da fila
-      const playersForMatch = this.queueStatus.playersInQueueList?.slice(0, 10) || [];
-      
-      console.log('🎮 [Queue] Jogadores para match:', playersForMatch.map(p => ({
-        name: p.summonerName,
-        mmr: p.mmr,
-        primaryLane: p.primaryLane,
-        secondaryLane: p.secondaryLane
-      })));
-      
-      if (playersForMatch.length === 10) {
-        // ✅ NOVO: Implementar lógica de balanceamento de lanes
-        const balancedTeams = this.balanceTeamsByLanes(playersForMatch);
-        
-        if (balancedTeams) {
-          const { team1, team2 } = balancedTeams;
-          
-          // Calcular MMR médio dos times
-          const avgMMR1 = team1.reduce((sum, p) => sum + p.mmr, 0) / team1.length;
-          const avgMMR2 = team2.reduce((sum, p) => sum + p.mmr, 0) / team2.length;
-          
-          // ✅ CORREÇÃO: Usar apenas gameName (sem tagLine) para summonerName
-          const matchData = {
-            type: 'match_found',
-            data: {
-              matchId: Date.now(),
-              playerSide: 'blue', // Será ajustado para cada jogador
-              teammates: team1.map(p => ({
-                id: p.queuePosition || 0,
-                summonerName: this.extractGameName(p.summonerName), // ✅ CORREÇÃO: Apenas gameName
-                mmr: p.mmr,
-                primaryLane: p.primaryLane || 'fill',
-                secondaryLane: p.secondaryLane || 'fill',
-                assignedLane: p.assignedLane || p.primaryLane || 'fill',
-                teamIndex: p.teamIndex || 0, // ✅ NOVO: Índice para o draft
-                isAutofill: p.isAutofill || false
-              })),
-              enemies: team2.map(p => ({
-                id: p.queuePosition || 0,
-                summonerName: this.extractGameName(p.summonerName), // ✅ CORREÇÃO: Apenas gameName
-                mmr: p.mmr,
-                primaryLane: p.primaryLane || 'fill',
-                secondaryLane: p.secondaryLane || 'fill',
-                assignedLane: p.assignedLane || p.primaryLane || 'fill',
-                teamIndex: p.teamIndex || 0, // ✅ NOVO: Índice para o draft
-                isAutofill: p.isAutofill || false
-              })),
-              averageMMR: {
-                yourTeam: avgMMR1,
-                enemyTeam: avgMMR2
-              },
-              estimatedGameDuration: 25,
-              phase: 'accept',
-              acceptTimeout: 30
-            }
-          };
-          
-          console.log('🎮 [Queue] Match found criado com lanes balanceadas:', matchData);
-          console.log('🎮 [Queue] Team1 (teammates):', matchData.data.teammates.map(p => ({
-            name: p.summonerName,
-            lane: p.assignedLane,
-            teamIndex: p.teamIndex,
-            isAutofill: p.isAutofill
-          })));
-          console.log('🎮 [Queue] Team2 (enemies):', matchData.data.enemies.map(p => ({
-            name: p.summonerName,
-            lane: p.assignedLane,
-            teamIndex: p.teamIndex,
-            isAutofill: p.isAutofill
-          })));
-          
-          // ✅ CORREÇÃO: Criar partida no backend ANTES de disparar o evento
-          this.createMatchInBackend(matchData.data).then((matchId) => {
-            // Atualizar o matchId com o ID real do banco
-            if (matchId) {
-              matchData.data.matchId = matchId;
-              console.log(`✅ [Queue] MatchId atualizado para: ${matchId}`);
-            }
-            
-            // Disparar evento para o app APÓS criar a partida
-            const event = new CustomEvent('matchFound', { detail: matchData });
-            document.dispatchEvent(event);
-            
-            console.log('✅ [Queue] Evento matchFound disparado com matchId:', matchId);
-          }).catch((error) => {
-            console.error('❌ [Queue] Erro ao criar partida, mas continuando fluxo:', error);
-            
-            // Mesmo com erro, disparar o evento para não bloquear o fluxo
-            const event = new CustomEvent('matchFound', { detail: matchData });
-            document.dispatchEvent(event);
-            
-            console.log('✅ [Queue] Evento matchFound disparado (sem matchId do backend)');
-          });
-        }
+      if (diffSeconds < 60) {
+        return `${diffSeconds}s`;
+      } else {
+        const minutes = Math.floor(diffSeconds / 60);
+        const seconds = diffSeconds % 60;
+        return `${minutes}m ${seconds}s`;
       }
+    } catch (error) {
+      console.warn('⚠️ [Queue] Erro ao calcular tempo na fila:', error);
+      return '0s';
     }
   }
 
-  // ✅ NOVO: Extrair apenas o gameName (sem tagLine)
+  isUserInQueue(user: any): boolean {
+    const userRiotId = user.riotId || user.riot_id;
+    if (!userRiotId) return false;
+    
+    return this.queueStatus.playersInQueueList?.some(player => 
+      player.summonerName === userRiotId || 
+      `${player.summonerName}#${player.tagLine}` === userRiotId
+    ) || false;
+  }
+
+  inviteToLink(user: any): void {
+    console.log('🔗 [Queue] Convidando usuário para vincular:', user);
+    alert(`Funcionalidade em desenvolvimento: Convidar ${user.displayName || user.username} para vincular conta`);
+  }
+
+  inviteToQueue(user: any): void {
+    console.log('📝 [Queue] Convidando usuário para a fila:', user);
+    alert(`Funcionalidade em desenvolvimento: Convidar ${user.displayName || user.username} para a fila`);
+  }
+
+  // Extrair apenas o gameName (sem tagLine)
   private extractGameName(fullName: string): string {
     if (fullName.includes('#')) {
       return fullName.split('#')[0];
     }
     return fullName;
-  }
-
-  // ✅ CORREÇÃO COMPLETA: Balancear times por MMR e lanes
-  private balanceTeamsByLanes(players: any[]): { team1: any[], team2: any[] } | null {
-    console.log('🎯 [Queue] Balanceando times por lanes...');
-    
-    // ✅ CORREÇÃO: Ordenar jogadores por MMR (maior primeiro)
-    const sortedPlayers = [...players].sort((a, b) => b.mmr - a.mmr);
-    
-    // ✅ CORREÇÃO: Atribuir lanes únicas baseado em MMR e preferências
-    const playersWithLanes = this.assignLanesByMMRAndPreferences(sortedPlayers, []);
-    
-    console.log('🎯 [Queue] Jogadores com lanes atribuídas:', playersWithLanes.length);
-    
-    // ✅ VERIFICAÇÃO: Garantir que temos exatamente 10 jogadores
-    if (playersWithLanes.length !== 10) {
-      console.error('❌ [Queue] ERRO: Não temos 10 jogadores com lanes! Temos:', playersWithLanes.length);
-      return null;
-    }
-    
-    // ✅ CORREÇÃO: Verificar se temos exatamente 10 jogadores com lanes únicas
-    const uniqueLanes = new Set(playersWithLanes.map(p => p.assignedLane));
-    console.log('🎯 [Queue] Lanes únicas encontradas:', Array.from(uniqueLanes));
-    
-    if (uniqueLanes.size !== 5) {
-      console.error('❌ [Queue] ERRO: Não temos 5 lanes únicas! Temos:', uniqueLanes.size);
-      return null;
-    }
-    
-    if (playersWithLanes.length !== 10) {
-      console.error('❌ [Queue] ERRO: Não temos 10 jogadores! Temos:', playersWithLanes.length);
-      return null;
-    }
-    
-    // ✅ CORREÇÃO: Usar todos os jogadores (já têm lanes únicas garantidas pelo método anterior)
-    const playersWithUniqueLanes = playersWithLanes;
-    
-    // ✅ CORREÇÃO: Separar times baseado no teamIndex já atribuído (0-4 = time azul, 5-9 = time vermelho)
-    const team1: any[] = [];
-    const team2: any[] = [];
-    
-    playersWithUniqueLanes.forEach(player => {
-      if (player.teamIndex >= 0 && player.teamIndex <= 4) {
-        team1.push(player);
-      } else if (player.teamIndex >= 5 && player.teamIndex <= 9) {
-        team2.push(player);
-      } else {
-        console.error(`❌ [Queue] TeamIndex inválido para ${player.summonerName}: ${player.teamIndex}`);
-      }
-    });
-    
-    console.log('🎯 [Queue] Times separados por teamIndex:', {
-      team1Size: team1.length,
-      team2Size: team2.length,
-      team1MMR: team1.reduce((sum, p) => sum + p.mmr, 0) / team1.length,
-      team2MMR: team2.reduce((sum, p) => sum + p.mmr, 0) / team2.length,
-      team1: team1.map(p => ({ name: p.summonerName, lane: p.assignedLane, teamIndex: p.teamIndex, mmr: p.mmr })),
-      team2: team2.map(p => ({ name: p.summonerName, lane: p.assignedLane, teamIndex: p.teamIndex, mmr: p.mmr }))
-    });
-    
-    console.log('🎯 [Queue] Índices ajustados:', {
-      team1: team1.map(p => ({ name: p.summonerName, teamIndex: p.teamIndex, lane: p.assignedLane })),
-      team2: team2.map(p => ({ name: p.summonerName, teamIndex: p.teamIndex, lane: p.assignedLane }))
-    });
-    
-    // ✅ VERIFICAÇÃO: Garantir que cada time tem 5 jogadores com lanes únicas
-    const team1Lanes = new Set(team1.map(p => p.assignedLane));
-    const team2Lanes = new Set(team2.map(p => p.assignedLane));
-    
-    console.log('✅ [Queue] Verificação final:', {
-      team1Size: team1.length,
-      team2Size: team2.length,
-      team1Lanes: Array.from(team1Lanes),
-      team2Lanes: Array.from(team2Lanes),
-      team1LanesUnique: team1Lanes.size === 5,
-      team2LanesUnique: team2Lanes.size === 5
-    });
-    
-    // ✅ VERIFICAÇÃO: Garantir que cada time tem 5 jogadores
-    if (team1.length !== 5 || team2.length !== 5) {
-      console.error('❌ [Queue] ERRO: Times não têm 5 jogadores!', { team1Size: team1.length, team2Size: team2.length });
-      return null;
-    }
-    
-    return { team1, team2 };
-  }
-
-
-
-  // ✅ CORREÇÃO COMPLETA: Atribuir lanes únicas baseado em MMR e preferências
-  private assignLanesByMMRAndPreferences(players: any[], lanePriority: string[]): any[] {
-    console.log('🎯 [Queue] assignLanesByMMRAndPreferences iniciado com', players.length, 'jogadores');
-    
-    // ✅ CORREÇÃO: Definir ordem exata das lanes conforme o draft espera
-    const laneOrder = ['top', 'jungle', 'mid', 'bot', 'support'];
-    const laneToIndex: { [key: string]: number } = { 'top': 0, 'jungle': 1, 'mid': 2, 'bot': 3, 'support': 4 };
-    
-    // ✅ CORREÇÃO: Ordenar jogadores por MMR (maior primeiro) para priorizar preferências
-    const sortedPlayers = [...players].sort((a, b) => b.mmr - a.mmr);
-    
-    console.log('🎯 [Queue] Jogadores ordenados por MMR:', sortedPlayers.map(p => ({
-      name: p.summonerName,
-      mmr: p.mmr,
-      primaryLane: p.primaryLane,
-      secondaryLane: p.secondaryLane
-    })));
-    
-    // ✅ CORREÇÃO: Sistema de atribuição de lanes único - cada lane só pode ser atribuída 2 vezes
-    const laneAssignments: { [key: string]: number } = { 'top': 0, 'jungle': 0, 'mid': 0, 'bot': 0, 'support': 0 };
-    const playersWithLanes: any[] = [];
-    
-    // ✅ PRIMEIRA PASSADA: Atribuir lanes preferidas para jogadores com maior MMR
-    for (const player of sortedPlayers) {
-      const primaryLane = player.primaryLane || 'fill';
-      const secondaryLane = player.secondaryLane || 'fill';
-      
-      let assignedLane = null;
-      let isAutofill = false;
-      let teamIndex = null;
-      
-      // Tentar lane primária primeiro (se não foi atribuída 2 vezes ainda)
-      if (primaryLane !== 'fill' && laneAssignments[primaryLane] < 2) {
-        assignedLane = primaryLane;
-        isAutofill = false;
-        laneAssignments[primaryLane]++;
-        teamIndex = laneAssignments[primaryLane] === 1 ? laneToIndex[primaryLane] : laneToIndex[primaryLane] + 5;
-      }
-      // Tentar lane secundária
-      else if (secondaryLane !== 'fill' && laneAssignments[secondaryLane] < 2) {
-        assignedLane = secondaryLane;
-        isAutofill = false;
-        laneAssignments[secondaryLane]++;
-        teamIndex = laneAssignments[secondaryLane] === 1 ? laneToIndex[secondaryLane] : laneToIndex[secondaryLane] + 5;
-      }
-      // Se nenhuma preferência está disponível, encontrar uma lane disponível
-      else {
-        // Encontrar primeira lane disponível
-        for (const lane of laneOrder) {
-          if (laneAssignments[lane] < 2) {
-            assignedLane = lane;
-            isAutofill = true;
-            laneAssignments[lane]++;
-            teamIndex = laneAssignments[lane] === 1 ? laneToIndex[lane] : laneToIndex[lane] + 5;
-            break;
-          }
-        }
-      }
-      
-      // Atribuir lane ao jogador
-      const playerWithLane = {
-        ...player,
-        assignedLane: assignedLane,
-        isAutofill: isAutofill,
-        teamIndex: teamIndex
-      };
-      
-      playersWithLanes.push(playerWithLane);
-      
-      console.log(`🎯 [Queue] ${player.summonerName} (MMR: ${player.mmr}) → ${assignedLane} (${isAutofill ? 'autofill' : 'preferência'}, índice ${teamIndex})`);
-    }
-    
-    // ✅ VERIFICAÇÃO: Garantir que todas as lanes foram atribuídas exatamente 2 vezes
-    console.log(`🎯 [Queue] Contagem final de lanes:`, laneAssignments);
-    
-    const allLanesAssigned = Object.values(laneAssignments).every(count => count === 2);
-    if (!allLanesAssigned) {
-      console.error('❌ [Queue] ERRO: Nem todas as lanes foram atribuídas 2 vezes!', laneAssignments);
-      return [];
-    }
-    
-    // ✅ CORREÇÃO: Ordenar jogadores por teamIndex para garantir ordem correta
-    const orderedPlayers = playersWithLanes.sort((a, b) => {
-      if (a.teamIndex !== null && b.teamIndex !== null) {
-        return a.teamIndex - b.teamIndex;
-      }
-      return 0;
-    });
-    
-    console.log('✅ [Queue] Jogadores finais ordenados por teamIndex:', orderedPlayers.map(p => ({
-      name: p.summonerName,
-      lane: p.assignedLane,
-      teamIndex: p.teamIndex,
-      isAutofill: p.isAutofill,
-      mmr: p.mmr
-    })));
-    
-    console.log('✅ [Queue] Total de jogadores processados:', orderedPlayers.length);
-    console.log('✅ [Queue] Lanes atribuídas:', orderedPlayers.map(p => p.assignedLane));
-    console.log('✅ [Queue] TeamIndexes:', orderedPlayers.map(p => p.teamIndex));
-    
-    // ✅ VERIFICAÇÃO: Garantir que temos exatamente 10 jogadores
-    if (orderedPlayers.length !== 10) {
-      console.error('❌ [Queue] ERRO: Não temos 10 jogadores! Temos:', orderedPlayers.length);
-      return [];
-    }
-    
-    // ✅ VERIFICAÇÃO: Garantir que temos teamIndexes únicos de 0-9
-    const teamIndexes = orderedPlayers.map(p => p.teamIndex).sort((a, b) => a - b);
-    const expectedIndexes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
-    const hasCorrectIndexes = JSON.stringify(teamIndexes) === JSON.stringify(expectedIndexes);
-    
-    if (!hasCorrectIndexes) {
-      console.error('❌ [Queue] ERRO: TeamIndexes incorretos!', teamIndexes);
-      return [];
-    }
-    
-    // ✅ VERIFICAÇÃO FINAL: Garantir que cada lane tem exatamente 2 jogadores
-    const laneCounts: { [key: string]: number } = {};
-    orderedPlayers.forEach(p => {
-      laneCounts[p.assignedLane] = (laneCounts[p.assignedLane] || 0) + 1;
-    });
-    
-    console.log('✅ [Queue] Contagem de jogadores por lane:', laneCounts);
-    
-    const hasCorrectDistribution = Object.values(laneCounts).every(count => count === 2);
-    if (!hasCorrectDistribution) {
-      console.error('❌ [Queue] ERRO: Distribuição incorreta de lanes!', laneCounts);
-      return [];
-    }
-    
-    console.log('✅ [Queue] Atribuição de lanes concluída com sucesso!');
-    return orderedPlayers;
-  }
-
-  // ✅ CORREÇÃO: Criar partida no backend e retornar Promise
-  private createMatchInBackend(matchData: any): Promise<number | null> {
-    console.log('🎮 [Queue] Criando partida no backend:', matchData);
-    
-    return new Promise((resolve, reject) => {
-      this.apiService.createMatchFromFrontend(matchData).subscribe({
-        next: (response) => {
-          console.log('✅ [Queue] Partida criada no backend com sucesso:', response);
-          
-          // Retornar o matchId se disponível
-          if (response.success && response.matchId) {
-            console.log(`✅ [Queue] Partida criada com ID: ${response.matchId}`);
-            resolve(response.matchId);
-          } else {
-            console.warn('⚠️ [Queue] Partida criada mas sem matchId');
-            resolve(null);
-          }
-        },
-        error: (error) => {
-          console.error('❌ [Queue] Erro ao criar partida no backend:', error);
-          reject(error);
-        }
-      });
-    });
   }
 } 

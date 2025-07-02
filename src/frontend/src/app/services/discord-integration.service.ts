@@ -601,6 +601,11 @@ export class DiscordIntegrationService {
     return this.currentDiscordUser;
   }
 
+  checkConnection(): void {
+    console.log(`🔍 [DiscordService #${this.instanceId}] Verificando conexão...`);
+    this.requestDiscordStatus();
+  }
+
   // NOVO: Método para identificar o usuário atual baseado nos dados do LCU
   identifyCurrentUserFromLCU(lcuData?: { gameName: string, tagLine: string }): any {
     if (!lcuData || !lcuData.gameName || !lcuData.tagLine) {

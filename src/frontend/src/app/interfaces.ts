@@ -7,10 +7,11 @@ export interface Player {
   summonerId?: string;
   puuid?: string;
   tagLine?: string;
-  profileIconId?: number;
+  profileIconId?: string | number;
   summonerLevel?: number;
   currentMMR: number;
   mmr?: number; // Alias para currentMMR
+  customLp?: number; // LP customizado
   region: string;
   rank?: {
     tier: string;
@@ -91,6 +92,7 @@ export interface Notification {
   title: string;
   message: string;
   timestamp: Date;
+  isRead?: boolean;
 }
 
 export interface CurrentGame {

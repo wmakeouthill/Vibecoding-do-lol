@@ -279,6 +279,9 @@ export class DatabaseManager {
     
     // ✅ CORREÇÃO: Alterar estrutura da tabela queue_players se necessário
     await this.ensureQueuePlayersStructure();
+    
+    // ✅ NOVO: Adicionar coluna de status de aceitação durante inicialização
+    await this.addAcceptanceStatusColumn();
   }
 
   private async ensureQueuePlayersStructure(): Promise<void> {
@@ -655,22 +658,7 @@ export class DatabaseManager {
     }
   }
 
-  async updateCustomMatchStatus(matchId: number, status: string): Promise<void> {
-    if (!this.pool) throw new Error('Pool de conexão não inicializado');
 
-    try {
-      // Garantir que a tabela existe antes de atualizar
-      await this.ensureCustomMatchesTable();
-
-      await this.pool.execute(
-        'UPDATE custom_matches SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [status, matchId]
-      );
-    } catch (error) {
-      console.error('Erro ao atualizar status da partida customizada:', error);
-      throw error;
-    }
-  }
 
   // Método genérico para atualizar partida customizada
   async updateCustomMatch(matchId: number, updateData: any): Promise<void> {
@@ -839,6 +827,119 @@ export class DatabaseManager {
       }
     } catch (error) {
       console.error('❌ [Database] Erro ao remover jogador da fila:', error);
+      throw error;
+    }
+  }
+
+  // ✅ NOVO: Remover jogador da fila por summoner_name
+  async removePlayerFromQueueBySummonerName(summonerName: string): Promise<boolean> {
+    if (!this.pool) throw new Error('Pool de conexão não inicializado');
+
+    try {
+      console.log(`🔍 [Database] Tentando remover jogador da fila por summoner_name: ${summonerName}`);
+      
+      // ✅ CORREÇÃO: Buscar e deletar linha por summoner_name
+      const [result] = await this.pool.execute(
+        'DELETE FROM queue_players WHERE summoner_name = ?',
+        [summonerName]
+      );
+
+      const affectedRows = (result as any).affectedRows;
+      if (affectedRows > 0) {
+        console.log(`✅ [Database] Jogador (${summonerName}) removido da fila - linha deletada`);
+        return true;
+      } else {
+        console.log(`⚠️ [Database] Nenhuma linha encontrada para remover (${summonerName})`);
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ [Database] Erro ao remover jogador da fila por summoner_name:', error);
+      throw error;
+    }
+  }
+
+  // ✅ NOVO: Adicionar coluna de status de aceitação na tabela queue_players
+  async addAcceptanceStatusColumn(): Promise<void> {
+    if (!this.pool) throw new Error('Pool de conexão não inicializado');
+
+    try {
+      // Verificar se a coluna já existe
+      const [columns] = await this.pool.execute(
+        "SHOW COLUMNS FROM queue_players LIKE 'acceptance_status'"
+      );
+      
+      if ((columns as any[]).length === 0) {
+        // Adicionar coluna se não existir
+        await this.pool.execute(
+          'ALTER TABLE queue_players ADD COLUMN acceptance_status TINYINT DEFAULT 0 COMMENT "0=pendente, 1=aceito, 2=recusado"'
+        );
+        console.log('✅ [Database] Coluna acceptance_status adicionada à tabela queue_players');
+      } else {
+        console.log('✅ [Database] Coluna acceptance_status já existe');
+      }
+    } catch (error) {
+      console.error('❌ [Database] Erro ao adicionar coluna acceptance_status:', error);
+      throw error;
+    }
+  }
+
+  // ✅ NOVO: Atualizar status de aceitação de um jogador
+  async updatePlayerAcceptanceStatus(summonerName: string, status: number): Promise<boolean> {
+    if (!this.pool) throw new Error('Pool de conexão não inicializado');
+
+    try {
+      console.log(`🔍 [Database] Atualizando status de aceitação para ${summonerName}: ${status}`);
+      
+      const [result] = await this.pool.execute(
+        'UPDATE queue_players SET acceptance_status = ? WHERE summoner_name = ?',
+        [status, summonerName]
+      );
+
+      const affectedRows = (result as any).affectedRows;
+      if (affectedRows > 0) {
+        console.log(`✅ [Database] Status de aceitação atualizado para ${summonerName}: ${status}`);
+        return true;
+      } else {
+        console.log(`⚠️ [Database] Jogador ${summonerName} não encontrado para atualizar status`);
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ [Database] Erro ao atualizar status de aceitação:', error);
+      throw error;
+    }
+  }
+
+  // ✅ NOVO: Limpar status de aceitação de todos os jogadores (reset)
+  async clearAllAcceptanceStatus(): Promise<void> {
+    if (!this.pool) throw new Error('Pool de conexão não inicializado');
+
+    try {
+      await this.pool.execute(
+        'UPDATE queue_players SET acceptance_status = 0'
+      );
+      console.log('✅ [Database] Status de aceitação de todos os jogadores resetado');
+    } catch (error) {
+      console.error('❌ [Database] Erro ao limpar status de aceitação:', error);
+      throw error;
+    }
+  }
+
+  // ✅ NOVO: Remover jogadores que recusaram a partida
+  async removeDeclinedPlayers(): Promise<number> {
+    if (!this.pool) throw new Error('Pool de conexão não inicializado');
+
+    try {
+      console.log('🗑️ [Database] Removendo jogadores que recusaram a partida...');
+      
+      const [result] = await this.pool.execute(
+        'DELETE FROM queue_players WHERE acceptance_status = 2'
+      );
+
+      const affectedRows = (result as any).affectedRows;
+      console.log(`✅ [Database] ${affectedRows} jogadores que recusaram foram removidos da fila`);
+      return affectedRows;
+    } catch (error) {
+      console.error('❌ [Database] Erro ao remover jogadores que recusaram:', error);
       throw error;
     }
   }
@@ -2745,11 +2846,11 @@ export class DatabaseManager {
 
     try {
       await this.pool.execute(
-        'UPDATE queue_players SET queue_position = ? WHERE player_id = ? AND is_active = 1',
+        'UPDATE queue_players SET queue_position = ? WHERE player_id = ?',
         [position, playerId]
       );
     } catch (error) {
-      console.error('Erro ao atualizar posição na fila:', error);
+      console.error('❌ [Database] Erro ao atualizar posição na fila:', error);
       throw error;
     }
   }
@@ -2769,6 +2870,98 @@ export class DatabaseManager {
       }
     } catch (error) {
       console.error('❌ Erro ao verificar/corrigir charset da tabela settings:', error);
+      throw error;
+    }
+  }
+
+  // ✅ NOVO: Buscar partidas custom ativas (status = 'pending')
+  async getActiveCustomMatches(): Promise<any[]> {
+    if (!this.pool) throw new Error('Pool de conexão não inicializado');
+
+    try {
+      const [rows] = await this.pool.execute(
+        `SELECT * FROM custom_matches 
+         WHERE status = 'pending' 
+         ORDER BY created_at ASC`
+      );
+      return rows as any[];
+    } catch (error) {
+      console.error('❌ [Database] Erro ao buscar partidas ativas:', error);
+      return [];
+    }
+  }
+
+  // ✅ NOVO: Buscar partidas custom por status
+  async getCustomMatchesByStatus(status: string): Promise<any[]> {
+    if (!this.pool) throw new Error('Pool de conexão não inicializado');
+
+    try {
+      const [rows] = await this.pool.execute(
+        `SELECT * FROM custom_matches 
+         WHERE status = ? 
+         ORDER BY created_at DESC`,
+        [status]
+      );
+      return rows as any[];
+    } catch (error) {
+      console.error('❌ [Database] Erro ao buscar partidas por status:', error);
+      return [];
+    }
+  }
+
+  // ✅ NOVO: Atualizar status da partida custom
+  async updateCustomMatchStatus(matchId: number, status: string, extraData?: any): Promise<void> {
+    if (!this.pool) throw new Error('Pool de conexão não inicializado');
+
+    try {
+      let query = 'UPDATE custom_matches SET status = ?';
+      let params: any[] = [status, matchId];
+
+      if (extraData) {
+        if (extraData.completedAt) {
+          query += ', completed_at = ?';
+          params.splice(-1, 0, extraData.completedAt);
+        }
+        if (extraData.winnerTeam !== undefined) {
+          query += ', winner_team = ?';
+          params.splice(-1, 0, extraData.winnerTeam);
+        }
+        if (extraData.duration !== undefined) {
+          query += ', duration = ?';
+          params.splice(-1, 0, extraData.duration);
+        }
+      }
+
+      query += ' WHERE id = ?';
+
+      await this.pool.execute(query, params);
+      console.log(`✅ [Database] Status da partida ${matchId} atualizado para: ${status}`);
+    } catch (error) {
+      console.error('❌ [Database] Erro ao atualizar status da partida:', error);
+      throw error;
+    }
+  }
+
+  // ✅ NOVO: Atualizar dados do jogador
+  async updatePlayer(playerId: number, updateData: Partial<Player>): Promise<void> {
+    if (!this.pool) throw new Error('Pool de conexão não inicializado');
+
+    try {
+      const fields = Object.keys(updateData);
+      const values = Object.values(updateData);
+      
+      if (fields.length === 0) {
+        console.warn('⚠️ [Database] Nenhum campo para atualizar');
+        return;
+      }
+
+      const setClause = fields.map(field => `${field} = ?`).join(', ');
+      const query = `UPDATE players SET ${setClause} WHERE id = ?`;
+      
+      await this.pool.execute(query, [...values, playerId]);
+      console.log(`✅ [Database] Jogador ${playerId} atualizado com sucesso`);
+    } catch (error) {
+      console.error('❌ [Database] Erro ao atualizar jogador:', error);
       throw error;
     }
   }

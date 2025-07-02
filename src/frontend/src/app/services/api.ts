@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Observable, throwError } from 'rxjs';
+import { Observable, throwError, Subject } from 'rxjs';
 import { catchError, retry, map, switchMap } from 'rxjs/operators';
 import { Player, RefreshPlayerResponse } from '../interfaces'; // Importar Player e RefreshPlayerResponse
 
@@ -64,6 +64,9 @@ export class ApiService {
   // Error suppression system to reduce spam when services are down
   private errorSuppressionCache = new Map<string, number>();
   private readonly ERROR_SUPPRESSION_DURATION = 30000; // 30 seconds
+
+  // ✅ NOVO: Subject para mensagens WebSocket
+  private webSocketMessageSubject = new Subject<any>();
 
   constructor(private http: HttpClient) {
     // Log de diagnóstico inicial
@@ -879,7 +882,7 @@ export class ApiService {
       );
   }
 
-  // ✅ NOVO: Criar partida a partir do frontend
+  // ✅ NOVO: Criar partida a partir do frontend (SIMPLIFICADO - backend processa automaticamente)
   createMatchFromFrontend(matchData: any): Observable<any> {
     console.log('🎮 [API] Criando partida a partir do frontend:', matchData);
     
@@ -949,5 +952,15 @@ export class ApiService {
       .pipe(
         catchError(this.handleError)
       );
+  }
+
+  // ✅ NOVO: Método para escutar mensagens WebSocket
+  onWebSocketMessage(): Observable<any> {
+    return this.webSocketMessageSubject.asObservable();
+  }
+
+  // ✅ NOVO: Método para emitir mensagens WebSocket (usado pelo backend)
+  emitWebSocketMessage(message: any): void {
+    this.webSocketMessageSubject.next(message);
   }
 }
