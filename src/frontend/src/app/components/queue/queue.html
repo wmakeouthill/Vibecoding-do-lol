@@ -188,7 +188,7 @@
       <div class="table-body">
         <div *ngFor="let user of discordUsersOnline; trackBy: trackByDiscordUserId" 
              class="table-row"
-             [class.has-lol]="user.linkedNickname">
+             [class.has-lol]="hasLinkedNickname(user)">
           <div class="col-player">
             <div class="discord-user-info">
               <i class="fab fa-discord"></i>
@@ -196,10 +196,10 @@
             </div>
           </div>
           <div class="col-lol">
-            <div *ngIf="user.linkedNickname" class="lol-account">
-              <span class="linked-name">{{ user.linkedNickname }}</span>
+            <div *ngIf="hasLinkedNickname(user)" class="lol-account">
+              <span class="linked-name">{{ getLinkedNickname(user) }}</span>
             </div>
-            <div *ngIf="!user.linkedNickname" class="no-lol">
+            <div *ngIf="!hasLinkedNickname(user)" class="no-lol">
               <span class="not-linked">Não vinculado</span>
             </div>
           </div>
@@ -215,19 +215,19 @@
           </div>
           <div class="col-actions">
             <!-- Ações simplificadas - Backend gerencia lógica -->
-            <button *ngIf="!user.linkedNickname" 
+            <button *ngIf="!hasLinkedNickname(user)" 
                     class="action-btn link-btn" 
                     (click)="inviteToLink(user)">
               <i class="fas fa-link"></i>
               <span>Vincular</span>
             </button>
-            <button *ngIf="user.linkedNickname && !isUserInQueue(user)" 
+            <button *ngIf="hasLinkedNickname(user) && !isUserInQueue(user)" 
                     class="action-btn invite-btn" 
                     (click)="inviteToQueue(user)">
               <i class="fas fa-plus"></i>
               <span>Convidar</span>
             </button>
-            <span *ngIf="user.linkedNickname && isUserInQueue(user)" class="queue-status in-queue">
+            <span *ngIf="hasLinkedNickname(user) && isUserInQueue(user)" class="queue-status in-queue">
               Na Fila
             </span>
           </div>

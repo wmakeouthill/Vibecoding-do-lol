@@ -83,6 +83,9 @@ export class MatchFoundService {
       // 8. Notificar frontend sobre partida encontrada
       this.notifyMatchFound(matchId, matchData);
 
+      // 9. ✅ NOVO: Iniciar atualizações de timer em tempo real
+      this.startTimerUpdates(matchId);
+
       console.log(`✅ [MatchFound] Partida ${matchId} criada e processo de aceitação iniciado`);
       return matchId;
 
@@ -290,6 +293,26 @@ export class MatchFoundService {
     }
   }
 
+  // ✅ NOVO: Enviar atualizações de timer em tempo real
+  private startTimerUpdates(matchId: number): void {
+    const matchStatus = this.pendingMatches.get(matchId);
+    if (!matchStatus) return;
+
+    let timeLeft = Math.floor(this.ACCEPTANCE_TIMEOUT_MS / 1000); // 30 segundos
+    
+    const timerInterval = setInterval(() => {
+      timeLeft--;
+      
+      // Enviar atualização do timer via WebSocket
+      this.notifyTimerUpdate(matchId, timeLeft);
+      
+      // Parar quando chegar a 0 ou partida não existir mais
+      if (timeLeft <= 0 || !this.pendingMatches.has(matchId)) {
+        clearInterval(timerInterval);
+      }
+    }, 1000);
+  }
+
   // ✅ Aceitar automaticamente para bots
   private async autoAcceptForBots(matchId: number, players: string[]): Promise<void> {
     try {
@@ -385,6 +408,23 @@ export class MatchFoundService {
 
     this.broadcastMessage(message);
     console.log(`📢 [MatchFound] Notificação de cancelamento enviada (${matchId})`);
+  }
+
+  // ✅ NOVO: Notificar atualização do timer
+  private notifyTimerUpdate(matchId: number, timeLeft: number): void {
+    if (!this.wss) return;
+
+    const message = {
+      type: 'match_timer_update',
+      data: {
+        matchId,
+        timeLeft,
+        isUrgent: timeLeft <= 10
+      },
+      timestamp: Date.now()
+    };
+
+    this.broadcastMessage(message);
   }
 
   private broadcastMessage(message: any): void {

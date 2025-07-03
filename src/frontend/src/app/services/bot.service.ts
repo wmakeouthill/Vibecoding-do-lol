@@ -31,6 +31,23 @@ export class BotService {
     constructor() { }
 
     /**
+     * ✅ NOVO: Verifica se deve aceitar partida automaticamente
+     */
+    shouldAutoAcceptMatch(currentPlayer: any): boolean {
+        if (!currentPlayer) {
+            return false;
+        }
+
+        const isBotPlayer = this.isBot(currentPlayer);
+        console.log(`🤖 [BotService] shouldAutoAcceptMatch:`, {
+            playerName: currentPlayer.summonerName || currentPlayer.gameName,
+            isBot: isBotPlayer
+        });
+
+        return isBotPlayer;
+    }
+
+    /**
      * Verifica se um jogador é um bot
      */
     isBot(player: any): boolean {

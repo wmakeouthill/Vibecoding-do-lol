@@ -52,6 +52,9 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
     if (this.matchData && this.matchData.phase === 'accept') {
       this.startAcceptCountdown();
     }
+    
+    // ✅ NOVO: Escutar atualizações de timer do backend
+    this.setupTimerListener();
   }
 
   ngOnChanges(changes: SimpleChanges) {
@@ -87,6 +90,27 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
   ngOnDestroy() {
     if (this.countdownTimer) {
       clearInterval(this.countdownTimer);
+    }
+    
+    // ✅ NOVO: Remover listener de timer
+    document.removeEventListener('matchTimerUpdate', this.onTimerUpdate);
+  }
+
+  // ✅ NOVO: Configurar listener para atualizações de timer do backend
+  private setupTimerListener(): void {
+    document.addEventListener('matchTimerUpdate', this.onTimerUpdate);
+  }
+
+  // ✅ NOVO: Handler para atualizações de timer do backend
+  private onTimerUpdate = (event: any): void => {
+    if (event.detail) {
+      this.acceptTimeLeft = event.detail.timeLeft;
+      this.isTimerUrgent = event.detail.isUrgent;
+      
+      // Auto-decline se tempo esgotar
+      if (this.acceptTimeLeft <= 0) {
+        this.onDeclineMatch();
+      }
     }
   }
 
@@ -136,10 +160,13 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   private startAcceptCountdown(): void {
-    this.acceptTimeLeft = this.matchData?.acceptTimeout || 30;
+    this.acceptTimeLeft = Math.floor((this.matchData?.acceptTimeout || 30000) / 1000); // Converter ms para segundos
     this.isTimerUrgent = this.acceptTimeLeft <= 10; // Verificar urgência inicial
 
+    // ✅ MUDANÇA: Timer local como fallback, sincronizado com backend
     this.countdownTimer = window.setInterval(() => {
+      // Só decrementar localmente se não estiver recebendo atualizações do backend
+      // (as atualizações do backend têm prioridade via onTimerUpdate)
       this.acceptTimeLeft--;
       this.isTimerUrgent = this.acceptTimeLeft <= 10; // Atualizar urgência
 

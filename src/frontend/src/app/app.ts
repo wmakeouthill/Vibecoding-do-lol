@@ -14,6 +14,7 @@ import { GameInProgressComponent } from './components/game-in-progress/game-in-p
 import { ApiService } from './services/api';
 import { QueueStateService } from './services/queue-state';
 import { DiscordIntegrationService } from './services/discord-integration.service';
+import { BotService } from './services/bot.service';
 import { Player, QueueStatus, LCUStatus, MatchFound, QueuePreferences, RefreshPlayerResponse } from './interfaces';
 import type { Notification } from './interfaces';
 
@@ -89,7 +90,8 @@ export class App implements OnInit, OnDestroy {
   constructor(
     private apiService: ApiService,
     private queueStateService: QueueStateService,
-    private discordService: DiscordIntegrationService
+    private discordService: DiscordIntegrationService,
+    private botService: BotService
   ) {
     this.isElectron = !!(window as any).electronAPI;
   }
@@ -188,6 +190,11 @@ export class App implements OnInit, OnDestroy {
         this.handleMatchCancelled(message.data);
         break;
         
+      case 'match_timer_update':
+        console.log('⏰ [App] Atualização de timer');
+        this.handleMatchTimerUpdate(message.data);
+        break;
+        
       case 'queue_update':
         console.log('🔄 [App] Atualização da fila');
         this.handleQueueUpdate(message.data);
@@ -211,10 +218,26 @@ export class App implements OnInit, OnDestroy {
     console.log('🎮 [App] Exibindo match found:', data);
     
     this.matchFoundData = data;
-    this.showMatchFound = true;
     this.isInQueue = false;
     
-    this.addNotification('success', 'Partida Encontrada!', 'Você tem 30 segundos para aceitar.');
+    // ✅ NOVO: Aceitação automática para bots
+    if (this.currentPlayer && this.botService.shouldAutoAcceptMatch(this.currentPlayer)) {
+      console.log('🤖 [App] Bot detectado - aceitando partida automaticamente em 2 segundos...');
+      
+      // ✅ Para bots, não mostrar tela de match found (aceitar direto)
+      this.showMatchFound = false;
+      
+      // Aguardar 2 segundos para simular comportamento humano
+      setTimeout(() => {
+        this.acceptMatch();
+      }, 2000);
+      
+      this.addNotification('info', 'Bot Auto-Accept', 'Partida será aceita automaticamente...');
+    } else {
+      // ✅ Para jogadores humanos, mostrar tela de aceitação
+      this.showMatchFound = true;
+      this.addNotification('success', 'Partida Encontrada!', 'Você tem 30 segundos para aceitar.');
+    }
     
     // Som de notificação
     try {
@@ -273,6 +296,18 @@ export class App implements OnInit, OnDestroy {
     this.isInQueue = true; // Voltar para fila
     
     this.addNotification('info', 'Partida Cancelada', data.message || 'A partida foi cancelada.');
+  }
+
+  private handleMatchTimerUpdate(data: any): void {
+    console.log('⏰ [App] Timer atualizado:', data);
+    
+    // Atualizar timer no componente match-found se estiver visível
+    if (this.showMatchFound && this.matchFoundData && this.matchFoundData.matchId === data.matchId) {
+      // Emitir evento para o componente match-found atualizar o timer
+      document.dispatchEvent(new CustomEvent('matchTimerUpdate', { 
+        detail: { timeLeft: data.timeLeft, isUrgent: data.isUrgent } 
+      }));
+    }
   }
 
   private handleQueueUpdate(data: any): void {
@@ -896,8 +931,27 @@ export class App implements OnInit, OnDestroy {
 
   isSpecialUser(): boolean {
     // Usuários especiais que têm acesso às ferramentas de desenvolvimento
-    const specialUsers = ['Admin', 'wcaco#BR1', 'developer#DEV', 'test#TEST'];
-    return this.currentPlayer && specialUsers.includes(this.currentPlayer.summonerName) || false;
+    const specialUsers = [
+      'Admin', 
+      'wcaco#BR1', 
+      'developer#DEV', 
+      'test#TEST', 
+      'popcorn seller#coup',
+      'popcorn seller',  // Variação sem tag
+      'popcorn seller#COUP'  // Variação com tag maiúscula
+    ];
+    
+    if (this.currentPlayer) {
+      const isSpecial = specialUsers.includes(this.currentPlayer.summonerName);
+      console.log(`🔍 [App] Verificação de usuário especial:`, {
+        currentPlayerName: this.currentPlayer.summonerName,
+        isSpecialUser: isSpecial,
+        specialUsers: specialUsers
+      });
+      return isSpecial;
+    }
+    
+    return false;
   }
 
   simulateLastCustomMatch(): void {
@@ -958,5 +1012,10 @@ export class App implements OnInit, OnDestroy {
   // ✅ ADICIONADO: Propriedades faltantes para o template
   get currentMatchData(): any {
     return this.draftData || this.gameData || null;
+  }
+
+  // ✅ NOVO: Verificar se jogador atual é bot
+  isCurrentPlayerBot(): boolean {
+    return this.currentPlayer ? this.botService.isBot(this.currentPlayer) : false;
   }
 }
