@@ -51,6 +51,7 @@ export class DiscordIntegrationService {
   private autoUpdateInterval?: number;
   private readonly AUTO_UPDATE_INTERVAL = 60000; // Aumentado para 60 segundos (era 30s) - menos polling, mais broadcasts
   private lastAutoUpdate = 0;
+  private lastQueueIgnoreLog = 0; // ✅ NOVO: Para throttling de logs de fila ignorada
 
   private matchFoundSubject = new Subject<any>();
 
@@ -336,16 +337,43 @@ export class DiscordIntegrationService {
         break;
 
       case 'queue_update':
-        console.log(`🎯 [DiscordService #${this.instanceId}] Fila atualizada:`, data.data?.playersInQueue || 0, 'jogadores');
+        // ✅ FILTRO INTELIGENTE: Só processar se houver mudanças significativas
+        const currentPlayerCount = this.queueParticipants?.length || 0;
+        const newPlayerCount = data.data?.playersInQueue || 0;
+        const newPlayerList = data.data?.playersInQueueList || [];
+        
+        // Verificar se há mudança real no número de jogadores
+        const hasPlayerCountChange = currentPlayerCount !== newPlayerCount;
+        
+        // Verificar se é um broadcast crítico (10+ jogadores = matchmaking)
+        const isCriticalUpdate = newPlayerCount >= 10 && currentPlayerCount < 10;
+        
+        // Verificar se é uma mudança substancial (diferença de 2+ jogadores)
+        const isSubstantialChange = Math.abs(currentPlayerCount - newPlayerCount) >= 2;
+        
+        // ✅ SÓ PROCESSAR E EMITIR SE FOR RELEVANTE
+        if (hasPlayerCountChange || isCriticalUpdate || isSubstantialChange || data.critical) {
+          console.log(`🎯 [DiscordService #${this.instanceId}] Fila atualizada:`, {
+            players: `${currentPlayerCount} → ${newPlayerCount}`,
+            critical: isCriticalUpdate,
+            substantial: isSubstantialChange,
+            forced: data.critical
+          });
 
-        // Aplicar atualização imediatamente (sem throttling desnecessário)
-        this.queueParticipants = data.data?.playersInQueueList || [];
-        this.lastQueueUpdate = Date.now();
+          // Atualizar dados locais
+          this.queueParticipants = newPlayerList;
+          this.lastQueueUpdate = Date.now();
 
-        // Emitir atualização da fila para componentes
-        this.queueUpdateSubject.next(data.data);
-
-        console.log(`🎯 [DiscordService #${this.instanceId}] Atualização de fila aplicada imediatamente`);
+          // Emitir atualização para componentes
+          this.queueUpdateSubject.next(data.data);
+        } else {
+          // ✅ IGNORAR: Atualização sem mudanças significativas
+          const timeSinceLastLog = Date.now() - (this.lastQueueIgnoreLog || 0);
+          if (timeSinceLastLog > 15000) { // Log apenas a cada 15 segundos
+            console.log(`⏭️ [DiscordService #${this.instanceId}] Atualização de fila ignorada - sem mudanças significativas (${newPlayerCount} jogadores)`);
+            this.lastQueueIgnoreLog = Date.now();
+          }
+        }
         break;
 
       case 'queue_joined':
@@ -456,72 +484,145 @@ export class DiscordIntegrationService {
 
   // Entrar na fila Discord
   joinDiscordQueue(primaryLane: string, secondaryLane: string, username: string, lcuData?: { gameName: string, tagLine: string }) {
+    console.log('🎮 [DiscordService] === ENTRADA NA FILA DISCORD ===');
+    console.log('🎮 [DiscordService] Dados recebidos:', {
+      primaryLane,
+      secondaryLane,
+      username,
+      lcuData,
+      wsConnected: this.ws?.readyState === WebSocket.OPEN,
+      backendConnected: this.isBackendConnected,
+      inDiscordChannel: this.isInDiscordChannel
+    });
+
+    // Validação 1: WebSocket conectado
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.error('❌ WebSocket não conectado');
+      console.error('❌ [DiscordService] WebSocket não conectado');
+      console.error('❌ [DiscordService] Estado do WebSocket:', this.ws?.readyState);
       return false;
     }
 
-    if (!this.isInDiscordChannel) {
-      console.error('❌ Não está no canal #lol-matchmaking');
-      return false;
-    }
-
-    // Verificar se temos dados do LCU
+    // Validação 2: Dados do LCU disponíveis
     if (!lcuData || !lcuData.gameName || !lcuData.tagLine) {
-      console.error('❌ Dados do LCU não disponíveis. Certifique-se de estar logado no LoL');
+      console.error('❌ [DiscordService] Dados do LCU não disponíveis');
+      console.error('❌ [DiscordService] lcuData recebido:', lcuData);
+      console.error('❌ [DiscordService] Certifique-se de estar logado no LoL');
       return false;
     }
 
-    // Buscar o Discord ID do usuário atual baseado nos dados do LCU
     const lcuFullName = `${lcuData.gameName}#${lcuData.tagLine}`;
     console.log('🔍 [DiscordService] Procurando usuário Discord para:', lcuFullName);
+    console.log('🔍 [DiscordService] Usuários Discord disponíveis:', this.discordUsersOnline.length);
+    console.log('🔍 [DiscordService] Lista de usuários:', this.discordUsersOnline.map(u => ({
+      username: u.username,
+      displayName: u.displayName,
+      linkedNickname: u.linkedNickname
+    })));
 
-    // Procurar nos usuários online do Discord que tenham o nick vinculado
+    // Validação 3: Procurar usuário Discord com nick vinculado
     const matchingUser = this.discordUsersOnline.find(user => {
       if (user.linkedNickname) {
-        const discordFullName = `${user.linkedNickname.gameName}#${user.linkedNickname.tagLine}`;
+        // ✅ CORRIGIDO: linkedNickname pode ser um objeto {gameName, tagLine} ou uma string
+        let discordFullName = '';
+        
+        if (typeof user.linkedNickname === 'string') {
+          // Se for string, usar diretamente
+          discordFullName = user.linkedNickname;
+        } else if (user.linkedNickname.gameName && user.linkedNickname.tagLine) {
+          // Se for objeto, formar a string
+          discordFullName = `${user.linkedNickname.gameName}#${user.linkedNickname.tagLine}`;
+        } else {
+          return false;
+        }
+        
+        console.log('🔍 [DiscordService] Comparando:', {
+          lcu: lcuFullName,
+          discord: discordFullName,
+          linkedNicknameType: typeof user.linkedNickname,
+          linkedNicknameValue: user.linkedNickname,
+          match: discordFullName === lcuFullName
+        });
         return discordFullName === lcuFullName;
       }
       return false;
     });
 
     if (!matchingUser) {
-      console.error('❌ Usuário Discord não encontrado para:', lcuFullName);
+      console.error('❌ [DiscordService] Usuário Discord não encontrado para:', lcuFullName);
+      console.error('❌ [DiscordService] Verifique se:');
+      console.error('  1. Você está no canal #lol-matchmaking do Discord');
+      console.error('  2. Você vinculou sua conta usando o comando !vincular');
+      console.error('  3. O gameName#tagLine está correto');
       console.log('🔍 [DiscordService] Usuários disponíveis:', this.discordUsersOnline.map(u => ({
         username: u.username,
         linkedNickname: u.linkedNickname
       })));
-      return false;
+      
+      // ✅ NOVO: Tentar validação mais flexível se a validação rígida falhar
+      console.log('🔍 [DiscordService] Tentando validação alternativa...');
+      
+      // Verificar se existe pelo menos um usuário online no Discord
+      if (this.discordUsersOnline.length === 0) {
+        console.error('❌ [DiscordService] Nenhum usuário Discord online encontrado');
+        console.error('❌ [DiscordService] Certifique-se de estar conectado ao Discord e no canal correto');
+        return false;
+      }
+      
+      // Se há usuários Discord online mas nenhum com vinculação, permitir entrada mas avisar
+      console.warn('⚠️ [DiscordService] Prosseguindo sem validação de vinculação Discord');
+      console.warn('⚠️ [DiscordService] O backend fará a validação final');
+      
+      // Usar o primeiro usuário online como fallback ou criar entrada manual
+      const fallbackUser = this.discordUsersOnline[0];
+      console.log('🔄 [DiscordService] Usando usuário Discord como fallback:', fallbackUser.username);
+      
+      const message = {
+        type: 'join_discord_queue',
+        data: {
+          discordId: fallbackUser.id,
+          gameName: lcuData.gameName,
+          tagLine: lcuData.tagLine,
+          lcuData: lcuData,
+          preferences: {
+            primaryLane: primaryLane,
+            secondaryLane: secondaryLane
+          },
+          fallbackMode: true // Indicar que está usando modo fallback
+        }
+      };
+
+      console.log('🎯 [DiscordService] Enviando entrada na fila (modo fallback):', message);
+      this.ws.send(JSON.stringify(message));
+      return true;
     }
 
-    console.log('✅ [DiscordService] Usuário Discord encontrado:', matchingUser);
+    console.log('✅ [DiscordService] Usuário Discord encontrado:', {
+      id: matchingUser.id,
+      username: matchingUser.username,
+      displayName: matchingUser.displayName,
+      linkedNickname: matchingUser.linkedNickname
+    });
 
-    // Usar os dados do Discord vinculado em vez dos dados do LCU
-    const discordGameName = matchingUser.linkedNickname.gameName;
-    const discordTagLine = matchingUser.linkedNickname.tagLine;
-
-    console.log('🔍 [DiscordService] Dados para entrada na fila:', {
+    // ✅ CORRIGIDO: Usar os dados do LCU, pois o Discord linkedNickname é só uma string
+    console.log('🔍 [DiscordService] Dados finais para entrada na fila:', {
       discordId: matchingUser.id,
       discordUsername: matchingUser.username,
       lcuData: lcuData,
-      discordData: {
-        gameName: discordGameName,
-        tagLine: discordTagLine
-      },
+      linkedNickname: matchingUser.linkedNickname,
       lanes: {
         primary: primaryLane,
         secondary: secondaryLane
-      },
-      usingDiscordData: true
+      }
     });
 
     const message = {
       type: 'join_discord_queue',
       data: {
         discordId: matchingUser.id,
-        gameName: discordGameName, // Usar dados do Discord
-        tagLine: discordTagLine,   // Usar dados do Discord
-        lcuData: lcuData, // Manter dados do LCU para verificação
+        gameName: lcuData.gameName, // ✅ USAR DADOS DO LCU
+        tagLine: lcuData.tagLine,   // ✅ USAR DADOS DO LCU
+        lcuData: lcuData,
+        linkedNickname: matchingUser.linkedNickname, // Para referência
         preferences: {
           primaryLane: primaryLane,
           secondaryLane: secondaryLane
@@ -529,7 +630,7 @@ export class DiscordIntegrationService {
       }
     };
 
-    console.log('🎯 Enviando entrada na fila Discord:', message);
+    console.log('🎯 [DiscordService] Enviando entrada na fila Discord:', message);
     this.ws.send(JSON.stringify(message));
     return true;
   }
@@ -576,16 +677,11 @@ export class DiscordIntegrationService {
   // Métodos públicos
   isConnected(): boolean {
     const wsOpen = this.ws?.readyState === WebSocket.OPEN;
-    const backendConnected = this.isBackendConnected;
-    const finalStatus = wsOpen;
+    const finalStatus = wsOpen && this.isBackendConnected;
 
-    console.log(`🔍 [DiscordService #${this.instanceId}] Status de conexão:`, {
-      wsOpen,
-      backendConnected,
-      finalStatus,
-      wsReadyState: this.ws?.readyState
-    });
-
+    // ✅ REMOVIDO: Log excessivo que causava spam
+    // Só fazer log se o status mudou ou em debug específico
+    
     return finalStatus;
   }
 

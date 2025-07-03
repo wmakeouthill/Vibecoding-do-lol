@@ -7,16 +7,15 @@
       {{ queueStatus.isActive ? 'Sistema Online' : 'Sistema Offline' }}
     </div>
 
-    <!-- Discord Mode Toggle -->
-    <div class="discord-toggle" *ngIf="showDiscordMode">
+    <!-- Discord Status - Dados do Backend -->
+    <div class="discord-toggle">
       <div class="discord-status" [class.connected]="isDiscordConnected">
         <i class="fab fa-discord"></i>
-        <span *ngIf="isDiscordConnected && discordService.isDiscordBackendConnected()">Discord Conectado</span>
-        <span *ngIf="isDiscordConnected && !discordService.isDiscordBackendConnected()">Servidor Conectado (Discord Offline)</span>
-        <span *ngIf="!isDiscordConnected">Desconectado</span>
+        <span *ngIf="isDiscordConnected">Discord Conectado</span>
+        <span *ngIf="!isDiscordConnected">Discord Desconectado</span>
       </div>
-      <div class="discord-user" *ngIf="currentDiscordUser">
-        👤 {{ currentDiscordUser.displayName || currentDiscordUser.username }}
+      <div class="discord-user" *ngIf="currentPlayer?.gameName">
+        👤 {{ currentPlayer?.gameName }}#{{ currentPlayer?.tagLine }}
       </div>
     </div>
   </div>
@@ -28,19 +27,19 @@
            alt="Profile Icon"
            class="profile-icon"
            (error)="onProfileIconError($event)">
-      <div class="player-level" *ngIf="currentPlayer.summonerLevel">
-        {{ currentPlayer.summonerLevel }}
+      <div class="player-level" *ngIf="currentPlayer?.summonerLevel">
+        {{ currentPlayer?.summonerLevel }}
       </div>
     </div>
     <div class="player-details">
       <h3>
-        {{ currentPlayer.summonerName }}<span class="player-tag">{{ getPlayerTag() }}</span>
+        {{ currentPlayer?.summonerName }}<span class="player-tag">{{ getPlayerTag() }}</span>
       </h3>
       <div class="player-stats">
-        <span class="mmr">{{ currentPlayer.currentMMR || currentPlayer.mmr || 'N/A' }} MMR</span>
-        <span class="rank" *ngIf="currentPlayer.rank">{{ getPlayerRankDisplay() }}</span>
-        <span class="wins-losses" *ngIf="currentPlayer.wins !== undefined && currentPlayer.losses !== undefined">
-          {{ currentPlayer.wins }}V / {{ currentPlayer.losses }}D
+        <span class="mmr">{{ currentPlayer?.currentMMR || currentPlayer?.mmr || 'N/A' }} MMR</span>
+        <span class="rank" *ngIf="currentPlayer?.rank">{{ getPlayerRankDisplay() }}</span>
+        <span class="wins-losses" *ngIf="currentPlayer?.wins !== undefined && currentPlayer?.losses !== undefined">
+          {{ currentPlayer?.wins }}V / {{ currentPlayer?.losses }}D
         </span>
       </div>
       <div class="player-preferences" *ngIf="queuePreferences.primaryLane && queuePreferences.secondaryLane">
@@ -162,7 +161,7 @@
             </div>
           </div>
           <div class="col-mmr">{{ player.mmr }}</div>
-          <div class="col-time">{{ getTimeInQueue(player.joinTime) }}</div>
+          <div class="col-time">{{ getTimeInQueue(player) }}</div>
           <div class="col-status">
             <span class="status-badge in-queue">Na Fila</span>
           </div>
@@ -198,8 +197,7 @@
           </div>
           <div class="col-lol">
             <div *ngIf="user.linkedNickname" class="lol-account">
-              <span class="game-name">{{ user.linkedNickname.gameName }}</span>
-              <span class="tag-line">#{{ user.linkedNickname.tagLine }}</span>
+              <span class="linked-name">{{ user.linkedNickname }}</span>
             </div>
             <div *ngIf="!user.linkedNickname" class="no-lol">
               <span class="not-linked">Não vinculado</span>
@@ -216,14 +214,22 @@
             </span>
           </div>
           <div class="col-actions">
-            <button *ngIf="!user.linkedNickname" class="action-btn link-btn" (click)="inviteToLink(user)">
+            <!-- Ações simplificadas - Backend gerencia lógica -->
+            <button *ngIf="!user.linkedNickname" 
+                    class="action-btn link-btn" 
+                    (click)="inviteToLink(user)">
               <i class="fas fa-link"></i>
               <span>Vincular</span>
             </button>
-            <button *ngIf="user.linkedNickname && !isUserInQueue(user)" class="action-btn invite-btn" (click)="inviteToQueue(user)">
+            <button *ngIf="user.linkedNickname && !isUserInQueue(user)" 
+                    class="action-btn invite-btn" 
+                    (click)="inviteToQueue(user)">
               <i class="fas fa-plus"></i>
               <span>Convidar</span>
             </button>
+            <span *ngIf="user.linkedNickname && isUserInQueue(user)" class="queue-status in-queue">
+              Na Fila
+            </span>
           </div>
         </div>
         
@@ -246,7 +252,7 @@
 
         <div class="requirements" *ngIf="currentPlayer">
           <div class="requirement-item">
-            <i class="icon-check" [class.met]="currentPlayer.currentMMR >= 0"></i>
+            <i class="icon-check" [class.met]="(currentPlayer?.currentMMR || 0) >= 0"></i>
             <span>MMR válido</span>
           </div>
           <div class="requirement-item">
@@ -266,20 +272,16 @@
         </button>
       </div>
 
-      <!-- Status do Discord -->
-      <div class="discord-status-info" *ngIf="showDiscordMode">
+      <!-- Status do Discord - Dados do Backend -->
+      <div class="discord-status-info">
         <div class="status-row">
           <div class="status-item" [class.connected]="isDiscordConnected">
             <div class="status-indicator"></div>
-            <span>Servidor</span>
+            <span>Discord: {{ isDiscordConnected ? 'Conectado' : 'Desconectado' }}</span>
           </div>
-          <div class="status-item" [class.connected]="discordService.isDiscordBackendConnected()">
+          <div class="status-item" [class.connected]="discordUsersOnline.length > 0">
             <div class="status-indicator"></div>
-            <span>Discord Bot</span>
-          </div>
-          <div class="status-item" [class.connected]="discordService.isInChannel()">
-            <div class="status-indicator"></div>
-            <span>Canal</span>
+            <span>Usuários Online: {{ discordUsersOnline.length }}</span>
           </div>
         </div>
       </div>
@@ -291,15 +293,15 @@
           <div class="lcu-details">
             <div class="lol-info">
               <span class="label">LoL:</span>
-              <span class="value">{{ currentPlayer.gameName }}#{{ currentPlayer.tagLine }}</span>
+              <span class="value">{{ currentPlayer?.gameName }}#{{ currentPlayer?.tagLine }}</span>
             </div>
-            <div class="discord-info" *ngIf="currentDiscordUser">
+            <div class="discord-info">
               <span class="label">Discord:</span>
-              <span class="value">{{ currentDiscordUser.displayName || currentDiscordUser.username }} (vinculado para {{ currentPlayer.gameName }}#{{ currentPlayer.tagLine }})</span>
+              <span class="value">{{ isDiscordConnected ? 'Conectado' : 'Desconectado' }}</span>
             </div>
             <div class="status-info">
               <i class="fas fa-check-circle"></i>
-              <span>Você será identificado automaticamente na fila Discord</span>
+              <span>Backend identifica automaticamente sua vinculação Discord</span>
             </div>
           </div>
         </div>

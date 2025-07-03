@@ -81,6 +81,10 @@ export class App implements OnInit, OnDestroy {
   };
 
   private destroy$ = new Subject<void>();
+  private lastIgnoreLogTime = 0;
+  
+  // ✅ NOVO: Controle de auto-refresh para sincronizar com o queue component
+  private autoRefreshEnabled = false;
 
   constructor(
     private apiService: ApiService,
@@ -97,29 +101,42 @@ export class App implements OnInit, OnDestroy {
     this.loadPlayerData();
     this.setupDiscordStatusListener();
     this.startLCUStatusCheck();
-    this.startQueueStatusCheck();
+    // ✅ REMOVIDO: startQueueStatusCheck() - usar apenas WebSocket em tempo real
     this.checkBackendConnection();
     this.loadConfigFromDatabase();
     
     // ✅ NOVO: Configurar comunicação com backend
     this.setupBackendCommunication();
+    
+    // ✅ NOVO: Buscar status inicial da fila UMA VEZ apenas
+    this.refreshQueueStatus();
   }
 
   // ✅ NOVO: Configurar comunicação centralizada com backend
   private setupBackendCommunication(): void {
     console.log('🔌 [App] Configurando comunicação com backend via WebSocket...');
     
-    // Escutar estado da fila via MySQL
-    this.queueStateService.getQueueState().subscribe(queueState => {
-      console.log('📊 [App] Estado da fila atualizado via backend:', queueState);
+    // Escutar estado da fila via MySQL apenas para mudanças de estado críticas
+    this.queueStateService.getQueueState().pipe(
+      takeUntil(this.destroy$)
+    ).subscribe(queueState => {
+      console.log('📊 [App] Estado crítico da fila atualizado via backend:', queueState);
+      
+      // Só atualizar estado crítico (entrada/saída da fila)
+      const wasInQueue = this.isInQueue;
       this.isInQueue = queueState.isInQueue;
       
-      // Buscar dados completos da fila
-      this.refreshQueueStatus();
+      // Se mudou o estado de estar na fila, buscar dados atualizados UMA VEZ
+      if (wasInQueue !== this.isInQueue) {
+        console.log(`🔄 [App] Estado da fila mudou: ${wasInQueue} → ${this.isInQueue}`);
+        this.refreshQueueStatus();
+      }
     });
 
     // Escutar mensagens WebSocket do backend
-    this.apiService.onWebSocketMessage().subscribe({
+    this.apiService.onWebSocketMessage().pipe(
+      takeUntil(this.destroy$)
+    ).subscribe({
       next: (message) => {
         console.log('📡 [App] Mensagem do backend recebida:', message);
         this.handleBackendMessage(message);
@@ -259,8 +276,56 @@ export class App implements OnInit, OnDestroy {
   }
 
   private handleQueueUpdate(data: any): void {
-    console.log('🔄 [App] Atualização da fila:', data);
-    this.queueStatus = data;
+    // ✅ VERIFICAR SE AUTO-REFRESH ESTÁ HABILITADO ANTES DE PROCESSAR
+    if (!this.autoRefreshEnabled) {
+      // Só processar atualizações críticas mesmo com auto-refresh desabilitado
+      const currentPlayerCount = this.queueStatus?.playersInQueue || 0;
+      const newPlayerCount = data?.playersInQueue || 0;
+      const isCriticalUpdate = newPlayerCount >= 10 && currentPlayerCount < 10; // Matchmaking threshold
+      
+      if (!isCriticalUpdate && !data.critical) {
+        // ✅ IGNORAR: Auto-refresh desabilitado e não é atualização crítica
+        const timeSinceLastIgnoreLog = Date.now() - (this.lastIgnoreLogTime || 0);
+        if (timeSinceLastIgnoreLog > 30000) { // Log apenas a cada 30 segundos
+          console.log('⏭️ [App] Atualizações da fila ignoradas - auto-refresh desabilitado');
+          this.lastIgnoreLogTime = Date.now();
+        }
+        return;
+      }
+    }
+    
+    // ✅ FILTROS MÚLTIPLOS: Só atualizar em casos específicos e necessários
+    const currentPlayerCount = this.queueStatus?.playersInQueue || 0;
+    const newPlayerCount = data?.playersInQueue || 0;
+    
+    // 1. Verificar se há mudança no número de jogadores
+    const hasPlayerCountChange = currentPlayerCount !== newPlayerCount;
+    
+    // 2. Verificar se há mudança no status ativo da fila
+    const currentIsActive = this.queueStatus?.isActive || false;
+    const newIsActive = data?.isActive !== undefined ? data.isActive : currentIsActive;
+    const hasActiveStatusChange = currentIsActive !== newIsActive;
+    
+    // 3. Verificar se é uma mudança crítica (10+ jogadores = matchmaking)
+    const isCriticalThreshold = newPlayerCount >= 10 && currentPlayerCount < 10;
+    
+    // ✅ SÓ ATUALIZAR SE HOUVER MUDANÇAS SIGNIFICATIVAS
+    if (hasPlayerCountChange || hasActiveStatusChange || isCriticalThreshold) {
+      console.log(`📊 [App] Status da fila atualizado:`, {
+        playersInQueue: `${currentPlayerCount} → ${newPlayerCount}`,
+        isActive: `${currentIsActive} → ${newIsActive}`,
+        isCritical: isCriticalThreshold,
+        autoRefreshEnabled: this.autoRefreshEnabled
+      });
+      this.queueStatus = data;
+    } else {
+      // ✅ IGNORAR: Log apenas quando necessário, evitar spam
+      const timeSinceLastIgnoreLog = Date.now() - (this.lastIgnoreLogTime || 0);
+      if (timeSinceLastIgnoreLog > 10000) { // Log apenas a cada 10 segundos
+        console.log('⏭️ [App] Atualizações da fila ignoradas - sem mudanças significativas');
+        this.lastIgnoreLogTime = Date.now();
+      }
+    }
   }
 
   ngOnDestroy(): void {
@@ -294,9 +359,38 @@ export class App implements OnInit, OnDestroy {
   async joinDiscordQueueWithFullData(data: { player: Player | null, preferences: QueuePreferences }): Promise<void> {
     console.log('📞 [App] Solicitando entrada na fila Discord ao backend...', data);
     
+    if (!data.player) {
+      console.error('❌ [App] Dados do jogador não disponíveis');
+      this.addNotification('error', 'Erro', 'Dados do jogador não disponíveis');
+      return;
+    }
+
+    if (!data.player.gameName || !data.player.tagLine) {
+      console.error('❌ [App] gameName ou tagLine não disponíveis');
+      this.addNotification('error', 'Erro', 'Dados do jogador incompletos (gameName/tagLine)');
+      return;
+    }
+
     try {
-      await this.apiService.joinQueue(data.player, data.preferences).toPromise();
-      console.log('✅ [App] Solicitação de entrada na fila Discord enviada');
+      // ✅ CORRIGIDO: Usar discordService.joinDiscordQueue para entrada via Discord
+      const success = this.discordService.joinDiscordQueue(
+        data.preferences.primaryLane,
+        data.preferences.secondaryLane,
+        data.player.summonerName,
+        {
+          gameName: data.player.gameName,
+          tagLine: data.player.tagLine
+        }
+      );
+
+      if (success) {
+        console.log('✅ [App] Solicitação de entrada na fila Discord enviada via WebSocket');
+        this.addNotification('success', 'Fila Discord', 'Entrando na fila via Discord...');
+        this.isInQueue = true;
+      } else {
+        console.error('❌ [App] Falha ao enviar solicitação via Discord WebSocket');
+        this.addNotification('error', 'Erro', 'Falha ao conectar com Discord');
+      }
     } catch (error) {
       console.error('❌ [App] Erro ao entrar na fila Discord:', error);
       this.addNotification('error', 'Erro', 'Falha ao entrar na fila Discord');
@@ -534,7 +628,21 @@ export class App implements OnInit, OnDestroy {
   }
 
   private setupDiscordStatusListener(): void {
-    // Implementação simplificada
+    // ✅ CORRIGIDO: Usar observables em tempo real em vez de polling
+    this.discordService.onConnectionChange().pipe(
+      takeUntil(this.destroy$)
+    ).subscribe(isConnected => {
+      console.log(`🤖 [App] Discord status atualizado:`, isConnected);
+      this.discordStatus.isConnected = isConnected;
+      
+      if (isConnected) {
+        this.discordStatus.botUsername = 'LoL Matchmaking Bot';
+      } else {
+        this.discordStatus.botUsername = '';
+      }
+    });
+
+    // Solicitar status inicial UMA VEZ apenas
     this.discordService.checkConnection();
   }
 
@@ -547,11 +655,12 @@ export class App implements OnInit, OnDestroy {
     }, 5000);
   }
 
-  private startQueueStatusCheck(): void {
-    setInterval(() => {
-      this.refreshQueueStatus();
-    }, 3000);
-  }
+  // ✅ REMOVIDO: Polling automático - usar apenas WebSocket em tempo real
+  // private startQueueStatusCheck(): void {
+  //   setInterval(() => {
+  //     this.refreshQueueStatus();
+  //   }, 3000);
+  // }
 
   private checkBackendConnection(): void {
     this.apiService.checkHealth().subscribe({
@@ -580,11 +689,17 @@ export class App implements OnInit, OnDestroy {
     });
   }
 
-  // ✅ MANTIDO: Métodos básicos de interface
+  // ✅ MANTIDO: Métodos básicos de interface (MANUAL APENAS)
   onRefreshData(): void {
-    console.log('🔄 [App] Refresh solicitado');
+    console.log('🔄 [App] Refresh MANUAL solicitado pelo usuário');
     this.refreshQueueStatus();
     this.loadPlayerData();
+  }
+
+  // ✅ NOVO: Método para o queue component informar sobre mudanças no auto-refresh
+  onAutoRefreshToggle(enabled: boolean): void {
+    this.autoRefreshEnabled = enabled;
+    console.log(`🔄 [App] Auto-refresh ${enabled ? 'habilitado' : 'desabilitado'} - atualizações de fila serão ${enabled ? 'processadas' : 'filtradas'}`);
   }
 
   // ✅ MANTIDO: Métodos auxiliares para bots (admin)

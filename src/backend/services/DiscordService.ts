@@ -944,15 +944,21 @@ export class DiscordService {
 
   private async getLinkedNicknameForUser(discordId: string): Promise<{gameName: string, tagLine: string} | null> {
     try {
+      console.log(`🔍 [DiscordService] Buscando vinculação para Discord ID: ${discordId}`);
       const link = await this.databaseManager.getDiscordLink(discordId);
+      
       if (link) {
-        return {
+        const result = {
           gameName: link.game_name,
           tagLine: link.tag_line
         };
+        console.log(`✅ [DiscordService] Vinculação encontrada para ${discordId}:`, result);
+        return result;
+      } else {
+        console.log(`❌ [DiscordService] Nenhuma vinculação encontrada para Discord ID: ${discordId}`);
       }
     } catch (error) {
-      console.error('❌ Erro ao buscar vinculação:', error);
+      console.error(`❌ [DiscordService] Erro ao buscar vinculação para ${discordId}:`, error);
     }
     return null;
   }

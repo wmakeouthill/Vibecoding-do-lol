@@ -1,6 +1,8 @@
 import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, OnChanges, ChangeDetectorRef, NgZone, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { Player, QueueStatus, QueuePreferences } from '../../interfaces';
 import { DiscordIntegrationService } from '../../services/discord-integration.service';
 import { QueueStateService } from '../../services/queue-state';
@@ -28,6 +30,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   @Output() leaveQueue = new EventEmitter<void>();
   @Output() joinDiscordQueueWithFullData = new EventEmitter<{player: Player | null, preferences: QueuePreferences}>();
   @Output() refreshData = new EventEmitter<void>();
+  @Output() autoRefreshToggle = new EventEmitter<boolean>();
 
   queueTimer = 0;
   private timerInterval?: number;
@@ -40,13 +43,9 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     autoAccept: false
   };
 
-  // Discord Integration
-  discordQueue: any[] = [];
+  // Discord Integration - Dados vêm do backend via WebSocket
   isDiscordConnected = false;
-  currentDiscordUser: any = null;
-  showDiscordMode = false;
   discordUsersOnline: any[] = [];
-  isInDiscordChannel = false;
 
   // Players table
   activeTab: 'queue' | 'lobby' | 'all' = 'all';
@@ -56,6 +55,9 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   // Auto-refresh
   private autoRefreshInterval?: number;
   private readonly AUTO_REFRESH_INTERVAL_MS = 2000; // 2 segundos
+
+  // ✅ NOVO: Subject para gerenciar limpeza de subscriptions
+  private destroy$ = new Subject<void>();
 
   constructor(
     public discordService: DiscordIntegrationService,
@@ -68,6 +70,9 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
 
   ngOnInit(): void {
     console.log('🎯 [Queue] Componente inicializado (Frontend Interface Only)');
+    
+    // ✅ NOVO: Notificar o app.ts sobre o estado inicial do auto-refresh
+    this.autoRefreshToggle.emit(this.autoRefreshEnabled);
     
     // Configurar listeners do Discord
     this.setupDiscordListeners();
@@ -90,6 +95,10 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   ngOnDestroy(): void {
     console.log('🛑 [Queue] Componente destruído');
     
+    // ✅ Finalizar observables Discord e outros subscriptions
+    this.destroy$.next();
+    this.destroy$.complete();
+    
     // Parar sincronização MySQL
     this.queueStateService.stopMySQLSync();
     
@@ -100,6 +109,8 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     if (this.timerInterval) {
       clearInterval(this.timerInterval);
     }
+    
+    console.log('✅ [Queue] Cleanup completo - observables Discord finalizados');
   }
 
   ngOnChanges(changes: any): void {
@@ -121,10 +132,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
         });
       }
       
-      // Tentar identificar o usuário Discord quando o currentPlayer for atualizado
-      if (this.discordUsersOnline.length > 0) {
-        this.tryIdentifyCurrentDiscordUser();
-      }
+      // ✅ REMOVIDO: Frontend não faz mais identificação - Backend faz automaticamente
       
       this.cdr.detectChanges();
     }
@@ -138,11 +146,13 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
 
   // Configurar controle de auto-refresh
   private setupAutoRefreshControl(): void {
-    // Fazer refresh inicial manual
-    this.refreshPlayersData();
+    // ✅ REMOVIDO: Refresh inicial automático que ignorava configuração do usuário
+    // this.refreshPlayersData();
     
     // Buscar profile icon do backend se necessário
     this.fetchProfileIconFromBackend();
+    
+    console.log('🔄 [Queue] Auto-refresh configurado - aguardando habilitação manual pelo usuário');
   }
 
   // Iniciar auto-refresh
@@ -174,6 +184,9 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   onAutoRefreshChange(): void {
     console.log(`🔄 [Queue] Auto-refresh ${this.autoRefreshEnabled ? 'habilitado' : 'desabilitado'}`);
     
+    // ✅ NOVO: Notificar o app.ts sobre a mudança
+    this.autoRefreshToggle.emit(this.autoRefreshEnabled);
+    
     if (this.autoRefreshEnabled) {
       // Iniciar sincronização MySQL e polling
       if (this.currentPlayer) {
@@ -190,7 +203,9 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
 
   // Configurar listener do estado da fila
   private setupQueueStateListener(): void {
-    this.queueStateService.getQueueState().subscribe(state => {
+    this.queueStateService.getQueueState().pipe(
+      takeUntil(this.destroy$)
+    ).subscribe(state => {
       console.log('🔄 [Queue] Estado da fila atualizado via MySQL:', state);
       
       // SEMPRE atualizar estado local baseado na sincronização MySQL
@@ -362,178 +377,158 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     }
   }
 
-  getLaneDisplayName(laneId: string): string {
-    const lanes: { [key: string]: string } = {
-      'top': 'Topo',
-      'jungle': 'Selva', 
-      'mid': 'Meio',
-      'bot': 'Atirador',
-      'adc': 'Atirador',
-      'support': 'Suporte',
-      'fill': 'Qualquer'
-    };
-    return lanes[laneId] || 'Qualquer';
-  }
+  // ✅ REMOVIDO: getLaneDisplayName() - duplicado de getLaneName()
 
-  // ✅ MANTIDO: Discord Integration (Interface)
+  // ✅ CORRIGIDO: Discord Integration via WebSocket em tempo real
   private setupDiscordListeners() {
-    // Discord connection status
-    setInterval(() => {
-      const connected = this.discordService.isConnected();
+    console.log('🔗 [Queue] Configurando listeners Discord via WebSocket...');
+    
+    // ✅ Usar observables em tempo real com takeUntil para cleanup automático
+    
+    // Discord connection status via observable
+    this.discordService.onConnectionChange().pipe(
+      takeUntil(this.destroy$)
+    ).subscribe(connected => {
       if (this.isDiscordConnected !== connected) {
         this.isDiscordConnected = connected;
-        console.log(`🔗 [Queue] Discord connection status: ${connected}`);
+        console.log(`🔗 [Queue] Discord connection status via WebSocket: ${connected}`);
         this.cdr.detectChanges();
       }
-    }, 2000);
+    });
 
-    // Discord users online
-    setInterval(() => {
-      const users = this.discordService.getDiscordUsersOnline();
+    // Discord users online via observable
+    this.discordService.onUsersUpdate().pipe(
+      takeUntil(this.destroy$)
+    ).subscribe(users => {
       if (JSON.stringify(this.discordUsersOnline) !== JSON.stringify(users)) {
         this.discordUsersOnline = users;
-        console.log(`👥 [Queue] Discord users online: ${users.length}`);
+        console.log(`👥 [Queue] Discord users updated via WebSocket: ${users.length}`);
+        console.log('👥 [Queue] Usuários Discord recebidos:', users.map(u => ({
+          username: u.username,
+          displayName: u.displayName,
+          hasLinkedNickname: !!u.linkedNickname,
+          linkedNickname: u.linkedNickname
+        })));
         
-        // Tentar identificar o usuário atual quando a lista for atualizada
-        this.tryIdentifyCurrentDiscordUser();
+        // ✅ REMOVIDO: Backend identifica usuário automaticamente
         
         this.cdr.detectChanges();
       }
-    }, 3000);
+    });
 
-    // Current Discord user
-    setInterval(() => {
-      const user = this.discordService.getCurrentDiscordUser();
-      if (JSON.stringify(this.currentDiscordUser) !== JSON.stringify(user)) {
-        this.currentDiscordUser = user;
-        console.log('👤 [Queue] Current Discord user updated:', user);
-        this.cdr.detectChanges();
-      }
-    }, 2000);
-  }
-
-  private checkDiscordConnection() {
+    // ✅ Solicitar status inicial UMA VEZ apenas
+    console.log('🔍 [Queue] Solicitando status inicial do Discord...');
     this.discordService.checkConnection();
   }
 
-  private tryIdentifyCurrentDiscordUser() {
-    if (!this.currentPlayer || !this.currentPlayer.gameName || !this.currentPlayer.tagLine) {
-      console.log('⚠️ [Queue] Não é possível identificar usuário Discord: dados do LCU incompletos');
-      return;
-    }
-
-    const expectedRiotId = `${this.currentPlayer.gameName}#${this.currentPlayer.tagLine}`;
-    console.log('🔍 [Queue] Procurando usuário Discord com Riot ID:', expectedRiotId);
-
-    const matchingUser = this.discordUsersOnline.find(user => {
-      const userRiotId = user.riotId || user.riot_id;
-      const matches = userRiotId === expectedRiotId;
-      if (matches) {
-        console.log('✅ [Queue] Usuário Discord encontrado:', user);
-      }
-      return matches;
-    });
-
-    if (matchingUser && !this.currentDiscordUser) {
-      console.log('🎯 [Queue] Identificando usuário Discord automaticamente:', matchingUser);
-      // Atualizar localmente (sem método updateCurrentDiscordUser)
-      this.currentDiscordUser = matchingUser;
-    } else if (!matchingUser) {
-      console.log('❌ [Queue] Usuário Discord não encontrado para Riot ID:', expectedRiotId);
-      console.log('📋 [Queue] Usuários disponíveis:', this.discordUsersOnline.map(u => ({
-        name: u.displayName || u.username,
-        riotId: u.riotId || u.riot_id
-      })));
-    }
+  private checkDiscordConnection() {
+    // ✅ Apenas para uso manual/refresh - não em loop
+    console.log('🔄 [Queue] Verificação manual da conexão Discord');
+    this.discordService.checkConnection();
   }
 
+  // ✅ REMOVIDO: tryIdentifyCurrentDiscordUser() - Backend faz identificação automática
+
   onJoinDiscordQueue() {
-    if (!this.queueStatus.isActive) {
-      console.warn('⚠️ [Queue] Fila não está ativa');
-      return;
-    }
-
-    console.log('🎮 [Queue] Tentando entrar na fila Discord...');
-
-    // Verificar se o Discord está conectado
-    if (!this.isDiscordConnected) {
-      alert('❌ Discord não está conectado. Conecte-se ao Discord primeiro.');
-      return;
-    }
-
-    // Verificar se há um usuário Discord identificado
-    if (!this.currentDiscordUser) {
-      console.warn('⚠️ [Queue] Usuário Discord não identificado');
-      this.performDiscordValidation();
-      return;
-    }
-
-    // Verificar se o usuário tem Riot ID vinculado
-    const userRiotId = this.currentDiscordUser.riotId || this.currentDiscordUser.riot_id;
-    if (!userRiotId) {
-      alert('❌ Sua conta Discord não está vinculada ao League of Legends. Use o comando !vincular no Discord.');
-      return;
-    }
-
-    // Verificar se o Riot ID confere com o jogador atual
-    const expectedRiotId = this.currentPlayer ? `${this.currentPlayer.gameName}#${this.currentPlayer.tagLine}` : '';
-    if (userRiotId !== expectedRiotId) {
-      alert(`❌ Discordância de contas:\n- Discord: ${userRiotId}\n- LoL: ${expectedRiotId}\n\nUse o comando !desvincular e !vincular no Discord.`);
-      return;
-    }
-
-    console.log('✅ [Queue] Validação Discord passou, abrindo seletor de lanes...');
+    console.log('🎮 [Queue] Abrindo seletor de lanes...');
+    // ✅ SIMPLIFICADO: Backend faz todas as validações, frontend apenas exibe UI
     this.showLaneSelector = true;
   }
 
-  private performDiscordValidation() {
-    console.log('🔍 [Queue] Realizando validação Discord...');
-
-    if (!this.currentPlayer || !this.currentPlayer.gameName || !this.currentPlayer.tagLine) {
-      alert('❌ Dados do jogador incompletos. Reinicie o cliente LoL.');
-      return;
-    }
-
-    const expectedRiotId = `${this.currentPlayer.gameName}#${this.currentPlayer.tagLine}`;
-    console.log('🔍 [Queue] Procurando usuário Discord com Riot ID:', expectedRiotId);
-
-    // Procurar usuário Discord baseado no Riot ID
-    const matchingUser = this.discordUsersOnline.find(user => {
-      const userRiotId = user.riotId || user.riot_id;
-      return userRiotId === expectedRiotId;
-    });
-
-    if (matchingUser) {
-      console.log('✅ [Queue] Usuário Discord encontrado:', matchingUser);
-      // Atualizar localmente (sem método updateCurrentDiscordUser)
-      this.currentDiscordUser = matchingUser;
-      
-      // Tentar novamente
-      this.onJoinDiscordQueue();
-    } else {
-      console.log('❌ [Queue] Usuário Discord não encontrado');
-      
-      const availableUsers = this.discordUsersOnline
-        .filter(u => u.riotId || u.riot_id)
-        .map(u => `${u.displayName || u.username}: ${u.riotId || u.riot_id}`)
-        .join('\n');
-
-      alert(`❌ Conta Discord não encontrada ou não vinculada.\n\nSua conta LoL: ${expectedRiotId}\n\nContas Discord vinculadas:\n${availableUsers || 'Nenhuma'}\n\nUse o comando !vincular no Discord.`);
-    }
-  }
+  // ✅ REMOVIDO: performDiscordValidation() - Backend faz todas as validações
 
   onConfirmDiscordQueue(preferences: QueuePreferences) {
     console.log('✅ [Queue] Confirmando entrada na fila Discord com preferências:', preferences);
     
-    if (!this.currentPlayer || !this.currentDiscordUser) {
-      console.error('❌ [Queue] Dados incompletos para entrar na fila Discord');
-      return;
-    }
-
     this.queuePreferences = preferences;
     this.showLaneSelector = false;
     
-    // Emitir evento com dados completos
+    // ✅ VALIDAÇÕES LOCAIS ANTES DE EMITIR EVENTO
+    
+    // Validação 1: Dados do jogador atual
+    if (!this.currentPlayer) {
+      console.error('❌ [Queue] Dados do jogador atual não disponíveis');
+      alert('Erro: Dados do jogador não disponíveis. Certifique-se de que o League of Legends está aberto.');
+      return;
+    }
+
+    // Validação 2: gameName e tagLine
+    if (!this.currentPlayer.gameName || !this.currentPlayer.tagLine) {
+      console.error('❌ [Queue] gameName ou tagLine não disponíveis');
+      console.error('❌ [Queue] Dados do jogador:', {
+        summonerName: this.currentPlayer.summonerName,
+        gameName: this.currentPlayer.gameName,
+        tagLine: this.currentPlayer.tagLine
+      });
+      alert('Erro: Dados do Riot ID (gameName#tagLine) não disponíveis.\n\nCertifique-se de que:\n1. O League of Legends está aberto\n2. Você está logado na sua conta\n3. Aguarde alguns segundos para o sistema detectar seus dados');
+      return;
+    }
+
+    // Validação 3: Conexão Discord
+    if (!this.isDiscordConnected) {
+      console.error('❌ [Queue] Discord não conectado');
+      alert('Erro: Discord não está conectado.\n\nVerifique se:\n1. O bot Discord está online\n2. Você está no servidor Discord correto\n3. Há conexão com a internet');
+      return;
+    }
+
+    // Validação 4: Usuários Discord online
+    if (this.discordUsersOnline.length === 0) {
+      console.error('❌ [Queue] Nenhum usuário Discord online encontrado');
+      alert('Erro: Nenhum usuário encontrado no canal Discord.\n\nVerifique se:\n1. Você está no canal #lol-matchmaking\n2. Outros usuários estão online no canal\n3. O bot Discord está funcionando');
+      return;
+    }
+
+    // ✅ NOVA VALIDAÇÃO: Verificar se há vinculação Discord
+    const lcuFullName = `${this.currentPlayer.gameName}#${this.currentPlayer.tagLine}`;
+    const hasLinkedAccount = this.discordUsersOnline.some(user => {
+      if (user.linkedNickname) {
+        // ✅ CORRIGIDO: linkedNickname pode ser um objeto {gameName, tagLine} ou uma string
+        let discordFullName = '';
+        
+        if (typeof user.linkedNickname === 'string') {
+          // Se for string, usar diretamente
+          discordFullName = user.linkedNickname;
+        } else if (user.linkedNickname.gameName && user.linkedNickname.tagLine) {
+          // Se for objeto, formar a string
+          discordFullName = `${user.linkedNickname.gameName}#${user.linkedNickname.tagLine}`;
+        } else {
+          return false;
+        }
+        
+        return discordFullName === lcuFullName;
+      }
+      return false;
+    });
+
+    if (!hasLinkedAccount) {
+      console.warn('⚠️ [Queue] Conta não vinculada ao Discord, mas permitindo entrada (backend validará)');
+      console.log('🔍 [Queue] Dados para debug:', {
+        lcuAccount: lcuFullName,
+        discordUsers: this.discordUsersOnline.map(u => ({
+          username: u.username,
+          linkedNickname: u.linkedNickname
+        }))
+      });
+      
+      // Mostrar aviso mas permitir continuar
+      const confirmResult = confirm(
+        `Aviso: Sua conta LoL (${lcuFullName}) não foi encontrada vinculada no Discord.\n\n` +
+        'Para entrar na fila, você precisa:\n' +
+        '1. Estar no canal #lol-matchmaking do Discord\n' +
+        '2. Usar o comando !vincular no Discord\n\n' +
+        'Deseja tentar entrar na fila mesmo assim?\n' +
+        '(O sistema tentará fazer a vinculação automaticamente)'
+      );
+      
+      if (!confirmResult) {
+        console.log('🚫 [Queue] Usuário cancelou entrada na fila sem vinculação');
+        return;
+      }
+    }
+
+    console.log('✅ [Queue] Todas as validações passaram, emitindo evento para app.ts');
+    
+    // ✅ EMITIR EVENTO PARA APP.TS
     this.joinDiscordQueueWithFullData.emit({
       player: this.currentPlayer,
       preferences: preferences
@@ -541,6 +536,8 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     
     this.queueTimer = 0;
     this.startQueueTimer();
+    
+    console.log('✅ [Queue] Evento emitido com sucesso, timer iniciado');
   }
 
   onLeaveDiscordQueue() {
@@ -557,7 +554,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     this.cdr.detectChanges();
   }
 
-  refreshPlayersData(): void {
+  refreshPlayersData(forceManual: boolean = false): void {
     if (this.isRefreshing) {
       console.log('⏳ [Queue] Refresh já em andamento, ignorando...');
       return;
@@ -566,7 +563,17 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     this.isRefreshing = true;
     console.log('🔄 [Queue] Atualizando dados dos jogadores...');
 
-    this.refreshData.emit();
+    // ✅ CORRIGIDO: Só emitir refreshData se auto-refresh estiver habilitado OU se for um refresh manual forçado
+    if (this.autoRefreshEnabled || forceManual) {
+      if (forceManual) {
+        console.log('🔄 [Queue] Emitindo refreshData (refresh manual forçado)');
+      } else {
+        console.log('🔄 [Queue] Emitindo refreshData (auto-refresh habilitado)');
+      }
+      this.refreshData.emit();
+    } else {
+      console.log('⏭️ [Queue] Refresh ignorado - auto-refresh desabilitado e não é manual');
+    }
 
     // Reset isRefreshing após um delay
     setTimeout(() => {
@@ -577,8 +584,11 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
 
   refreshQueueData(): void {
     console.log('🔄 [Queue] Refresh manual da fila solicitado');
-    this.refreshPlayersData();
+    // ✅ SEMPRE funcionar quando clicado manualmente
+    this.refreshPlayersData(true); // forceManual = true
   }
+
+  // ✅ REMOVIDO: refreshDataManual() - funcionalidade integrada em refreshPlayersData()
 
   // Track functions for *ngFor performance
   trackByPlayerId(index: number, player: any): string {
@@ -590,71 +600,32 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   isCurrentPlayer(player: any): boolean {
-    if (!this.currentPlayer || !player) return false;
-    
-    // Tentar múltiplas formas de comparação
-    if (this.currentPlayer.id && player.id) {
-      return this.currentPlayer.id === player.id;
-    }
-    
-    if (this.currentPlayer.summonerName && player.summonerName) {
-      return this.currentPlayer.summonerName === player.summonerName;
-    }
-    
-    if (this.currentPlayer.gameName && player.gameName) {
-      return this.currentPlayer.gameName === player.gameName;
-    }
-    
-    return false;
+    // ✅ SIMPLIFICADO: Backend marca jogador atual
+    return player?.isCurrentPlayer || false;
   }
 
-  getTimeInQueue(joinTime: Date | string): string {
-    if (!joinTime) return '0s';
-    
-    try {
-      const now = new Date();
-      const start = new Date(joinTime);
-      const diffMs = now.getTime() - start.getTime();
-      const diffSeconds = Math.floor(diffMs / 1000);
-      
-      if (diffSeconds < 60) {
-        return `${diffSeconds}s`;
-      } else {
-        const minutes = Math.floor(diffSeconds / 60);
-        const seconds = diffSeconds % 60;
-        return `${minutes}m ${seconds}s`;
-      }
-    } catch (error) {
-      console.warn('⚠️ [Queue] Erro ao calcular tempo na fila:', error);
-      return '0s';
-    }
+  getTimeInQueue(player: any): string {
+    // ✅ SIMPLIFICADO: Backend calcula e fornece tempo formatado
+    return player?.timeInQueue || '0s';
   }
 
   isUserInQueue(user: any): boolean {
-    const userRiotId = user.riotId || user.riot_id;
-    if (!userRiotId) return false;
-    
-    return this.queueStatus.playersInQueueList?.some(player => 
-      player.summonerName === userRiotId || 
-      `${player.summonerName}#${player.tagLine}` === userRiotId
-    ) || false;
+    // ✅ SIMPLIFICADO: Backend fornece dados processados
+    return user.isInQueue || false;
   }
 
+  // ✅ REMOVIDO: Métodos de desenvolvimento não implementados
+  // - inviteToLink() e inviteToQueue() 
+  // - extractGameName() nunca usado
+
+  // ✅ PLACEHOLDER: Métodos necessários para o template mas simplificados
   inviteToLink(user: any): void {
-    console.log('🔗 [Queue] Convidando usuário para vincular:', user);
-    alert(`Funcionalidade em desenvolvimento: Convidar ${user.displayName || user.username} para vincular conta`);
+    // Placeholder - Backend gerencia vinculações
+    console.log('🔗 [Queue] Use !vincular no Discord para:', user.username);
   }
 
   inviteToQueue(user: any): void {
-    console.log('📝 [Queue] Convidando usuário para a fila:', user);
-    alert(`Funcionalidade em desenvolvimento: Convidar ${user.displayName || user.username} para a fila`);
-  }
-
-  // Extrair apenas o gameName (sem tagLine)
-  private extractGameName(fullName: string): string {
-    if (fullName.includes('#')) {
-      return fullName.split('#')[0];
-    }
-    return fullName;
+    // Placeholder - Backend gerencia convites
+    console.log('📝 [Queue] Backend gerencia convites automaticamente:', user.username);
   }
 } 

@@ -78,7 +78,9 @@
           [currentPlayer]="currentPlayer"
           (joinQueue)="joinQueue($event)"
           (leaveQueue)="leaveQueue()"
-          (joinDiscordQueueWithFullData)="joinDiscordQueueWithFullData($event)">
+          (joinDiscordQueueWithFullData)="joinDiscordQueueWithFullData($event)"
+          (refreshData)="onRefreshData()"
+          (autoRefreshToggle)="onAutoRefreshToggle($event)">
         </app-queue>
       </div>      <!-- History -->
       <div *ngSwitchCase="'history'" class="view-container">
