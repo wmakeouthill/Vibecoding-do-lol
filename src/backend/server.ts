@@ -640,37 +640,50 @@ app.get('/api/player/current-details', (async (req: Request, res: Response) => {
       return res.status(503).json({ error: 'Cliente do LoL não conectado' });
     }
 
-    console.log('[CURRENT DETAILS] Getting current summoner from LCU...');
-    const lcuSummoner = await lcuService.getCurrentSummoner();
-    if (!lcuSummoner) {
-      console.log('[CURRENT DETAILS] No summoner data from LCU');
+    console.log('[CURRENT DETAILS] Getting client status from LCU...');
+    const clientStatus = await lcuService.getClientStatus();
+    if (!clientStatus || !clientStatus.summoner) {
+      console.log('[CURRENT DETAILS] No client status data from LCU');
       return res.status(404).json({ error: 'Não foi possível obter dados do jogador no LCU.' });
     }
 
+    const lcuSummoner = clientStatus.summoner;
     console.log('[CURRENT DETAILS] LCU Summoner data received:', {
-      gameName: (lcuSummoner as any).gameName,
-      tagLine: (lcuSummoner as any).tagLine,
+      displayName: lcuSummoner.displayName,
+      summonerId: lcuSummoner.summonerId,
       puuid: lcuSummoner.puuid
     });
 
-    // Check if we have gameName and tagLine
-    if (!(lcuSummoner as any).gameName || !(lcuSummoner as any).tagLine) {
-      console.log('[CURRENT DETAILS] LCU data missing gameName or tagLine:', {
-        gameName: (lcuSummoner as any).gameName,
-        tagLine: (lcuSummoner as any).tagLine
-      });
-      return res.status(404).json({ error: 'gameName e tagLine não disponíveis no LCU.' });
+    // ✅ CORREÇÃO: O getClientStatus() já garante que displayName está disponível
+    if (!lcuSummoner.displayName) {
+      console.log('[CURRENT DETAILS] LCU data missing displayName after processing');
+      return res.status(404).json({ error: 'displayName não disponível no LCU.' });
     }
 
-    const riotId = `${(lcuSummoner as any).gameName}#${(lcuSummoner as any).tagLine}`;
+    // ✅ CORREÇÃO: Extrair gameName e tagLine do displayName
+    let gameName: string;
+    let tagLine: string;
+    
+    if (lcuSummoner.displayName.includes('#')) {
+      [gameName, tagLine] = lcuSummoner.displayName.split('#');
+    } else {
+      // Fallback: usar displayName como gameName e BR1 como tagLine padrão
+      gameName = lcuSummoner.displayName;
+      tagLine = 'BR1';
+      console.warn('[CURRENT DETAILS] DisplayName sem #, usando BR1 como tagLine padrão');
+    }
+
+    const riotId = `${gameName}#${tagLine}`;
     const region = 'br1';
 
-    console.log('[CURRENT DETAILS] Using Riot ID from LCU:', riotId);    // Prepare base data with LCU information
+    console.log('[CURRENT DETAILS] Using Riot ID from LCU displayName:', riotId);
+
+    // Prepare base data with LCU information
     const baseData = {
       lcu: lcuSummoner,
       riotAccount: {
-        gameName: (lcuSummoner as any).gameName,
-        tagLine: (lcuSummoner as any).tagLine,
+        gameName: gameName,
+        tagLine: tagLine,
         puuid: lcuSummoner.puuid
       },
       riotApi: null,
@@ -688,7 +701,9 @@ app.get('/api/player/current-details', (async (req: Request, res: Response) => {
       }
     } catch (lcuRankError: any) {
       console.log('[CURRENT DETAILS] LCU ranked stats unavailable:', lcuRankError.message);
-    }    // Skip Riot API - we prioritize LCU only
+    }
+
+    // Skip Riot API - we prioritize LCU only
     console.log('[CURRENT DETAILS] Using LCU-only data (Riot API disabled by design)');
     baseData.partialData = true;
 

@@ -9,7 +9,6 @@ export class DiscordIntegrationService {
   private ws?: WebSocket;
   private isBackendConnected = false;
   private discordUsersOnline: any[] = [];
-  private linkedNicknames: Map<string, { gameName: string, tagLine: string }> = new Map();
   private currentDiscordUser: any = null;
   private isInDiscordChannel = false;
   private queueParticipants: any[] = [];
@@ -18,7 +17,7 @@ export class DiscordIntegrationService {
   private usersSubject = new BehaviorSubject<any[]>([]);
   private connectionSubject = new BehaviorSubject<boolean>(false);
   private queueJoinedSubject = new BehaviorSubject<any>(null);
-  private queueUpdateSubject = new BehaviorSubject<any>(null); // NOVO: Para atualizações da fila
+  private queueUpdateSubject = new BehaviorSubject<any>(null);
 
   // Contador de instâncias para debug
   private static instanceCount = 0;
@@ -26,32 +25,28 @@ export class DiscordIntegrationService {
 
   // Throttling simplificado - apenas proteção básica contra spam
   private lastStatusRequest = 0;
-  private readonly STATUS_REQUEST_COOLDOWN = 2000; // Aumentado para 2 segundos (era 500ms) - menos polling
+  private readonly STATUS_REQUEST_COOLDOWN = 2000;
 
-  // Otimizações de performance - REMOVIDO THROTTLING DESNECESSÁRIO
   // Atualizações de fila em tempo real
   private lastQueueUpdate = 0;
-  private readonly QUEUE_UPDATE_THROTTLE = 50; // Apenas 50ms para evitar spam extremo
-  private pendingQueueUpdate: any = null;
-  private queueUpdateTimeout: any = null;
 
   // Sistema de reconexão robusto
   private reconnectAttempts = 0;
   private readonly MAX_RECONNECT_ATTEMPTS = 10;
-  private readonly INITIAL_RECONNECT_DELAY = 100; // Começar com 100ms
-  private readonly MAX_RECONNECT_DELAY = 5000; // Máximo 5 segundos
+  private readonly INITIAL_RECONNECT_DELAY = 100;
+  private readonly MAX_RECONNECT_DELAY = 5000;
   private reconnectTimeout?: number;
   private heartbeatInterval?: number;
-  private readonly HEARTBEAT_INTERVAL = 30000; // Heartbeat a cada 30 segundos
+  private readonly HEARTBEAT_INTERVAL = 30000;
   private lastHeartbeat = 0;
   private connectionTimeout?: number;
-  private readonly CONNECTION_TIMEOUT = 10000; // Timeout de 10 segundos
+  private readonly CONNECTION_TIMEOUT = 10000;
 
-  // NOVO: Sistema de atualizações automáticas via WebSocket
+  // Sistema de atualizações automáticas via WebSocket
   private autoUpdateInterval?: number;
-  private readonly AUTO_UPDATE_INTERVAL = 60000; // Aumentado para 60 segundos (era 30s) - menos polling, mais broadcasts
+  private readonly AUTO_UPDATE_INTERVAL = 60000;
   private lastAutoUpdate = 0;
-  private lastQueueIgnoreLog = 0; // ✅ NOVO: Para throttling de logs de fila ignorada
+  private lastQueueIgnoreLog = 0;
 
   private matchFoundSubject = new Subject<any>();
 
@@ -292,8 +287,7 @@ export class DiscordIntegrationService {
           this.currentDiscordUser = data.currentUser;
         }
         
-        // NOVO: Tentar identificar o usuário atual automaticamente
-        this.tryIdentifyCurrentUser();
+        // Usuário atual será identificado quando sendLCUData for chamado
         break;
 
       case 'discord_current_user':
@@ -307,7 +301,7 @@ export class DiscordIntegrationService {
 
       case 'discord_links_update':
         console.log(`🔗 [DiscordService #${this.instanceId}] Vinculações Discord atualizadas:`, data.links?.length || 0, 'links');
-        this.updateLinkedNicknames(data.links || []);
+        // Links são processados pelo backend, frontend apenas recebe notificação
         break;
 
       case 'discord_status':
@@ -337,21 +331,15 @@ export class DiscordIntegrationService {
         break;
 
       case 'queue_update':
-        // ✅ FILTRO INTELIGENTE: Só processar se houver mudanças significativas
+        // Filtro inteligente: só processar se houver mudanças significativas
         const currentPlayerCount = this.queueParticipants?.length || 0;
         const newPlayerCount = data.data?.playersInQueue || 0;
         const newPlayerList = data.data?.playersInQueueList || [];
         
-        // Verificar se há mudança real no número de jogadores
         const hasPlayerCountChange = currentPlayerCount !== newPlayerCount;
-        
-        // Verificar se é um broadcast crítico (10+ jogadores = matchmaking)
         const isCriticalUpdate = newPlayerCount >= 10 && currentPlayerCount < 10;
-        
-        // Verificar se é uma mudança substancial (diferença de 2+ jogadores)
         const isSubstantialChange = Math.abs(currentPlayerCount - newPlayerCount) >= 2;
         
-        // ✅ SÓ PROCESSAR E EMITIR SE FOR RELEVANTE
         if (hasPlayerCountChange || isCriticalUpdate || isSubstantialChange || data.critical) {
           console.log(`🎯 [DiscordService #${this.instanceId}] Fila atualizada:`, {
             players: `${currentPlayerCount} → ${newPlayerCount}`,
@@ -360,16 +348,12 @@ export class DiscordIntegrationService {
             forced: data.critical
           });
 
-          // Atualizar dados locais
           this.queueParticipants = newPlayerList;
           this.lastQueueUpdate = Date.now();
-
-          // Emitir atualização para componentes
           this.queueUpdateSubject.next(data.data);
         } else {
-          // ✅ IGNORAR: Atualização sem mudanças significativas
           const timeSinceLastLog = Date.now() - (this.lastQueueIgnoreLog || 0);
-          if (timeSinceLastLog > 15000) { // Log apenas a cada 15 segundos
+          if (timeSinceLastLog > 15000) {
             console.log(`⏭️ [DiscordService #${this.instanceId}] Atualização de fila ignorada - sem mudanças significativas (${newPlayerCount} jogadores)`);
             this.lastQueueIgnoreLog = Date.now();
           }
@@ -427,8 +411,9 @@ export class DiscordIntegrationService {
     }
   }
 
-  // Solicitar status atual do Discord (com throttling reduzido)
+  // Solicitar status atual do Discord (com throttling e validação)
   requestDiscordStatus() {
+    // Verificação dupla de conexão WebSocket
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       console.warn(`⚠️ [DiscordService #${this.instanceId}] WebSocket não está conectado, não é possível solicitar status`);
       return;
@@ -444,32 +429,44 @@ export class DiscordIntegrationService {
     this.lastStatusRequest = now;
     console.log(`🔍 [DiscordService #${this.instanceId}] Solicitando status do Discord...`);
 
-    // Enviar solicitações essenciais apenas
-    const messages = [
-      { type: 'get_discord_status' },
-      { type: 'get_discord_users_online' }
-    ];
+    try {
+      // Enviar solicitações essenciais apenas
+      const messages = [
+        { type: 'get_discord_status' },
+        { type: 'get_discord_users_online' }
+      ];
 
-    messages.forEach(msg => {
-      console.log(`📤 [DiscordService #${this.instanceId}] Enviando:`, msg.type);
-      this.ws!.send(JSON.stringify(msg));
-    });
+      messages.forEach(msg => {
+        // Verificar novamente antes de cada envio
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+          console.log(`📤 [DiscordService #${this.instanceId}] Enviando:`, msg.type);
+          this.ws.send(JSON.stringify(msg));
+        } else {
+          console.warn(`⚠️ [DiscordService #${this.instanceId}] WebSocket desconectou durante envio de ${msg.type}`);
+        }
+      });
+    } catch (error) {
+      console.error(`❌ [DiscordService #${this.instanceId}] Erro ao enviar solicitações de status:`, error);
+    }
   }
 
-  // NOVO: Iniciar sistema de atualização automática como backup
+  // Sistema de atualização automática como backup
   private startAutoUpdate() {
     this.stopAutoUpdate(); // Parar atualização anterior se existir
 
     this.autoUpdateInterval = window.setInterval(() => {
+      // Verificar se WebSocket está conectado antes de tentar atualizar
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         const now = Date.now();
         const timeSinceLastUpdate = now - this.lastAutoUpdate;
 
         // Só fazer atualização automática se não recebeu atualização há muito tempo (2 minutos)
-        if (timeSinceLastUpdate > 120000) { // 2 minutos sem atualização
+        if (timeSinceLastUpdate > 120000) {
           console.log(`🔄 [DiscordService #${this.instanceId}] Atualização automática (backup) - última atualização há ${Math.floor(timeSinceLastUpdate / 1000)}s`);
           this.requestDiscordStatus();
         }
+      } else {
+        console.log(`⚠️ [DiscordService #${this.instanceId}] WebSocket não conectado durante auto-update, ignorando`);
       }
     }, this.AUTO_UPDATE_INTERVAL);
   }
@@ -522,24 +519,19 @@ export class DiscordIntegrationService {
     // Validação 3: Procurar usuário Discord com nick vinculado
     const matchingUser = this.discordUsersOnline.find(user => {
       if (user.linkedNickname) {
-        // ✅ CORRIGIDO: linkedNickname pode ser um objeto {gameName, tagLine} ou uma string
+        // linkedNickname sempre vem como objeto {gameName, tagLine} do backend
         let discordFullName = '';
         
-        if (typeof user.linkedNickname === 'string') {
-          // Se for string, usar diretamente
-          discordFullName = user.linkedNickname;
-        } else if (user.linkedNickname.gameName && user.linkedNickname.tagLine) {
-          // Se for objeto, formar a string
+        if (user.linkedNickname.gameName && user.linkedNickname.tagLine) {
           discordFullName = `${user.linkedNickname.gameName}#${user.linkedNickname.tagLine}`;
         } else {
+          console.warn('🔍 [DiscordService] linkedNickname em formato inválido:', user.linkedNickname);
           return false;
         }
         
         console.log('🔍 [DiscordService] Comparando:', {
           lcu: lcuFullName,
           discord: discordFullName,
-          linkedNicknameType: typeof user.linkedNickname,
-          linkedNicknameValue: user.linkedNickname,
           match: discordFullName === lcuFullName
         });
         return discordFullName === lcuFullName;
@@ -699,43 +691,17 @@ export class DiscordIntegrationService {
 
   checkConnection(): void {
     console.log(`🔍 [DiscordService #${this.instanceId}] Verificando conexão...`);
-    this.requestDiscordStatus();
-  }
-
-  // NOVO: Método para identificar o usuário atual baseado nos dados do LCU
-  identifyCurrentUserFromLCU(lcuData?: { gameName: string, tagLine: string }): any {
-    if (!lcuData || !lcuData.gameName || !lcuData.tagLine) {
-      console.log('⚠️ [DiscordService] Dados do LCU não disponíveis para identificação do usuário atual');
-      this.currentDiscordUser = null;
-      return null;
-    }
-
-    const lcuFullName = `${lcuData.gameName}#${lcuData.tagLine}`;
-    console.log('🔍 [DiscordService] Identificando usuário atual para:', lcuFullName);
-
-    // Procurar nos usuários online do Discord que tenham o nick vinculado
-    const matchingUser = this.discordUsersOnline.find(user => {
-      if (user.linkedNickname) {
-        const discordFullName = `${user.linkedNickname.gameName}#${user.linkedNickname.tagLine}`;
-        return discordFullName === lcuFullName;
-      }
-      return false;
-    });
-
-    if (matchingUser) {
-      this.currentDiscordUser = {
-        id: matchingUser.id,
-        username: matchingUser.username,
-        displayName: matchingUser.displayName || matchingUser.username
-      };
-      console.log('✅ [DiscordService] Usuário atual identificado:', this.currentDiscordUser);
+    
+    // Só solicitar status se WebSocket estiver conectado
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.requestDiscordStatus();
     } else {
-      this.currentDiscordUser = null;
-      console.log('❌ [DiscordService] Usuário atual não encontrado nos usuários Discord online');
+      console.log(`⚠️ [DiscordService #${this.instanceId}] WebSocket não conectado, tentando reconectar...`);
+      this.forceReconnect();
     }
-
-    return this.currentDiscordUser;
   }
+
+
 
   getDiscordUsersOnline(): any[] {
     return this.discordUsersOnline;
@@ -826,16 +792,7 @@ export class DiscordIntegrationService {
     console.log(`✅ [DiscordService #${this.instanceId}] Instância destruída com sucesso`);
   }
 
-  // Atualizar vinculações quando receber dados do backend
-  private updateLinkedNicknames(links: any[]) {
-    this.linkedNicknames.clear();
-    links.forEach(link => {
-      this.linkedNicknames.set(link.discord_id, {
-        gameName: link.game_name,
-        tagLine: link.tag_line
-      });
-    });
-  }
+
 
   // Método para solicitar especificamente o status do canal
   requestChannelStatus(): void {
@@ -853,24 +810,10 @@ export class DiscordIntegrationService {
     return this.matchFoundSubject.asObservable();
   }
 
-  // NOVO: Método para tentar identificar o usuário atual automaticamente
-  private tryIdentifyCurrentUser() {
-    // Se já temos um usuário identificado, não fazer nada
-    if (this.currentDiscordUser) {
-      return;
-    }
 
-    // Tentar identificar baseado nos dados do LCU se disponíveis
-    // Isso pode ser chamado quando o LCU fornece dados do usuário atual
-    console.log(`🔍 [DiscordService #${this.instanceId}] Tentando identificar usuário atual automaticamente...`);
-    
-    // Por enquanto, não fazer identificação automática
-    // O usuário será identificado quando o método identifyCurrentUserFromLCU for chamado explicitamente
-    // ou quando o componente queue chamar a verificação
-  }
 
-  // NOVO: Método para enviar dados do LCU e identificar usuário atual
-  sendLCUData(lcuData: { gameName: string, tagLine: string }): boolean {
+  // Método para enviar dados do LCU para identificação no backend
+  sendLCUData(lcuData: { gameName: string, tagLine: string } | { displayName: string }): boolean {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       console.error('❌ WebSocket não conectado para enviar dados do LCU');
       return false;

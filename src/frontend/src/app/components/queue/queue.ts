@@ -120,11 +120,11 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     }
     
     // Enviar dados LCU para Discord (backend gerencia a vinculação)
-    if (newPlayer?.gameName && newPlayer?.tagLine) {
+    if (newPlayer?.displayName) {
       console.log('🎮 [Queue] Enviando dados do LCU para identificação Discord...');
+      // Enviar displayName diretamente - o backend vai processar
       this.discordService.sendLCUData({
-        gameName: newPlayer.gameName,
-        tagLine: newPlayer.tagLine
+        displayName: newPlayer.displayName
       });
     }
     
@@ -194,7 +194,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     this.autoRefreshToggle.emit(this.autoRefreshEnabled);
     
     if (this.autoRefreshEnabled) {
-      if (this.currentPlayer && this.currentPlayer.gameName) {
+      if (this.currentPlayer && this.currentPlayer.displayName) {
         this.queueStateService.updateCurrentPlayer(this.currentPlayer);
         this.queueStateService.startPolling();
       }
@@ -308,7 +308,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     this.showLaneSelector = false;
     
     // Validações básicas (backend fará validações completas)
-    if (!this.currentPlayer?.gameName || !this.currentPlayer?.tagLine) {
+    if (!this.currentPlayer?.displayName) {
       alert('Erro: Dados do Riot ID não disponíveis. Certifique-se de que o League of Legends está aberto.');
       return;
     }
@@ -440,20 +440,35 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   getLinkedNickname(user: any): string {
-    if (!user?.linkedNickname) return '';
+    if (!user?.linkedNickname) {
+      return '';
+    }
 
+    // Debug log para identificar problemas
+    console.log('🔍 [Queue] getLinkedNickname debug:', {
+      username: user.username,
+      linkedNickname: user.linkedNickname,
+      type: typeof user.linkedNickname
+    });
+
+    // Se for string, retornar diretamente
     if (typeof user.linkedNickname === 'string') {
       return user.linkedNickname;
     }
 
-    if (user.linkedNickname.gameName && user.linkedNickname.tagLine) {
-      return `${user.linkedNickname.gameName}#${user.linkedNickname.tagLine}`;
+    // Se for objeto, formar a string corretamente
+    if (user.linkedNickname && typeof user.linkedNickname === 'object') {
+      if (user.linkedNickname.gameName && user.linkedNickname.tagLine) {
+        return `${user.linkedNickname.gameName}#${user.linkedNickname.tagLine}`;
+      }
+      
+      if (user.linkedNickname.gameName) {
+        return user.linkedNickname.gameName;
+      }
     }
 
-    if (user.linkedNickname.gameName) {
-      return user.linkedNickname.gameName;
-    }
-
+    // Fallback para casos inesperados
+    console.warn('⚠️ [Queue] linkedNickname em formato inesperado:', user.linkedNickname);
     return '[Vinculado]';
   }
 

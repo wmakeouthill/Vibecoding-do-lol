@@ -1,5 +1,4 @@
 import { Client, GatewayIntentBits, ChannelType, PermissionFlagsBits, SlashCommandBuilder } from 'discord.js';
-import { WebSocket as WSClient } from 'ws';
 import { DatabaseManager } from '../database/DatabaseManager';
 
 export interface DiscordPlayer {
@@ -340,86 +339,7 @@ export class DiscordService {
     }
   }
 
-  // Métodos para comunicação com frontend
-  addClient(ws: WSClient): void {
-    // Método removido - não é mais necessário
-    // O DiscordService agora usa o WebSocket principal do servidor
-  }
 
-  private async handleClientMessage(ws: WSClient, message: any): Promise<void> {
-    console.log(`📥 [DiscordService] Mensagem recebida:`, message.type);
-    
-    try {
-      switch (message.type) {
-        case 'get_discord_status':
-          // Responder imediatamente com status atual
-          const status = {
-            type: 'discord_status',
-            isConnected: this.isConnected,
-            inChannel: await this.hasUsersInMatchmakingChannel(),
-            currentUser: await this.getCurrentUserInfo(),
-            timestamp: Date.now()
-          };
-          ws.send(JSON.stringify(status));
-          break;
-          
-        case 'get_discord_users_online':
-          // Responder imediatamente com usuários atuais
-          const users = await this.getUsersInMatchmakingChannel();
-          ws.send(JSON.stringify({
-            type: 'discord_users_online',
-            users: users,
-            timestamp: Date.now()
-          }));
-          break;
-          
-        case 'get_discord_links':
-          // Responder imediatamente com links
-          await this.broadcastDiscordLinks();
-          break;
-          
-        case 'get_discord_channel_status':
-          // Responder imediatamente com status do canal
-          const channelStatus = {
-            type: 'discord_channel_status',
-            inChannel: await this.hasUsersInMatchmakingChannel(),
-            usersCount: (await this.getUsersInMatchmakingChannel()).length,
-            timestamp: Date.now()
-          };
-          ws.send(JSON.stringify(channelStatus));
-          break;
-          
-        case 'join_discord_queue':
-          // Processar entrada na fila Discord
-          if (message.data) {
-            await this.addToQueue(
-              message.data.discordId,
-              message.data.username || 'Unknown',
-              message.data.role || 'fill',
-              message.data.lcuData
-            );
-          }
-          break;
-          
-        case 'leave_discord_queue':
-          // Processar saída da fila Discord
-          if (message.data && message.data.discordId) {
-            this.removeFromQueue(message.data.discordId);
-          }
-          break;
-          
-        default:
-          console.log(`⚠️ [DiscordService] Tipo de mensagem não reconhecido:`, message.type);
-      }
-    } catch (error) {
-      console.error(`❌ [DiscordService] Erro ao processar mensagem:`, error);
-      ws.send(JSON.stringify({
-        type: 'error',
-        message: 'Erro interno do servidor Discord',
-        timestamp: Date.now()
-      }));
-    }
-  }
 
   private async addToQueue(userId: string, username: string, role: string, lcuData?: {gameName: string, tagLine: string}): Promise<void> {
     // Usar dados do LCU se disponíveis, senão usar username do Discord
@@ -548,7 +468,7 @@ export class DiscordService {
       const playersToRemove: string[] = [];
       for (const player of players) {
         if (player.linkedNickname) {
-          const fullName = `${player.linkedNickname.gameName}#${player.linkedNickname.tagLine}`;
+          const fullName = `${player.linkedNickname.gameName}${player.linkedNickname.tagLine}`;
           playersToRemove.push(fullName);
         }
       }
@@ -1353,13 +1273,40 @@ export class DiscordService {
   }
 
   // NOVO: Método para identificar o usuário atual no Discord baseado nos dados do LCU
-  async identifyCurrentUserFromLCU(lcuData?: { gameName: string, tagLine: string }): Promise<any> {
-    if (!lcuData || !lcuData.gameName || !lcuData.tagLine) {
+  async identifyCurrentUserFromLCU(lcuData?: { gameName: string, tagLine: string } | { displayName: string }): Promise<any> {
+    if (!lcuData) {
       console.log('⚠️ [DiscordService] Dados do LCU não disponíveis para identificação do usuário atual');
       return null;
     }
 
-    const lcuFullName = `${lcuData.gameName}#${lcuData.tagLine}`;
+    // Processar dados do LCU - aceitar tanto formato separado quanto displayName completo
+    let gameName: string;
+    let tagLine: string;
+    
+    if ('displayName' in lcuData) {
+      // Se recebeu displayName, extrair gameName e tagLine
+      const displayName = lcuData.displayName;
+      const parts = displayName.split('#');
+      if (parts.length === 2) {
+        gameName = parts[0];
+        tagLine = parts[1];
+        console.log('🔍 [DiscordService] Processando displayName:', displayName, '→', { gameName, tagLine });
+      } else {
+        console.error('❌ [DiscordService] Formato de displayName inválido:', displayName);
+        return null;
+      }
+    } else {
+      // Se recebeu formato separado, usar diretamente
+      gameName = lcuData.gameName;
+      tagLine = lcuData.tagLine;
+    }
+
+    if (!gameName || !tagLine) {
+      console.log('⚠️ [DiscordService] gameName ou tagLine não disponíveis');
+      return null;
+    }
+
+    const lcuFullName = `${gameName}#${tagLine}`;
     console.log('🔍 [DiscordService] Identificando usuário atual para:', lcuFullName);
 
     // Buscar usuários no canal
@@ -1368,7 +1315,9 @@ export class DiscordService {
     // Procurar nos usuários online do Discord que tenham o nick vinculado
     const matchingUser = usersInChannel.find(user => {
       if (user.linkedNickname) {
+        // Discord salva com # no tagLine, então comparar diretamente
         const discordFullName = `${user.linkedNickname.gameName}#${user.linkedNickname.tagLine}`;
+        console.log(`🔍 [DiscordService] Comparando: "${discordFullName}" com "${lcuFullName}"`);
         return discordFullName === lcuFullName;
       }
       return false;
@@ -1386,12 +1335,16 @@ export class DiscordService {
       return currentUser;
     } else {
       console.log('❌ [DiscordService] Usuário atual não encontrado nos usuários Discord online');
+      console.log('🔍 [DiscordService] Usuários disponíveis:', usersInChannel.map(u => ({
+        username: u.username,
+        linkedNickname: u.linkedNickname ? `${u.linkedNickname.gameName}#${u.linkedNickname.tagLine}` : 'none'
+      })));
       return null;
     }
   }
 
   // NOVO: Método para broadcast do usuário atual
-  async broadcastCurrentUser(lcuData?: { gameName: string, tagLine: string }): Promise<void> {
+  async broadcastCurrentUser(lcuData?: { gameName: string, tagLine: string } | { displayName: string }): Promise<void> {
     const currentUser = await this.identifyCurrentUserFromLCU(lcuData);
     
     this.broadcastToClients({
@@ -1402,14 +1355,36 @@ export class DiscordService {
   }
 
   // NOVO: Método para atualizar dados do LCU e fazer broadcast
-  async updateLCUDataAndBroadcast(lcuData: { gameName: string, tagLine: string }): Promise<void> {
+  async updateLCUDataAndBroadcast(lcuData: { gameName: string, tagLine: string } | { displayName: string }): Promise<void> {
     console.log('🔄 [DiscordService] Atualizando dados do LCU:', lcuData);
     
+    // Processar dados do LCU - aceitar tanto formato separado quanto displayName completo
+    let processedLCUData: { gameName: string, tagLine: string };
+    
+    if ('displayName' in lcuData) {
+      // Se recebeu displayName, extrair gameName e tagLine
+      const displayName = lcuData.displayName;
+      const parts = displayName.split('#');
+      if (parts.length === 2) {
+        processedLCUData = {
+          gameName: parts[0],
+          tagLine: parts[1]
+        };
+        console.log('🔄 [DiscordService] Processando displayName:', displayName, '→', processedLCUData);
+      } else {
+        console.error('❌ [DiscordService] Formato de displayName inválido:', displayName);
+        return;
+      }
+    } else {
+      // Se recebeu formato separado, usar diretamente
+      processedLCUData = lcuData as { gameName: string, tagLine: string };
+    }
+    
     // Atualizar cache dos dados do LCU
-    this.lastKnownLCUData = lcuData;
+    this.lastKnownLCUData = processedLCUData;
     
     // Fazer broadcast do usuário atual
-    await this.broadcastCurrentUser(lcuData);
+    await this.broadcastCurrentUser(processedLCUData);
     
     // Também fazer broadcast dos usuários no canal com informações do usuário atual
     await this.performBroadcast(true); // Broadcast crítico para incluir usuário atual

@@ -838,20 +838,68 @@ export class DatabaseManager {
     try {
       console.log(`🔍 [Database] Tentando remover jogador da fila por summoner_name: ${summonerName}`);
       
-      // ✅ CORREÇÃO: Buscar e deletar linha por summoner_name
-      const [result] = await this.pool.execute(
+      // ✅ CORREÇÃO: Primeiro tentar busca exata
+      let [result] = await this.pool.execute(
         'DELETE FROM queue_players WHERE summoner_name = ?',
         [summonerName]
       );
 
-      const affectedRows = (result as any).affectedRows;
+      let affectedRows = (result as any).affectedRows;
+      
       if (affectedRows > 0) {
-        console.log(`✅ [Database] Jogador (${summonerName}) removido da fila - linha deletada`);
+        console.log(`✅ [Database] Jogador (${summonerName}) removido da fila - busca exata`);
         return true;
-      } else {
-        console.log(`⚠️ [Database] Nenhuma linha encontrada para remover (${summonerName})`);
-        return false;
       }
+
+      // ✅ NOVO: Se não encontrou com busca exata, tentar formatos alternativos
+      console.log(`🔍 [Database] Busca exata falhou, tentando formatos alternativos...`);
+      
+      // Caso 1: Se o nome recebido não tem #, tentar adicionar #BR1
+      if (!summonerName.includes('#')) {
+        const nameWithTag = `${summonerName}#BR1`;
+        console.log(`🔍 [Database] Tentando com #BR1: ${nameWithTag}`);
+        
+        [result] = await this.pool.execute(
+          'DELETE FROM queue_players WHERE summoner_name = ?',
+          [nameWithTag]
+        );
+        
+        affectedRows = (result as any).affectedRows;
+        if (affectedRows > 0) {
+          console.log(`✅ [Database] Jogador removido com formato ${nameWithTag}`);
+          return true;
+        }
+      }
+      
+      // Caso 2: Se o nome tem #, tentar buscar só a parte antes do #
+      if (summonerName.includes('#')) {
+        const nameOnly = summonerName.split('#')[0];
+        console.log(`🔍 [Database] Tentando só o gameName: ${nameOnly}`);
+        
+        [result] = await this.pool.execute(
+          'DELETE FROM queue_players WHERE summoner_name LIKE ?',
+          [`${nameOnly}#%`]
+        );
+        
+        affectedRows = (result as any).affectedRows;
+        if (affectedRows > 0) {
+          console.log(`✅ [Database] Jogador removido com busca parcial ${nameOnly}#%`);
+          return true;
+        }
+      }
+      
+      // ✅ DEBUG: Mostrar jogadores atualmente na fila para debug
+      console.log(`⚠️ [Database] Nenhuma linha encontrada para remover (${summonerName})`);
+      
+      const [players] = await this.pool.execute(
+        'SELECT summoner_name FROM queue_players ORDER BY join_time ASC'
+      );
+      
+      console.log(`🔍 [Database] Jogadores atualmente na fila:`, 
+        (players as any[]).map(p => p.summoner_name)
+      );
+      
+      return false;
     } catch (error) {
       console.error('❌ [Database] Erro ao remover jogador da fila por summoner_name:', error);
       throw error;

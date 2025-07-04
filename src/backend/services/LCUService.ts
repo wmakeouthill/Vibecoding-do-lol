@@ -30,6 +30,8 @@ interface CurrentSummoner {
   unnamed: boolean;
   xpSinceLastLevel: number;
   xpUntilNextLevel: number;
+  gameName?: string;  // Adicionado - pode não estar sempre presente
+  tagLine?: string;   // Adicionado - pode não estar sempre presente
 }
 
 export class LCUService {
@@ -230,27 +232,13 @@ export class LCUService {
       console.log('👤 Buscando summoner atual do LCU...');
       const response = await this.client.get('/lol-summoner/v1/current-summoner');
       
-      // Adicionar gameName e tagLine se disponíveis
       const summoner = response.data;
-      
-      // Tentar obter Riot ID (gameName#tagLine) de endpoints específicos
-      try {
-        const riotIdData = await this.getCurrentRiotId();
-        if (riotIdData) {
-          summoner.gameName = riotIdData.gameName;
-          summoner.tagLine = riotIdData.tagLine;
-          console.log('✅ Riot ID obtido:', `${riotIdData.gameName}#${riotIdData.tagLine}`);
-        }
-      } catch (error) {
-        console.log('⚠️ Não foi possível obter Riot ID específico');
-      }
       
       console.log('✅ Summoner encontrado:', {
         displayName: summoner.displayName,
-        gameName: summoner.gameName || 'N/A',
-        tagLine: summoner.tagLine || 'N/A',
         summonerLevel: summoner.summonerLevel,
-        puuid: summoner.puuid ? 'presente' : 'ausente'
+        puuid: summoner.puuid ? 'presente' : 'ausente',
+        summonerId: summoner.summonerId
       });
       
       return summoner;
@@ -265,67 +253,6 @@ export class LCUService {
         throw new Error('Nenhum invocador logado no cliente');
       }
       throw new Error('Erro ao obter dados do invocador atual');
-    }
-  }
-
-  // Novo método específico para obter Riot ID
-  async getCurrentRiotId(): Promise<{gameName: string, tagLine: string} | null> {
-    if (!this.client) {
-      throw new Error('Cliente LCU não conectado');
-    }
-
-    try {
-      // Tentar endpoint específico para Riot ID
-      console.log('🔍 Buscando Riot ID específico...');
-      
-      // Método 1: Endpoint do chat (mais confiável)
-      try {
-        const chatResponse = await this.client.get('/lol-chat/v1/me');
-        if (chatResponse.data && chatResponse.data.gameName && chatResponse.data.tagLine) {
-          console.log('✅ Riot ID obtido via chat:', `${chatResponse.data.gameName}#${chatResponse.data.tagLine}`);
-          return {
-            gameName: chatResponse.data.gameName,
-            tagLine: chatResponse.data.tagLine
-          };
-        }
-      } catch (error) {
-        console.log('⚠️ Endpoint chat não disponível');
-      }
-
-      // Método 2: Endpoint do login
-      try {
-        const loginResponse = await this.client.get('/lol-login/v1/session');
-        if (loginResponse.data && loginResponse.data.username) {
-          const username = loginResponse.data.username;
-          if (username.includes('#')) {
-            const [gameName, tagLine] = username.split('#');
-            console.log('✅ Riot ID obtido via login:', `${gameName}#${tagLine}`);
-            return { gameName, tagLine };
-          }
-        }
-      } catch (error) {
-        console.log('⚠️ Endpoint login não disponível');
-      }
-
-      // Método 3: Endpoint de summoner alias
-      try {
-        const aliasResponse = await this.client.get('/lol-summoner/v1/current-summoner/alias');
-        if (aliasResponse.data && aliasResponse.data.gameName && aliasResponse.data.tagLine) {
-          console.log('✅ Riot ID obtido via alias:', `${aliasResponse.data.gameName}#${aliasResponse.data.tagLine}`);
-          return {
-            gameName: aliasResponse.data.gameName,
-            tagLine: aliasResponse.data.tagLine
-          };
-        }
-      } catch (error) {
-        console.log('⚠️ Endpoint alias não disponível');
-      }
-
-      console.log('⚠️ Não foi possível obter Riot ID de nenhum endpoint');
-      return null;
-    } catch (error) {
-      console.error('❌ Erro ao buscar Riot ID:', error);
-      return null;
     }
   }
 
@@ -591,9 +518,50 @@ export class LCUService {
       const summoner = await this.getCurrentSummoner();
       const gameflow = await this.getGameflowPhase();
 
+      // ✅ CORREÇÃO: Construir displayName se não estiver disponível
+      let processedSummoner: any = { ...summoner };
+      
+      if (!processedSummoner.displayName || processedSummoner.displayName.trim() === '') {
+        // Tentar construir displayName a partir de outros campos
+        if (summoner.gameName && summoner.tagLine) {
+          processedSummoner.displayName = `${summoner.gameName}#${summoner.tagLine}`;
+          console.log('🔧 [LCU] DisplayName construído a partir de gameName#tagLine:', processedSummoner.displayName);
+        } else if (summoner.internalName) {
+          processedSummoner.displayName = summoner.internalName;
+          console.log('🔧 [LCU] DisplayName usando internalName:', processedSummoner.displayName);
+        } else {
+          // Tentar buscar dados do alias endpoint
+          try {
+            const aliasResponse = await this.client.get('/lol-summoner/v1/current-summoner/alias');
+            if (aliasResponse.data && aliasResponse.data.gameName) {
+              const alias = aliasResponse.data;
+              processedSummoner.displayName = alias.tagLine ? 
+                `${alias.gameName}#${alias.tagLine}` : 
+                alias.gameName;
+              processedSummoner.gameName = alias.gameName;
+              processedSummoner.tagLine = alias.tagLine || 'BR1';
+              console.log('🔧 [LCU] DisplayName obtido via alias endpoint:', processedSummoner.displayName);
+            }
+          } catch (aliasError) {
+            console.log('⚠️ [LCU] Endpoint alias não disponível, usando fallback');
+            processedSummoner.displayName = `Summoner${summoner.summonerId}`;
+            processedSummoner.gameName = processedSummoner.displayName;
+            processedSummoner.tagLine = 'BR1';
+          }
+        }
+      } else {
+        // Se displayName existe, extrair gameName e tagLine se necessário
+        if (!summoner.gameName && processedSummoner.displayName.includes('#')) {
+          const [gameName, tagLine] = processedSummoner.displayName.split('#');
+          processedSummoner.gameName = gameName;
+          processedSummoner.tagLine = tagLine;
+          console.log('🔧 [LCU] GameName e TagLine extraídos do displayName:', `${gameName}#${tagLine}`);
+        }
+      }
+
       return {
         isConnected: this.isConnected,
-        summoner,
+        summoner: processedSummoner,
         gameflowPhase: gameflow
       };
     } catch (error) {

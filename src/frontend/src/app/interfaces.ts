@@ -3,6 +3,7 @@
 export interface Player {
   id: number;
   summonerName: string;
+  displayName?: string; // Nome completo formatado (gameName#tagLine)
   gameName?: string;  // Nome do Riot ID (sem tag)
   summonerId?: string;
   puuid?: string;
