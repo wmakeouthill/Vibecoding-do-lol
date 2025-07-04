@@ -1,18 +1,7 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable, interval } from 'rxjs';
 import { ApiService } from './api';
-
-// Import interfaces from api.ts since they are now defined there
-interface QueueStatus {
-  playersInQueue: number;
-  averageWaitTime: number;
-  estimatedMatchTime: number;
-  isActive: boolean;
-  playersInQueueList?: QueuedPlayerInfo[];
-  recentActivities?: QueueActivity[];
-  activeMatches?: number;
-  queuedPlayers?: any[];
-}
+import { QueueStatus } from '../interfaces';
 
 interface QueuedPlayerInfo {
   summonerName: string;
@@ -144,7 +133,9 @@ export class QueueStateService {
   private async syncQueueFromDatabase(): Promise<void> {
     try {
       // SEMPRE buscar dados DIRETAMENTE da tabela queue_players via API
-      const queueStatus = await this.apiService.getQueueStatus().toPromise();
+      // Se temos dados do jogador atual, passar para o backend fazer a detecção
+      const currentPlayerDisplayName = this.currentPlayerData?.displayName;
+      const queueStatus = await this.apiService.getQueueStatus(currentPlayerDisplayName).toPromise();
       
       // ✅ REMOÇÃO DE VALIDAÇÃO: A fila deve ser exibida SEMPRE, mesmo se vazia
       console.log('📊 [QueueState] Status da fila obtido - exibindo independente de validações:', {
@@ -197,12 +188,33 @@ export class QueueStateService {
         return;
       }
 
-      // REGRA: Verificar se o usuário atual está na fila (baseado na tabela queue_players)
+      // REGRA: Verificar se o usuário atual está na fila (priorizar backend se disponível)
       let isUserInQueue = false;
       let userPosition = 0;
       let queuedPlayer: any = null;
 
-      if (this.currentPlayerData) {
+      // ✅ NOVO: Se o backend retornou informação sobre usuário atual, usar essa info (mais confiável)
+      const queueStatusWithPlayerInfo = queueStatus as any;
+      if (queueStatusWithPlayerInfo.isCurrentPlayerInQueue !== undefined) {
+        isUserInQueue = queueStatusWithPlayerInfo.isCurrentPlayerInQueue;
+        console.log(`🎯 [QueueState] Status de fila determinado pelo backend: ${isUserInQueue ? 'na fila' : 'fora da fila'}`);
+        
+        // Se está na fila, tentar encontrar posição na lista
+        if (isUserInQueue && queueStatus.playersInQueueList && this.currentPlayerData) {
+          const identifiers = this.buildPlayerIdentifiers(this.currentPlayerData);
+          queuedPlayer = queueStatus.playersInQueueList.find((player: any) => {
+            return this.matchPlayerIdentifiers(player, identifiers);
+          });
+          
+          if (queuedPlayer) {
+            userPosition = queuedPlayer.queuePosition || 0;
+            console.log(`✅ [QueueState] Posição na fila encontrada: ${userPosition}`);
+          }
+        }
+      } else if (this.currentPlayerData) {
+        // ✅ FALLBACK: Se backend não retornou info, usar lógica manual (compatibilidade)
+        console.log('🔄 [QueueState] Backend não retornou status do usuário, usando detecção manual...');
+        
         // Construir diferentes formatos de identificação possíveis
         const identifiers = this.buildPlayerIdentifiers(this.currentPlayerData);
         

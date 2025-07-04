@@ -369,8 +369,16 @@ export class ApiService {
   }
 
   // Queue endpoints
-  getQueueStatus(): Observable<QueueStatus> {
-    return this.http.get<QueueStatus>(`${this.baseUrl}/queue/status`)
+  getQueueStatus(currentPlayerDisplayName?: string): Observable<QueueStatus> {
+    let url = `${this.baseUrl}/queue/status`;
+    
+    // Se temos o displayName do jogador atual, incluir na query para detecção no backend
+    if (currentPlayerDisplayName) {
+      const params = new URLSearchParams({ currentPlayerDisplayName });
+      url += `?${params.toString()}`;
+    }
+    
+    return this.http.get<QueueStatus>(url)
       .pipe(catchError(this.handleError));
   }
 

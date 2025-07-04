@@ -53,6 +53,7 @@ interface QueueStatus {
   isActive: boolean;
   playersInQueueList?: QueuedPlayerInfo[];
   recentActivities?: QueueActivity[];
+  isCurrentPlayerInQueue?: boolean; // Indica se o usuário atual está na fila (calculado no backend)
 }
 
 export class MatchmakingService {
@@ -735,6 +736,31 @@ export class MatchmakingService {
   // ✅ ATUALIZADO: Método para obter fila atual
   public getQueue(): QueuedPlayer[] {
     return [...this.queue];
+  }
+
+  /**
+   * Verificar se um jogador está na fila consultando a tabela queue_players
+   * @param displayName - Display name no formato "gameName#tagLine"
+   * @returns Promise<boolean> - true se o jogador está na fila
+   */
+  public async isPlayerInQueue(displayName: string): Promise<boolean> {
+    try {
+      console.log(`🔍 [Matchmaking] Verificando se ${displayName} está na fila...`);
+      
+      // Buscar na tabela queue_players (fonte de verdade)
+      const activeQueuePlayers = await this.dbManager.getActiveQueuePlayers();
+      
+      const isInQueue = activeQueuePlayers.some(dbPlayer => 
+        dbPlayer.summoner_name === displayName
+      );
+      
+      console.log(`${isInQueue ? '✅' : '❌'} [Matchmaking] ${displayName} ${isInQueue ? 'está' : 'não está'} na fila`);
+      
+      return isInQueue;
+    } catch (error) {
+      console.error(`❌ [Matchmaking] Erro ao verificar se ${displayName} está na fila:`, error);
+      return false;
+    }
   }
 
   // Método para adicionar jogador à fila via Discord (com verificação)

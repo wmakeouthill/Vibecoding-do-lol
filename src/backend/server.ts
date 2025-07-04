@@ -1157,7 +1157,21 @@ app.post('/api/capture-match/:playerId', (req: Request, res: Response) => {
 app.get('/api/queue/status', async (req: Request, res: Response) => {
   try {
     const queueStatus = await matchmakingService.getQueueStatus();
-    res.json(queueStatus);
+    
+    // Verificar se tem dados do usuário atual para detecção na fila
+    const { currentPlayerDisplayName } = req.query;
+    
+    if (currentPlayerDisplayName && typeof currentPlayerDisplayName === 'string') {
+      // Verificar se o usuário atual está na fila consultando a tabela queue_players
+      const isCurrentPlayerInQueue = await matchmakingService.isPlayerInQueue(currentPlayerDisplayName);
+      
+      res.json({
+        ...queueStatus,
+        isCurrentPlayerInQueue
+      });
+    } else {
+      res.json(queueStatus);
+    }
   } catch (error: any) {
     console.error('Erro ao obter status da fila:', error);
     res.status(500).json({ error: error.message });

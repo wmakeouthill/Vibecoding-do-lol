@@ -36,6 +36,7 @@ export interface QueueStatus {
   yourPosition?: number;
   playersInQueueList?: QueuedPlayerInfo[]; // Lista dos jogadores na fila
   recentActivities?: QueueActivity[]; // Atividades recentes
+  isCurrentPlayerInQueue?: boolean; // Indica se o usuário atual está na fila (calculado no backend)
 }
 
 export interface QueuedPlayerInfo {

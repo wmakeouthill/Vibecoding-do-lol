@@ -671,9 +671,20 @@ export class App implements OnInit, OnDestroy {
   }
 
   private refreshQueueStatus(): void {
-    this.apiService.getQueueStatus().subscribe({
+    // Se temos o jogador atual, passar seu displayName para detecção no backend
+    const currentPlayerDisplayName = this.currentPlayer?.displayName;
+    
+    this.apiService.getQueueStatus(currentPlayerDisplayName).subscribe({
       next: (status) => {
         console.log('📊 [App] Status da fila atualizado:', status);
+        
+        // Se o backend retornou informação sobre o jogador atual na fila, usar essa info
+        const statusWithPlayerInfo = status as any;
+        if (statusWithPlayerInfo.isCurrentPlayerInQueue !== undefined) {
+          this.isInQueue = statusWithPlayerInfo.isCurrentPlayerInQueue;
+          console.log(`🎯 [App] Status de fila do jogador atual determinado pelo backend: ${this.isInQueue ? 'na fila' : 'fora da fila'}`);
+        }
+        
         this.queueStatus = status;
       },
       error: (error) => {
