@@ -86,6 +86,9 @@ export class App implements OnInit, OnDestroy {
   
   // ✅ NOVO: Controle de auto-refresh para sincronizar com o queue component
   private autoRefreshEnabled = false;
+  
+  // ✅ NOVO: Controle para priorizar backend sobre QueueStateService
+  private hasRecentBackendQueueStatus = false;
 
   constructor(
     private apiService: ApiService,
@@ -112,6 +115,14 @@ export class App implements OnInit, OnDestroy {
     
     // ✅ NOVO: Buscar status inicial da fila UMA VEZ apenas
     this.refreshQueueStatus();
+    
+    // ✅ NOVO: Forçar atualização do status da fila a cada 10 segundos para garantir sincronização
+    setInterval(() => {
+      if (this.currentPlayer?.displayName) {
+        console.log('🔄 [App] Atualização periódica do status da fila');
+        this.refreshQueueStatus();
+      }
+    }, 10000);
   }
 
   // ✅ NOVO: Configurar comunicação centralizada com backend
@@ -124,9 +135,17 @@ export class App implements OnInit, OnDestroy {
     ).subscribe(queueState => {
       console.log('📊 [App] Estado crítico da fila atualizado via backend:', queueState);
       
-      // Só atualizar estado crítico (entrada/saída da fila)
+      // ✅ CORRIGIDO: Não sobrescrever o estado isInQueue se já foi determinado pelo backend
+      // O backend (via refreshQueueStatus) tem prioridade sobre o QueueStateService
       const wasInQueue = this.isInQueue;
-      this.isInQueue = queueState.isInQueue;
+      
+      // Só atualizar se não tivermos uma determinação recente do backend
+      if (!this.hasRecentBackendQueueStatus) {
+        this.isInQueue = queueState.isInQueue;
+        console.log(`🔄 [App] Estado da fila atualizado via QueueStateService: ${this.isInQueue ? 'na fila' : 'fora da fila'}`);
+      } else {
+        console.log(`🎯 [App] Mantendo estado determinado pelo backend: ${this.isInQueue ? 'na fila' : 'fora da fila'}`);
+      }
       
       // Se mudou o estado de estar na fila, buscar dados atualizados UMA VEZ
       if (wasInQueue !== this.isInQueue) {
@@ -421,7 +440,15 @@ export class App implements OnInit, OnDestroy {
       if (success) {
         console.log('✅ [App] Solicitação de entrada na fila Discord enviada via WebSocket');
         this.addNotification('success', 'Fila Discord', 'Entrando na fila via Discord...');
+        
+        // ✅ CORRIGIDO: Marcar estado como na fila imediatamente
         this.isInQueue = true;
+        this.hasRecentBackendQueueStatus = true;
+        
+        // Atualizar status após 3 segundos para confirmar
+        setTimeout(() => {
+          this.refreshQueueStatus();
+        }, 3000);
       } else {
         console.error('❌ [App] Falha ao enviar solicitação via Discord WebSocket');
         this.addNotification('error', 'Erro', 'Falha ao conectar com Discord');
@@ -438,7 +465,15 @@ export class App implements OnInit, OnDestroy {
     try {
       await this.apiService.leaveQueue(this.currentPlayer?.id, this.currentPlayer?.summonerName).toPromise();
       console.log('✅ [App] Solicitação de saída da fila enviada');
+      
+      // ✅ CORRIGIDO: Marcar estado como fora da fila imediatamente
       this.isInQueue = false;
+      this.hasRecentBackendQueueStatus = true;
+      
+      // Atualizar status após 2 segundos para confirmar
+      setTimeout(() => {
+        this.refreshQueueStatus();
+      }, 2000);
     } catch (error) {
       console.error('❌ [App] Erro ao sair da fila:', error);
       this.addNotification('error', 'Erro', 'Falha ao sair da fila');
@@ -689,21 +724,42 @@ export class App implements OnInit, OnDestroy {
     // Se temos o jogador atual, passar seu displayName para detecção no backend
     const currentPlayerDisplayName = this.currentPlayer?.displayName;
     
+    console.log('📊 [App] refreshQueueStatus chamado:', {
+      currentPlayerDisplayName: currentPlayerDisplayName,
+      currentIsInQueue: this.isInQueue
+    });
+    
     this.apiService.getQueueStatus(currentPlayerDisplayName).subscribe({
       next: (status) => {
-        console.log('📊 [App] Status da fila atualizado:', status);
+        console.log('📊 [App] Status da fila recebido do backend:', status);
+        
+        // ✅ CORRIGIDO: Marcar que temos uma resposta recente do backend
+        this.hasRecentBackendQueueStatus = true;
         
         // Se o backend retornou informação sobre o jogador atual na fila, usar essa info
         const statusWithPlayerInfo = status as any;
         if (statusWithPlayerInfo.isCurrentPlayerInQueue !== undefined) {
+          const previousState = this.isInQueue;
           this.isInQueue = statusWithPlayerInfo.isCurrentPlayerInQueue;
-          console.log(`🎯 [App] Status de fila do jogador atual determinado pelo backend: ${this.isInQueue ? 'na fila' : 'fora da fila'}`);
+          
+          console.log(`🎯 [App] Estado da fila atualizado pelo backend: ${previousState} → ${this.isInQueue}`);
+          console.log(`🎯 [App] Jogadores na fila: ${status.playersInQueue}`);
+          console.log(`🎯 [App] Lista de jogadores:`, status.playersInQueueList?.map(p => p.summonerName) || []);
+        } else {
+          console.log('⚠️ [App] Backend não retornou isCurrentPlayerInQueue');
         }
         
         this.queueStatus = status;
+        
+        // ✅ NOVO: Limpar flag após 5 segundos para permitir atualizações do QueueStateService
+        setTimeout(() => {
+          this.hasRecentBackendQueueStatus = false;
+          console.log('🔄 [App] Flag de backend recente limpa, permitindo atualizações do QueueStateService');
+        }, 5000);
       },
       error: (error) => {
         console.warn('⚠️ [App] Erro ao atualizar status da fila:', error);
+        this.hasRecentBackendQueueStatus = false;
       }
     });
   }

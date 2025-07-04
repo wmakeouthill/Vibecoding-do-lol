@@ -66,6 +66,9 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   // Cleanup
   private destroy$ = new Subject<void>();
 
+  // ✅ NOVO: Timer para atualizar tempos dos jogadores na fila
+  private playersTimeInterval?: number;
+
   constructor(
     public discordService: DiscordIntegrationService,
     private queueStateService: QueueStateService,
@@ -85,9 +88,16 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     this.setupQueueStateListener();
     this.autoRefreshToggle.emit(this.autoRefreshEnabled);
     
+    // ✅ NOVO: Fazer refresh inicial SEMPRE que entrar no componente
+    console.log('🔄 [Queue] Fazendo refresh inicial do estado da fila...');
+    this.refreshData.emit();
+    
     if (this.isInQueue) {
       this.startQueueTimer();
     }
+    
+    // ✅ NOVO: Iniciar timer para atualizar tempos dos jogadores na fila
+    this.startPlayersTimeUpdate();
   }
 
   ngOnDestroy(): void {
@@ -107,6 +117,17 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
 
     if (changes.queueStatus?.currentValue) {
       console.log('🔄 [Queue] QueueStatus atualizado');
+      this.cdr.detectChanges();
+    }
+    
+    // ✅ NOVO: Debug do estado isInQueue
+    if (changes.isInQueue) {
+      console.log(`🎯 [Queue] Estado isInQueue mudou: ${changes.isInQueue.previousValue} → ${changes.isInQueue.currentValue}`);
+      console.log(`🎯 [Queue] Estado atual do componente:`, {
+        isInQueue: this.isInQueue,
+        currentPlayerDisplayName: this.currentPlayer?.displayName,
+        queuePlayersCount: this.queueStatus?.playersInQueue || 0
+      });
       this.cdr.detectChanges();
     }
   }
@@ -135,6 +156,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     this.queueStateService.stopMySQLSync();
     this.stopAutoRefresh();
     this.stopQueueTimer();
+    this.stopPlayersTimeUpdate();
   }
 
   // =============================================================================
@@ -241,7 +263,35 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
 
   // Método chamado pelo template (compatibilidade)
   refreshPlayersData(): void {
-    this.refreshQueueData();
+    console.log('🔄 [Queue] refreshPlayersData chamado - forçando atualização completa');
+    console.log('🔄 [Queue] Estado atual:', {
+      isInQueue: this.isInQueue,
+      currentPlayer: this.currentPlayer?.displayName,
+      playersInQueue: this.queueStatus?.playersInQueue
+    });
+    
+    this.isRefreshing = true;
+    
+    // ✅ NOVO: Emitir evento para o componente pai atualizar o estado da fila
+    console.log('🔄 [Queue] Solicitando atualização completa do estado da fila ao componente pai...');
+    this.refreshData.emit();
+    
+    // ✅ NOVO: Forçar atualização do QueueStateService
+    if (this.currentPlayer?.displayName) {
+      console.log('🔄 [Queue] Atualizando QueueStateService com jogador atual...');
+      this.queueStateService.updateCurrentPlayer(this.currentPlayer);
+      this.queueStateService.forceSync();
+    }
+    
+    // ✅ NOVO: Forçar detecção de mudanças imediatamente
+    this.cdr.detectChanges();
+    
+    // Parar refresh após 2 segundos
+    setTimeout(() => {
+      this.isRefreshing = false;
+      this.cdr.detectChanges();
+      console.log('✅ [Queue] Refresh completo');
+    }, 2000);
   }
 
   // =============================================================================
@@ -286,9 +336,13 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
 
   // Métodos Discord chamados pelo template
   onJoinDiscordQueue(): void {
-    if (!this.queueStatus.isActive) return;
-    console.log('🎮 [Queue] Entrada Discord solicitada');
-    this.onJoinQueue();
+    console.log('🔍 [Queue] Entrada Discord solicitada');
+    console.log('🔍 [Queue] Estado atual antes da entrada:', {
+      isInQueue: this.isInQueue,
+      currentPlayer: this.currentPlayer?.displayName,
+      isDiscordConnected: this.isDiscordConnected
+    });
+    this.showLaneSelector = true;
   }
 
   onLeaveDiscordQueue(): void {
@@ -303,6 +357,11 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
 
   onConfirmJoinQueue(preferences: QueuePreferences): void {
     console.log('✅ [Queue] Confirmando entrada na fila');
+    console.log('✅ [Queue] Estado atual na confirmação:', {
+      isInQueue: this.isInQueue,
+      currentPlayer: this.currentPlayer?.displayName,
+      preferences: preferences
+    });
     
     this.queuePreferences = preferences;
     this.showLaneSelector = false;
@@ -327,6 +386,8 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     
     this.queueTimer = 0;
     this.startQueueTimer();
+    
+    console.log('✅ [Queue] Emissão de entrada na fila concluída');
   }
 
   onCloseLaneSelector(): void {
@@ -394,14 +455,68 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   getProfileIconUrl(): string {
+    console.log('🖼️ [Queue] getProfileIconUrl chamado:', {
+      hasCurrentPlayer: !!this.currentPlayer,
+      displayName: this.currentPlayer?.displayName,
+      gameName: this.currentPlayer?.gameName,
+      tagLine: this.currentPlayer?.tagLine,
+      profileIconId: this.currentPlayer?.profileIconId
+    });
+    
+    // ✅ PRIORIDADE 1: Se tem profileIconId direto, usar
     if (this.currentPlayer?.profileIconId && Number(this.currentPlayer.profileIconId) > 0) {
-      return this.profileIconService.getProfileIconUrl(String(this.currentPlayer.profileIconId));
+      const iconId = Number(this.currentPlayer.profileIconId);
+      console.log('🖼️ [Queue] Usando profileIconId direto:', iconId);
+      return `https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/${iconId}.jpg`;
     }
-    return '/assets/images/champion-placeholder.svg';
+    
+    // ✅ PRIORIDADE 2: Se tem displayName, tentar buscar do cache
+    if (this.currentPlayer?.displayName) {
+      const cachedIconId = this.profileIconService.getProfileIconId(
+        this.currentPlayer.displayName,
+        this.currentPlayer.gameName,
+        this.currentPlayer.tagLine
+      );
+      
+      console.log('🖼️ [Queue] Cache check:', {
+        displayName: this.currentPlayer.displayName,
+        cachedIconId: cachedIconId
+      });
+      
+      if (cachedIconId && cachedIconId > 0) {
+        console.log('🖼️ [Queue] Usando ícone do cache:', cachedIconId);
+        return `https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/${cachedIconId}.jpg`;
+      } else {
+        // ✅ BUSCAR AUTOMATICAMENTE se não está no cache
+        console.log('🖼️ [Queue] Ícone não encontrado no cache, buscando do servidor...');
+        this.profileIconService.fetchProfileIcon(
+          this.currentPlayer.displayName,
+          this.currentPlayer.gameName,
+          this.currentPlayer.tagLine
+        ).then((iconId: number | null) => {
+          console.log('🖼️ [Queue] Ícone obtido do servidor:', iconId);
+          this.cdr.detectChanges(); // Forçar atualização da UI
+        }).catch((error: any) => {
+          console.warn('⚠️ [Queue] Erro ao buscar ícone do servidor:', error);
+        });
+        
+        // ✅ RETORNAR ÍCONE PADRÃO enquanto busca
+        return `https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/29.jpg`;
+      }
+    }
+    
+    // ✅ FALLBACK: Ícone padrão
+    console.log('🖼️ [Queue] Usando ícone padrão (fallback)');
+    return `https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/29.jpg`;
   }
 
   onProfileIconError(event: Event): void {
-    (event.target as HTMLImageElement).src = '/assets/images/champion-placeholder.svg';
+    const target = event.target as HTMLImageElement;
+    if (!target) return;
+
+    // ✅ CORRIGIDO: Usar o método do ProfileIconService para fallbacks
+    const profileIconId = this.currentPlayer?.profileIconId ? Number(this.currentPlayer.profileIconId) : undefined;
+    this.profileIconService.onProfileIconError(event, profileIconId);
   }
 
   // =============================================================================
@@ -425,7 +540,33 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   getTimeInQueue(player: any): string {
-    return player?.timeInQueue || '0s';
+    if (!player?.joinTime) {
+      return '0s';
+    }
+    
+    try {
+      // ✅ CORRIGIDO: Calcular tempo real baseado no joinTime
+      const joinTime = new Date(player.joinTime);
+      const now = new Date();
+      const diffMs = now.getTime() - joinTime.getTime();
+      
+      if (diffMs < 0) {
+        return '0s';
+      }
+      
+      const diffSeconds = Math.floor(diffMs / 1000);
+      const minutes = Math.floor(diffSeconds / 60);
+      const seconds = diffSeconds % 60;
+      
+      if (minutes > 0) {
+        return `${minutes}m ${seconds}s`;
+      } else {
+        return `${seconds}s`;
+      }
+    } catch (error) {
+      console.warn('⚠️ [Queue] Erro ao calcular tempo na fila:', error);
+      return '0s';
+    }
   }
 
   isUserInQueue(user: any): boolean {
@@ -490,5 +631,25 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
 
   inviteToQueue(user: any): void {
     console.log('📝 [Queue] Backend gerencia convites:', user.username);
+  }
+
+  // ✅ NOVO: Iniciar timer para atualizar tempos dos jogadores na fila
+  private startPlayersTimeUpdate(): void {
+    // Atualizar a cada 1 segundo para mostrar tempos em tempo real
+    this.playersTimeInterval = setInterval(() => {
+      // Forçar detecção de mudanças para atualizar os tempos exibidos
+      this.cdr.detectChanges();
+    }, 1000);
+    
+    console.log('🔄 [Queue] Timer de atualização de tempos dos jogadores iniciado');
+  }
+
+  // ✅ NOVO: Parar timer de atualização de tempos
+  private stopPlayersTimeUpdate(): void {
+    if (this.playersTimeInterval) {
+      clearInterval(this.playersTimeInterval);
+      this.playersTimeInterval = undefined;
+      console.log('🛑 [Queue] Timer de atualização de tempos dos jogadores parado');
+    }
   }
 } 
