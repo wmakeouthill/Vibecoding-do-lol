@@ -436,7 +436,24 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   // DISCORD UTILITIES (backend gerencia vinculação)
   // =============================================================================
   hasLinkedNickname(user: any): boolean {
-    return !!(user?.linkedNickname);
+    // Verificar se tem linkedNickname (string ou objeto)
+    if (user?.linkedNickname) {
+      if (typeof user.linkedNickname === 'string') {
+        return true;
+      }
+      if (typeof user.linkedNickname === 'object' && 
+          user.linkedNickname.gameName && 
+          user.linkedNickname.tagLine) {
+        return true;
+      }
+    }
+    
+    // Verificar novo formato linkedDisplayName
+    if (user?.linkedDisplayName && typeof user.linkedDisplayName === 'string') {
+      return true;
+    }
+    
+    return false;
   }
 
   getLinkedNickname(user: any): string {
@@ -444,27 +461,21 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       return '';
     }
 
-    // Debug log para identificar problemas
-    console.log('🔍 [Queue] getLinkedNickname debug:', {
-      username: user.username,
-      linkedNickname: user.linkedNickname,
-      type: typeof user.linkedNickname
-    });
-
-    // Se for string, retornar diretamente
+    // Se for string (displayName direto), retornar
     if (typeof user.linkedNickname === 'string') {
       return user.linkedNickname;
     }
 
-    // Se for objeto, formar a string corretamente
-    if (user.linkedNickname && typeof user.linkedNickname === 'object') {
-      if (user.linkedNickname.gameName && user.linkedNickname.tagLine) {
-        return `${user.linkedNickname.gameName}#${user.linkedNickname.tagLine}`;
-      }
-      
-      if (user.linkedNickname.gameName) {
-        return user.linkedNickname.gameName;
-      }
+    // Se for objeto com {gameName, tagLine}, montar displayName
+    if (typeof user.linkedNickname === 'object' && 
+        user.linkedNickname.gameName && 
+        user.linkedNickname.tagLine) {
+      return `${user.linkedNickname.gameName}#${user.linkedNickname.tagLine}`;
+    }
+
+    // Verificar se tem linkedDisplayName (novo formato)
+    if (user.linkedDisplayName && typeof user.linkedDisplayName === 'string') {
+      return user.linkedDisplayName;
     }
 
     // Fallback para casos inesperados

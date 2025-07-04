@@ -255,9 +255,9 @@ export class ApiService {
         catchError(this.handleError)
       );
   }  // Player endpoints
-  registerPlayer(riotId: string, region: string): Observable<Player> {
-    // Use the new refresh endpoint that handles Riot ID properly
-    return this.refreshPlayerByRiotId(riotId, region).pipe(
+  registerPlayer(displayName: string, region: string): Observable<Player> {
+    // Use the new refresh endpoint that handles Display Name properly
+    return this.refreshPlayerByDisplayName(displayName, region).pipe(
       map(response => {
         if (!response.player) {
           throw new Error('Falha ao registrar jogador');
@@ -334,9 +334,9 @@ export class ApiService {
     return this.getCurrentSummonerFromLCU().pipe(
       switchMap((lcuData: any) => {
         if (lcuData && lcuData.gameName && lcuData.tagLine) {
-          const riotId = `${lcuData.gameName}#${lcuData.tagLine}`;
+          const displayName = `${lcuData.gameName}#${lcuData.tagLine}`;
           // Use the working refresh endpoint
-          return this.refreshPlayerByRiotId(riotId, 'br1').pipe(
+          return this.refreshPlayerByDisplayName(displayName, 'br1').pipe(
             map(response => ({
               success: true,
               data: {
@@ -482,9 +482,9 @@ export class ApiService {
   }
 
   // Método para atualizar dados do jogador usando Riot ID (gameName#tagLine)
-  refreshPlayerByRiotId(riotId: string, region: string): Observable<RefreshPlayerResponse> {
-    return this.http.post<RefreshPlayerResponse>(`${this.baseUrl}/player/refresh-by-riot-id`, {
-      riotId,
+  refreshPlayerByDisplayName(displayName: string, region: string): Observable<RefreshPlayerResponse> {
+    return this.http.post<RefreshPlayerResponse>(`${this.baseUrl}/player/refresh-by-display-name`, {
+      displayName,
       region
     }).pipe(
       map(response => {
@@ -559,12 +559,12 @@ export class ApiService {
   // ========== MÉTODOS MAIS AMIGÁVEIS PARA BUSCAR JOGADOR ==========
 
   // Método principal: buscar por Riot ID (GameName#TagLine) - MAIS AMIGÁVEL
-  getPlayerByRiotId(riotId: string, region: string): Observable<Player> {
-    if (!riotId.includes('#')) {
+  getPlayerByDisplayName(displayName: string, region: string): Observable<Player> {
+    if (!displayName.includes('#')) {
       return throwError(() => new Error('Formato inválido. Use: NomeDoJogo#TAG (ex: Player#BR1)'));
     }
 
-    return this.http.get<Player>(`${this.baseUrl}/player/details/${encodeURIComponent(riotId)}?region=${region}`)
+    return this.http.get<Player>(`${this.baseUrl}/player/details/${encodeURIComponent(displayName)}?region=${region}`)
       .pipe(
         retry(1),
         catchError(this.handleError)
@@ -609,10 +609,20 @@ export class ApiService {
             throw new Error('Dados do LCU não disponíveis');
           }
 
+          // ✅ CORREÇÃO: Construir displayName no formato gameName#tagLine
+          let displayName: string | undefined = undefined;
+          if (lcuData.gameName && lcuData.tagLine) {
+            displayName = `${lcuData.gameName}#${lcuData.tagLine}`;
+          } else if (lcuData.displayName) {
+            displayName = lcuData.displayName;
+          }
+
           // Create a Player object from LCU data only
           const lcuPlayer: Player = {
             id: lcuData.summonerId || 0,
             summonerName: lcuData.gameName || lcuData.displayName || 'Unknown',
+            displayName: displayName, // ✅ ADICIONADO: Definir displayName corretamente
+            gameName: lcuData.gameName || null,
             tagLine: lcuData.tagLine || null,
             summonerId: (lcuData.summonerId || '0').toString(),
             puuid: lcuData.puuid || '',
@@ -635,8 +645,8 @@ export class ApiService {
   smartPlayerSearch(identifier: string, region: string = 'br1'): Observable<Player> {
     // Detectar o tipo de identificador e usar o método apropriado
     if (identifier.includes('#')) {
-      // É um Riot ID (GameName#TagLine)
-      return this.getPlayerByRiotId(identifier, region);
+      // É um Display Name (GameName#TagLine)
+      return this.getPlayerByDisplayName(identifier, region);
     } else if (identifier.match(/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/)) {
       // É um PUUID
       return this.getPlayerByPuuid(identifier, region);
@@ -663,11 +673,25 @@ export class ApiService {
     const lcuRankedStats = data.lcuRankedStats || null;
 
     // Process rank data from multiple sources
-    const rankedData = this.processRankedData(riotApi, lcuRankedStats);    return {
+    const rankedData = this.processRankedData(riotApi, lcuRankedStats);
+
+    // ✅ CORREÇÃO: Construir displayName no formato gameName#tagLine
+    const gameName = riotAccount.gameName || riotApi.gameName || lcuData.gameName || null;
+    const tagLine = riotAccount.tagLine || riotApi.tagLine || lcuData.tagLine || null;
+    
+    let displayName: string | undefined = undefined;
+    if (gameName && tagLine) {
+      displayName = `${gameName}#${tagLine}`;
+    } else if (lcuData.displayName) {
+      displayName = lcuData.displayName;
+    }
+
+    return {
       id: riotApi.id || lcuData.summonerId || 0,
       summonerName: riotAccount.gameName || riotApi.gameName || riotApi.name || lcuData.gameName || lcuData.displayName || 'Unknown',
-      gameName: riotAccount.gameName || riotApi.gameName || lcuData.gameName || null,
-      tagLine: riotAccount.tagLine || riotApi.tagLine || lcuData.tagLine || null,
+      displayName: displayName, // ✅ ADICIONADO: Definir displayName corretamente
+      gameName: gameName,
+      tagLine: tagLine,
       summonerId: riotApi.id || lcuData.summonerId?.toString() || '0',
       puuid: riotAccount.puuid || riotApi.puuid || lcuData.puuid || '',
       profileIconId: riotApi.profileIconId || lcuData.profileIconId || 1,

@@ -419,7 +419,7 @@ export class RiotAPIService {
         throw new Error('Erro ao conectar com a Riot API');
       }
     }
-  } async getSummonerByRiotId(gameName: string, tagLine: string, region: string): Promise<any> {
+  } async getSummonerByDisplayName(gameName: string, tagLine: string, region: string): Promise<any> {
     if (!this.isApiKeyConfigured()) {
       throw new Error('Chave da Riot API não configurada');
     }
@@ -479,14 +479,14 @@ export class RiotAPIService {
       } else if (error.response?.status === 429) {
         throw new Error('Limite de requisições da Riot API excedido. Tente novamente em alguns minutos.');
       } else {
-        console.error('Erro na Riot API (getSummonerByRiotId):', error.response?.data || error.message);
+        console.error('Erro na Riot API (getSummonerByDisplayName):', error.response?.data || error.message);
         throw new Error('Erro ao conectar com a Riot API');
       }
     }
   }
 
   /**
-   * Método unificado que detecta automaticamente se a entrada é Riot ID ou summoner name legado
+   * Método unificado que detecta automaticamente se a entrada é Display Name ou summoner name legado
    * @param nameInput - Pode ser "gameName#tagLine" ou "summonerName"
    * @param region - Região do servidor
    * @returns Dados do summoner
@@ -498,11 +498,11 @@ export class RiotAPIService {
 
     const trimmedInput = nameInput.trim();
 
-    // Detectar se é Riot ID (contém #)
+    // Detectar se é Display Name (contém #)
     if (trimmedInput.includes('#')) {
       const parts = trimmedInput.split('#');
       if (parts.length !== 2) {
-        throw new Error('Formato de Riot ID inválido. Use: gameName#tagLine');
+        throw new Error('Formato de Display Name inválido. Use: gameName#tagLine');
       }
 
       const [gameName, tagLine] = parts;
@@ -510,7 +510,7 @@ export class RiotAPIService {
         throw new Error('gameName e tagLine não podem estar vazios');
       }
 
-      return this.getSummonerByRiotId(gameName.trim(), tagLine.trim(), region);
+      return this.getSummonerByDisplayName(gameName.trim(), tagLine.trim(), region);
     } else {
       // É um summoner name legado
       return this.getSummonerByName(trimmedInput, region);
@@ -524,7 +524,7 @@ export class RiotAPIService {
    * @param region - Região do servidor
    * @returns Dados da conta (AccountDto)
    */
-  async getAccountByRiotId(gameName: string, tagLine: string, region: string): Promise<AccountData> {
+  async getAccountByDisplayName(gameName: string, tagLine: string, region: string): Promise<AccountData> {
     if (!this.isApiKeyConfigured()) {
       throw new Error('Chave da Riot API não configurada');
     }
@@ -546,7 +546,7 @@ export class RiotAPIService {
       } else if (error.response?.status === 429) {
         throw new Error('Limite de requisições da Riot API excedido. Tente novamente em alguns minutos.');
       } else {
-        console.error('Erro na Riot API (getAccountByRiotId):', error.response?.data || error.message);
+        console.error('Erro na Riot API (getAccountByDisplayName):', error.response?.data || error.message);
         throw new Error('Erro ao conectar com a Riot API');
       }
     }

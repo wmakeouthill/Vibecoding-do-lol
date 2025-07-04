@@ -534,12 +534,17 @@ export class App implements OnInit, OnDestroy {
         // ✅ CORRIGIDO: Formar nome completo no formato gameName#tagLine SEMPRE
         if (player.gameName && player.tagLine) {
           player.summonerName = `${player.gameName}#${player.tagLine}`;
-          console.log('✅ [App] Nome formatado:', player.summonerName);
+          // ✅ NOVA CORREÇÃO: Garantir que displayName seja definido
+          if (!player.displayName) {
+            player.displayName = `${player.gameName}#${player.tagLine}`;
+          }
+          console.log('✅ [App] Nome formatado:', player.summonerName, 'displayName:', player.displayName);
         } else {
           console.warn('⚠️ [App] Dados incompletos do jogador:', {
             gameName: player.gameName,
             tagLine: player.tagLine,
-            summonerName: player.summonerName
+            summonerName: player.summonerName,
+            displayName: player.displayName
           });
           // Se não conseguir formar o nome completo, mostrar erro
           if (!player.summonerName || !player.summonerName.includes('#')) {
@@ -561,7 +566,7 @@ export class App implements OnInit, OnDestroy {
         // ✅ ADICIONADO: Atualizar formulário de configurações com dados do jogador
         this.updateSettingsForm();
         
-        console.log('✅ [App] Jogador carregado:', this.currentPlayer.summonerName);
+        console.log('✅ [App] Jogador carregado:', this.currentPlayer.summonerName, 'displayName:', this.currentPlayer.displayName);
         this.addNotification('success', 'Jogador Detectado', `Logado como: ${this.currentPlayer.summonerName}`);
       },
       error: (error) => {
@@ -596,8 +601,10 @@ export class App implements OnInit, OnDestroy {
           
           // ✅ CORRIGIDO: Formar nome completo no formato gameName#tagLine
           let summonerName = 'Unknown';
+          let displayName: string | undefined = undefined;
           if (gameName && tagLine) {
             summonerName = `${gameName}#${tagLine}`;
+            displayName = `${gameName}#${tagLine}`; // ✅ NOVA CORREÇÃO: Definir displayName
           } else {
             console.warn('⚠️ [App] Dados incompletos via getCurrentPlayerDetails:', {
               gameName, tagLine
@@ -609,6 +616,7 @@ export class App implements OnInit, OnDestroy {
           const player: Player = {
             id: lcuData.summonerId || 0,
             summonerName: summonerName,
+            displayName: displayName, // ✅ ADICIONADO: Definir displayName corretamente
             gameName: gameName,
             tagLine: tagLine,
             summonerId: (lcuData.summonerId || 0).toString(),
@@ -626,7 +634,7 @@ export class App implements OnInit, OnDestroy {
           // ✅ ADICIONADO: Atualizar formulário de configurações
           this.updateSettingsForm();
           
-          console.log('✅ [App] Dados do jogador mapeados com sucesso:', player.summonerName);
+          console.log('✅ [App] Dados do jogador mapeados com sucesso:', player.summonerName, 'displayName:', player.displayName);
           this.addNotification('success', 'Jogador Detectado', `Logado como: ${player.summonerName}`);
         }
       },
@@ -643,7 +651,19 @@ export class App implements OnInit, OnDestroy {
     if (stored) {
       try {
         this.currentPlayer = JSON.parse(stored);
-        console.log('✅ [App] Dados do jogador carregados do localStorage');
+        
+        // ✅ NOVA CORREÇÃO: Garantir que displayName seja definido se ausente
+        if (this.currentPlayer && !this.currentPlayer.displayName) {
+          if (this.currentPlayer.gameName && this.currentPlayer.tagLine) {
+            this.currentPlayer.displayName = `${this.currentPlayer.gameName}#${this.currentPlayer.tagLine}`;
+            console.log('🔧 [App] DisplayName construído do localStorage:', this.currentPlayer.displayName);
+          } else if (this.currentPlayer.summonerName && this.currentPlayer.summonerName.includes('#')) {
+            this.currentPlayer.displayName = this.currentPlayer.summonerName;
+            console.log('🔧 [App] DisplayName definido como summonerName do localStorage:', this.currentPlayer.displayName);
+          }
+        }
+        
+        console.log('✅ [App] Dados do jogador carregados do localStorage, displayName:', this.currentPlayer?.displayName);
       } catch (error) {
         console.warn('⚠️ [App] Erro ao carregar do localStorage');
       }

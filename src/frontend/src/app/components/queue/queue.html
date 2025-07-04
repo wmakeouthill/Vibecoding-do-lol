@@ -36,7 +36,7 @@
           {{ currentPlayer?.displayName || currentPlayer?.summonerName }}<span class="player-tag" *ngIf="!currentPlayer?.displayName">{{ getPlayerTag() }}</span>
         </h3>
       <div class="player-stats">
-        <span class="mmr">{{ currentPlayer.currentMMR || currentPlayer.mmr || 'N/A' }} MMR</span>
+        <span class="mmr">{{ currentPlayer?.currentMMR || currentPlayer?.mmr || 'N/A' }} MMR</span>
         <span class="rank" *ngIf="currentPlayer?.rank">{{ getPlayerRankDisplay() }}</span>
         <span class="wins-losses" *ngIf="currentPlayer?.wins !== undefined && currentPlayer?.losses !== undefined">
           {{ currentPlayer?.wins }}V / {{ currentPlayer?.losses }}D

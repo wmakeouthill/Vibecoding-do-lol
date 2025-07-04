@@ -134,27 +134,27 @@ export class PlayerService {
     }
   }
 
-  async getPlayerBySummonerNameWithDetails(riotId: string, region: string): Promise<any> {
-    if (!riotId.includes('#')) {
-      throw new Error('Formato de Riot ID inválido. Use gameName#tagLine.');
+  async getPlayerBySummonerNameWithDetails(displayName: string, region: string): Promise<any> {
+    if (!displayName.includes('#')) {
+      throw new Error('Formato de Display Name inválido. Use gameName#tagLine.');
     }
-    const [gameName, tagLine] = riotId.split('#');
+    const [gameName, tagLine] = displayName.split('#');
 
     if (!gameName || !tagLine) {
-      throw new Error('gameName e tagLine são obrigatórios do Riot ID.');
+      throw new Error('gameName e tagLine são obrigatórios do Display Name.');
     } try {
-      // Usar o método unificado que suporta tanto Riot ID quanto summoner name legado
-      const summonerDetails = await this.riotAPI.getSummoner(riotId, region);
+      // Usar o método unificado que suporta tanto Display Name quanto summoner name legado
+      const summonerDetails = await this.riotAPI.getSummoner(displayName, region);
 
       // O método getSummoner já retorna os dados completos incluindo gameName e tagLine
       return summonerDetails;
 
     } catch (error: any) {
-      console.error(`Erro em getPlayerBySummonerNameWithDetails para ${riotId} na região ${region}:`, error);
+      console.error(`Erro em getPlayerBySummonerNameWithDetails para ${displayName} na região ${region}:`, error);
       if (error.message.includes('não encontrado') || error.response?.status === 404) {
-        throw new Error(`Jogador com Riot ID '${riotId}' não encontrado na região ${region.toUpperCase()}`);
+        throw new Error(`Jogador com Display Name '${displayName}' não encontrado na região ${region.toUpperCase()}`);
       }
-      throw new Error('Falha ao buscar dados do jogador por Riot ID na Riot API.');
+      throw new Error('Falha ao buscar dados do jogador por Display Name na Riot API.');
     }
   }
 
