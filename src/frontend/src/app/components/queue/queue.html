@@ -14,9 +14,9 @@
         <span *ngIf="isDiscordConnected">Discord Conectado</span>
         <span *ngIf="!isDiscordConnected">Discord Desconectado</span>
       </div>
-          <div class="discord-user" *ngIf="currentPlayer?.displayName">
-      👤 {{ currentPlayer?.displayName }}
-    </div>
+      <div class="discord-user" *ngIf="currentPlayer && currentPlayer.displayName">
+        👤 {{ currentPlayer.displayName }}
+      </div>
     </div>
   </div>
 

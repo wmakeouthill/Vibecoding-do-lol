@@ -531,14 +531,16 @@ export class App implements OnInit, OnDestroy {
       next: (player) => {
         console.log('✅ [App] Dados do jogador carregados via LCU:', player);
         
-        // ✅ CORRIGIDO: Formar nome completo no formato gameName#tagLine SEMPRE
-        if (player.gameName && player.tagLine) {
-          player.summonerName = `${player.gameName}#${player.tagLine}`;
-          // ✅ NOVA CORREÇÃO: Garantir que displayName seja definido
-          if (!player.displayName) {
-            player.displayName = `${player.gameName}#${player.tagLine}`;
-          }
-          console.log('✅ [App] Nome formatado:', player.summonerName, 'displayName:', player.displayName);
+        // ✅ CORRIGIDO: Usar displayName diretamente do backend se disponível
+        if (player.displayName) {
+          // O backend já construiu o displayName corretamente
+          player.summonerName = player.displayName;
+          console.log('✅ [App] Usando displayName do backend:', player.displayName);
+        } else if (player.gameName && player.tagLine) {
+          // Fallback: construir se não veio do backend
+          player.displayName = `${player.gameName}#${player.tagLine}`;
+          player.summonerName = player.displayName;
+          console.log('✅ [App] DisplayName construído como fallback:', player.displayName);
         } else {
           console.warn('⚠️ [App] Dados incompletos do jogador:', {
             gameName: player.gameName,
@@ -599,24 +601,37 @@ export class App implements OnInit, OnDestroy {
           const gameName = riotAccount.gameName || lcuData.gameName;
           const tagLine = riotAccount.tagLine || lcuData.tagLine;
           
-          // ✅ CORRIGIDO: Formar nome completo no formato gameName#tagLine
+          // ✅ CORRIGIDO: Usar displayName do backend se disponível
           let summonerName = 'Unknown';
-          let displayName: string | undefined = undefined;
-          if (gameName && tagLine) {
-            summonerName = `${gameName}#${tagLine}`;
-            displayName = `${gameName}#${tagLine}`; // ✅ NOVA CORREÇÃO: Definir displayName
+          let displayName = '';
+          
+          // Verificar se o backend já forneceu displayName
+          if (lcuData.displayName) {
+            displayName = lcuData.displayName;
+            summonerName = displayName;
+            console.log('✅ [App] Usando displayName do backend:', displayName);
+          } else if (gameName && tagLine) {
+            displayName = `${gameName}#${tagLine}`;
+            summonerName = displayName;
+            console.log('✅ [App] DisplayName construído como fallback:', displayName);
           } else {
             console.warn('⚠️ [App] Dados incompletos via getCurrentPlayerDetails:', {
-              gameName, tagLine
+              gameName, tagLine, lcuDisplayName: lcuData.displayName
             });
             this.addNotification('warning', 'Dados Incompletos', 'Não foi possível obter gameName#tagLine');
+            return;
+          }
+          
+          // Garantir que displayName não seja vazio
+          if (!displayName) {
+            this.addNotification('warning', 'Dados Incompletos', 'Não foi possível obter displayName');
             return;
           }
           
           const player: Player = {
             id: lcuData.summonerId || 0,
             summonerName: summonerName,
-            displayName: displayName, // ✅ ADICIONADO: Definir displayName corretamente
+            displayName: displayName, // ✅ ADICIONADO: Definir displayName corretamente (já verificado acima)
             gameName: gameName,
             tagLine: tagLine,
             summonerId: (lcuData.summonerId || 0).toString(),

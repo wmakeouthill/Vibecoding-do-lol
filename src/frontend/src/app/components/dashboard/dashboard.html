@@ -2,10 +2,8 @@
   <!-- Hero Section -->
   <div class="hero-section" *ngIf="player">
     <div class="hero-content">
-      <div class="player-avatar">        <img [src]="getProfileIconUrl()"
-             alt="Profile Icon"
-             class="profile-icon"
-             (error)="onProfileIconError($event)">
+      <div class="player-avatar"> <img [src]="getProfileIconUrl()" alt="Profile Icon" class="profile-icon"
+          (error)="onProfileIconError($event)">
         <div class="rank-badge" *ngIf="player.rank" [style.background]="getRankColor()">
           {{ player.rank.tier }}
         </div>
@@ -13,12 +11,14 @@
 
       <div class="player-info">
         <h1>Bem-vindo de volta, <span class="highlight">{{ player.summonerName }}</span>!</h1>
-        <p class="subtitle">Pronto para dominar a Fenda do Invocador?</p>        <div class="player-stats-row">
+        <p class="subtitle">Pronto para dominar a Fenda do Invocador?</p>
+        <div class="player-stats-row">
           <div class="stat-pill">
             <span class="stat-icon">⚡</span>
             <span class="stat-value">{{ player.currentMMR || player.mmr || 'N/A' }}</span>
             <span class="stat-label">MMR</span>
-          </div>          <div class="stat-pill" *ngIf="player.rankedData?.soloQueue || player.rank">
+          </div>
+          <div class="stat-pill" *ngIf="player.rankedData?.soloQueue || player.rank">
             <span class="stat-icon">🏆</span>
             <span class="stat-value">{{ getSoloQueueRank() }}</span>
             <span class="stat-label">Solo/Duo ({{ getSoloQueueLP() }} LP)</span>
@@ -82,7 +82,8 @@
   <!-- Quick Actions -->
   <div class="quick-actions-section" *ngIf="player">
     <h2>🚀 Ações Rápidas</h2>
-    <div class="action-cards">      <div class="action-card primary" (click)="onJoinQueue(); showButtonFeedback($event)">
+    <div class="action-cards">
+      <div class="action-card primary" (click)="onJoinQueue(); showButtonFeedback($event)">
         <div class="action-icon">⚔️</div>
         <h3>Entrar na Fila</h3>
         <p>Buscar partida 5v5 ranqueada</p>
@@ -163,10 +164,8 @@
 
     <!-- Matches List -->
     <div class="recent-matches" *ngIf="recentMatches.length > 0 && !isLoadingMatches">
-      <div class="match-item"
-           *ngFor="let match of recentMatches.slice(0, 3)"
-           [class.victory]="match.isVictory"
-           [class.defeat]="!match.isVictory">
+      <div class="match-item" *ngFor="let match of recentMatches.slice(0, 3)" [class.victory]="match.isVictory"
+        [class.defeat]="!match.isVictory">
         <div class="match-result">
           <span class="result-icon">{{ match.isVictory ? '🏆' : '💔' }}</span>
           <span class="result-text">{{ match.isVictory ? 'Vitória' : 'Derrota' }}</span>
@@ -176,7 +175,7 @@
           <div class="match-info">
             <span class="match-mode">{{ match.gameMode || 'Matchmaking' }}</span>
             <span class="match-duration">{{ formatMatchDuration(match.duration) }}</span>
-          </div>          <!-- Champion and KDA info when available -->
+          </div> <!-- Champion and KDA info when available -->
           <div class="match-champion" *ngIf="match.champion || match.kda || match.playerName">
             <div class="player-info" *ngIf="match.playerName || match.champion">
               <span class="player-name" *ngIf="match.playerName">{{ match.playerName }}</span>
@@ -187,7 +186,8 @@
         </div>
 
         <div class="match-mmr">
-          <span class="mmr-change" [class.positive]="(match.mmrChange || 0) > 0" [class.negative]="(match.mmrChange || 0) < 0">
+          <span class="mmr-change" [class.positive]="(match.mmrChange || 0) > 0"
+            [class.negative]="(match.mmrChange || 0) < 0">
             {{ (match.mmrChange || 0) > 0 ? '+' : '' }}{{ match.mmrChange || 0 }}
           </span>
           <span class="mmr-label">MMR</span>

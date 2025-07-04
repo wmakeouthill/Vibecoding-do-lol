@@ -3,7 +3,6 @@ import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { Player, QueueStatus, Match } from '../../interfaces';
 import { ApiService } from '../../services/api';
-import { ChampionService } from '../../services/champion.service';
 import { Subscription } from 'rxjs';
 
 @Component({
@@ -362,7 +361,7 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
 
         // Tentar pegar o championId do participante principal
         const championId = currentParticipant?.championId || playerStats?.championId;
-        const championName = ChampionService.getChampionNameById(championId);
+        const championName = championId ? `Champion${championId}` : 'Unknown';
 
         // Buscar o nome do jogador
         const playerName = currentPlayerIdentity?.player?.gameName ||
@@ -783,13 +782,23 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
     console.log('💾 Loading custom matches from database...');
 
     // Usar o formato correto do Riot ID (gameName#tagLine) se disponível
-    let playerIdentifier = this.player.summonerName || this.player.id.toString();
+    let playerIdentifier = this.player.summonerName || this.player.id?.toString() || '';
     
-    // Se temos gameName e tagLine, usar o formato Riot ID
-    if (this.player.gameName && this.player.tagLine) {
+    // Priorizar displayName se disponível (formato gameName#tagLine)
+    if (this.player.displayName && this.player.displayName.trim() !== '') {
+      playerIdentifier = this.player.displayName;
+    }
+    // Fallback para summonerName (que deveria ser igual ao displayName)
+    else if (this.player.summonerName) {
+      playerIdentifier = this.player.summonerName;
+    }
+    // Se temos gameName e tagLine, construir o formato
+    else if (this.player.gameName && this.player.tagLine) {
       playerIdentifier = `${this.player.gameName}#${this.player.tagLine}`;
-    } else if (this.player.summonerName && this.player.tagLine) {
-      playerIdentifier = `${this.player.summonerName}#${this.player.tagLine}`;
+    }
+    // Último recurso: usar ID
+    else {
+      playerIdentifier = this.player.id?.toString() || 'unknown';
     }
 
     console.log('🔍 [DASHBOARD] Player data received:', {
@@ -801,12 +810,29 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
     });
 
     console.log('🎯 [DASHBOARD] Using player identifier for search:', playerIdentifier);
+    console.log('🎯 [DASHBOARD] Player object:', {
+      summonerName: this.player.summonerName,
+      gameName: this.player.gameName,
+      displayName: this.player.displayName,
+      tagLine: this.player.tagLine
+    });
 
     const customMatchesSub = this.apiService.getCustomMatches(playerIdentifier, 0, 3)
       .subscribe({
         next: (response) => {
           if (response && response.success && response.matches && response.matches.length > 0) {
             console.log('✅ Custom matches loaded from database:', response.matches.length);
+            console.log('🔍 First match raw data:', {
+              id: response.matches[0].id,
+              participants_data: response.matches[0].participants_data,
+              pick_ban_data: response.matches[0].pick_ban_data,
+              created_at: response.matches[0].created_at,
+              player_won: response.matches[0].player_won,
+              player_lp_change: response.matches[0].player_lp_change
+            });
+            
+            // Log completo do primeiro match para debug
+            console.log('🔍 Complete first match data:', JSON.stringify(response.matches[0], null, 2));
 
             // Convert custom matches to dashboard format
             const customMatchesForDashboard = this.convertCustomMatchesToDashboard(response.matches);
@@ -815,6 +841,7 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
             this.recentMatches = customMatchesForDashboard.slice(0, 3);
 
             console.log('🎯 Recent matches from database:', this.recentMatches.length);
+            console.log('🔍 Processed match data:', this.recentMatches[0]);
             this.isLoadingMatches = false;
             this.matchHistoryError = null;
           } else {
@@ -833,82 +860,131 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
     this.subscriptions.push(customMatchesSub);
   }
   private convertCustomMatchesToDashboard(customMatches: any[]): any[] {
-    return customMatches.map((match: any) => {
-      // Parse JSON fields safely
-      let team1Players = [];
-      let team2Players = [];
-      let pickBanData = null;
-      let participantsData = [];
+    console.log('🔄 [Dashboard] convertCustomMatchesToDashboard called with', customMatches.length, 'matches');
+    return customMatches.map((match: any, index: number) => {
+      console.log(`🔍 [Dashboard] Processing match ${index + 1}:`, {
+        id: match.id,
+        hasParticipantsData: !!match.participants_data,
+        participantsDataType: typeof match.participants_data,
+        participantsDataLength: Array.isArray(match.participants_data) ? match.participants_data.length : 'not array'
+      });
 
-      try {
-        team1Players = typeof match.team1_players === 'string' ? JSON.parse(match.team1_players) : (match.team1_players || []);
-        team2Players = typeof match.team2_players === 'string' ? JSON.parse(match.team2_players) : (match.team2_players || []);
-        participantsData = typeof match.participants_data === 'string' ? JSON.parse(match.participants_data) : (match.participants_data || []);
-
-        if (match.pick_ban_data) {
-          pickBanData = typeof match.pick_ban_data === 'string' ? JSON.parse(match.pick_ban_data) : match.pick_ban_data;
-        }
-      } catch (e) {
-        console.warn('⚠️ Error parsing custom match data:', e);
-      }
-
-      // Determine player's champion and KDA from participants data
+      // O backend já processa os dados com DataDragonService, então podemos usar diretamente
       let playerChampion = 'Unknown';
       let playerKDA = '0/0/0';
       let playerStats = null;
 
-      // Try to find player in participants data first (more accurate)
-      if (participantsData && participantsData.length > 0) {
-        const currentPlayerName = this.player?.summonerName?.toLowerCase();
-        playerStats = participantsData.find((participant: any) => {
-          const participantName = participant.riotIdGameName || participant.gameName || participant.summonerName || '';
-          return participantName.toLowerCase() === currentPlayerName;
-        });        if (playerStats) {
-          // Use championId if available, otherwise fallback to championName
-          const championId = playerStats.championId;
-          playerChampion = championId ?
-            ChampionService.getChampionNameById(championId) :
-            (playerStats.championName || playerStats.champion || 'Unknown');
+      // Identificadores do jogador atual
+      const currentPlayerName = this.player?.summonerName?.toLowerCase() || '';
+      const currentGameName = this.player?.gameName?.toLowerCase() || '';
+      const currentDisplayName = this.player?.displayName?.toLowerCase() || '';
+
+      console.log(`🎯 [Dashboard] Looking for player:`, {
+        summonerName: currentPlayerName,
+        gameName: currentGameName,
+        displayName: currentDisplayName
+      });
+
+      // Usar os dados já processados do backend
+      if (match.participants_data && Array.isArray(match.participants_data)) {
+        console.log(`📊 [Dashboard] Participants data found:`, match.participants_data.length, 'participants');
+        
+        // Log dos primeiros participantes para debug
+        match.participants_data.slice(0, 2).forEach((p: any, i: number) => {
+          console.log(`👤 [Dashboard] Participant ${i + 1}:`, {
+            riotIdGameName: p.riotIdGameName,
+            gameName: p.gameName,
+            summonerName: p.summonerName,
+            championName: p.championName,
+            championId: p.championId,
+            kills: p.kills,
+            deaths: p.deaths,
+            assists: p.assists
+          });
+        });
+        
+        // Buscar o participante atual nos dados já processados
+        playerStats = match.participants_data.find((participant: any) => {
+          const participantRiotId = (participant.riotIdGameName || '').toLowerCase();
+          const participantGameName = (participant.gameName || '').toLowerCase();
+          const participantSummonerName = (participant.summonerName || '').toLowerCase();
+          
+          const isMatch = participantRiotId === currentGameName ||
+                         participantGameName === currentGameName ||
+                         participantSummonerName === currentPlayerName ||
+                         participantRiotId === currentDisplayName ||
+                         participantGameName === currentDisplayName;
+          
+          if (isMatch) {
+            console.log(`✅ [Dashboard] Found player match:`, {
+              participant: {
+                riotIdGameName: participantRiotId,
+                gameName: participantGameName,
+                summonerName: participantSummonerName
+              },
+              current: {
+                summonerName: currentPlayerName,
+                gameName: currentGameName,
+                displayName: currentDisplayName
+              }
+            });
+          }
+          
+          return isMatch;
+        });
+
+        if (playerStats) {
+          // Usar o championName já processado pelo backend
+          playerChampion = playerStats.championName || 'Unknown';
           playerKDA = `${playerStats.kills || 0}/${playerStats.deaths || 0}/${playerStats.assists || 0}`;
+          
+          console.log(`🏆 [Dashboard] Player stats found:`, {
+            championName: playerChampion,
+            kda: playerKDA,
+            rawStats: {
+              kills: playerStats.kills,
+              deaths: playerStats.deaths,
+              assists: playerStats.assists
+            }
+          });
+        } else {
+          console.warn(`⚠️ [Dashboard] Player not found in participants data for match ${match.id}`);
         }
+      } else {
+        console.warn(`⚠️ [Dashboard] No participants_data found for match ${match.id}`);
       }
 
-      // Fallback: Determine player's champion from pick/ban data
-      if (playerChampion === 'Unknown' && pickBanData) {
+      // Fallback: Se não encontramos nos participants_data, tentar pick_ban_data
+      if (playerChampion === 'Unknown' && match.pick_ban_data) {
         try {
+          const pickBanData = typeof match.pick_ban_data === 'string' ? 
+                              JSON.parse(match.pick_ban_data) : match.pick_ban_data;
+          
           if (pickBanData && pickBanData.team1Picks) {
             const playerTeam = match.player_team || (match.player_won && match.winner_team === 1 ? 1 : 2);
             const picks = playerTeam === 1 ? pickBanData.team1Picks : pickBanData.team2Picks;
 
             if (picks && picks.length > 0) {
-              const currentPlayerName = this.player?.summonerName?.toLowerCase();
+              const currentPlayerName = this.player?.summonerName?.toLowerCase() || '';
               let playerPick = picks.find((pick: any) =>
-                pick.player && pick.player.toString().toLowerCase().includes(currentPlayerName || '')
+                pick.player && pick.player.toString().toLowerCase().includes(currentPlayerName)
               );
 
               if (!playerPick && picks.length > 0) {
                 playerPick = picks[0]; // Fallback to first pick
-              }              if (playerPick && playerPick.champion) {
-                // Try to get championId first, then fallback to champion name
-                if (playerPick.championId) {
-                  playerChampion = ChampionService.getChampionNameById(playerPick.championId);
-                } else {
-                  playerChampion = playerPick.champion;
-                  // If it's a number string, try to convert and map it
-                  const championIdNum = parseInt(playerChampion);
-                  if (!isNaN(championIdNum)) {
-                    playerChampion = ChampionService.getChampionNameById(championIdNum);
-                  }
-                }
+              }
+
+              if (playerPick && playerPick.champion) {
+                playerChampion = playerPick.champion;
               }
             }
           }
         } catch (e) {
-          console.warn('⚠️ Error extracting player champion:', e);
+          console.warn('⚠️ Error extracting player champion from pick_ban_data:', e);
         }
       }
 
-      // Use the MMR change from database if available, otherwise calculate a default
+      // Usar o MMR change já calculado pelo backend
       const mmrChange = match.player_mmr_change || match.player_lp_change || (match.player_won ? 15 : -10);
 
       return {
@@ -916,7 +992,7 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
         timestamp: new Date(match.created_at).getTime(),
         isVictory: match.player_won || false,
         duration: (match.duration || 25) * 60, // Convert minutes to seconds
-        mmrChange: mmrChange, // Use actual MMR change from database
+        mmrChange: mmrChange,
         gameMode: 'Personalizada',
         champion: playerChampion,
         kda: playerKDA,
