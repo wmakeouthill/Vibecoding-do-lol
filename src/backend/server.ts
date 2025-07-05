@@ -1257,6 +1257,13 @@ app.post('/api/queue/leave', (async (req: Request, res: Response) => {
       });
     }
 
+    // ✅ PRIORIZAR SUMMONER_NAME
+    if (summonerName) {
+      console.log('✅ [API] Usando summonerName como identificador principal:', summonerName);
+    } else {
+      console.log('⚠️ [API] Usando playerId como fallback:', playerId);
+    }
+    
     console.log('🔍 [API] Tentando remover jogador:', { playerId, summonerName });
     console.log('🔍 [API] Fila atual:', matchmakingService.getQueue().map(p => ({ id: p.id, name: p.summonerName })));
 

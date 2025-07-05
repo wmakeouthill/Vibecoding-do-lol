@@ -352,42 +352,13 @@ export class MatchmakingService {
    */
   public async removePlayerFromQueueById(playerId?: number, summonerName?: string): Promise<boolean> {
     console.log(`🔍 [Matchmaking] Tentando remover jogador da fila:`, { playerId, summonerName });
-    console.log(`🔍 [Matchmaking] Estado atual da fila local:`, this.queue.map(p => ({ id: p.id, name: p.summonerName })));
+    console.log(`🔍 [Matchmaking] Estado atual da fila local:`, this.queue.map(p => ({ id: p.id, name: p.summonerName, type: typeof p.id })));
 
     try {
       let removed = false;
 
-      if (playerId) {
-        // ✅ ATUALIZADO: Buscar jogador na fila local primeiro
-        const playerIndex = this.queue.findIndex(p => p.id === playerId);
-        console.log(`🔍 [Matchmaking] Buscando jogador por ID ${playerId} na fila local:`, playerIndex !== -1 ? 'ENCONTRADO' : 'NÃO ENCONTRADO');
-        
-        if (playerIndex !== -1) {
-          const player = this.queue[playerIndex];
-          console.log(`🔍 [Matchmaking] Jogador encontrado na fila local:`, player);
-          
-          // ✅ ATUALIZADO: Remover da fila local
-          this.queue.splice(playerIndex, 1);
-          console.log(`✅ [Matchmaking] Jogador removido da fila local. Nova fila:`, this.queue.map(p => ({ id: p.id, name: p.summonerName })));
-
-          // REGRA: Deletar linha da tabela (não marcar como inativo)
-          console.log(`🔍 [Matchmaking] Removendo jogador ${player.id} da tabela queue_players...`);
-          await this.dbManager.removePlayerFromQueue(player.id);
-          console.log(`✅ [Matchmaking] Linha do jogador ${player.summonerName} deletada da tabela queue_players`);
-
-          // Adicionar atividade
-          this.addActivity(
-            'player_left',
-            `${player.summonerName} saiu da fila`,
-            player.summonerName
-          );
-
-          removed = true;
-        } else {
-          console.log(`⚠️ [Matchmaking] Jogador com ID ${playerId} não encontrado na fila local`);
-        }
-      } else if (summonerName) {
-        // ✅ NOVO: Remover diretamente por summoner_name no banco com comparação robusta
+      // ✅ PRIORIZAR REMOÇÃO POR SUMMONER_NAME (mais confiável)
+      if (summonerName) {
         console.log(`🔍 [Matchmaking] Removendo por summoner_name: ${summonerName}`);
         
         // ✅ CORREÇÃO: Tentar múltiplos formatos para encontrar o jogador
@@ -399,33 +370,31 @@ export class MatchmakingService {
         
         console.log(`🔍 [Matchmaking] Tentando remover com os seguintes nomes:`, possibleNames);
         
-        // Primeiro tentar no banco de dados
-        for (const name of possibleNames) {
-          removed = await this.dbManager.removePlayerFromQueueBySummonerName(name);
-          if (removed) {
-            console.log(`✅ [Matchmaking] Jogador removido do banco com nome: ${name}`);
-            break;
-          }
-        }
+        // ✅ BUSCAR NA FILA LOCAL PRIMEIRO
+        const playerIndex = this.queue.findIndex(p => {
+          return possibleNames.some(name => 
+            p.summonerName === name ||
+            p.summonerName.toLowerCase() === name.toLowerCase() ||
+            (p.summonerName.includes('#') && name.includes('#') && p.summonerName === name) ||
+            (p.summonerName.includes('#') && !name.includes('#') && p.summonerName.startsWith(name + '#')) ||
+            (!p.summonerName.includes('#') && name.includes('#') && name.startsWith(p.summonerName + '#'))
+          );
+        });
         
-        if (removed) {
-          // ✅ CORREÇÃO: Remover da fila local também com comparação robusta
-          const playerIndex = this.queue.findIndex(p => {
-            // Comparar com diferentes formatos
-            return possibleNames.some(name => 
-              p.summonerName === name ||
-              p.summonerName.toLowerCase() === name.toLowerCase() ||
-              (p.summonerName.includes('#') && name.includes('#') && p.summonerName === name) ||
-              (p.summonerName.includes('#') && !name.includes('#') && p.summonerName.startsWith(name + '#')) ||
-              (!p.summonerName.includes('#') && name.includes('#') && name.startsWith(p.summonerName + '#'))
-            );
-          });
+        if (playerIndex !== -1) {
+          const player = this.queue[playerIndex];
+          console.log(`✅ [Matchmaking] Jogador encontrado na fila local:`, player);
           
-          if (playerIndex !== -1) {
-            const player = this.queue[playerIndex];
-            this.queue.splice(playerIndex, 1);
-            
-            console.log(`✅ [Matchmaking] Jogador ${player.summonerName} removido da fila local`);
+          // Remover da fila local
+          this.queue.splice(playerIndex, 1);
+          console.log(`✅ [Matchmaking] Jogador removido da fila local. Nova fila:`, this.queue.map(p => ({ id: p.id, name: p.summonerName })));
+          
+          // Remover do banco de dados usando summonerName
+          console.log(`🔍 [Matchmaking] Removendo jogador ${player.summonerName} da tabela queue_players...`);
+          const dbRemoved = await this.dbManager.removePlayerFromQueueBySummonerName(player.summonerName);
+          
+          if (dbRemoved) {
+            console.log(`✅ [Matchmaking] Jogador ${player.summonerName} removido do banco de dados`);
             
             // Adicionar atividade
             this.addActivity(
@@ -433,9 +402,59 @@ export class MatchmakingService {
               `${player.summonerName} saiu da fila`,
               player.summonerName
             );
+            
+            removed = true;
           } else {
-            console.warn(`⚠️ [Matchmaking] Jogador removido do banco mas não encontrado na fila local: ${summonerName}`);
+            console.warn(`⚠️ [Matchmaking] Jogador removido da fila local mas falhou no banco de dados: ${player.summonerName}`);
+            removed = true; // Considerar removido pois foi removido da fila local
           }
+        } else {
+          console.log(`⚠️ [Matchmaking] Jogador não encontrado na fila local por summonerName: ${summonerName}`);
+          
+          // Tentar remover direto do banco como fallback
+          for (const name of possibleNames) {
+            const dbRemoved = await this.dbManager.removePlayerFromQueueBySummonerName(name);
+            if (dbRemoved) {
+              console.log(`✅ [Matchmaking] Jogador removido do banco com nome: ${name}`);
+              removed = true;
+              break;
+            }
+          }
+        }
+      } else if (playerId) {
+        // ✅ FALLBACK: Buscar por ID (com conversão de tipos)
+        const playerIndex = this.queue.findIndex(p => Number(p.id) === Number(playerId));
+        console.log(`🔍 [Matchmaking] Buscando jogador por ID ${playerId} na fila local:`, playerIndex !== -1 ? 'ENCONTRADO' : 'NÃO ENCONTRADO');
+        
+        if (playerIndex !== -1) {
+          const player = this.queue[playerIndex];
+          console.log(`🔍 [Matchmaking] Jogador encontrado na fila local:`, player);
+          
+          // ✅ ATUALIZADO: Remover da fila local
+          this.queue.splice(playerIndex, 1);
+          console.log(`✅ [Matchmaking] Jogador removido da fila local. Nova fila:`, this.queue.map(p => ({ id: p.id, name: p.summonerName })));
+
+          // REGRA: Deletar linha da tabela usando summonerName (mais confiável)
+          console.log(`🔍 [Matchmaking] Removendo jogador ${player.summonerName} da tabela queue_players...`);
+          const dbRemoved = await this.dbManager.removePlayerFromQueueBySummonerName(player.summonerName);
+          
+          if (dbRemoved) {
+            console.log(`✅ [Matchmaking] Linha do jogador ${player.summonerName} deletada da tabela queue_players`);
+            
+            // Adicionar atividade
+            this.addActivity(
+              'player_left',
+              `${player.summonerName} saiu da fila`,
+              player.summonerName
+            );
+            
+            removed = true;
+          } else {
+            console.warn(`⚠️ [Matchmaking] Jogador removido da fila local mas falhou no banco de dados: ${player.summonerName}`);
+            removed = true; // Considerar removido pois foi removido da fila local
+          }
+        } else {
+          console.log(`⚠️ [Matchmaking] Jogador com ID ${playerId} não encontrado na fila local`);
         }
       }
       

@@ -478,7 +478,8 @@ export class App implements OnInit, OnDestroy {
       const playerIdentifier = this.currentPlayer.displayName || this.currentPlayer.summonerName;
       console.log('📞 [App] Usando identificador:', playerIdentifier);
       
-      await this.apiService.leaveQueue(this.currentPlayer?.id, playerIdentifier).toPromise();
+      // ✅ CORRIGIDO: Priorizar summonerName/displayName ao invés de playerId
+      await this.apiService.leaveQueue(undefined, playerIdentifier).toPromise();
       console.log('✅ [App] Solicitação de saída da fila enviada');
       
       // ✅ CORRIGIDO: Marcar estado como fora da fila imediatamente

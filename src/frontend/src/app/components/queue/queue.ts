@@ -130,12 +130,17 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
         if (playerInQueue && !this.isInQueue) {
           console.log('🎯 [Queue] Jogador encontrado na fila, atualizando estado:', playerInQueue);
           this.isInQueue = true;
+          // ✅ CORRIGIDO: Sincronizar timer com o tempo real da tabela
+          this.syncTimerWithPlayerData(playerInQueue);
           this.startQueueTimer();
         } else if (!playerInQueue && this.isInQueue) {
           console.log('🎯 [Queue] Jogador não encontrado na fila, atualizando estado');
           this.isInQueue = false;
           this.stopQueueTimer();
           this.queueTimer = 0;
+        } else if (playerInQueue && this.isInQueue) {
+          // ✅ NOVO: Se já está na fila, sincronizar timer periodicamente
+          this.syncTimerWithPlayerData(playerInQueue);
         }
       }
       
@@ -620,7 +625,43 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   isUserInQueue(user: any): boolean {
-    return user.isInQueue || false;
+    // ✅ CORRIGIDO: Verificar se o usuário Discord vinculado está na fila
+    if (!this.queueStatus?.playersInQueueList || !this.hasLinkedNickname(user)) {
+      return false;
+    }
+    
+    const linkedNickname = this.getLinkedNickname(user);
+    if (!linkedNickname) {
+      return false;
+    }
+    
+    // Buscar o usuário na lista da fila usando o linkedNickname
+    const playerInQueue = this.queueStatus.playersInQueueList.find((player: any) => {
+      const playerFullName = player.tagLine ? `${player.summonerName}#${player.tagLine}` : player.summonerName;
+      
+      // Comparar diferentes formatos
+      return playerFullName === linkedNickname ||
+             player.summonerName === linkedNickname ||
+             playerFullName.toLowerCase() === linkedNickname.toLowerCase() ||
+             player.summonerName.toLowerCase() === linkedNickname.toLowerCase() ||
+             (playerFullName.includes('#') && linkedNickname.includes('#') && playerFullName === linkedNickname) ||
+             (playerFullName.includes('#') && !linkedNickname.includes('#') && playerFullName.startsWith(linkedNickname + '#')) ||
+             (!playerFullName.includes('#') && linkedNickname.includes('#') && linkedNickname.startsWith(playerFullName + '#'));
+    });
+    
+    const inQueue = !!playerInQueue;
+    
+    // ✅ DEBUG: Log apenas quando muda de estado
+    if (user.lastQueueStatus !== inQueue) {
+      console.log(`🔍 [Queue] Discord user ${user.username} queue status:`, {
+        linkedNickname: linkedNickname,
+        inQueue: inQueue,
+        playerFound: playerInQueue ? playerInQueue.summonerName : 'none'
+      });
+      user.lastQueueStatus = inQueue;
+    }
+    
+    return inQueue;
   }
 
   // =============================================================================
@@ -700,6 +741,27 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       clearInterval(this.playersTimeInterval);
       this.playersTimeInterval = undefined;
       console.log('🛑 [Queue] Timer de atualização de tempos dos jogadores parado');
+    }
+  }
+
+  // ✅ NOVO: Sincronizar timer com dados do jogador na fila
+  private syncTimerWithPlayerData(playerData: any): void {
+    if (!playerData?.joinTime) {
+      return;
+    }
+    
+    try {
+      const joinTime = new Date(playerData.joinTime);
+      const now = new Date();
+      const diffMs = now.getTime() - joinTime.getTime();
+      
+      if (diffMs >= 0) {
+        const diffSeconds = Math.floor(diffMs / 1000);
+        this.queueTimer = diffSeconds;
+        console.log(`🔄 [Queue] Timer sincronizado: ${diffSeconds}s (${this.getTimerDisplay()})`);
+      }
+    } catch (error) {
+      console.warn('⚠️ [Queue] Erro ao sincronizar timer:', error);
     }
   }
 } 
