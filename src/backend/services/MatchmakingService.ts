@@ -80,6 +80,9 @@ export class MatchmakingService {
     this.dbManager = dbManager;
     this.wss = wss;
     
+    console.log('🔍 [Matchmaking] WebSocket Server recebido:', !!wss);
+    console.log('🔍 [Matchmaking] WebSocket clients:', wss?.clients?.size || 0);
+    
     // ✅ NOVO: Inicializar serviços separados
     this.matchFoundService = new MatchFoundService(dbManager, wss);
     this.draftService = new DraftService(dbManager, wss);
@@ -747,6 +750,7 @@ export class MatchmakingService {
         
         // Notificar que partida foi criada via MatchFoundService
         await this.matchFoundService.createMatchForAcceptance({
+          matchId: matchId, // ✅ NOVO: Passar o ID da partida já criada
           team1Players: balancedData.team1.map((p: any) => p.summonerName),
           team2Players: balancedData.team2.map((p: any) => p.summonerName),
           averageMMR: {

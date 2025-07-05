@@ -79,7 +79,15 @@ export class DraftService {
       const allPlayers = [...team1Players, ...team2Players];
       const matchPlayers = queuePlayers.filter(p => allPlayers.includes(p.summoner_name));
 
+      console.log(`🔍 [Draft] Jogadores na fila: ${queuePlayers.length}`);
+      console.log(`🔍 [Draft] Jogadores da partida: ${allPlayers.length}`);
+      console.log(`🔍 [Draft] Jogadores encontrados na fila: ${matchPlayers.length}`);
+      console.log(`🔍 [Draft] Jogadores da partida:`, allPlayers);
+      console.log(`🔍 [Draft] Jogadores na fila:`, queuePlayers.map(p => p.summoner_name));
+
       if (matchPlayers.length !== 10) {
+        console.error(`❌ [Draft] Jogadores faltando: ${10 - matchPlayers.length}`);
+        console.error(`❌ [Draft] Jogadores não encontrados:`, allPlayers.filter(p => !queuePlayers.some(qp => qp.summoner_name === p)));
         throw new Error('Nem todos os jogadores estão disponíveis para o draft');
       }
 

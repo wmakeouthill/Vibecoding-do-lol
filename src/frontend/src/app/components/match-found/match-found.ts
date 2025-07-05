@@ -305,7 +305,21 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
    */
   isCurrentPlayer(player: PlayerInfo): boolean {
     if (!this.matchData) return false;
-    return player.summonerName.includes('popcorn seller');
+    
+    // ✅ CORREÇÃO: Usar lógica mais robusta para identificar o jogador atual
+    // O jogador atual deve estar nos teammates (não nos enemies)
+    const isInTeammates = this.matchData.teammates.some(teammate => 
+      teammate.summonerName === player.summonerName
+    );
+    
+    console.log('🎮 [MatchFound] isCurrentPlayer check:', {
+      playerName: player.summonerName,
+      isInTeammates,
+      teammates: this.matchData.teammates.map(t => t.summonerName),
+      enemies: this.matchData.enemies.map(e => e.summonerName)
+    });
+    
+    return isInTeammates;
   }
 
   /**

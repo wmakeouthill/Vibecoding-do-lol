@@ -67,6 +67,7 @@ export class ApiService {
 
   // ✅ NOVO: Subject para mensagens WebSocket
   private webSocketMessageSubject = new Subject<any>();
+  private webSocket: WebSocket | null = null;
 
   constructor(private http: HttpClient) {
     // Log de diagnóstico inicial
@@ -79,6 +80,9 @@ export class ApiService {
       hostname: window.location.hostname,
       protocol: window.location.protocol
     });
+
+    // ✅ NOVO: Conectar ao WebSocket do backend
+    this.connectWebSocket();
 
 
   }
@@ -991,8 +995,49 @@ export class ApiService {
     return this.webSocketMessageSubject.asObservable();
   }
 
+  // ✅ NOVO: Conectar ao WebSocket do backend
+  private connectWebSocket(): void {
+    try {
+      const wsUrl = this.baseUrl.replace('/api', '').replace('http', 'ws') + '/ws';
+      console.log('🔌 [ApiService] Conectando ao WebSocket:', wsUrl);
+      
+      this.webSocket = new WebSocket(wsUrl);
+      
+      this.webSocket.onopen = () => {
+        console.log('✅ [ApiService] WebSocket conectado com sucesso');
+      };
+      
+      this.webSocket.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          console.log('📨 [ApiService] Mensagem WebSocket recebida:', message.type);
+          this.webSocketMessageSubject.next(message);
+        } catch (error) {
+          console.error('❌ [ApiService] Erro ao processar mensagem WebSocket:', error);
+        }
+      };
+      
+      this.webSocket.onerror = (error) => {
+        console.error('❌ [ApiService] Erro no WebSocket:', error);
+      };
+      
+      this.webSocket.onclose = () => {
+        console.log('🔌 [ApiService] WebSocket desconectado');
+        // Tentar reconectar após 5 segundos
+        setTimeout(() => {
+          this.connectWebSocket();
+        }, 5000);
+      };
+      
+    } catch (error) {
+      console.error('❌ [ApiService] Erro ao conectar WebSocket:', error);
+    }
+  }
+
   // ✅ NOVO: Método para emitir mensagens WebSocket (usado pelo backend)
   emitWebSocketMessage(message: any): void {
+    console.log('📤 [ApiService] Emitindo mensagem WebSocket:', message.type);
     this.webSocketMessageSubject.next(message);
+    console.log('✅ [ApiService] Mensagem emitida com sucesso');
   }
 }

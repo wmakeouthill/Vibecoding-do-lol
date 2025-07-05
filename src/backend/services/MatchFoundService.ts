@@ -24,6 +24,8 @@ export class MatchFoundService {
 
   async initialize(): Promise<void> {
     console.log('🎯 [MatchFound] Inicializando MatchFoundService...');
+    console.log('🔍 [MatchFound] WebSocket Server disponível:', !!this.wss);
+    console.log('🔍 [MatchFound] WebSocket clients:', this.wss?.clients?.size || 0);
     
     // Iniciar monitoramento contínuo de acceptance_status
     this.startAcceptanceMonitoring();
@@ -31,28 +33,54 @@ export class MatchFoundService {
     console.log('✅ [MatchFound] MatchFoundService inicializado com sucesso');
   }
 
-  // ✅ Criar nova partida e iniciar processo de aceitação
+  // ✅ Iniciar processo de aceitação para partida já criada
   async createMatchForAcceptance(matchData: {
     team1Players: string[];
     team2Players: string[];
     averageMMR: { team1: number; team2: number };
     balancedTeams: any;
+    matchId?: number; // ✅ NOVO: ID da partida já criada
   }): Promise<number> {
-    console.log('🎮 [MatchFound] Criando partida para aceitação...');
+    console.log('🎮 [MatchFound] Iniciando processo de aceitação para partida...');
     
     try {
-      // 1. Calcular MMR médio geral
-      const avgMMR = (matchData.averageMMR.team1 + matchData.averageMMR.team2) / 2;
+      // ✅ CORREÇÃO: Usar matchId fornecido ou buscar partida existente
+      let matchId = matchData.matchId;
       
-      // 2. Criar partida no banco com status 'pending'
-      const matchId = await this.dbManager.createCustomMatch({
-        title: `Partida ${Date.now()}`,
-        description: `Partida balanceada - MMR médio: ${Math.round(avgMMR)}`,
-        team1Players: matchData.team1Players,
-        team2Players: matchData.team2Players,
-        createdBy: 'MatchmakingSystem',
-        gameMode: 'CLASSIC'
-      });
+      if (!matchId) {
+        console.log('🔍 [MatchFound] Buscando partida existente no banco...');
+        
+        // Buscar partida mais recente que corresponda aos times
+        const recentMatches = await this.dbManager.getCustomMatches(10, 0); // Buscar 10 partidas mais recentes
+        const matchingMatch = recentMatches.find((match: any) => {
+          try {
+            const team1 = typeof match.team1_players === 'string' 
+              ? JSON.parse(match.team1_players) 
+              : (match.team1_players || []);
+            const team2 = typeof match.team2_players === 'string' 
+              ? JSON.parse(match.team2_players) 
+              : (match.team2_players || []);
+            
+            return JSON.stringify(team1.sort()) === JSON.stringify(matchData.team1Players.sort()) &&
+                   JSON.stringify(team2.sort()) === JSON.stringify(matchData.team2Players.sort());
+          } catch (error) {
+            return false;
+          }
+        });
+        
+        if (matchingMatch) {
+          matchId = matchingMatch.id;
+          console.log(`✅ [MatchFound] Partida existente encontrada: ${matchId}`);
+        } else {
+          console.error('❌ [MatchFound] Nenhuma partida correspondente encontrada no banco!');
+          throw new Error('Partida não encontrada no banco de dados');
+        }
+      }
+
+      // ✅ VERIFICAÇÃO: Garantir que matchId é válido
+      if (!matchId) {
+        throw new Error('ID da partida não encontrado');
+      }
 
       // 3. Adicionar coluna de acceptance_status se não existir
       await this.dbManager.addAcceptanceStatusColumn();
@@ -72,21 +100,23 @@ export class MatchFoundService {
 
       // 6. Configurar timeout para cancelar partida se não for aceita
       acceptanceStatus.timeout = setTimeout(() => {
-        this.handleAcceptanceTimeout(matchId);
+        this.handleAcceptanceTimeout(matchId as number);
       }, this.ACCEPTANCE_TIMEOUT_MS);
 
-      this.pendingMatches.set(matchId, acceptanceStatus);
+      this.pendingMatches.set(matchId as number, acceptanceStatus);
 
-      // 7. Aceitar automaticamente para bots
-      await this.autoAcceptForBots(matchId, allPlayers);
+      // 7. Notificar frontend sobre partida encontrada PRIMEIRO
+      this.notifyMatchFound(matchId as number, matchData);
 
-      // 8. Notificar frontend sobre partida encontrada
-      this.notifyMatchFound(matchId, matchData);
+      // 8. ✅ NOVO: Iniciar atualizações de timer em tempo real
+      this.startTimerUpdates(matchId as number);
 
-      // 9. ✅ NOVO: Iniciar atualizações de timer em tempo real
-      this.startTimerUpdates(matchId);
+      // 9. Aceitar automaticamente para bots COM DELAY para dar tempo da tela aparecer
+      setTimeout(async () => {
+        await this.autoAcceptForBots(matchId as number, allPlayers);
+      }, 2000); // 2 segundos de delay para bots
 
-      console.log(`✅ [MatchFound] Partida ${matchId} criada e processo de aceitação iniciado`);
+      console.log(`✅ [MatchFound] Partida ${matchId} processada e processo de aceitação iniciado`);
       return matchId;
 
     } catch (error) {
@@ -230,7 +260,11 @@ export class MatchFoundService {
       // 3. Atualizar status da partida para 'accepted'
       await this.dbManager.updateCustomMatchStatus(matchId, 'accepted');
 
-      // 4. Notificar que todos aceitaram (será processado pelo DraftService)
+      // 4. ✅ CORREÇÃO: NÃO remover jogadores da fila aqui - deixar o DraftService fazer isso
+      // Os jogadores precisam permanecer na fila para o DraftService buscar seus dados
+      console.log(`✅ [MatchFound] Jogadores mantidos na fila para o DraftService`);
+
+      // 5. Notificar que todos aceitaram (será processado pelo DraftService)
       this.notifyAllPlayersAccepted(matchId, match);
 
       console.log(`✅ [MatchFound] Partida ${matchId} totalmente aceita - encaminhando para Draft`);
@@ -316,12 +350,24 @@ export class MatchFoundService {
   // ✅ Aceitar automaticamente para bots
   private async autoAcceptForBots(matchId: number, players: string[]): Promise<void> {
     try {
+      console.log(`🤖 [MatchFound] Verificando bots para partida ${matchId}...`);
+      console.log(`🤖 [MatchFound] Jogadores:`, players);
+      
+      let botCount = 0;
+      let humanCount = 0;
+      
       for (const playerName of players) {
         if (this.isBot(playerName)) {
           await this.dbManager.updatePlayerAcceptanceStatus(playerName, 1);
           console.log(`🤖 [MatchFound] Bot ${playerName} aceitou automaticamente`);
+          botCount++;
+        } else {
+          console.log(`👤 [MatchFound] Jogador humano ${playerName} precisa aceitar manualmente`);
+          humanCount++;
         }
       }
+      
+      console.log(`🤖 [MatchFound] Resumo: ${botCount} bots aceitaram, ${humanCount} humanos precisam aceitar`);
     } catch (error) {
       console.error('❌ [MatchFound] Erro na aceitação automática de bots:', error);
     }
@@ -336,7 +382,23 @@ export class MatchFoundService {
 
   // ✅ Notificações WebSocket
   private notifyMatchFound(matchId: number, matchData: any): void {
-    if (!this.wss) return;
+    console.log('🔍 [MatchFound] notifyMatchFound chamado');
+    console.log('🔍 [MatchFound] WebSocket Server:', !!this.wss);
+    console.log('🔍 [MatchFound] WebSocket clients:', this.wss?.clients?.size || 0);
+    
+    if (!this.wss) {
+      console.error('❌ [MatchFound] WebSocket Server não disponível!');
+      return;
+    }
+
+    console.log(`🎮 [MatchFound] Preparando notificação match_found para partida ${matchId}`);
+    console.log(`🎮 [MatchFound] Dados da partida:`, {
+      matchId,
+      team1Count: matchData.team1Players?.length || 0,
+      team2Count: matchData.team2Players?.length || 0,
+      hasBalancedTeams: !!matchData.balancedTeams,
+      clientsConnected: this.wss.clients?.size || 0
+    });
 
     const message = {
       type: 'match_found',
@@ -352,8 +414,9 @@ export class MatchFoundService {
       timestamp: Date.now()
     };
 
+    console.log(`📤 [MatchFound] Enviando mensagem match_found:`, JSON.stringify(message, null, 2));
     this.broadcastMessage(message);
-    console.log(`📢 [MatchFound] Notificação de partida encontrada enviada (${matchId})`);
+    console.log(`📢 [MatchFound] Notificação de partida encontrada enviada para ${this.wss.clients?.size || 0} clientes (${matchId})`);
   }
 
   private notifyAcceptanceProgress(matchId: number, matchStatus: AcceptanceStatus): void {
@@ -428,17 +491,31 @@ export class MatchFoundService {
   }
 
   private broadcastMessage(message: any): void {
-    if (!this.wss?.clients) return;
+    console.log('🔍 [MatchFound] broadcastMessage chamado');
+    console.log('🔍 [MatchFound] WebSocket clients:', this.wss?.clients?.size || 0);
+    
+    if (!this.wss?.clients) {
+      console.error('❌ [MatchFound] WebSocket clients não disponível!');
+      return;
+    }
 
+    let sentCount = 0;
     this.wss.clients.forEach((client: WebSocket) => {
+      console.log('🔍 [MatchFound] Client state:', client.readyState);
       if (client.readyState === WebSocket.OPEN) {
         try {
           client.send(JSON.stringify(message));
+          sentCount++;
+          console.log('✅ [MatchFound] Mensagem enviada para cliente');
         } catch (error) {
           console.error('❌ [MatchFound] Erro ao enviar mensagem:', error);
         }
+      } else {
+        console.log('⚠️ [MatchFound] Cliente não está aberto, estado:', client.readyState);
       }
     });
+    
+    console.log(`📤 [MatchFound] Mensagem enviada para ${sentCount} clientes`);
   }
 
   // ✅ Shutdown

@@ -192,45 +192,10 @@
   </div>
 
   <!-- Match Found Modal -->
-  <div class="modal-overlay" *ngIf="matchFound">
-    <div class="modal match-found-modal">
-      <h2>🎉 Partida Encontrada!</h2>
-
-      <div class="teams-display">
-        <div class="team team-blue">
-          <h3>Time Azul ({{ matchFound.averageMMR1 }} MMR)</h3>
-          <div class="team-players">
-            <div class="player" *ngFor="let player of matchFound.team1">
-              <span class="player-name">{{ player.summonerName }}</span>
-              <span class="player-mmr">{{ player.mmr }} MMR</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="vs-divider">VS</div>
-
-        <div class="team team-red">
-          <h3>Time Vermelho ({{ matchFound.averageMMR2 }} MMR)</h3>
-          <div class="team-players">
-            <div class="player" *ngFor="let player of matchFound.team2">
-              <span class="player-name">{{ player.summonerName }}</span>
-              <span class="player-mmr">{{ player.mmr }} MMR</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="your-team">
-        <p>Você está no <strong>Time {{ matchFound.yourTeam === 1 ? 'Azul' : 'Vermelho' }}</strong></p>
-      </div>
-
-      <div class="modal-actions">
-        <button class="btn btn-primary" (click)="acceptMatch()">
-          Aceitar Partida
-        </button>
-        <button class="btn btn-secondary" (click)="declineMatch()">
-          Recusar        </button>
-      </div>
-    </div>
-  </div>
+  <app-match-found
+    [matchData]="matchFoundData"
+    [isVisible]="showMatchFound"
+    (acceptMatch)="onAcceptMatch($event)"
+    (declineMatch)="onDeclineMatch($event)">
+  </app-match-found>
 </div>

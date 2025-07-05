@@ -57,18 +57,25 @@ export class BotService {
         }
 
         // Verificar se é um bot baseado no nome
-        const playerName = player.name || player.summonerName || '';
-        const isBotPlayer = playerName.toLowerCase().includes('bot') || 
-                           playerName.toLowerCase().includes('ai') ||
-                           playerName.toLowerCase().includes('computer') ||
-                           playerName.toLowerCase().includes('cpu');
+        const playerName = player.name || player.summonerName || player.displayName || player.gameName || '';
+        const hasBot = playerName.toLowerCase().includes('bot');
+        const hasAI = playerName.toLowerCase().includes('ai');
+        const hasComputer = playerName.toLowerCase().includes('computer');
+        const hasCPU = playerName.toLowerCase().includes('cpu');
 
-        console.log(`🤖 [BotService] isBot check:`, {
+        const isBotPlayer = hasBot || hasAI || hasComputer || hasCPU;
+
+        console.log(`🤖 [BotService] === isBot check ===`, {
             playerName: playerName,
-            isBot: isBotPlayer,
+            hasBot, hasAI, hasComputer, hasCPU,
+            isBotPlayer,
             id: player.id,
             summonerName: player.summonerName,
-            name: player.name
+            name: player.name,
+            displayName: player.displayName,
+            gameName: player.gameName,
+            tagLine: player.tagLine,
+            fullPlayer: player
         });
 
         return isBotPlayer;
@@ -228,7 +235,7 @@ export class BotService {
 
         const currentTeam = phase.team;
         const teamPlayers = currentTeam === 'blue' ? session.blueTeam : session.redTeam;
-        
+
         console.log(`🤖 [BotService] Time atual: ${currentTeam}`);
         console.log(`🤖 [BotService] Jogadores do time:`, teamPlayers.map(p => ({
             id: p.id,
@@ -259,7 +266,7 @@ export class BotService {
         }
 
         console.log('🤖 [BotService] Current player encontrado:', currentPlayer);
-        
+
         if (currentPlayer) {
             const isBotPlayer = this.isBot(currentPlayer);
             console.log('🤖 [BotService] É bot?', isBotPlayer);
@@ -386,18 +393,18 @@ export class BotService {
         const timerId = setTimeout(() => {
             console.log(`🤖 [BotService] === EXECUTANDO AÇÃO AGENDADA (${phase.action}) ===`);
             console.log(`🤖 [BotService] Timer ${timerId} executando para ação ${session.currentAction + 1}`);
-            
+
             this.performBotAction(phase, session, champions);
-            
+
             console.log(`🤖 [BotService] Ação agendada concluída, executando callback`);
             callback();
-            
+
             console.log(`🤖 [BotService] === FIM DA AÇÃO AGENDADA ===`);
         }, delay);
 
         console.log(`🤖 [BotService] Timer agendado: ${timerId}`);
         console.log(`🤖 [BotService] === FIM DO AGENDAMENTO ===`);
-        
+
         return timerId;
     }
 
@@ -457,4 +464,4 @@ export class BotService {
             botPercentage: totalPlayers > 0 ? (totalBots / totalPlayers) * 100 : 0
         };
     }
-} 
+}

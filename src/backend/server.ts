@@ -194,6 +194,8 @@ app.use((req, res, next) => {
 
 // Inicializar serviços
 const dbManager = new DatabaseManager();
+console.log('🔍 [Server] WebSocket Server criado:', !!wss);
+console.log('🔍 [Server] WebSocket clients iniciais:', wss?.clients?.size || 0);
 const matchmakingService = new MatchmakingService(dbManager, wss);
 const playerService = new PlayerService(globalRiotAPI, dbManager);
 const lcuService = new LCUService(globalRiotAPI);

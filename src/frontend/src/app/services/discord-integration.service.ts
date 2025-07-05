@@ -11,13 +11,13 @@ export class DiscordIntegrationService {
   private discordUsersOnline: any[] = [];
   private currentDiscordUser: any = null;
   private isInDiscordChannel = false;
-  private queueParticipants: any[] = [];
+  // ✅ REMOVIDO: variáveis de queue - não devem estar no DiscordService
 
   // Observables para componentes
   private usersSubject = new BehaviorSubject<any[]>([]);
   private connectionSubject = new BehaviorSubject<boolean>(false);
-  private queueJoinedSubject = new BehaviorSubject<any>(null);
-  private queueUpdateSubject = new BehaviorSubject<any>(null);
+  // ✅ REMOVIDO: observables de queue - não devem estar no DiscordService
+  // A lógica de queue fica inteiramente no ApiService/backend
 
   // Contador de instâncias para debug
   private static instanceCount = 0;
@@ -27,8 +27,7 @@ export class DiscordIntegrationService {
   private lastStatusRequest = 0;
   private readonly STATUS_REQUEST_COOLDOWN = 2000;
 
-  // Atualizações de fila em tempo real
-  private lastQueueUpdate = 0;
+  // ✅ REMOVIDO: variáveis de queue - não devem estar no DiscordService
 
   // Sistema de reconexão robusto
   private reconnectAttempts = 0;
@@ -46,9 +45,13 @@ export class DiscordIntegrationService {
   private autoUpdateInterval?: number;
   private readonly AUTO_UPDATE_INTERVAL = 60000;
   private lastAutoUpdate = 0;
-  private lastQueueIgnoreLog = 0;
+  // ✅ REMOVIDO: variáveis de queue - não devem estar no DiscordService
 
-  private matchFoundSubject = new Subject<any>();
+  // ✅ REMOVIDO: matchFoundSubject - não deve estar no DiscordService
+  // A lógica de matchmaking fica inteiramente no ApiService
+
+  // ✅ NOVO: Referência para o ApiService para repassar mensagens
+  private apiService?: any;
 
   constructor() {
     DiscordIntegrationService.instanceCount++;
@@ -59,6 +62,12 @@ export class DiscordIntegrationService {
     setTimeout(() => {
       this.connectToWebSocket();
     }, 500);
+  }
+
+  // ✅ NOVO: Método para registrar o ApiService
+  setApiService(apiService: any): void {
+    this.apiService = apiService;
+    console.log(`🔗 [DiscordService #${this.instanceId}] ApiService registrado para repasse de mensagens`);
   }
 
   private getWebSocketURL(): string {
@@ -78,8 +87,8 @@ export class DiscordIntegrationService {
     const isWindows = () => navigator.userAgent.indexOf('Windows') !== -1;
 
     // Função para detectar se está no Electron
-    const isElectron = () => !!(window as any).electronAPI || 
-           !!(window as any).require || 
+    const isElectron = () => !!(window as any).electronAPI ||
+           !!(window as any).require ||
            navigator.userAgent.toLowerCase().indexOf('electron') > -1 ||
            !!(window as any).process?.type;
 
@@ -88,7 +97,7 @@ export class DiscordIntegrationService {
       console.log(`🔗 [DiscordService #${this.instanceId}] WebSocket: Detectado Electron no Windows, usando 127.0.0.1`);
       return 'ws://127.0.0.1:3000/ws';
     }
-    
+
     // Em outros casos, usar localhost
     console.log(`🔗 [DiscordService #${this.instanceId}] WebSocket: Usando localhost padrão`);
     return 'ws://localhost:3000/ws';
@@ -275,18 +284,18 @@ export class DiscordIntegrationService {
 
         // Atualizar timestamp da última atualização automática
         this.lastAutoUpdate = Date.now();
-        
+
         // Se for um broadcast crítico, logar como evento importante
         if (data.critical) {
           console.log(`🚨 [DiscordService #${this.instanceId}] Broadcast CRÍTICO recebido - atualização imediata`);
         }
-        
+
         // NOVO: Se incluir informações do usuário atual, atualizar
         if (data.currentUser) {
           console.log(`👤 [DiscordService #${this.instanceId}] Usuário atual recebido via WebSocket:`, data.currentUser);
           this.currentDiscordUser = data.currentUser;
         }
-        
+
         // Usuário atual será identificado quando sendLCUData for chamado
         break;
 
@@ -331,75 +340,87 @@ export class DiscordIntegrationService {
         break;
 
       case 'queue_update':
-        // Filtro inteligente: só processar se houver mudanças significativas
-        const currentPlayerCount = this.queueParticipants?.length || 0;
-        const newPlayerCount = data.data?.playersInQueue || 0;
-        const newPlayerList = data.data?.playersInQueueList || [];
-        
-        const hasPlayerCountChange = currentPlayerCount !== newPlayerCount;
-        const isCriticalUpdate = newPlayerCount >= 10 && currentPlayerCount < 10;
-        const isSubstantialChange = Math.abs(currentPlayerCount - newPlayerCount) >= 2;
-        
-        if (hasPlayerCountChange || isCriticalUpdate || isSubstantialChange || data.critical) {
-          console.log(`🎯 [DiscordService #${this.instanceId}] Fila atualizada:`, {
-            players: `${currentPlayerCount} → ${newPlayerCount}`,
-            critical: isCriticalUpdate,
-            substantial: isSubstantialChange,
-            forced: data.critical
-          });
-
-          this.queueParticipants = newPlayerList;
-          this.lastQueueUpdate = Date.now();
-          this.queueUpdateSubject.next(data.data);
-        } else {
-          const timeSinceLastLog = Date.now() - (this.lastQueueIgnoreLog || 0);
-          if (timeSinceLastLog > 15000) {
-            console.log(`⏭️ [DiscordService #${this.instanceId}] Atualização de fila ignorada - sem mudanças significativas (${newPlayerCount} jogadores)`);
-            this.lastQueueIgnoreLog = Date.now();
-          }
+        console.log(`🎯 [DiscordService #${this.instanceId}] Atualização de fila recebida - repassando para ApiService`);
+        // ✅ CORREÇÃO: Apenas repassar para ApiService, não processar aqui
+        if (this.apiService) {
+          this.apiService.emitWebSocketMessage(data);
         }
         break;
 
       case 'queue_joined':
-        console.log(`✅ [DiscordService #${this.instanceId}] Entrou na fila com sucesso!`, data);
-        // Emitir evento para o componente queue
-        this.queueJoinedSubject.next(data.data);
+        console.log(`✅ [DiscordService #${this.instanceId}] Entrou na fila - repassando para ApiService`);
+        // ✅ CORREÇÃO: Apenas repassar para ApiService, não processar aqui
+        if (this.apiService) {
+          this.apiService.emitWebSocketMessage(data);
+        }
         break;
 
       case 'match_created':
-        console.log(`🎮 [DiscordService #${this.instanceId}] Match criado!`, data);
+        console.log(`🎮 [DiscordService #${this.instanceId}] Match criado - repassando para ApiService`);
+        // ✅ CORREÇÃO: Apenas repassar para ApiService, não processar aqui
+        if (this.apiService) {
+          this.apiService.emitWebSocketMessage(data);
+        }
         break;
 
       case 'match_found':
-        console.log(`🎮 [DiscordService #${this.instanceId}] Partida encontrada!`, data);
-        this.matchFoundSubject.next(data.data);
+        console.log(`🎮 [DiscordService #${this.instanceId}] Match found - repassando para ApiService`);
+        // ✅ CORREÇÃO: Apenas repassar para ApiService, não processar aqui
+        if (this.apiService) {
+          console.log(`📤 [DiscordService #${this.instanceId}] Repassando match_found para ApiService...`);
+          this.apiService.emitWebSocketMessage(data);
+          console.log(`✅ [DiscordService #${this.instanceId}] match_found repassado com sucesso`);
+        } else {
+          console.warn(`⚠️ [DiscordService #${this.instanceId}] ApiService não registrado! Mensagem match_found não será repassada.`);
+        }
+        break;
+
+      case 'match_acceptance_progress':
+        console.log(`📊 [DiscordService #${this.instanceId}] Progresso de aceitação`, data);
+        // ✅ NOVO: Repassar para ApiService
+        if (this.apiService) {
+          this.apiService.emitWebSocketMessage(data);
+        }
+        break;
+
+      case 'match_fully_accepted':
+        console.log(`✅ [DiscordService #${this.instanceId}] Partida totalmente aceita`, data);
+        // ✅ NOVO: Repassar para ApiService
+        if (this.apiService) {
+          this.apiService.emitWebSocketMessage(data);
+        }
+        break;
+
+      case 'match_timer_update':
+        console.log(`⏰ [DiscordService #${this.instanceId}] Timer atualizado`, data);
+        // ✅ NOVO: Repassar para ApiService
+        if (this.apiService) {
+          this.apiService.emitWebSocketMessage(data);
+        }
         break;
 
       case 'draft_started':
-        console.log(`🎯 [DiscordService #${this.instanceId}] Fase de draft iniciada!`, data);
-        // Emitir evento para o app principal processar
-        this.matchFoundSubject.next({
-          ...data.data,
-          phase: 'draft_started'
-        });
+        console.log(`🎯 [DiscordService #${this.instanceId}] Draft started - repassando para ApiService`);
+        // ✅ CORREÇÃO: Apenas repassar para ApiService, não processar aqui
+        if (this.apiService) {
+          this.apiService.emitWebSocketMessage(data);
+        }
         break;
 
       case 'match_cancelled':
-        console.log(`❌ [DiscordService #${this.instanceId}] Partida cancelada!`, data);
-        // Emitir evento de cancelamento
-        this.matchFoundSubject.next({
-          type: 'match_cancelled',
-          ...data.data
-        });
+        console.log(`❌ [DiscordService #${this.instanceId}] Match cancelled - repassando para ApiService`);
+        // ✅ CORREÇÃO: Apenas repassar para ApiService, não processar aqui
+        if (this.apiService) {
+          this.apiService.emitWebSocketMessage(data);
+        }
         break;
 
       case 'draft_cancelled':
-        console.log(`❌ [DiscordService #${this.instanceId}] Draft cancelado!`, data);
-        // Emitir evento de cancelamento de draft
-        this.matchFoundSubject.next({
-          type: 'draft_cancelled',
-          ...data.data
-        });
+        console.log(`❌ [DiscordService #${this.instanceId}] Draft cancelled - repassando para ApiService`);
+        // ✅ CORREÇÃO: Apenas repassar para ApiService, não processar aqui
+        if (this.apiService) {
+          this.apiService.emitWebSocketMessage(data);
+        }
         break;
 
       case 'pong':
@@ -407,7 +428,7 @@ export class DiscordIntegrationService {
         break;
 
       default:
-        console.log(`⚠️ [DiscordService #${this.instanceId}] Tipo de mensagem não reconhecido:`, data.type);
+        console.log(`⚠️ [DiscordService #${this.instanceId}] Tipo de mensagem não reconhecido:`, data.type, data);
     }
   }
 
@@ -521,14 +542,14 @@ export class DiscordIntegrationService {
       if (user.linkedNickname) {
         // linkedNickname sempre vem como objeto {gameName, tagLine} do backend
         let discordFullName = '';
-        
+
         if (user.linkedNickname.gameName && user.linkedNickname.tagLine) {
           discordFullName = `${user.linkedNickname.gameName}#${user.linkedNickname.tagLine}`;
         } else {
           console.warn('🔍 [DiscordService] linkedNickname em formato inválido:', user.linkedNickname);
           return false;
         }
-        
+
         console.log('🔍 [DiscordService] Comparando:', {
           lcu: lcuFullName,
           discord: discordFullName,
@@ -549,25 +570,25 @@ export class DiscordIntegrationService {
         username: u.username,
         linkedNickname: u.linkedNickname
       })));
-      
+
       // ✅ NOVO: Tentar validação mais flexível se a validação rígida falhar
       console.log('🔍 [DiscordService] Tentando validação alternativa...');
-      
+
       // Verificar se existe pelo menos um usuário online no Discord
       if (this.discordUsersOnline.length === 0) {
         console.error('❌ [DiscordService] Nenhum usuário Discord online encontrado');
         console.error('❌ [DiscordService] Certifique-se de estar conectado ao Discord e no canal correto');
         return false;
       }
-      
+
       // Se há usuários Discord online mas nenhum com vinculação, permitir entrada mas avisar
       console.warn('⚠️ [DiscordService] Prosseguindo sem validação de vinculação Discord');
       console.warn('⚠️ [DiscordService] O backend fará a validação final');
-      
+
       // Usar o primeiro usuário online como fallback ou criar entrada manual
       const fallbackUser = this.discordUsersOnline[0];
       console.log('🔄 [DiscordService] Usando usuário Discord como fallback:', fallbackUser.username);
-      
+
       const message = {
         type: 'join_discord_queue',
         data: {
@@ -673,7 +694,7 @@ export class DiscordIntegrationService {
 
     // ✅ REMOVIDO: Log excessivo que causava spam
     // Só fazer log se o status mudou ou em debug específico
-    
+
     return finalStatus;
   }
 
@@ -691,7 +712,7 @@ export class DiscordIntegrationService {
 
   checkConnection(): void {
     console.log(`🔍 [DiscordService #${this.instanceId}] Verificando conexão...`);
-    
+
     // Só solicitar status se WebSocket estiver conectado
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.requestDiscordStatus();
@@ -701,14 +722,14 @@ export class DiscordIntegrationService {
     }
   }
 
-
-
   getDiscordUsersOnline(): any[] {
     return this.discordUsersOnline;
   }
 
+  // ✅ REMOVIDO: Método para obter participantes da fila - não deve estar no DiscordService
+  // A lógica de queue fica inteiramente no ApiService/backend
   getQueueParticipants(): any[] {
-    return this.queueParticipants;
+    return [];
   }
 
   // Observables
@@ -720,14 +741,8 @@ export class DiscordIntegrationService {
     return this.connectionSubject.asObservable();
   }
 
-  onQueueJoined(): Observable<any> {
-    return this.queueJoinedSubject.asObservable();
-  }
-
-  // NOVO: Observable para atualizações da fila em tempo real
-  onQueueUpdate(): Observable<any> {
-    return this.queueUpdateSubject.asObservable();
-  }
+  // ✅ REMOVIDO: Métodos de queue - não devem estar no DiscordService
+  // A lógica de queue fica inteiramente no ApiService/backend
 
   // Método para forçar reconexão e atualização
   forceReconnect(): void {
@@ -777,22 +792,18 @@ export class DiscordIntegrationService {
     // Limpar observables
     this.usersSubject.complete();
     this.connectionSubject.complete();
-    this.queueJoinedSubject.complete();
-    this.queueUpdateSubject.complete();
-    this.matchFoundSubject.complete();
+    // ✅ REMOVIDO: observables de queue - não devem estar no DiscordService
 
     // Resetar estado
     this.isBackendConnected = false;
     this.discordUsersOnline = [];
     this.currentDiscordUser = null;
     this.isInDiscordChannel = false;
-    this.queueParticipants = [];
+    // ✅ REMOVIDO: variáveis de queue - não devem estar no DiscordService
     this.reconnectAttempts = 0;
 
     console.log(`✅ [DiscordService #${this.instanceId}] Instância destruída com sucesso`);
   }
-
-
 
   // Método para solicitar especificamente o status do canal
   requestChannelStatus(): void {
@@ -805,12 +816,8 @@ export class DiscordIntegrationService {
     this.ws.send(JSON.stringify({ type: 'get_discord_channel_status' }));
   }
 
-  // Observable para match_found
-  onMatchFound(): Observable<any> {
-    return this.matchFoundSubject.asObservable();
-  }
-
-
+  // ✅ REMOVIDO: Observable para match_found - não deve estar no DiscordService
+  // A lógica de matchmaking fica inteiramente no ApiService
 
   // Método para enviar dados do LCU para identificação no backend
   sendLCUData(lcuData: { gameName: string, tagLine: string } | { displayName: string }): boolean {
@@ -820,7 +827,7 @@ export class DiscordIntegrationService {
     }
 
     console.log('🎮 [DiscordService] Enviando dados do LCU para identificação:', lcuData);
-    
+
     const message = {
       type: 'update_lcu_data',
       lcuData: lcuData
