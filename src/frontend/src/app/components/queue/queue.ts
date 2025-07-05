@@ -116,7 +116,29 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     }
 
     if (changes.queueStatus?.currentValue) {
-      console.log('🔄 [Queue] QueueStatus atualizado');
+      console.log('🔄 [Queue] QueueStatus atualizado:', changes.queueStatus.currentValue);
+      
+      // ✅ NOVO: Verificar se o jogador atual está na lista da fila
+      if (this.currentPlayer?.displayName && changes.queueStatus.currentValue?.playersInQueueList) {
+        const playerInQueue = changes.queueStatus.currentValue.playersInQueueList.find((p: any) => 
+          p.summonerName === this.currentPlayer?.displayName || 
+          p.summonerName === this.currentPlayer?.summonerName ||
+          (p.summonerName && this.currentPlayer?.displayName && 
+           p.summonerName.replace(/\s+/g, '').toLowerCase() === this.currentPlayer.displayName.replace(/\s+/g, '').toLowerCase())
+        );
+        
+        if (playerInQueue && !this.isInQueue) {
+          console.log('🎯 [Queue] Jogador encontrado na fila, atualizando estado:', playerInQueue);
+          this.isInQueue = true;
+          this.startQueueTimer();
+        } else if (!playerInQueue && this.isInQueue) {
+          console.log('🎯 [Queue] Jogador não encontrado na fila, atualizando estado');
+          this.isInQueue = false;
+          this.stopQueueTimer();
+          this.queueTimer = 0;
+        }
+      }
+      
       this.cdr.detectChanges();
     }
     
@@ -128,6 +150,15 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
         currentPlayerDisplayName: this.currentPlayer?.displayName,
         queuePlayersCount: this.queueStatus?.playersInQueue || 0
       });
+      
+      // ✅ NOVO: Iniciar/parar timer baseado no estado
+      if (this.isInQueue && !this.timerInterval) {
+        this.startQueueTimer();
+      } else if (!this.isInQueue && this.timerInterval) {
+        this.stopQueueTimer();
+        this.queueTimer = 0;
+      }
+      
       this.cdr.detectChanges();
     }
   }
@@ -347,6 +378,18 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
 
   onLeaveDiscordQueue(): void {
     console.log('🔍 [Queue] Saída Discord solicitada');
+    console.log('🔍 [Queue] Estado atual antes da saída:', {
+      isInQueue: this.isInQueue,
+      currentPlayer: this.currentPlayer?.displayName,
+      isDiscordConnected: this.isDiscordConnected
+    });
+    
+    if (!this.currentPlayer?.displayName) {
+      console.error('❌ [Queue] Dados do jogador não disponíveis para sair da fila');
+      return;
+    }
+    
+    console.log('✅ [Queue] Delegando saída da fila para o componente pai');
     this.onLeaveQueue();
   }
 
@@ -519,6 +562,10 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     this.profileIconService.onProfileIconError(event, profileIconId);
   }
 
+  onProfileIconLoad(event: Event): void {
+    console.log('✅ [Queue] Profile icon carregado com sucesso');
+  }
+
   // =============================================================================
   // TABLE UTILITIES
   // =============================================================================
@@ -545,7 +592,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     }
     
     try {
-      // ✅ CORRIGIDO: Calcular tempo real baseado no joinTime
+      // ✅ CORRIGIDO: Calcular tempo real baseado no joinTime (string ISO do backend)
       const joinTime = new Date(player.joinTime);
       const now = new Date();
       const diffMs = now.getTime() - joinTime.getTime();
@@ -564,7 +611,10 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
         return `${seconds}s`;
       }
     } catch (error) {
-      console.warn('⚠️ [Queue] Erro ao calcular tempo na fila:', error);
+      console.warn('⚠️ [Queue] Erro ao calcular tempo na fila:', error, {
+        joinTime: player.joinTime,
+        type: typeof player.joinTime
+      });
       return '0s';
     }
   }

@@ -271,7 +271,7 @@ export class MatchmakingService {
           secondaryLaneDisplay: this.getLaneDisplayName(player.preferences?.secondaryLane),
           mmr: player.currentMMR,
           queuePosition: player.queuePosition || 0,
-          joinTime: player.joinTime
+          joinTime: player.joinTime // ✅ CORRIGIDO: Será serializado automaticamente como string ISO no JSON
         };
       });
 
@@ -352,6 +352,7 @@ export class MatchmakingService {
    */
   public async removePlayerFromQueueById(playerId?: number, summonerName?: string): Promise<boolean> {
     console.log(`🔍 [Matchmaking] Tentando remover jogador da fila:`, { playerId, summonerName });
+    console.log(`🔍 [Matchmaking] Estado atual da fila local:`, this.queue.map(p => ({ id: p.id, name: p.summonerName })));
 
     try {
       let removed = false;
@@ -359,14 +360,18 @@ export class MatchmakingService {
       if (playerId) {
         // ✅ ATUALIZADO: Buscar jogador na fila local primeiro
         const playerIndex = this.queue.findIndex(p => p.id === playerId);
+        console.log(`🔍 [Matchmaking] Buscando jogador por ID ${playerId} na fila local:`, playerIndex !== -1 ? 'ENCONTRADO' : 'NÃO ENCONTRADO');
         
         if (playerIndex !== -1) {
           const player = this.queue[playerIndex];
+          console.log(`🔍 [Matchmaking] Jogador encontrado na fila local:`, player);
           
           // ✅ ATUALIZADO: Remover da fila local
           this.queue.splice(playerIndex, 1);
+          console.log(`✅ [Matchmaking] Jogador removido da fila local. Nova fila:`, this.queue.map(p => ({ id: p.id, name: p.summonerName })));
 
           // REGRA: Deletar linha da tabela (não marcar como inativo)
+          console.log(`🔍 [Matchmaking] Removendo jogador ${player.id} da tabela queue_players...`);
           await this.dbManager.removePlayerFromQueue(player.id);
           console.log(`✅ [Matchmaking] Linha do jogador ${player.summonerName} deletada da tabela queue_players`);
 
@@ -378,6 +383,8 @@ export class MatchmakingService {
           );
 
           removed = true;
+        } else {
+          console.log(`⚠️ [Matchmaking] Jogador com ID ${playerId} não encontrado na fila local`);
         }
       } else if (summonerName) {
         // ✅ NOVO: Remover diretamente por summoner_name no banco com comparação robusta
@@ -530,7 +537,7 @@ export class MatchmakingService {
           secondaryLane: player.secondaryLane,
           mmr: player.mmr,
           queuePosition: player.queuePosition,
-          joinTime: player.joinTime
+          joinTime: player.joinTime.toISOString() // ✅ CORRIGIDO: Serializar como string ISO
         })) || []
       };
 

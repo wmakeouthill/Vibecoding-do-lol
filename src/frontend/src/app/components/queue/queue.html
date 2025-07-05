@@ -41,6 +41,10 @@
         <span class="wins-losses" *ngIf="currentPlayer?.wins !== undefined && currentPlayer?.losses !== undefined">
           {{ currentPlayer?.wins }}V / {{ currentPlayer?.losses }}D
         </span>
+        <span class="queue-time" *ngIf="isInQueue">
+          <i class="fas fa-clock"></i>
+          {{ getTimerDisplay() }} na fila
+        </span>
       </div>
       <div class="player-preferences" *ngIf="queuePreferences.primaryLane && queuePreferences.secondaryLane">
         <span class="preference-item">

@@ -56,6 +56,7 @@ export class QueueStateService {
   private pollingInterval: any = null;
   private readonly POLLING_INTERVAL_MS = 3000; // Polling a cada 3 segundos
   private currentPlayerData: any = null;
+  private lastIdentifiers: string[] = []; // ✅ NOVO: Para evitar spam de logs
 
   constructor(private apiService: ApiService) {
     console.log('🔄 QueueStateService inicializado com sincronização MySQL (tabela queue_players)');
@@ -218,7 +219,11 @@ export class QueueStateService {
         // Construir diferentes formatos de identificação possíveis
         const identifiers = this.buildPlayerIdentifiers(this.currentPlayerData);
         
-        console.log('🔍 [QueueState] Identificadores do jogador atual:', identifiers);
+        // ✅ REDUZIR SPAM: Só logar identificadores na primeira vez ou se mudaram
+        if (!this.lastIdentifiers || JSON.stringify(identifiers) !== JSON.stringify(this.lastIdentifiers)) {
+          console.log('🔍 [QueueState] Identificadores do jogador atual:', identifiers);
+          this.lastIdentifiers = identifiers;
+        }
 
         // Buscar na lista de jogadores da fila (dados vindos da tabela queue_players)
         if (queueStatus.playersInQueueList && queueStatus.playersInQueueList.length > 0) {
@@ -229,9 +234,15 @@ export class QueueStateService {
           if (queuedPlayer) {
             isUserInQueue = true;
             userPosition = queuedPlayer.queuePosition || 0;
-            console.log(`✅ [QueueState] Usuário encontrado na tabela queue_players: ${JSON.stringify(queuedPlayer)} (posição: ${userPosition})`);
+            // ✅ REDUZIR SPAM: Só logar se mudou de estado
+            if (!this.queueStateSubject.value.isInQueue) {
+              console.log(`✅ [QueueState] Usuário encontrado na fila: ${queuedPlayer.summonerName} (posição: ${userPosition})`);
+            }
           } else {
-            console.log('❌ [QueueState] Usuário não encontrado na tabela queue_players');
+            // ✅ REDUZIR SPAM: Só logar se mudou de estado
+            if (this.queueStateSubject.value.isInQueue) {
+              console.log('❌ [QueueState] Usuário não encontrado na tabela queue_players');
+            }
           }
         }
       }
@@ -246,7 +257,18 @@ export class QueueStateService {
         averageWaitTime: queueStatus.averageWaitTime || 0
       };
 
-      console.log('🔄 [QueueState] Estado atualizado baseado na tabela queue_players:', newState);
+      // ✅ REDUZIR SPAM: Só logar se o estado mudou significativamente
+      const currentState = this.queueStateSubject.value;
+      if (currentState.isInQueue !== newState.isInQueue || 
+          currentState.position !== newState.position ||
+          currentState.playersInQueue !== newState.playersInQueue) {
+        console.log('🔄 [QueueState] Estado atualizado:', {
+          isInQueue: `${currentState.isInQueue} → ${newState.isInQueue}`,
+          position: `${currentState.position} → ${newState.position}`,
+          playersInQueue: `${currentState.playersInQueue} → ${newState.playersInQueue}`
+        });
+      }
+      
       this.queueStateSubject.next(newState);
 
     } catch (error: any) {
@@ -304,8 +326,12 @@ export class QueueStateService {
       identifiers.push(playerData.displayName);
     }
     
-    console.log('🔍 [QueueState] Identificadores construídos:', identifiers);
-    return identifiers.filter(Boolean); // Remover valores vazios
+    // ✅ REDUZIR SPAM: Só logar se os identificadores mudaram
+    const filteredIdentifiers = identifiers.filter(Boolean);
+    if (JSON.stringify(filteredIdentifiers) !== JSON.stringify(this.lastIdentifiers)) {
+      console.log('🔍 [QueueState] Identificadores construídos:', filteredIdentifiers);
+    }
+    return filteredIdentifiers;
   }
 
   /**
@@ -320,7 +346,10 @@ export class QueueStateService {
     // Verificar correspondência exata
     for (const identifier of identifiers) {
       if (queuePlayerName === identifier) {
-        console.log(`✅ [QueueState] Correspondência exata encontrada: ${queuePlayerName} === ${identifier}`);
+        // ✅ REDUZIR SPAM: Só logar se não estava na fila antes
+        if (!this.queueStateSubject.value.isInQueue) {
+          console.log(`✅ [QueueState] Correspondência exata encontrada: ${queuePlayerName} === ${identifier}`);
+        }
         return true;
       }
       
@@ -329,7 +358,10 @@ export class QueueStateService {
       const identifierBaseName = identifier.split('#')[0];
       
       if (queueBaseName === identifierBaseName) {
-        console.log(`✅ [QueueState] Correspondência por base name: ${queueBaseName} === ${identifierBaseName}`);
+        // ✅ REDUZIR SPAM: Só logar se não estava na fila antes
+        if (!this.queueStateSubject.value.isInQueue) {
+          console.log(`✅ [QueueState] Correspondência por base name: ${queueBaseName} === ${identifierBaseName}`);
+        }
         return true;
       }
     }

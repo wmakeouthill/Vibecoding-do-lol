@@ -461,22 +461,52 @@ export class App implements OnInit, OnDestroy {
 
   async leaveQueue(): Promise<void> {
     console.log('📞 [App] Solicitando saída da fila ao backend...');
+    console.log('📞 [App] Dados do jogador atual:', {
+      id: this.currentPlayer?.id,
+      summonerName: this.currentPlayer?.summonerName,
+      displayName: this.currentPlayer?.displayName
+    });
+    
+    if (!this.currentPlayer?.summonerName && !this.currentPlayer?.displayName) {
+      console.error('❌ [App] Nenhum identificador do jogador disponível');
+      this.addNotification('error', 'Erro', 'Dados do jogador não disponíveis para sair da fila');
+      return;
+    }
     
     try {
-      await this.apiService.leaveQueue(this.currentPlayer?.id, this.currentPlayer?.summonerName).toPromise();
+      // ✅ USAR displayName como prioridade
+      const playerIdentifier = this.currentPlayer.displayName || this.currentPlayer.summonerName;
+      console.log('📞 [App] Usando identificador:', playerIdentifier);
+      
+      await this.apiService.leaveQueue(this.currentPlayer?.id, playerIdentifier).toPromise();
       console.log('✅ [App] Solicitação de saída da fila enviada');
       
       // ✅ CORRIGIDO: Marcar estado como fora da fila imediatamente
       this.isInQueue = false;
       this.hasRecentBackendQueueStatus = true;
       
+      this.addNotification('success', 'Saiu da Fila', 'Você saiu da fila com sucesso');
+      
       // Atualizar status após 2 segundos para confirmar
       setTimeout(() => {
         this.refreshQueueStatus();
       }, 2000);
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ [App] Erro ao sair da fila:', error);
-      this.addNotification('error', 'Erro', 'Falha ao sair da fila');
+      console.error('❌ [App] Detalhes do erro:', {
+        status: error.status,
+        message: error.message,
+        error: error.error
+      });
+      
+      let errorMessage = 'Falha ao sair da fila';
+      if (error.error?.message) {
+        errorMessage += `: ${error.error.message}`;
+      } else if (error.message) {
+        errorMessage += `: ${error.message}`;
+      }
+      
+      this.addNotification('error', 'Erro', errorMessage);
     }
   }
 

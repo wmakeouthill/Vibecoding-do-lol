@@ -813,7 +813,26 @@ export class DatabaseManager {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
 
     try {
+      // ✅ DEBUG: Verificar se o jogador existe na tabela antes de remover
+      console.log(`🔍 [Database] Verificando se jogador ${playerId} existe na tabela queue_players...`);
+      const [existingRows] = await this.pool.execute(
+        'SELECT * FROM queue_players WHERE player_id = ?',
+        [playerId]
+      );
+      
+      if ((existingRows as any[]).length === 0) {
+        console.log(`⚠️ [Database] Jogador ${playerId} não encontrado na tabela queue_players`);
+        
+        // ✅ DEBUG: Mostrar todos os jogadores na tabela para debug
+        const [allPlayers] = await this.pool.execute('SELECT player_id, summoner_name FROM queue_players');
+        console.log(`🔍 [Database] Jogadores atualmente na tabela queue_players:`, allPlayers);
+        return;
+      }
+      
+      console.log(`✅ [Database] Jogador ${playerId} encontrado na tabela:`, existingRows);
+      
       // ✅ CORREÇÃO: Deletar linha ao invés de marcar is_active = 0
+      console.log(`🔍 [Database] Executando DELETE para jogador ${playerId}...`);
       const [result] = await this.pool.execute(
         'DELETE FROM queue_players WHERE player_id = ?',
         [playerId]
