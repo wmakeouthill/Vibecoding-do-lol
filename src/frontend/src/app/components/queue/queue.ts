@@ -341,7 +341,8 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     this.timerInterval = this.ngZone.runOutsideAngular(() => {
       return window.setInterval(() => {
         this.ngZone.run(() => {
-          this.queueTimer++;
+          // ✅ CORRIGIDO: Calcular tempo real baseado no joinTime do jogador atual
+          this.updateQueueTimerFromCurrentPlayer();
           this.cdr.detectChanges();
         });
       }, 1000);
@@ -353,6 +354,26 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       console.log('⏱️ [Queue] Parando timer da fila');
       clearInterval(this.timerInterval);
       this.timerInterval = undefined;
+    }
+  }
+
+  // ✅ NOVO: Atualizar timer baseado no tempo real do jogador atual na fila
+  private updateQueueTimerFromCurrentPlayer(): void {
+    if (!this.currentPlayer?.displayName || !this.queueStatus?.playersInQueueList) {
+      return;
+    }
+
+    // Encontrar o jogador atual na lista da fila
+    const currentPlayerInQueue = this.queueStatus.playersInQueueList.find(player => 
+      player.isCurrentPlayer === true ||
+      player.summonerName === this.currentPlayer?.displayName ||
+      (player.tagLine ? `${player.summonerName}#${player.tagLine}` : player.summonerName) === this.currentPlayer?.displayName
+    );
+
+    if (currentPlayerInQueue?.joinTime) {
+      // ✅ CORRIGIDO: Usar método auxiliar para garantir consistência
+      const timeData = this.calculateTimeInQueue(currentPlayerInQueue.joinTime);
+      this.queueTimer = timeData.seconds;
     }
   }
 
@@ -433,8 +454,9 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       preferences: preferences
     });
     
-    this.queueTimer = 0;
-    this.startQueueTimer();
+    // ✅ REMOVIDO: Timer será sincronizado automaticamente quando o backend atualizar a fila
+    // this.queueTimer = 0;
+    // this.startQueueTimer();
     
     console.log('✅ [Queue] Emissão de entrada na fila concluída');
   }
@@ -608,37 +630,37 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
            player.summonerName.toLowerCase() === currentDisplayName.toLowerCase();
   }
 
-  getTimeInQueue(player: any): string {
-    if (!player?.joinTime) {
-      return '0s';
-    }
-    
+  // ✅ NOVO: Método auxiliar para calcular tempo na fila (usado tanto pelo timer quanto pela tabela)
+  private calculateTimeInQueue(joinTime: string | Date): { seconds: number, display: string } {
     try {
-      // ✅ CORRIGIDO: Calcular tempo real baseado no joinTime (string ISO do backend)
-      const joinTime = new Date(player.joinTime);
+      const joinTimeDate = typeof joinTime === 'string' ? new Date(joinTime) : joinTime;
       const now = new Date();
-      const diffMs = now.getTime() - joinTime.getTime();
+      const diffMs = now.getTime() - joinTimeDate.getTime();
       
       if (diffMs < 0) {
-        return '0s';
+        return { seconds: 0, display: '0s' };
       }
       
       const diffSeconds = Math.floor(diffMs / 1000);
       const minutes = Math.floor(diffSeconds / 60);
       const seconds = diffSeconds % 60;
       
-      if (minutes > 0) {
-        return `${minutes}m ${seconds}s`;
-      } else {
-        return `${seconds}s`;
-      }
+      const display = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+      
+      return { seconds: diffSeconds, display };
     } catch (error) {
-      console.warn('⚠️ [Queue] Erro ao calcular tempo na fila:', error, {
-        joinTime: player.joinTime,
-        type: typeof player.joinTime
-      });
+      console.warn('⚠️ [Queue] Erro ao calcular tempo na fila:', error);
+      return { seconds: 0, display: '0s' };
+    }
+  }
+
+  getTimeInQueue(player: any): string {
+    if (!player?.joinTime) {
       return '0s';
     }
+    
+    // ✅ CORRIGIDO: Usar método auxiliar para garantir consistência
+    return this.calculateTimeInQueue(player.joinTime).display;
   }
 
   isUserInQueue(user: any): boolean {
@@ -780,37 +802,16 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       return;
     }
     
-    try {
-      const joinTime = new Date(playerData.joinTime);
-      const now = new Date();
-      const diffMs = now.getTime() - joinTime.getTime();
-      
-      if (diffMs >= 0) {
-        const diffSeconds = Math.floor(diffMs / 1000);
-        const currentTimer = this.queueTimer;
-        
-        if (resetTimer) {
-          // Primeira sincronização - definir timer com o tempo real
-          this.queueTimer = diffSeconds;
-          console.log(`🔄 [Queue] Timer inicializado: ${diffSeconds}s (${this.getTimerDisplay()})`);
-        } else {
-          // Sincronização periódica - ajustar apenas se há diferença significativa
-          const timeDiff = Math.abs(diffSeconds - currentTimer);
-          
-          if (timeDiff > 2) { // Se diferença for maior que 2 segundos, sincronizar
-            this.queueTimer = diffSeconds;
-            console.log(`🔄 [Queue] Timer ajustado: ${currentTimer}s → ${diffSeconds}s (diferença: ${timeDiff}s)`);
-          } else {
-            // Diferença pequena, manter timer local para evitar "pulos"
-            console.log(`🔄 [Queue] Timer mantido: ${currentTimer}s (servidor: ${diffSeconds}s, diferença: ${timeDiff}s)`);
-          }
-        }
-      }
-    } catch (error) {
-      console.warn('⚠️ [Queue] Erro ao sincronizar timer:', error, {
-        joinTime: playerData.joinTime,
-        type: typeof playerData.joinTime
-      });
+    // ✅ CORRIGIDO: Usar método auxiliar para garantir consistência
+    const timeData = this.calculateTimeInQueue(playerData.joinTime);
+    
+    if (resetTimer) {
+      // ✅ SIMPLIFICADO: Apenas inicializar timer na primeira vez
+      this.queueTimer = timeData.seconds;
+      console.log(`🔄 [Queue] Timer inicializado: ${timeData.seconds}s (${this.getTimerDisplay()})`);
+    } else {
+      // ✅ REMOVIDO: Lógica de ajuste - o timer agora se auto-atualiza com tempo real
+      console.log(`🔄 [Queue] Timer auto-atualizado: ${this.queueTimer}s (servidor: ${timeData.seconds}s)`);
     }
   }
 } 
