@@ -621,7 +621,7 @@ export class MatchmakingService {
   }
 
   // Métodos auxiliares
-  private getLaneDisplayName(laneId?: string): string {
+  public getLaneDisplayName(laneId?: string): string {
     const lanes: { [key: string]: string } = {
       'top': 'Topo',
       'jungle': 'Selva',
@@ -1793,7 +1793,7 @@ export class MatchmakingService {
   }
 
   // ✅ NOVO: Mapear lanes do frontend para backend
-  private mapLaneToBackend(lane: string): string {
+  public mapLaneToBackend(lane: string): string {
     const mapping: { [key: string]: string } = {
       'TOP': 'top',
       'JUNGLE': 'jungle', 
@@ -1808,7 +1808,7 @@ export class MatchmakingService {
   }
 
   // ✅ NOVO: Mapear lanes do backend para frontend
-  private mapLaneToFrontend(lane: string): string {
+  public mapLaneToFrontend(lane: string): string {
     const mapping: { [key: string]: string } = {
       'top': 'TOP',
       'jungle': 'JUNGLE',

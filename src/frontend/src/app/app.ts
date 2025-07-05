@@ -337,11 +337,15 @@ export class App implements OnInit, OnDestroy {
       tagLine: this.currentPlayer?.tagLine
     });
 
-    // ✅ CORREÇÃO: Auto-aceitação de bots é feita apenas no backend
-    // O frontend sempre mostra o modal para todos os jogadores
-    console.log('🎯 [App] Auto-aceitação de bots é processada pelo backend');
-    console.log('🎮 [App] Mostrando tela de match-found para todos os jogadores');
+    // ✅ CORREÇÃO: Modal só deve ser exibido para jogadores humanos
+    // Bots são auto-aceitos pelo backend e não precisam do modal
+    if (this.isCurrentPlayerBot()) {
+      console.log('🎯 [App] Jogador atual é bot - não exibindo modal');
+      console.log('� [App] Auto-aceitação de bots é processada pelo backend');
+      return;
+    }
 
+    console.log('🎮 [App] Mostrando tela de match-found para jogador humano');
     this.showMatchFound = true;
     console.log('🎮 [App] showMatchFound definido como:', this.showMatchFound);
     console.log('🎮 [App] matchFoundData definido como:', !!this.matchFoundData);
@@ -383,7 +387,16 @@ export class App implements OnInit, OnDestroy {
         name: playerInfo.summonerName,
         lane: playerInfo.assignedLane,
         teamIndex: playerInfo.teamIndex,
-        autofill: playerInfo.isAutofill
+        autofill: playerInfo.isAutofill,
+        // ✅ ADICIONADO: Log detalhado das lanes
+        primaryLane: playerInfo.primaryLane,
+        secondaryLane: playerInfo.secondaryLane,
+        assignedLaneType: typeof playerInfo.assignedLane,
+        assignedLaneValue: playerInfo.assignedLane,
+        // ✅ NOVO: Log dos dados originais do backend
+        originalAssignedLane: player.assignedLane,
+        originalPrimaryLane: player.primaryLane,
+        originalSecondaryLane: player.secondaryLane
       });
 
       return playerInfo;

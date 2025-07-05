@@ -46,13 +46,13 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
   private countdownTimer?: number;
   isTimerUrgent = false;
 
-  constructor(private profileIconService: ProfileIconService) {}
+  constructor(private profileIconService: ProfileIconService) { }
 
   ngOnInit() {
     if (this.matchData && this.matchData.phase === 'accept') {
       this.startAcceptCountdown();
     }
-    
+
     // ✅ NOVO: Escutar atualizações de timer do backend
     this.setupTimerListener();
   }
@@ -73,7 +73,7 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
         teamIndex: p.teamIndex,
         isAutofill: p.isAutofill
       })));
-      
+
       if (this.countdownTimer) {
         clearInterval(this.countdownTimer);
       }
@@ -91,7 +91,7 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
     if (this.countdownTimer) {
       clearInterval(this.countdownTimer);
     }
-    
+
     // ✅ NOVO: Remover listener de timer
     document.removeEventListener('matchTimerUpdate', this.onTimerUpdate);
   }
@@ -106,7 +106,7 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
     if (event.detail) {
       this.acceptTimeLeft = event.detail.timeLeft;
       this.isTimerUrgent = event.detail.isUrgent;
-      
+
       // Auto-decline se tempo esgotar
       if (this.acceptTimeLeft <= 0) {
         this.onDeclineMatch();
@@ -121,7 +121,7 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
     if (!this.matchData) return;
 
     const allPlayers = [...this.matchData.teammates, ...this.matchData.enemies];
-    
+
     // Carregar ícones em paralelo para melhor performance
     const iconPromises = allPlayers.map(async (player) => {
       try {
@@ -195,19 +195,15 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
     }
   }
 
-  getLaneIcon(lane: string): string {
-    const icons: { [key: string]: string } = {
-      'top': '⚔️',
-      'jungle': '🌲',
-      'mid': '⚡',
-      'bot': '🏹',
-      'support': '🛡️',
-      'fill': '🎲'
-    };
-    return icons[lane] || '❓';
-  }
-
   getLaneName(lane: string): string {
+    if (!lane) {
+      return 'Desconhecido';
+    }
+
+    // ✅ CORREÇÃO: Normalizar lane para minúsculas e mapear para nome
+    const normalizedLane = lane.toLowerCase().trim();
+    const mappedLane = normalizedLane === 'adc' ? 'bot' : normalizedLane;
+
     const names: { [key: string]: string } = {
       'top': 'Topo',
       'jungle': 'Selva',
@@ -216,10 +212,36 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
       'support': 'Suporte',
       'fill': 'Preenchimento'
     };
-    return names[lane] || lane;
+
+    const name = names[mappedLane];
+    return name || lane;
+  }
+
+  getLaneIcon(lane: string): string {
+    if (!lane) {
+      return '❓';
+    }
+
+    // ✅ CORREÇÃO: Normalizar lane para minúsculas e mapear para ícone
+    const normalizedLane = lane.toLowerCase().trim();
+    const mappedLane = normalizedLane === 'adc' ? 'bot' : normalizedLane;
+
+    const icons: { [key: string]: string } = {
+      'top': '⚔️',
+      'jungle': '🌲',
+      'mid': '⚡',
+      'bot': '🏹',
+      'support': '🛡️',
+      'fill': '🎲'
+    };
+
+    const icon = icons[mappedLane];
+    return icon || '❓';
   }
 
   getAssignedLaneDisplay(player: PlayerInfo): string {
+    // ✅ LOG FORÇADO: Este log DEVE aparecer
+
     if (player.isAutofill) {
       return `${this.getLaneIcon(player.assignedLane)} ${this.getLaneName(player.assignedLane)} (Auto)`;
     }
@@ -242,22 +264,16 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
       if (a.teamIndex !== undefined && b.teamIndex !== undefined) {
         return a.teamIndex - b.teamIndex;
       }
-      
-      // Fallback: ordenar por lane se teamIndex não estiver disponível
-      const laneOrder = ['top', 'jungle', 'mid', 'bot', 'support'];
-      const laneA = a.assignedLane || a.primaryLane || 'fill';
-      const laneB = b.assignedLane || b.primaryLane || 'fill';
-      
-      const indexA = laneOrder.indexOf(laneA);
-      const indexB = laneOrder.indexOf(laneB);
-      
-      if (indexA !== -1 && indexB !== -1) {
-        return indexA - indexB;
-      }
-      
-      if (indexA !== -1) return -1;
-      if (indexB !== -1) return 1;
-      
+
+      // ✅ CORREÇÃO: Normalizar lanes para minúsculas e mapear ADC -> bot
+      const normalizeAndMapLane = (lane: string) => {
+        const normalized = lane.toLowerCase();
+        return normalized === 'adc' ? 'bot' : normalized;
+      };
+
+      const laneA = normalizeAndMapLane(a.assignedLane || a.primaryLane || 'fill');
+      const laneB = normalizeAndMapLane(b.assignedLane || b.primaryLane || 'fill');
+
       return 0;
     });
   }
@@ -305,20 +321,13 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
    */
   isCurrentPlayer(player: PlayerInfo): boolean {
     if (!this.matchData) return false;
-    
+
     // ✅ CORREÇÃO: Usar lógica mais robusta para identificar o jogador atual
     // O jogador atual deve estar nos teammates (não nos enemies)
-    const isInTeammates = this.matchData.teammates.some(teammate => 
+    const isInTeammates = this.matchData.teammates.some(teammate =>
       teammate.summonerName === player.summonerName
     );
-    
-    console.log('🎮 [MatchFound] isCurrentPlayer check:', {
-      playerName: player.summonerName,
-      isInTeammates,
-      teammates: this.matchData.teammates.map(t => t.summonerName),
-      enemies: this.matchData.enemies.map(e => e.summonerName)
-    });
-    
+
     return isInTeammates;
   }
 
@@ -327,19 +336,11 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
    */
   getBlueTeamPlayers(): PlayerInfo[] {
     if (!this.matchData) return [];
-    
+
     // Se o jogador está no time azul, teammates são azul, enemies são vermelho
     // Se o jogador está no time vermelho, teammates são vermelho, enemies são azul
     const blueTeam = this.matchData.playerSide === 'blue' ? this.matchData.teammates : this.matchData.enemies;
-    
-    console.log('🎮 [MatchFound] getBlueTeamPlayers:', {
-      playerSide: this.matchData.playerSide,
-      teammatesCount: this.matchData.teammates?.length,
-      enemiesCount: this.matchData.enemies?.length,
-      blueTeamCount: blueTeam?.length,
-      blueTeam: blueTeam?.map(p => ({ name: p.summonerName, lane: p.assignedLane }))
-    });
-    
+
     return blueTeam;
   }
 
@@ -348,19 +349,11 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
    */
   getRedTeamPlayers(): PlayerInfo[] {
     if (!this.matchData) return [];
-    
+
     // Se o jogador está no time azul, teammates são azul, enemies são vermelho
     // Se o jogador está no time vermelho, teammates são vermelho, enemies são azul
     const redTeam = this.matchData.playerSide === 'blue' ? this.matchData.enemies : this.matchData.teammates;
-    
-    console.log('🎮 [MatchFound] getRedTeamPlayers:', {
-      playerSide: this.matchData.playerSide,
-      teammatesCount: this.matchData.teammates?.length,
-      enemiesCount: this.matchData.enemies?.length,
-      redTeamCount: redTeam?.length,
-      redTeam: redTeam?.map(p => ({ name: p.summonerName, lane: p.assignedLane }))
-    });
-    
+
     return redTeam;
   }
 
@@ -369,9 +362,9 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
    */
   getBlueTeamMMR(): number {
     if (!this.matchData) return 0;
-    
-    return this.matchData.playerSide === 'blue' 
-      ? this.matchData.averageMMR.yourTeam 
+
+    return this.matchData.playerSide === 'blue'
+      ? this.matchData.averageMMR.yourTeam
       : this.matchData.averageMMR.enemyTeam;
   }
 
@@ -380,9 +373,9 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
    */
   getRedTeamMMR(): number {
     if (!this.matchData) return 0;
-    
-    return this.matchData.playerSide === 'blue' 
-      ? this.matchData.averageMMR.enemyTeam 
+
+    return this.matchData.playerSide === 'blue'
+      ? this.matchData.averageMMR.enemyTeam
       : this.matchData.averageMMR.yourTeam;
   }
 }
