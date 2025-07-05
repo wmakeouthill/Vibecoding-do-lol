@@ -780,7 +780,14 @@ export class App implements OnInit, OnDestroy {
           console.log('⚠️ [App] Backend não retornou isCurrentPlayerInQueue');
         }
         
-        this.queueStatus = status;
+        // ✅ CORRIGIDO: Converter joinTime de Date para string se necessário
+        this.queueStatus = {
+          ...status,
+          playersInQueueList: status.playersInQueueList?.map(player => ({
+            ...player,
+            joinTime: typeof player.joinTime === 'string' ? player.joinTime : player.joinTime.toISOString()
+          }))
+        };
         
         // ✅ NOVO: Limpar flag após 5 segundos para permitir atualizações do QueueStateService
         setTimeout(() => {

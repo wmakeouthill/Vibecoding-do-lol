@@ -1156,20 +1156,26 @@ app.post('/api/capture-match/:playerId', (req: Request, res: Response) => {
 // Rotas de matchmaking
 app.get('/api/queue/status', async (req: Request, res: Response) => {
   try {
-    const queueStatus = await matchmakingService.getQueueStatus();
+    console.log('🔍 [API] Buscando status da fila...');
     
     // Verificar se tem dados do usuário atual para detecção na fila
     const { currentPlayerDisplayName } = req.query;
     
     if (currentPlayerDisplayName && typeof currentPlayerDisplayName === 'string') {
+      console.log(`🔍 [API] Buscando status da fila para jogador: ${currentPlayerDisplayName}`);
+      
+      // ✅ NOVO: Usar método que marca o jogador atual na lista
+      const queueStatusWithCurrentPlayer = await matchmakingService.getQueueStatusWithCurrentPlayer(currentPlayerDisplayName);
+      
       // Verificar se o usuário atual está na fila consultando a tabela queue_players
       const isCurrentPlayerInQueue = await matchmakingService.isPlayerInQueue(currentPlayerDisplayName);
       
       res.json({
-        ...queueStatus,
+        ...queueStatusWithCurrentPlayer,
         isCurrentPlayerInQueue
       });
     } else {
+      const queueStatus = await matchmakingService.getQueueStatus();
       res.json(queueStatus);
     }
   } catch (error: any) {

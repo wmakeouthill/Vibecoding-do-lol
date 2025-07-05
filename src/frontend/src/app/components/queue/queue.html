@@ -33,13 +33,13 @@
     </div>
     <div class="player-details">
               <h3>
-          {{ currentPlayer?.displayName || currentPlayer?.summonerName }}<span class="player-tag" *ngIf="!currentPlayer?.displayName">{{ getPlayerTag() }}</span>
+          {{ currentPlayer.displayName || currentPlayer.summonerName }}<span class="player-tag" *ngIf="!currentPlayer.displayName">{{ getPlayerTag() }}</span>
         </h3>
       <div class="player-stats">
-        <span class="mmr">{{ currentPlayer?.currentMMR || currentPlayer?.mmr || 'N/A' }} MMR</span>
+        <span class="mmr">{{ currentPlayer.currentMMR || currentPlayer.mmr || 'N/A' }} MMR</span>
         <span class="rank" *ngIf="currentPlayer?.rank">{{ getPlayerRankDisplay() }}</span>
         <span class="wins-losses" *ngIf="currentPlayer?.wins !== undefined && currentPlayer?.losses !== undefined">
-          {{ currentPlayer?.wins }}V / {{ currentPlayer?.losses }}D
+          {{ currentPlayer.wins }}V / {{ currentPlayer.losses }}D
         </span>
         <span class="queue-time" *ngIf="isInQueue">
           <i class="fas fa-clock"></i>
@@ -294,7 +294,7 @@
           <div style="font-size: 12px; color: #ff6b6b;">
             🐛 DEBUG: isInQueue = {{ isInQueue }}<br>
             🐛 currentPlayer = {{ currentPlayer?.displayName || 'null' }}<br>
-            🐛 playersInQueue = {{ queueStatus?.playersInQueue || 0 }}
+            🐛 playersInQueue = {{ queueStatus.playersInQueue || 0 }}
           </div>
           <button style="margin-top: 5px; padding: 5px 10px; background: #ff6b6b; color: white; border: none; border-radius: 3px; cursor: pointer;" 
                   (click)="refreshPlayersData()">

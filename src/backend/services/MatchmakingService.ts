@@ -34,6 +34,7 @@ interface QueuedPlayerInfo {
   mmr: number;
   queuePosition: number;
   joinTime: Date;
+  isCurrentPlayer?: boolean; // ✅ NOVO: Indica se este é o jogador atual
 }
 
 interface QueueActivity {
@@ -245,8 +246,7 @@ export class MatchmakingService {
   }
 
   /**
-   * REGRA 2: Estado da fila = presença de registro na tabela queue_players com is_active = 1
-   * A contagem total deve ser uma contagem direta de linhas (COUNT(*))
+   * REGRA 2: Buscar status da fila baseado na fila local
    */
   async getQueueStatus(): Promise<QueueStatus> {
     try {
@@ -271,7 +271,8 @@ export class MatchmakingService {
           secondaryLaneDisplay: this.getLaneDisplayName(player.preferences?.secondaryLane),
           mmr: player.currentMMR,
           queuePosition: player.queuePosition || 0,
-          joinTime: player.joinTime // ✅ CORRIGIDO: Será serializado automaticamente como string ISO no JSON
+          joinTime: player.joinTime, // ✅ CORRIGIDO: Será serializado automaticamente como string ISO no JSON
+          isCurrentPlayer: false // ✅ NOVO: Indica se este é o jogador atual
         };
       });
 
@@ -295,6 +296,41 @@ export class MatchmakingService {
         playersInQueueList: [],
         recentActivities: [...this.recentActivities]
       };
+    }
+  }
+
+  /**
+   * ✅ NOVO: Buscar status da fila com marcação do jogador atual
+   */
+  async getQueueStatusWithCurrentPlayer(currentPlayerDisplayName?: string): Promise<QueueStatus> {
+    try {
+      const queueStatus = await this.getQueueStatus();
+      
+      if (!currentPlayerDisplayName || !queueStatus.playersInQueueList) {
+        return queueStatus;
+      }
+
+      // Marcar o jogador atual na lista
+      const playersInQueueList = queueStatus.playersInQueueList.map(player => {
+        const playerFullName = player.tagLine ? `${player.summonerName}#${player.tagLine}` : player.summonerName;
+        const isCurrentPlayer = playerFullName === currentPlayerDisplayName || 
+                               player.summonerName === currentPlayerDisplayName ||
+                               playerFullName.toLowerCase() === currentPlayerDisplayName.toLowerCase() ||
+                               player.summonerName.toLowerCase() === currentPlayerDisplayName.toLowerCase();
+        
+        return {
+          ...player,
+          isCurrentPlayer
+        };
+      });
+
+      return {
+        ...queueStatus,
+        playersInQueueList
+      };
+    } catch (error) {
+      console.error('❌ [Queue Status] Erro ao buscar status com jogador atual:', error);
+      return await this.getQueueStatus();
     }
   }
 
@@ -556,7 +592,8 @@ export class MatchmakingService {
           secondaryLane: player.secondaryLane,
           mmr: player.mmr,
           queuePosition: player.queuePosition,
-          joinTime: player.joinTime.toISOString() // ✅ CORRIGIDO: Serializar como string ISO
+          joinTime: player.joinTime.toISOString(), // ✅ CORRIGIDO: Serializar como string ISO
+          isCurrentPlayer: player.isCurrentPlayer || false // ✅ NOVO: Incluir campo isCurrentPlayer
         })) || []
       };
 

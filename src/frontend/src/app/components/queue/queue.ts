@@ -123,6 +123,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
         const playerInQueue = changes.queueStatus.currentValue.playersInQueueList.find((p: any) => 
           p.summonerName === this.currentPlayer?.displayName || 
           p.summonerName === this.currentPlayer?.summonerName ||
+          p.isCurrentPlayer === true || // ✅ NOVO: Usar campo isCurrentPlayer do backend
           (p.summonerName && this.currentPlayer?.displayName && 
            p.summonerName.replace(/\s+/g, '').toLowerCase() === this.currentPlayer.displayName.replace(/\s+/g, '').toLowerCase())
         );
@@ -139,8 +140,8 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
           this.stopQueueTimer();
           this.queueTimer = 0;
         } else if (playerInQueue && this.isInQueue) {
-          // ✅ NOVO: Se já está na fila, sincronizar timer periodicamente
-          this.syncTimerWithPlayerData(playerInQueue);
+          // ✅ CORRIGIDO: Se já está na fila, sincronizar timer periodicamente sem resetar
+          this.syncTimerWithPlayerData(playerInQueue, false); // false = não resetar timer
         }
       }
       
@@ -156,7 +157,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
         queuePlayersCount: this.queueStatus?.playersInQueue || 0
       });
       
-      // ✅ NOVO: Iniciar/parar timer baseado no estado
+      // ✅ CORRIGIDO: Iniciar/parar timer baseado no estado sem resetar se já está rodando
       if (this.isInQueue && !this.timerInterval) {
         this.startQueueTimer();
       } else if (!this.isInQueue && this.timerInterval) {
@@ -588,7 +589,23 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   isCurrentPlayer(player: any): boolean {
-    return player?.isCurrentPlayer || false;
+    // ✅ PRIORIDADE 1: Usar campo isCurrentPlayer do backend (mais confiável)
+    if (player?.isCurrentPlayer === true) {
+      return true;
+    }
+    
+    // ✅ FALLBACK: Comparação manual como backup
+    if (!this.currentPlayer?.displayName) {
+      return false;
+    }
+    
+    const currentDisplayName = this.currentPlayer.displayName;
+    const playerFullName = player.tagLine ? `${player.summonerName}#${player.tagLine}` : player.summonerName;
+    
+    return playerFullName === currentDisplayName || 
+           player.summonerName === currentDisplayName ||
+           playerFullName.toLowerCase() === currentDisplayName.toLowerCase() ||
+           player.summonerName.toLowerCase() === currentDisplayName.toLowerCase();
   }
 
   getTimeInQueue(player: any): string {
@@ -635,7 +652,19 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       return false;
     }
     
-    // Buscar o usuário na lista da fila usando o linkedNickname
+    // ✅ PRIORIDADE 1: Se o usuário atual é o mesmo que está sendo checado e tem isCurrentPlayer=true
+    if (this.currentPlayer?.displayName && 
+        (linkedNickname === this.currentPlayer.displayName || 
+         linkedNickname.toLowerCase() === this.currentPlayer.displayName.toLowerCase())) {
+      const currentPlayerInQueue = this.queueStatus.playersInQueueList.find((player: any) => 
+        player.isCurrentPlayer === true
+      );
+      if (currentPlayerInQueue) {
+        return true;
+      }
+    }
+    
+    // ✅ PRIORIDADE 2: Buscar o usuário na lista da fila usando o linkedNickname
     const playerInQueue = this.queueStatus.playersInQueueList.find((player: any) => {
       const playerFullName = player.tagLine ? `${player.summonerName}#${player.tagLine}` : player.summonerName;
       
@@ -656,7 +685,8 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       console.log(`🔍 [Queue] Discord user ${user.username} queue status:`, {
         linkedNickname: linkedNickname,
         inQueue: inQueue,
-        playerFound: playerInQueue ? playerInQueue.summonerName : 'none'
+        playerFound: playerInQueue ? playerInQueue.summonerName : 'none',
+        isCurrentPlayer: playerInQueue?.isCurrentPlayer || false
       });
       user.lastQueueStatus = inQueue;
     }
@@ -745,7 +775,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   // ✅ NOVO: Sincronizar timer com dados do jogador na fila
-  private syncTimerWithPlayerData(playerData: any): void {
+  private syncTimerWithPlayerData(playerData: any, resetTimer: boolean = true): void {
     if (!playerData?.joinTime) {
       return;
     }
@@ -757,11 +787,30 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       
       if (diffMs >= 0) {
         const diffSeconds = Math.floor(diffMs / 1000);
-        this.queueTimer = diffSeconds;
-        console.log(`🔄 [Queue] Timer sincronizado: ${diffSeconds}s (${this.getTimerDisplay()})`);
+        const currentTimer = this.queueTimer;
+        
+        if (resetTimer) {
+          // Primeira sincronização - definir timer com o tempo real
+          this.queueTimer = diffSeconds;
+          console.log(`🔄 [Queue] Timer inicializado: ${diffSeconds}s (${this.getTimerDisplay()})`);
+        } else {
+          // Sincronização periódica - ajustar apenas se há diferença significativa
+          const timeDiff = Math.abs(diffSeconds - currentTimer);
+          
+          if (timeDiff > 2) { // Se diferença for maior que 2 segundos, sincronizar
+            this.queueTimer = diffSeconds;
+            console.log(`🔄 [Queue] Timer ajustado: ${currentTimer}s → ${diffSeconds}s (diferença: ${timeDiff}s)`);
+          } else {
+            // Diferença pequena, manter timer local para evitar "pulos"
+            console.log(`🔄 [Queue] Timer mantido: ${currentTimer}s (servidor: ${diffSeconds}s, diferença: ${timeDiff}s)`);
+          }
+        }
       }
     } catch (error) {
-      console.warn('⚠️ [Queue] Erro ao sincronizar timer:', error);
+      console.warn('⚠️ [Queue] Erro ao sincronizar timer:', error, {
+        joinTime: playerData.joinTime,
+        type: typeof playerData.joinTime
+      });
     }
   }
 } 

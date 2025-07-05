@@ -44,9 +44,12 @@ export interface QueuedPlayerInfo {
   tagLine?: string;
   primaryLane: string;
   secondaryLane: string;
+  primaryLaneDisplay: string;
+  secondaryLaneDisplay: string;
   mmr: number;
   queuePosition: number;
-  joinTime: Date;
+  joinTime: string; // ISO string
+  isCurrentPlayer?: boolean; // ✅ NOVO: Indica se este é o jogador atual
 }
 
 export interface QueueActivity {
