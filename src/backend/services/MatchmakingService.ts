@@ -1307,24 +1307,35 @@ export class MatchmakingService {
       const team1Players = team1.map(p => p.summonerName);
       const team2Players = team2.map(p => p.summonerName);
       
-      // Preparar dados do pick/ban
+      // ✅ CORREÇÃO: Preparar dados do pick/ban com teamIndex corretos
       const pickBanData = {
-        team1: team1.map(p => ({
+        team1: team1.map((p, index) => ({
           summonerName: p.summonerName,
           assignedLane: p.assignedLane,
-          teamIndex: p.teamIndex || 0,
-          isAutofill: p.isAutofill || false
+          teamIndex: index, // ✅ CORREÇÃO: Team1 sempre 0-4
+          isAutofill: p.isAutofill || false,
+          mmr: p.mmr,
+          primaryLane: p.primaryLane,
+          secondaryLane: p.secondaryLane
         })),
-        team2: team2.map(p => ({
+        team2: team2.map((p, index) => ({
           summonerName: p.summonerName,
           assignedLane: p.assignedLane,
-          teamIndex: p.teamIndex || 0,
-          isAutofill: p.isAutofill || false
+          teamIndex: index + 5, // ✅ CORREÇÃO: Team2 sempre 5-9
+          isAutofill: p.isAutofill || false,
+          mmr: p.mmr,
+          primaryLane: p.primaryLane,
+          secondaryLane: p.secondaryLane
         })),
         currentAction: 0,
         phase: 'bans',
         phases: []
       };
+      
+      console.log('🎯 [CreateMatch] Dados do pick/ban preparados:', {
+        team1: pickBanData.team1.map(p => ({ name: p.summonerName, lane: p.assignedLane, index: p.teamIndex })),
+        team2: pickBanData.team2.map(p => ({ name: p.summonerName, lane: p.assignedLane, index: p.teamIndex }))
+      });
       
       // Criar partida no banco com dados completos
       const matchId = await this.dbManager.createCustomMatch({
@@ -1645,24 +1656,63 @@ export class MatchmakingService {
       return null;
     }
     
-    // Balancear times por MMR mantendo lanes únicas
+    // ✅ CORREÇÃO: Organizar times por lanes e índices corretos
+    const laneOrder = ['top', 'jungle', 'mid', 'bot', 'support'];
     const team1: any[] = [];
     const team2: any[] = [];
     
-    // Distribuir alternadamente para balancear MMR
-    for (let i = 0; i < playersWithLanes.length; i++) {
-      const player = playersWithLanes[i];
-      
-      if (i % 2 === 0) {
-        team1.push(player);
-      } else {
-        team2.push(player);
-      }
-    }
+    // Separar jogadores por lanes
+    const playersByLane: { [key: string]: any[] } = {};
+    laneOrder.forEach(lane => {
+      // ✅ CORREÇÃO: Converter assignedLane para backend antes de filtrar
+      playersByLane[lane] = playersWithLanes.filter(p => this.mapLaneToBackend(p.assignedLane) === lane);
+    });
     
-    console.log('✅ [TeamBalance] Times balanceados:', {
-      team1: team1.map(p => ({ name: p.summonerName, lane: p.assignedLane, mmr: p.mmr, autofill: p.isAutofill })),
-      team2: team2.map(p => ({ name: p.summonerName, lane: p.assignedLane, mmr: p.mmr, autofill: p.isAutofill }))
+    // Distribuir cada lane entre os times (maior MMR no team1, menor no team2)
+    laneOrder.forEach((lane, laneIndex) => {
+      const lanePlayers = playersByLane[lane];
+      if (lanePlayers.length === 2) {
+        // Ordenar por MMR (maior primeiro)
+        lanePlayers.sort((a, b) => b.mmr - a.mmr);
+        
+        // ✅ CORREÇÃO: Definir teamIndex corretamente baseado na lane
+        // Team1 (azul): índices 0-4, Team2 (vermelho): índices 5-9
+        const team1Player = {
+          ...lanePlayers[0],
+          teamIndex: laneIndex, // 0=TOP, 1=JUNGLE, 2=MID, 3=ADC, 4=SUPPORT
+          assignedLane: this.mapLaneToFrontend(lane) // ✅ CORREÇÃO: Usar lane do frontend
+        };
+        
+        const team2Player = {
+          ...lanePlayers[1],
+          teamIndex: laneIndex + 5, // 5=TOP, 6=JUNGLE, 7=MID, 8=ADC, 9=SUPPORT
+          assignedLane: this.mapLaneToFrontend(lane) // ✅ CORREÇÃO: Usar lane do frontend
+        };
+        
+        team1.push(team1Player);
+        team2.push(team2Player);
+      }
+    });
+    
+    // ✅ CORREÇÃO: Ordenar times por teamIndex para garantir ordem correta
+    team1.sort((a, b) => a.teamIndex - b.teamIndex);
+    team2.sort((a, b) => a.teamIndex - b.teamIndex);
+    
+    console.log('✅ [TeamBalance] Times balanceados com índices corretos:', {
+      team1: team1.map(p => ({ 
+        name: p.summonerName, 
+        lane: p.assignedLane, 
+        mmr: p.mmr, 
+        teamIndex: p.teamIndex,
+        autofill: p.isAutofill 
+      })),
+      team2: team2.map(p => ({ 
+        name: p.summonerName, 
+        lane: p.assignedLane, 
+        mmr: p.mmr, 
+        teamIndex: p.teamIndex,
+        autofill: p.isAutofill 
+      }))
     });
     
     return { team1, team2 };
@@ -1670,29 +1720,39 @@ export class MatchmakingService {
 
   // ✅ NOVO: Atribuir lanes otimizado
   private assignLanesOptimized(players: any[]): any[] {
-    const laneOrder = ['top', 'jungle', 'mid', 'bot', 'support'];
-    const laneAssignments: { [key: string]: number } = { 'top': 0, 'jungle': 0, 'mid': 0, 'bot': 0, 'support': 0 };
+    // ✅ CORREÇÃO: Usar nomenclatura correta das lanes
+    const laneOrder = ['top', 'jungle', 'mid', 'bot', 'support']; // Ordem dos índices 0-4
+    const laneAssignments: { [key: string]: number } = { 
+      'top': 0, 'jungle': 0, 'mid': 0, 'bot': 0, 'support': 0 
+    };
     const playersWithLanes: any[] = [];
+    
+    console.log('🎯 [LaneAssign] Iniciando atribuição de lanes para', players.length, 'jogadores');
     
     // Primeira passada: atribuir lanes preferidas para jogadores com maior MMR
     for (const player of players) {
-      const primaryLane = player.primaryLane || 'fill';
-      const secondaryLane = player.secondaryLane || 'fill';
+      // ✅ CORREÇÃO: Mapear lanes do frontend para backend
+      const primaryLane = this.mapLaneToBackend(player.primaryLane || 'fill');
+      const secondaryLane = this.mapLaneToBackend(player.secondaryLane || 'fill');
       
       let assignedLane = null;
       let isAutofill = false;
+      
+      console.log(`🎯 [LaneAssign] Processando ${player.summonerName} (MMR: ${player.mmr}) - Preferências: ${primaryLane}/${secondaryLane}`);
       
       // Tentar lane primária
       if (primaryLane !== 'fill' && laneAssignments[primaryLane] < 2) {
         assignedLane = primaryLane;
         isAutofill = false;
         laneAssignments[primaryLane]++;
+        console.log(`✅ [LaneAssign] ${player.summonerName} → ${assignedLane} (primária)`);
       }
       // Tentar lane secundária
       else if (secondaryLane !== 'fill' && laneAssignments[secondaryLane] < 2) {
         assignedLane = secondaryLane;
         isAutofill = false;
         laneAssignments[secondaryLane]++;
+        console.log(`✅ [LaneAssign] ${player.summonerName} → ${assignedLane} (secundária)`);
       }
       // Autofill: encontrar primeira lane disponível
       else {
@@ -1701,24 +1761,62 @@ export class MatchmakingService {
             assignedLane = lane;
             isAutofill = true;
             laneAssignments[lane]++;
+            console.log(`🔄 [LaneAssign] ${player.summonerName} → ${assignedLane} (autofill)`);
             break;
           }
         }
       }
       
+      if (!assignedLane) {
+        console.error(`❌ [LaneAssign] Não foi possível atribuir lane para ${player.summonerName}`);
+        continue;
+      }
+      
       const playerWithLane = {
         ...player,
-        assignedLane,
+        assignedLane: this.mapLaneToFrontend(assignedLane), // ✅ CORREÇÃO: Converter de volta para frontend
         isAutofill
       };
       
       playersWithLanes.push(playerWithLane);
-      
-      console.log(`🎯 [LaneAssign] ${player.summonerName} (MMR: ${player.mmr}) → ${assignedLane} ${isAutofill ? '(autofill)' : '(preferência)'}`);
     }
     
     console.log('✅ [LaneAssign] Atribuição final:', laneAssignments);
+    console.log('✅ [LaneAssign] Jogadores com lanes:', playersWithLanes.map(p => ({
+      name: p.summonerName,
+      lane: p.assignedLane,
+      mmr: p.mmr,
+      autofill: p.isAutofill
+    })));
+    
     return playersWithLanes;
+  }
+
+  // ✅ NOVO: Mapear lanes do frontend para backend
+  private mapLaneToBackend(lane: string): string {
+    const mapping: { [key: string]: string } = {
+      'TOP': 'top',
+      'JUNGLE': 'jungle', 
+      'MID': 'mid',
+      'ADC': 'bot',
+      'SUPPORT': 'support',
+      'BOTTOM': 'bot', // Alias
+      'BOT': 'bot',    // Alias
+      'fill': 'fill'
+    };
+    return mapping[lane.toUpperCase()] || 'fill';
+  }
+
+  // ✅ NOVO: Mapear lanes do backend para frontend
+  private mapLaneToFrontend(lane: string): string {
+    const mapping: { [key: string]: string } = {
+      'top': 'TOP',
+      'jungle': 'JUNGLE',
+      'mid': 'MID', 
+      'bot': 'ADC',
+      'support': 'SUPPORT'
+    };
+    return mapping[lane] || 'FILL';
   }
 
 } 

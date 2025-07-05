@@ -362,19 +362,32 @@ export class App implements OnInit, OnDestroy {
 
   // ✅ NOVO: Converter dados do backend para PlayerInfo
   private convertPlayersToPlayerInfo(players: any[]): any[] {
-    return players.map((player: any, index: number) => ({
-      id: index,
-      summonerName: player.summonerName,
-      mmr: player.mmr || 1200,
-      primaryLane: player.primaryLane || 'fill',
-      secondaryLane: player.secondaryLane || 'fill',
-      assignedLane: player.assignedLane || 'fill',
-      teamIndex: player.teamIndex || index,
-      isAutofill: player.isAutofill || false,
-      riotIdGameName: player.gameName,
-      riotIdTagline: player.tagLine,
-      profileIconId: player.profileIconId
-    }));
+    console.log('🔄 [App] Convertendo players para PlayerInfo:', players);
+
+    return players.map((player: any, index: number) => {
+      const playerInfo = {
+        id: player.teamIndex || index, // ✅ USAR teamIndex do backend
+        summonerName: player.summonerName,
+        mmr: player.mmr || 1200,
+        primaryLane: player.primaryLane || 'fill',
+        secondaryLane: player.secondaryLane || 'fill',
+        assignedLane: player.assignedLane || 'FILL', // ✅ Lane já vem correta do backend
+        teamIndex: player.teamIndex || index, // ✅ Índice correto do backend
+        isAutofill: player.isAutofill || false,
+        riotIdGameName: player.gameName,
+        riotIdTagline: player.tagLine,
+        profileIconId: player.profileIconId
+      };
+
+      console.log(`🔄 [App] Player ${index}:`, {
+        name: playerInfo.summonerName,
+        lane: playerInfo.assignedLane,
+        teamIndex: playerInfo.teamIndex,
+        autofill: playerInfo.isAutofill
+      });
+
+      return playerInfo;
+    });
   }
 
   private handleAcceptanceProgress(data: any): void {
