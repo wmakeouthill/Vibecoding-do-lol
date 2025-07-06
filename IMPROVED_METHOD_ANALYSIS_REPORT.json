@@ -1,0 +1,655 @@
+{
+  "timestamp": "2025-07-06T06:00:50.437Z",
+  "duplicates": {
+    "initialize": [
+      {
+        "name": "initialize",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 212,
+        "file": "DiscordService.ts",
+        "fullMatch": "async initialize(token?: string): Promise<boolean> {"
+      },
+      {
+        "name": "initialize",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 40,
+        "file": "DraftService.ts",
+        "fullMatch": "async initialize(): Promise<void> {"
+      },
+      {
+        "name": "initialize",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 49,
+        "file": "GameInProgressService.ts",
+        "fullMatch": "async initialize(): Promise<void> {"
+      },
+      {
+        "name": "initialize",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 61,
+        "file": "LCUService.ts",
+        "fullMatch": "async initialize(): Promise<void> {"
+      },
+      {
+        "name": "initialize",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 23,
+        "file": "MatchFoundService.ts",
+        "fullMatch": "async initialize(): Promise<void> {"
+      },
+      {
+        "name": "initialize",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 90,
+        "file": "MatchmakingService.ts",
+        "fullMatch": "async initialize(): Promise<void> {"
+      }
+    ],
+    "broadcastQueueUpdate": [
+      {
+        "name": "broadcastQueueUpdate",
+        "visibility": "private",
+        "isAsync": false,
+        "line": 557,
+        "file": "DiscordService.ts",
+        "fullMatch": "private broadcastQueueUpdate(): void {"
+      },
+      {
+        "name": "broadcastQueueUpdate",
+        "visibility": "public",
+        "isAsync": true,
+        "line": 560,
+        "file": "MatchmakingService.ts",
+        "fullMatch": "public async broadcastQueueUpdate(force: boolean = false): Promise<void> {"
+      }
+    ],
+    "prepareDraftData": [
+      {
+        "name": "prepareDraftData",
+        "visibility": "private",
+        "isAsync": true,
+        "line": 128,
+        "file": "DraftService.ts",
+        "fullMatch": "private async prepareDraftData(matchId: number, team1Players: string[], team2Players: string[], queuePlayers: any[]): Promise<DraftData | null> {"
+      },
+      {
+        "name": "prepareDraftData",
+        "visibility": "private",
+        "isAsync": true,
+        "line": 1521,
+        "file": "MatchmakingService.ts",
+        "fullMatch": "private async prepareDraftData(matchId: number, team1Players: string[], team2Players: string[], queuePlayers: any[]): Promise<any | null> {"
+      }
+    ],
+    "balanceTeamsAndAssignLanes": [
+      {
+        "name": "balanceTeamsAndAssignLanes",
+        "visibility": "private",
+        "isAsync": false,
+        "line": 222,
+        "file": "DraftService.ts",
+        "fullMatch": "private balanceTeamsAndAssignLanes(players: any[]): {"
+      },
+      {
+        "name": "balanceTeamsAndAssignLanes",
+        "visibility": "private",
+        "isAsync": false,
+        "line": 1629,
+        "file": "MatchmakingService.ts",
+        "fullMatch": "private balanceTeamsAndAssignLanes(players: any[]): {"
+      }
+    ],
+    "assignLanesOptimized": [
+      {
+        "name": "assignLanesOptimized",
+        "visibility": "private",
+        "isAsync": false,
+        "line": 275,
+        "file": "DraftService.ts",
+        "fullMatch": "private assignLanesOptimized(players: any[]): any[] {"
+      },
+      {
+        "name": "assignLanesOptimized",
+        "visibility": "private",
+        "isAsync": false,
+        "line": 1723,
+        "file": "MatchmakingService.ts",
+        "fullMatch": "private assignLanesOptimized(players: any[]): any[] {"
+      }
+    ],
+    "processDraftAction": [
+      {
+        "name": "processDraftAction",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 327,
+        "file": "DraftService.ts",
+        "fullMatch": "async processDraftAction(matchId: number, playerId: number, championId: number, action: 'pick' | 'ban'): Promise<void> {"
+      },
+      {
+        "name": "processDraftAction",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 974,
+        "file": "MatchmakingService.ts",
+        "fullMatch": "async processDraftAction(matchId: number, playerId: number, championId: number, action: 'pick' | 'ban'): Promise<void> {"
+      }
+    ],
+    "finalizeDraft": [
+      {
+        "name": "finalizeDraft",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 351,
+        "file": "DraftService.ts",
+        "fullMatch": "async finalizeDraft(matchId: number, draftResults: any): Promise<void> {"
+      },
+      {
+        "name": "finalizeDraft",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 981,
+        "file": "MatchmakingService.ts",
+        "fullMatch": "async finalizeDraft(matchId: number, draftResults: any): Promise<void> {"
+      }
+    ],
+    "notifyDraftStarted": [
+      {
+        "name": "notifyDraftStarted",
+        "visibility": "private",
+        "isAsync": false,
+        "line": 402,
+        "file": "DraftService.ts",
+        "fullMatch": "private notifyDraftStarted(matchId: number, draftData: DraftData): void {"
+      },
+      {
+        "name": "notifyDraftStarted",
+        "visibility": "private",
+        "isAsync": false,
+        "line": 1237,
+        "file": "MatchmakingService.ts",
+        "fullMatch": "private notifyDraftStarted(matchId: number, teams: any): void {"
+      }
+    ],
+    "broadcastMessage": [
+      {
+        "name": "broadcastMessage",
+        "visibility": "private",
+        "isAsync": false,
+        "line": 454,
+        "file": "DraftService.ts",
+        "fullMatch": "private broadcastMessage(message: any): void {"
+      },
+      {
+        "name": "broadcastMessage",
+        "visibility": "private",
+        "isAsync": false,
+        "line": 470,
+        "file": "GameInProgressService.ts",
+        "fullMatch": "private broadcastMessage(message: any): void {"
+      },
+      {
+        "name": "broadcastMessage",
+        "visibility": "private",
+        "isAsync": false,
+        "line": 533,
+        "file": "MatchFoundService.ts",
+        "fullMatch": "private broadcastMessage(message: any): void {"
+      }
+    ],
+    "shutdown": [
+      {
+        "name": "shutdown",
+        "visibility": "inferred_public",
+        "isAsync": false,
+        "line": 501,
+        "file": "DraftService.ts",
+        "fullMatch": "shutdown(): void {"
+      },
+      {
+        "name": "shutdown",
+        "visibility": "inferred_public",
+        "isAsync": false,
+        "line": 497,
+        "file": "GameInProgressService.ts",
+        "fullMatch": "shutdown(): void {"
+      },
+      {
+        "name": "shutdown",
+        "visibility": "inferred_public",
+        "isAsync": false,
+        "line": 561,
+        "file": "MatchFoundService.ts",
+        "fullMatch": "shutdown(): void {"
+      },
+      {
+        "name": "shutdown",
+        "visibility": "public",
+        "isAsync": false,
+        "line": 784,
+        "file": "MatchmakingService.ts",
+        "fullMatch": "public shutdown(): void {"
+      }
+    ],
+    "finishGame": [
+      {
+        "name": "finishGame",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 182,
+        "file": "GameInProgressService.ts",
+        "fullMatch": "async finishGame(matchId: number, gameResult: GameResult): Promise<void> {"
+      },
+      {
+        "name": "finishGame",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 992,
+        "file": "MatchmakingService.ts",
+        "fullMatch": "async finishGame(matchId: number, gameResult: any): Promise<void> {"
+      }
+    ],
+    "startGameMonitoring": [
+      {
+        "name": "startGameMonitoring",
+        "visibility": "private",
+        "isAsync": false,
+        "line": 340,
+        "file": "GameInProgressService.ts",
+        "fullMatch": "private startGameMonitoring(): void {"
+      },
+      {
+        "name": "startGameMonitoring",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 402,
+        "file": "LCUService.ts",
+        "fullMatch": "async startGameMonitoring(): Promise<void> {"
+      }
+    ],
+    "getActiveGame": [
+      {
+        "name": "getActiveGame",
+        "visibility": "inferred_public",
+        "isAsync": false,
+        "line": 484,
+        "file": "GameInProgressService.ts",
+        "fullMatch": "getActiveGame(matchId: number): GameData | undefined {"
+      },
+      {
+        "name": "getActiveGame",
+        "visibility": "inferred_public",
+        "isAsync": false,
+        "line": 1014,
+        "file": "MatchmakingService.ts",
+        "fullMatch": "getActiveGame(matchId: number): any {"
+      }
+    ],
+    "getActiveGamesCount": [
+      {
+        "name": "getActiveGamesCount",
+        "visibility": "inferred_public",
+        "isAsync": false,
+        "line": 487,
+        "file": "GameInProgressService.ts",
+        "fullMatch": "getActiveGamesCount(): number {"
+      },
+      {
+        "name": "getActiveGamesCount",
+        "visibility": "inferred_public",
+        "isAsync": false,
+        "line": 1017,
+        "file": "MatchmakingService.ts",
+        "fullMatch": "getActiveGamesCount(): number {"
+      }
+    ],
+    "getActiveGamesList": [
+      {
+        "name": "getActiveGamesList",
+        "visibility": "inferred_public",
+        "isAsync": false,
+        "line": 491,
+        "file": "GameInProgressService.ts",
+        "fullMatch": "getActiveGamesList(): GameData[] {"
+      },
+      {
+        "name": "getActiveGamesList",
+        "visibility": "inferred_public",
+        "isAsync": false,
+        "line": 1021,
+        "file": "MatchmakingService.ts",
+        "fullMatch": "getActiveGamesList(): any[] {"
+      }
+    ],
+    "getMatchHistory": [
+      {
+        "name": "getMatchHistory",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 734,
+        "file": "LCUService.ts",
+        "fullMatch": "async getMatchHistory(startIndex: number = 0, count: number = 20): Promise<any[]> {"
+      },
+      {
+        "name": "getMatchHistory",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 367,
+        "file": "RiotAPIService.ts",
+        "fullMatch": "async getMatchHistory(puuid: string, region: string, count: number = 20, startTime?: number, endTime?: number, queue?: number): Promise<string[]> {"
+      }
+    ],
+    "getMatchDetails": [
+      {
+        "name": "getMatchDetails",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 793,
+        "file": "LCUService.ts",
+        "fullMatch": "async getMatchDetails(gameId: number): Promise<any | null> {"
+      },
+      {
+        "name": "getMatchDetails",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 397,
+        "file": "RiotAPIService.ts",
+        "fullMatch": "async getMatchDetails(matchId: string, region: string): Promise<any> {"
+      }
+    ],
+    "acceptMatch": [
+      {
+        "name": "acceptMatch",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 132,
+        "file": "MatchFoundService.ts",
+        "fullMatch": "async acceptMatch(matchId: number, summonerName: string): Promise<void> {"
+      },
+      {
+        "name": "acceptMatch",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 1027,
+        "file": "MatchmakingService.ts",
+        "fullMatch": "async acceptMatch(playerId: number, matchId: number, summonerName?: string): Promise<void> {"
+      }
+    ],
+    "declineMatch": [
+      {
+        "name": "declineMatch",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 160,
+        "file": "MatchFoundService.ts",
+        "fullMatch": "async declineMatch(matchId: number, summonerName: string): Promise<void> {"
+      },
+      {
+        "name": "declineMatch",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 1044,
+        "file": "MatchmakingService.ts",
+        "fullMatch": "async declineMatch(playerId: number, matchId: number, summonerName?: string): Promise<void> {"
+      }
+    ],
+    "notifyMatchCancelled": [
+      {
+        "name": "notifyMatchCancelled",
+        "visibility": "private",
+        "isAsync": false,
+        "line": 499,
+        "file": "MatchFoundService.ts",
+        "fullMatch": "private notifyMatchCancelled(matchId: number, declinedPlayers: string[]): void {"
+      },
+      {
+        "name": "notifyMatchCancelled",
+        "visibility": "private",
+        "isAsync": false,
+        "line": 1214,
+        "file": "MatchmakingService.ts",
+        "fullMatch": "private notifyMatchCancelled(matchId?: number, declinedPlayers?: string[]): void {"
+      }
+    ],
+    "getPlayerStats": [
+      {
+        "name": "getPlayerStats",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 261,
+        "file": "MatchHistoryService.ts",
+        "fullMatch": "async getPlayerStats(playerId: number): Promise<any> {"
+      },
+      {
+        "name": "getPlayerStats",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 78,
+        "file": "PlayerService.ts",
+        "fullMatch": "async getPlayerStats(playerId: string): Promise<any> {"
+      }
+    ]
+  },
+  "unusedMethods": [
+    {
+      "method": {
+        "name": "getChampionById",
+        "visibility": "inferred_public",
+        "isAsync": false,
+        "line": 126,
+        "file": "DataDragonService.ts",
+        "fullMatch": "getChampionById(championId: number): ChampionData | null {"
+      },
+      "usageCount": 1
+    },
+    {
+      "method": {
+        "name": "reloadChampions",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 153,
+        "file": "DataDragonService.ts",
+        "fullMatch": "async reloadChampions(): Promise<void> {"
+      },
+      "usageCount": 1
+    },
+    {
+      "method": {
+        "name": "getCurrentChannelName",
+        "visibility": "inferred_public",
+        "isAsync": false,
+        "line": 161,
+        "file": "DiscordService.ts",
+        "fullMatch": "getCurrentChannelName(): string {"
+      },
+      "usageCount": 1
+    },
+    {
+      "method": {
+        "name": "broadcastUsersInChannelImmediate",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 1144,
+        "file": "DiscordService.ts",
+        "fullMatch": "async broadcastUsersInChannelImmediate(): Promise<void> {"
+      },
+      "usageCount": 1
+    },
+    {
+      "method": {
+        "name": "stopGameMonitoring",
+        "visibility": "inferred_public",
+        "isAsync": false,
+        "line": 500,
+        "file": "LCUService.ts",
+        "fullMatch": "stopGameMonitoring(): void {"
+      },
+      "usageCount": 1
+    },
+    {
+      "method": {
+        "name": "createCustomLobby",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 570,
+        "file": "LCUService.ts",
+        "fullMatch": "async createCustomLobby(gameMode: string = 'CLASSIC'): Promise<any> {"
+      },
+      "usageCount": 1
+    },
+    {
+      "method": {
+        "name": "invitePlayersToLobby",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 602,
+        "file": "LCUService.ts",
+        "fullMatch": "async invitePlayersToLobby(summonerNames: string[]): Promise<void> {"
+      },
+      "usageCount": 1
+    },
+    {
+      "method": {
+        "name": "getCurrentSummonerWithRiotData",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 624,
+        "file": "LCUService.ts",
+        "fullMatch": "async getCurrentSummonerWithRiotData(): Promise<any> {"
+      },
+      "usageCount": 1
+    },
+    {
+      "method": {
+        "name": "getCurrentRank",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 841,
+        "file": "LCUService.ts",
+        "fullMatch": "async getCurrentRank(): Promise<any> {"
+      },
+      "usageCount": 1
+    },
+    {
+      "method": {
+        "name": "saveCustomMatchResult",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 855,
+        "file": "LCUService.ts",
+        "fullMatch": "async saveCustomMatchResult(matchData: any): Promise<void> {"
+      },
+      "usageCount": 1
+    },
+    {
+      "method": {
+        "name": "getPublicSummonerData",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 17,
+        "file": "MatchHistoryService.ts",
+        "fullMatch": "async getPublicSummonerData(summonerName: string, region: string = 'br1'): Promise<any> {"
+      },
+      "usageCount": 1
+    },
+    {
+      "method": {
+        "name": "getPlayerMatchHistory",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 251,
+        "file": "MatchHistoryService.ts",
+        "fullMatch": "async getPlayerMatchHistory(playerId: number, limit: number = 10): Promise<any[]> {"
+      },
+      "usageCount": 1
+    },
+    {
+      "method": {
+        "name": "forceQueueUpdate",
+        "visibility": "public",
+        "isAsync": true,
+        "line": 780,
+        "file": "MatchmakingService.ts",
+        "fullMatch": "public async forceQueueUpdate(): Promise<void> {"
+      },
+      "usageCount": 1
+    },
+    {
+      "method": {
+        "name": "isServiceActive",
+        "visibility": "public",
+        "isAsync": false,
+        "line": 800,
+        "file": "MatchmakingService.ts",
+        "fullMatch": "public isServiceActive(): boolean {"
+      },
+      "usageCount": 1
+    },
+    {
+      "method": {
+        "name": "registerPlayer",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 10,
+        "file": "PlayerService.ts",
+        "fullMatch": "async registerPlayer(summonerName: string, region: string): Promise<any> {"
+      },
+      "usageCount": 1
+    },
+    {
+      "method": {
+        "name": "updatePlayerFromRiotAPI",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 106,
+        "file": "PlayerService.ts",
+        "fullMatch": "async updatePlayerFromRiotAPI(playerId: number): Promise<any> {"
+      },
+      "usageCount": 1
+    },
+    {
+      "method": {
+        "name": "searchPlayers",
+        "visibility": "inferred_public",
+        "isAsync": true,
+        "line": 385,
+        "file": "PlayerService.ts",
+        "fullMatch": "async searchPlayers(query: string): Promise<any[]> {"
+      },
+      "usageCount": 1
+    }
+  ],
+  "importantDuplicates": [
+    "initialize",
+    "broadcastQueueUpdate",
+    "processDraftAction",
+    "finalizeDraft",
+    "shutdown",
+    "finishGame",
+    "startGameMonitoring",
+    "getActiveGame",
+    "getActiveGamesCount",
+    "getActiveGamesList",
+    "getMatchHistory",
+    "getMatchDetails",
+    "acceptMatch",
+    "declineMatch",
+    "getPlayerStats"
+  ],
+  "statistics": {
+    "totalMethods": 229,
+    "duplicateMethodNames": 21,
+    "publicDuplicates": 15,
+    "potentiallyUnused": 17,
+    "publicMethods": 125,
+    "privateMethods": 104,
+    "asyncMethods": 134,
+    "filesAnalyzed": 11
+  }
+}

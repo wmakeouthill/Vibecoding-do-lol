@@ -777,6 +777,10 @@ export class MatchmakingService {
     }
   }
 
+  public async forceQueueUpdate(): Promise<void> {
+    await this.broadcastQueueUpdate(true);
+  }
+
   public shutdown(): void {
     this.isActive = false;
 
@@ -791,6 +795,10 @@ export class MatchmakingService {
     this.gameInProgressService.shutdown();
 
     console.log('🛑 MatchmakingService desligado (Refatorado)');
+  }
+
+  public isServiceActive(): boolean {
+    return this.isActive;
   }
 
   // ✅ ATUALIZADO: Método para obter fila atual
@@ -965,8 +973,33 @@ export class MatchmakingService {
     // Implementar lógica de cancelamento se necessário
   }
 
+  async processDraftAction(matchId: number, playerId: number, championId: number, action: 'pick' | 'ban'): Promise<void> {
+    console.log(`🎯 [Matchmaking] Redirecionando ação de draft para DraftService`);
+    await this.draftService.processDraftAction(matchId, playerId, championId, action);
+  }
+
   // ✅ NOVO: Finalizar draft usando DraftService
+  async finalizeDraft(matchId: number, draftResults: any): Promise<void> {
+    try {
+      console.log(`🏁 [Matchmaking] Redirecionando finalização de draft para DraftService`);
+      await this.draftService.finalizeDraft(matchId, draftResults);
+    } catch (error) {
+      console.error('❌ [Matchmaking] Erro ao finalizar draft:', error);
+      throw error;
+    }
+  }
+
   // ✅ NOVO: Finalizar jogo usando GameInProgressService
+  async finishGame(matchId: number, gameResult: any): Promise<void> {
+    try {
+      console.log(`🏁 [Matchmaking] Redirecionando finalização de jogo para GameInProgressService`);
+      await this.gameInProgressService.finishGame(matchId, gameResult);
+    } catch (error) {
+      console.error('❌ [Matchmaking] Erro ao finalizar jogo:', error);
+      throw error;
+    }
+  }
+
   // ✅ NOVO: Cancelar jogo usando GameInProgressService
   async cancelGameInProgress(matchId: number, reason: string): Promise<void> {
     try {
@@ -979,8 +1012,52 @@ export class MatchmakingService {
   }
 
   // ✅ NOVO: Métodos de consulta dos serviços
+  getActiveGame(matchId: number): any {
+    return this.gameInProgressService.getActiveGame(matchId);
+  }
+
+  getActiveGamesCount(): number {
+    return this.gameInProgressService.getActiveGamesCount();
+  }
+
+  getActiveGamesList(): any[] {
+    return this.gameInProgressService.getActiveGamesList();
+  }
+
   // ✅ NOVO: Aceitar partida usando MatchFoundService
+  async acceptMatch(playerId: number, matchId: number, summonerName?: string): Promise<void> {
+    try {
+      console.log(`✅ [Matchmaking] Redirecionando aceitação para MatchFoundService: ${summonerName || playerId}`);
+      
+      if (!summonerName) {
+        throw new Error('summonerName é obrigatório para aceitar partida');
+      }
+      
+      await this.matchFoundService.acceptMatch(matchId, summonerName);
+      
+    } catch (error) {
+      console.error('❌ [Matchmaking] Erro ao aceitar partida:', error);
+      throw error;
+    }
+  }
+
   // ✅ ATUALIZADO: Recusar partida usando MatchFoundService
+  async declineMatch(playerId: number, matchId: number, summonerName?: string): Promise<void> {
+    try {
+      console.log(`❌ [Matchmaking] Redirecionando recusa para MatchFoundService: ${summonerName || playerId}`);
+      
+      if (!summonerName) {
+        throw new Error('summonerName é obrigatório para recusar partida');
+      }
+      
+      await this.matchFoundService.declineMatch(matchId, summonerName);
+      
+    } catch (error) {
+      console.error('❌ [Matchmaking] Erro ao recusar partida:', error);
+      throw error;
+    }
+  }
+
   // ✅ NOVO: Método para criar partida quando frontend detecta 10 jogadores
   async createMatchFromFrontend(matchData: any): Promise<number> {
     console.log('🎮 [Match] Criando partida a partir do frontend:', matchData);
@@ -1101,7 +1178,7 @@ export class MatchmakingService {
             console.log(`🤖 [AutoAccept] Aceitando automaticamente partida ${matchId} para bot: ${playerName}`);
             
             // Aceitar a partida para o bot
-            await this.matchFoundService.acceptMatch(matchId, playerName);
+            await this.acceptMatch(-1, matchId, playerName);
             acceptedBots++;
             
             // Aguardar um pouco entre aceitações para não sobrecarregar
@@ -1134,7 +1211,51 @@ export class MatchmakingService {
    }
 
    // ✅ NOVO: Notificar frontend que partida foi cancelada
+   private notifyMatchCancelled(matchId?: number, declinedPlayers?: string[]): void {
+    if (this.wss) {
+      const message = {
+        type: 'match_cancelled',
+        data: {
+          matchId,
+          declinedPlayers,
+          message: 'Partida cancelada devido a recusas. Jogadores que recusaram foram removidos da fila.',
+          timestamp: Date.now()
+        }
+      };
+      
+      this.wss.clients.forEach((client: any) => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify(message));
+        }
+      });
+      
+      console.log(`📢 [AcceptanceMonitor] Notificação de cancelamento enviada para partida ${matchId}`);
+    }
+  }
+
   // ✅ NOVO: Notificar frontend que draft iniciou com dados completos
+  private notifyDraftStarted(matchId: number, teams: any): void {
+    if (this.wss) {
+      const message = {
+        type: 'draft_started',
+        data: {
+          matchId,
+          teams,
+          message: 'Draft iniciado! Todos os jogadores aceitaram a partida.',
+          timestamp: Date.now()
+        }
+      };
+      
+      this.wss.clients.forEach((client: any) => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify(message));
+        }
+      });
+      
+      console.log(`📢 [AcceptanceMonitor] Notificação de draft iniciado enviada para partida ${matchId}`);
+    }
+  }
+
   // ✅ NOVO: Balancear times por MMR e lanes
   private balanceTeamsByMMRAndLanes(players: any[]): { team1: any[], team2: any[] } | null {
     console.log('🎯 [Matchmaking] Balanceando times por MMR e lanes...');
@@ -1397,6 +1518,113 @@ export class MatchmakingService {
   }
 
   // ✅ NOVO: Preparar dados completos para o draft
+  private async prepareDraftData(matchId: number, team1Players: string[], team2Players: string[], queuePlayers: any[]): Promise<any | null> {
+    console.log(`🎯 [DraftPrep] Preparando dados do draft para partida ${matchId}...`);
+    
+    try {
+      // Criar mapa de dados dos jogadores
+      const playerDataMap = new Map<string, any>();
+      
+      for (const queuePlayer of queuePlayers) {
+        const playerData = {
+          summonerName: queuePlayer.summoner_name,
+          mmr: queuePlayer.custom_lp || 0,
+          primaryLane: queuePlayer.primary_lane || 'fill',
+          secondaryLane: queuePlayer.secondary_lane || 'fill'
+        };
+        playerDataMap.set(queuePlayer.summoner_name, playerData);
+      }
+
+      // Preparar dados dos times com informações completas
+      const team1Data = team1Players.map(playerName => {
+        const data = playerDataMap.get(playerName);
+        if (!data) {
+          console.warn(`⚠️ [DraftPrep] Dados não encontrados para jogador: ${playerName}`);
+          return {
+            summonerName: playerName,
+            mmr: 1000,
+            primaryLane: 'fill',
+            secondaryLane: 'fill'
+          };
+        }
+        return data;
+      });
+
+      const team2Data = team2Players.map(playerName => {
+        const data = playerDataMap.get(playerName);
+        if (!data) {
+          console.warn(`⚠️ [DraftPrep] Dados não encontrados para jogador: ${playerName}`);
+          return {
+            summonerName: playerName,
+            mmr: 1000,
+            primaryLane: 'fill',
+            secondaryLane: 'fill'
+          };
+        }
+        return data;
+      });
+
+      // Balancear times e atribuir lanes baseado em MMR e preferências
+      const balancedData = this.balanceTeamsAndAssignLanes([...team1Data, ...team2Data]);
+      
+      if (!balancedData) {
+        console.error('❌ [DraftPrep] Erro ao balancear times e atribuir lanes');
+        return null;
+      }
+
+      // Calcular MMR médio dos times
+      const team1MMR = balancedData.team1.reduce((sum, p) => sum + p.mmr, 0) / balancedData.team1.length;
+      const team2MMR = balancedData.team2.reduce((sum, p) => sum + p.mmr, 0) / balancedData.team2.length;
+
+      // Preparar dados completos do draft
+      const draftData = {
+        matchId,
+        team1: balancedData.team1.map((p, index) => ({
+          summonerName: p.summonerName,
+          assignedLane: p.assignedLane,
+          teamIndex: index, // 0-4 para team1
+          mmr: p.mmr,
+          primaryLane: p.primaryLane,
+          secondaryLane: p.secondaryLane,
+          isAutofill: p.isAutofill
+        })),
+        team2: balancedData.team2.map((p, index) => ({
+          summonerName: p.summonerName,
+          assignedLane: p.assignedLane,
+          teamIndex: index + 5, // 5-9 para team2
+          mmr: p.mmr,
+          primaryLane: p.primaryLane,
+          secondaryLane: p.secondaryLane,
+          isAutofill: p.isAutofill
+        })),
+        averageMMR: {
+          team1: team1MMR,
+          team2: team2MMR
+        },
+        balanceQuality: Math.abs(team1MMR - team2MMR), // Diferença de MMR entre times
+        autofillCount: balancedData.team1.filter(p => p.isAutofill).length + 
+                       balancedData.team2.filter(p => p.isAutofill).length,
+        createdAt: new Date().toISOString()
+      };
+
+      console.log(`✅ [DraftPrep] Dados do draft preparados:`, {
+        matchId,
+        team1MMR: Math.round(team1MMR),
+        team2MMR: Math.round(team2MMR),
+        balanceQuality: Math.round(draftData.balanceQuality),
+        autofillCount: draftData.autofillCount,
+        team1Lanes: draftData.team1.map(p => p.assignedLane),
+        team2Lanes: draftData.team2.map(p => p.assignedLane)
+      });
+
+      return draftData;
+
+    } catch (error) {
+      console.error(`❌ [DraftPrep] Erro ao preparar dados do draft:`, error);
+      return null;
+    }
+  }
+
   // ✅ NOVO: Balancear times e atribuir lanes baseado em MMR e preferências
   private balanceTeamsAndAssignLanes(players: any[]): { team1: any[], team2: any[] } | null {
     console.log('🎯 [TeamBalance] Balanceando times e atribuindo lanes...');

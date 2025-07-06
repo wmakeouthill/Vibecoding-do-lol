@@ -499,6 +499,14 @@ export class LCUService {
     }
   }
 
+  stopGameMonitoring(): void {
+    if (this.gameMonitorInterval) {
+      clearInterval(this.gameMonitorInterval);
+      this.gameMonitorInterval = null;
+      console.log('⏹️ Monitoramento de partidas parado');
+    }
+  }
+
   // ========== MÉTODOS AUXILIARES ==========
 
   async getClientStatus(): Promise<any> {
@@ -558,6 +566,55 @@ export class LCUService {
       };
     } catch (error) {
       throw new Error('Erro ao obter status do cliente');
+    }
+  }
+
+  async createCustomLobby(gameMode: string = 'CLASSIC'): Promise<any> {
+    if (!this.client) {
+      throw new Error('Cliente LCU não conectado');
+    }
+
+    const lobbyConfig = {
+      customGameLobby: {
+        configuration: {
+          gameMode: gameMode,
+          gameMutator: '',
+          gameServerRegion: '',
+          mapId: 11,
+          mutators: { id: 1 },
+          spectatorPolicy: 'AllAllowed',
+          teamSize: 5
+        },
+        lobbyName: 'Matchmaking Custom Game',
+        lobbyPassword: ''
+      },
+      isCustom: true
+    };
+
+    try {
+      const response = await this.client.post('/lol-lobby/v2/lobby', lobbyConfig);
+      console.log('🎮 Lobby customizado criado com sucesso');
+      return response.data;
+    } catch (error: any) {
+      console.error('Erro ao criar lobby:', error.response?.data || error.message);
+      throw new Error('Erro ao criar lobby customizado');
+    }
+  }
+
+  async invitePlayersToLobby(summonerNames: string[]): Promise<void> {
+    if (!this.client) {
+      throw new Error('Cliente LCU não conectado');
+    }
+
+    for (const summonerName of summonerNames) {
+      try {
+        await this.client.post('/lol-lobby/v2/lobby/invitations', {
+          toSummonerName: summonerName
+        });
+        console.log(`✉️ Convite enviado para ${summonerName}`);
+      } catch (error: any) {
+        console.error(`❌ Erro ao convidar ${summonerName}:`, error.response?.data || error.message);
+      }
     }
   }
 
@@ -796,4 +853,36 @@ export class LCUService {
   }
 
   // Método para salvar resultado de partida customizada
+  async saveCustomMatchResult(matchData: any): Promise<void> {
+    if (!this.dbManager) {
+      console.log('DatabaseManager não configurado para salvar partida customizada');
+      return;
+    }
+
+    try {
+      console.log('💾 Salvando resultado de partida customizada:', matchData);
+
+      // Create match in database
+      const matchId = await this.dbManager.createMatch(
+        matchData.team1Players || [],
+        matchData.team2Players || [],
+        matchData.averageMMR1 || 1200,
+        matchData.averageMMR2 || 1200
+      );
+
+      // If match is completed, mark it as such
+      if (matchData.completed && matchData.winner) {
+        await this.dbManager.completeMatch(
+          matchId,
+          matchData.winner,
+          matchData.mmrChanges || {}
+        );
+
+        console.log(`✅ Partida customizada ${matchId} salva com sucesso`);
+      }
+
+    } catch (error) {
+      console.error('❌ Erro ao salvar partida customizada:', error);
+    }
+  }
 }

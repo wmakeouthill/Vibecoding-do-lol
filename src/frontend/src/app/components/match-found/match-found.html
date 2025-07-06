@@ -89,6 +89,9 @@
         <div class="timer-circle" [class.urgent]="isTimerUrgent">
           <span class="time-left">{{ acceptTimeLeft }}</span>
         </div>
+        <div class="timer-message">
+          <p>Você tem {{ acceptTimeLeft }} segundos para aceitar</p>
+        </div>
       </div>
 
       <div class="action-buttons">
@@ -98,7 +101,7 @@
         </button>
         <button class="decline-btn" (click)="onDeclineMatch()">
           <i class="icon-close"></i>
-          Recusar
+          Recusar e Sair da Fila
         </button>
       </div>
     </div>

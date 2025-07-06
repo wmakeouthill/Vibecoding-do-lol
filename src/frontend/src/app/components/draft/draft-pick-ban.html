@@ -4,9 +4,9 @@
     <div class="session-info">
       <h2>🏆 Seleção de Campeões</h2>
       <div class="phase-indicator">
-        <span class="current-phase">{{ session | currentPhaseText }}</span>
+        <span class="current-phase">{{ getCurrentPhaseText(session) }}</span>
         <div class="progress-bar">
-          <div class="progress-fill" [style.width.%]="session | phaseProgress"></div>
+          <div class="progress-fill" [style.width.%]="getPhaseProgress(session)"></div>
         </div>
       </div>
     </div>
@@ -55,7 +55,7 @@
                 {{ player.summonerName || player.name || 'Jogador' }}
                 <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
               </span>
-              <span class="player-lane">{{ player.lane | laneDisplay }}</span>
+              <span class="player-lane">{{ getLaneDisplay(player.lane) }}</span>
             </div>
           </ng-container>
           <ng-template #emptySlot>
@@ -66,7 +66,7 @@
                 {{ player.summonerName || player.name || 'Jogador' }}
                 <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
               </span>
-              <span class="player-lane">{{ player.lane | laneDisplay }}</span>
+              <span class="player-lane">{{ getLaneDisplay(player.lane) }}</span>
             </div>
           </ng-template>
         </div>
@@ -113,7 +113,7 @@
                 {{ player.summonerName || player.name || 'Jogador' }}
                 <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
               </span>
-              <span class="player-lane">{{ player.lane | laneDisplay }}</span>
+              <span class="player-lane">{{ getLaneDisplay(player.lane) }}</span>
             </div>
           </ng-container>
           <ng-template #emptySlot>
@@ -124,7 +124,7 @@
                 {{ player.summonerName || player.name || 'Jogador' }}
                 <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
               </span>
-              <span class="player-lane">{{ player.lane | laneDisplay }}</span>
+              <span class="player-lane">{{ getLaneDisplay(player.lane) }}</span>
             </div>
           </ng-template>
         </div>
@@ -135,14 +135,14 @@
   <!-- Action Buttons -->
   <div class="action-buttons" *ngIf="session">
     <div class="buttons-container">
-      <button class="btn btn-success btn-lg" 
+      <button class="btn btn-success btn-lg"
               (click)="openConfirmationModal()"
               [disabled]="session.phase !== 'completed'">
         <span class="btn-icon">✅</span>
         <span class="btn-text">Ir para Confirmação</span>
       </button>
-      
-      <button class="btn btn-danger btn-lg" 
+
+      <button class="btn btn-danger btn-lg"
               (click)="cancelPickBan()">
         <span class="btn-icon">❌</span>
         <span class="btn-text">Cancelar</span>

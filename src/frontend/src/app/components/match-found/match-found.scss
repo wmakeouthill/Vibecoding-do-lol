@@ -298,7 +298,7 @@
       background: linear-gradient(135deg, #3498db, #2980b9);
       position: relative;
       animation: timerPulse 2s ease-in-out infinite;
-      box-shadow: 
+      box-shadow:
         0 0 20px rgba(52, 152, 219, 0.4),
         inset 0 0 20px rgba(255, 255, 255, 0.1);
 
@@ -319,7 +319,7 @@
       &.urgent {
         background: linear-gradient(135deg, #e74c3c, #c0392b);
         animation: timerPulseUrgent 1s ease-in-out infinite;
-        box-shadow: 
+        box-shadow:
           0 0 25px rgba(231, 76, 60, 0.6),
           inset 0 0 25px rgba(255, 255, 255, 0.15);
 
@@ -397,6 +397,7 @@
       }
     }
   }
+
 }
 
 .match-balance {
@@ -462,6 +463,24 @@
         }
       }
     }
+  }
+}
+
+.timer-message {
+  text-align: center;
+  margin-top: 0.5rem;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.9rem;
+  font-weight: 500;
+
+  p {
+    margin: 0;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.8; }
+    50% { opacity: 1; }
   }
 }
 

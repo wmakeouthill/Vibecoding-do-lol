@@ -83,6 +83,9 @@ export class App implements OnInit, OnDestroy {
 
   private destroy$ = new Subject<void>();
   private lastIgnoreLogTime = 0;
+  private lastTimerUpdate = 0; // ✅ NOVO: Throttle para timer updates
+  private lastMatchId: number | null = null; // ✅ NOVO: Rastrear última partida processada
+  private lastMessageTimestamp = 0; // ✅ NOVO: Throttle para mensagens backend
 
   // ✅ NOVO: Controle de auto-refresh para sincronizar com o queue component
   private autoRefreshEnabled = false;
@@ -182,13 +185,26 @@ export class App implements OnInit, OnDestroy {
   private handleBackendMessage(message: any): void {
     console.log('🔍 [App] === handleBackendMessage ===');
     console.log('🔍 [App] Tipo da mensagem:', message.type);
-    console.log('🔍 [App] Dados da mensagem:', JSON.stringify(message, null, 2));
+    console.log('🔍 [App] Timestamp da mensagem:', Date.now());
+
+    // ✅ NOVO: Throttle geral para mensagens backend (evitar spam)
+    const now = Date.now();
+    if (message.type === 'match_found' || message.type === 'match_timer_update') {
+      const timeSinceLastMessage = now - this.lastMessageTimestamp;
+      if (timeSinceLastMessage < 1000) { // Máximo 1 mensagem por segundo
+        console.log('🔍 [App] Throttling mensagem backend - muito frequente');
+        console.log('🔍 [App] Tipo:', message.type, 'Intervalo:', timeSinceLastMessage + 'ms');
+        return;
+      }
+      this.lastMessageTimestamp = now;
+    }
 
     switch (message.type) {
       case 'match_found':
         console.log('🎮 [App] === MATCH_FOUND RECEBIDO ===');
         console.log('🎮 [App] Partida encontrada pelo backend');
-        console.log('🎮 [App] Dados completos:', JSON.stringify(message.data, null, 2));
+        console.log('🎮 [App] MatchId recebido:', message.data?.matchId);
+        console.log('🎮 [App] Última partida processada:', this.lastMatchId);
         console.log('🎮 [App] Estado antes do processamento:', {
           showMatchFound: this.showMatchFound,
           currentPlayer: this.currentPlayer?.displayName || 'N/A',
@@ -264,9 +280,33 @@ export class App implements OnInit, OnDestroy {
   // ✅ SIMPLIFICADO: Handlers apenas atualizam interface
   private handleMatchFound(data: any): void {
     console.log('🎮 [App] === MATCH FOUND RECEBIDO ===');
-    console.log('🎮 [App] Dados recebidos:', data);
-    console.log('🎮 [App] Tipo dos dados:', typeof data);
-    console.log('🎮 [App] Chaves dos dados:', Object.keys(data || {}));
+    console.log('🎮 [App] MatchId recebido:', data?.matchId);
+    console.log('🎮 [App] Última partida processada:', this.lastMatchId);
+
+    // ✅ NOVO: Verificar se já processamos esta partida
+    if (this.lastMatchId === data?.matchId) {
+      console.log('🎮 [App] ❌ PARTIDA JÁ PROCESSADA - ignorando duplicata');
+      console.log('🎮 [App] MatchId duplicado:', data.matchId);
+      return;
+    }
+
+    // ✅ NOVO: Verificar se já temos esta partida ativa
+    if (this.matchFoundData && this.matchFoundData.matchId === data.matchId) {
+      console.log('🎮 [App] ❌ PARTIDA JÁ ESTÁ ATIVA - ignorando duplicata');
+      console.log('🎮 [App] Match atual:', this.matchFoundData.matchId, 'Match recebido:', data.matchId);
+      return;
+    }
+
+    // ✅ NOVO: Verificar se já estamos mostrando uma partida
+    if (this.showMatchFound && this.matchFoundData) {
+      console.log('🎮 [App] ❌ JÁ EXISTE UMA PARTIDA ATIVA - ignorando nova');
+      console.log('🎮 [App] Partida ativa:', this.matchFoundData.matchId, 'Nova partida:', data.matchId);
+      return;
+    }
+
+    // ✅ NOVO: Marcar esta partida como processada
+    this.lastMatchId = data.matchId;
+    console.log('🎮 [App] ✅ PROCESSANDO NOVA PARTIDA:', data.matchId);
 
     // ✅ NOVO: Converter dados do backend para formato do frontend
     const matchFoundData: MatchFoundData = {
@@ -416,11 +456,14 @@ export class App implements OnInit, OnDestroy {
   private handleDraftStarted(data: any): void {
     console.log('🎯 [App] Iniciando draft:', data);
 
+    // ✅ NOVO: Limpar controle de partida
+    this.lastMatchId = null;
     this.showMatchFound = false;
     this.matchFoundData = null;
     this.inDraftPhase = true;
     this.draftData = data;
 
+    console.log('🎯 [App] Estado limpo para draft');
     this.addNotification('success', 'Draft Iniciado!', 'A fase de draft começou.');
   }
 
@@ -446,12 +489,15 @@ export class App implements OnInit, OnDestroy {
   private handleMatchCancelled(data: any): void {
     console.log('❌ [App] Partida cancelada:', data);
 
+    // ✅ NOVO: Limpar controle de partida
+    this.lastMatchId = null;
     this.showMatchFound = false;
     this.matchFoundData = null;
     this.inDraftPhase = false;
     this.draftData = null;
     this.isInQueue = true; // Voltar para fila
 
+    console.log('❌ [App] Estado limpo após cancelamento');
     this.addNotification('info', 'Partida Cancelada', data.message || 'A partida foi cancelada.');
   }
 
@@ -466,16 +512,42 @@ export class App implements OnInit, OnDestroy {
       idsMatch: this.matchFoundData?.matchId === data.matchId
     });
 
-    // Atualizar timer no componente match-found se estiver visível
-    if (this.showMatchFound && this.matchFoundData && this.matchFoundData.matchId === data.matchId) {
-      console.log('⏰ [App] Condições atendidas - emitindo evento para componente');
-      // Emitir evento para o componente match-found atualizar o timer
+    // ✅ CORREÇÃO: Verificar se devemos processar esta atualização
+    if (!this.showMatchFound || !this.matchFoundData) {
+      console.log('⏰ [App] Match não está visível - ignorando timer');
+      return;
+    }
+
+    if (this.matchFoundData.matchId !== data.matchId) {
+      console.log('⏰ [App] Timer para partida diferente - ignorando');
+      return;
+    }
+
+    // ✅ NOVO: Throttle para evitar atualizações excessivas
+    const now = Date.now();
+    const timeSinceLastUpdate = now - (this.lastTimerUpdate || 0);
+
+    if (timeSinceLastUpdate < 500) { // Máximo 2 atualizações por segundo
+      console.log('⏰ [App] Throttling timer update - muito frequente');
+      return;
+    }
+
+    this.lastTimerUpdate = now;
+
+    console.log('⏰ [App] Condições atendidas - emitindo evento para componente');
+
+    // ✅ CORREÇÃO: Emitir evento apenas quando necessário
+    try {
       document.dispatchEvent(new CustomEvent('matchTimerUpdate', {
-        detail: { timeLeft: data.timeLeft, isUrgent: data.isUrgent }
+        detail: {
+          matchId: data.matchId,
+          timeLeft: data.timeLeft,
+          isUrgent: data.isUrgent || data.timeLeft <= 10
+        }
       }));
       console.log('⏰ [App] Evento matchTimerUpdate emitido com sucesso');
-    } else {
-      console.log('⏰ [App] Condições NÃO atendidas - timer ignorado');
+    } catch (error) {
+      console.error('❌ [App] Erro ao emitir evento matchTimerUpdate:', error);
     }
   }
 
@@ -677,37 +749,128 @@ export class App implements OnInit, OnDestroy {
       ).toPromise();
 
       console.log('✅ [App] Aceitação enviada ao backend');
-      this.addNotification('success', 'Partida Aceita!', 'Aguardando outros jogadores...');
-    } catch (error) {
+      this.addNotification('success', 'Partida Aceita!', 'Aguardando outros jogadores aceitar...');
+
+      // ✅ CORREÇÃO: Não fechar o modal imediatamente, aguardar resposta do backend
+      // O modal só será fechado quando o backend confirmar que todos aceitaram
+
+    } catch (error: any) {
       console.error('❌ [App] Erro ao aceitar partida:', error);
-      this.addNotification('error', 'Erro', 'Falha ao aceitar partida');
+
+      let errorMessage = 'Falha ao aceitar partida';
+      if (error.status === 404) {
+        errorMessage = 'Partida não encontrada ou expirada';
+      } else if (error.status === 409) {
+        errorMessage = 'Partida já foi aceita ou cancelada';
+      } else if (error.error?.message) {
+        errorMessage = error.error.message;
+      }
+
+      this.addNotification('error', 'Erro na Aceitação', errorMessage);
+
+      // Se a partida não existe mais, fechar o modal
+      if (error.status === 404) {
+        // ✅ NOVO: Limpar controle de partida
+        this.lastMatchId = null;
+        this.showMatchFound = false;
+        this.matchFoundData = null;
+        this.isInQueue = true;
+      }
     }
   }
 
   async declineMatch(): Promise<void> {
+    console.log('📞 [App] === INÍCIO DA RECUSA DA PARTIDA ===');
     console.log('📞 [App] Enviando recusa ao backend...');
+    console.log('📞 [App] Estado atual:', {
+      matchId: this.matchFoundData?.matchId,
+      currentPlayer: this.currentPlayer?.summonerName,
+      isInQueue: this.isInQueue,
+      showMatchFound: this.showMatchFound
+    });
 
     if (!this.matchFoundData?.matchId || !this.currentPlayer?.summonerName) {
+      console.error('❌ [App] Dados insuficientes para recusa');
       this.addNotification('error', 'Erro', 'Dados da partida não disponíveis');
       return;
     }
 
     try {
+      // ✅ CORREÇÃO: Enviar recusa ao backend
       await this.apiService.declineMatch(
         this.matchFoundData.matchId,
         this.currentPlayer.id,
         this.currentPlayer.summonerName
       ).toPromise();
 
-      console.log('✅ [App] Recusa enviada ao backend');
+      console.log('✅ [App] Recusa enviada ao backend com sucesso');
+
+      // ✅ CORREÇÃO: Atualizar estado local imediatamente
+      this.lastMatchId = null; // ✅ NOVO: Limpar controle de partida
       this.showMatchFound = false;
       this.matchFoundData = null;
-      this.isInQueue = true;
-      this.addNotification('info', 'Partida Recusada', 'Você voltou para a fila.');
-    } catch (error) {
+      this.isInQueue = false;
+
+      // ✅ NOVO: Marcar que temos uma resposta recente do backend
+      this.hasRecentBackendQueueStatus = true;
+
+      console.log('✅ [App] Estado atualizado:', {
+        showMatchFound: this.showMatchFound,
+        matchFoundData: this.matchFoundData,
+        isInQueue: this.isInQueue
+      });
+
+      this.addNotification('success', 'Partida Recusada', 'Você recusou a partida e saiu da fila.');
+
+      // ✅ CORREÇÃO: Aguardar 2 segundos e atualizar status para confirmar
+      setTimeout(() => {
+        console.log('🔄 [App] Confirmando status da fila após recusa...');
+        this.refreshQueueStatus();
+      }, 2000);
+
+    } catch (error: any) {
       console.error('❌ [App] Erro ao recusar partida:', error);
-      this.addNotification('error', 'Erro', 'Falha ao recusar partida');
+      console.error('❌ [App] Detalhes do erro:', {
+        status: error.status,
+        message: error.message,
+        error: error.error
+      });
+
+      let errorMessage = 'Falha ao recusar partida';
+
+      if (error.status === 404) {
+        errorMessage = 'Partida não encontrada ou já expirada';
+        console.log('⚠️ [App] Partida não encontrada - forçando saída da fila');
+
+        // ✅ CORREÇÃO: Se partida não existe, forçar saída da interface
+        this.lastMatchId = null; // ✅ NOVO: Limpar controle de partida
+        this.showMatchFound = false;
+        this.matchFoundData = null;
+        this.isInQueue = false;
+        this.hasRecentBackendQueueStatus = true;
+
+        // ✅ NOVO: Tentar sair da fila explicitamente
+        setTimeout(() => {
+          console.log('🔄 [App] Tentando sair da fila explicitamente...');
+          this.leaveQueue().catch(err => {
+            console.warn('⚠️ [App] Erro ao sair da fila após recusa:', err);
+          });
+        }, 1000);
+
+      } else if (error.status === 409) {
+        errorMessage = 'Partida já foi aceita ou cancelada';
+        // ✅ CORREÇÃO: Mesmo com erro 409, sair da interface
+        this.showMatchFound = false;
+        this.matchFoundData = null;
+        this.isInQueue = false;
+      } else if (error.error?.message) {
+        errorMessage = error.error.message;
+      }
+
+      this.addNotification('error', 'Erro na Recusa', errorMessage);
     }
+
+    console.log('📞 [App] === FIM DA RECUSA DA PARTIDA ===');
   }
 
   // ✅ MANTIDO: Métodos de interface simples
@@ -905,37 +1068,48 @@ export class App implements OnInit, OnDestroy {
     // Se temos o jogador atual, passar seu displayName para detecção no backend
     const currentPlayerDisplayName = this.currentPlayer?.displayName;
 
+    console.log('📊 [App] === REFRESH QUEUE STATUS ===');
     console.log('📊 [App] refreshQueueStatus chamado:', {
       currentPlayerDisplayName: currentPlayerDisplayName,
-      currentIsInQueue: this.isInQueue
+      currentIsInQueue: this.isInQueue,
+      hasRecentBackendQueueStatus: this.hasRecentBackendQueueStatus
     });
 
     this.apiService.getQueueStatus(currentPlayerDisplayName).subscribe({
       next: (status) => {
         console.log('📊 [App] Status da fila recebido do backend:', status);
 
-        // ✅ CORRIGIDO: Marcar que temos uma resposta recente do backend
+        // ✅ CORREÇÃO: Marcar que temos uma resposta recente do backend
         this.hasRecentBackendQueueStatus = true;
 
-        // Se o backend retornou informação sobre o jogador atual na fila, usar essa info
+        // ✅ NOVO: Verificar se o backend retornou informação específica sobre o jogador
         const statusWithPlayerInfo = status as any;
+
         if (statusWithPlayerInfo.isCurrentPlayerInQueue !== undefined) {
           const previousState = this.isInQueue;
           this.isInQueue = statusWithPlayerInfo.isCurrentPlayerInQueue;
 
-          console.log(`🎯 [App] Estado da fila atualizado pelo backend: ${previousState} → ${this.isInQueue}`);
-          console.log(`🎯 [App] Jogadores na fila: ${status.playersInQueue}`);
-          console.log(`🎯 [App] Lista de jogadores:`, status.playersInQueueList?.map(p => p.summonerName) || []);
+          console.log(`✅ [App] Estado da fila atualizado pelo backend: ${previousState} → ${this.isInQueue}`);
+
+          // ✅ NOVO: Se o estado mudou, notificar
+          if (previousState !== this.isInQueue) {
+            const statusMessage = this.isInQueue ? 'Você está na fila' : 'Você não está na fila';
+            console.log(`🔄 [App] Status da fila mudou: ${statusMessage}`);
+          }
         } else {
-          console.log('⚠️ [App] Backend não retornou isCurrentPlayerInQueue');
+          // ✅ NOVO: Se backend não retornou info específica, manter estado atual
+          console.log('⚠️ [App] Backend não retornou isCurrentPlayerInQueue - mantendo estado atual');
         }
 
-        // ✅ CORRIGIDO: Converter joinTime de Date para string se necessário
+        console.log(`📊 [App] Jogadores na fila: ${status.playersInQueue}`);
+        console.log(`📊 [App] Lista de jogadores:`, status.playersInQueueList?.map(p => p.summonerName) || []);
+
+        // ✅ CORREÇÃO: Converter joinTime de Date para string se necessário
         this.queueStatus = {
           ...status,
           playersInQueueList: status.playersInQueueList?.map(player => ({
             ...player,
-            joinTime: typeof player.joinTime === 'string' ? player.joinTime : player.joinTime.toISOString()
+            joinTime: typeof player.joinTime === 'string' ? player.joinTime : (player.joinTime as Date).toISOString()
           }))
         };
 
@@ -944,6 +1118,8 @@ export class App implements OnInit, OnDestroy {
           this.hasRecentBackendQueueStatus = false;
           console.log('🔄 [App] Flag de backend recente limpa, permitindo atualizações do QueueStateService');
         }, 5000);
+
+        console.log('📊 [App] === FIM DO REFRESH QUEUE STATUS ===');
       },
       error: (error) => {
         console.warn('⚠️ [App] Erro ao atualizar status da fila:', error);

@@ -58,42 +58,88 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   ngOnChanges(changes: SimpleChanges) {
-    // Reinicia o timer quando uma nova partida é encontrada
+    // ✅ CORREÇÃO CRÍTICA: Só reiniciar timer se for uma nova partida REAL
     if (changes['matchData'] && changes['matchData'].currentValue) {
-      console.log('🎮 [MatchFound] Dados recebidos:', this.matchData);
-      console.log('🎮 [MatchFound] Teammates:', this.matchData?.teammates?.map(p => ({
-        name: p.summonerName,
-        lane: p.assignedLane,
-        teamIndex: p.teamIndex,
-        isAutofill: p.isAutofill
-      })));
-      console.log('🎮 [MatchFound] Enemies:', this.matchData?.enemies?.map(p => ({
-        name: p.summonerName,
-        lane: p.assignedLane,
-        teamIndex: p.teamIndex,
-        isAutofill: p.isAutofill
-      })));
+      const previousMatchData = changes['matchData'].previousValue;
+      const currentMatchData = changes['matchData'].currentValue;
 
-      if (this.countdownTimer) {
-        clearInterval(this.countdownTimer);
+      const previousMatchId = previousMatchData?.matchId;
+      const currentMatchId = currentMatchData?.matchId;
+
+      console.log('🎮 [MatchFound] === ngOnChanges CHAMADO ===');
+      console.log('🎮 [MatchFound] MatchId anterior:', previousMatchId);
+      console.log('🎮 [MatchFound] MatchId atual:', currentMatchId);
+      console.log('🎮 [MatchFound] Timer ativo:', !!this.countdownTimer);
+      console.log('🎮 [MatchFound] Accept time atual:', this.acceptTimeLeft);
+
+      // ✅ CORREÇÃO: Verificações mais rigorosas para evitar reprocessamento
+      const isExactSameData = previousMatchData && currentMatchData &&
+                              JSON.stringify(previousMatchData) === JSON.stringify(currentMatchData);
+
+      if (isExactSameData) {
+        console.log('🎮 [MatchFound] Dados idênticos - ignorando ngOnChanges');
+        return;
       }
 
-      if (this.matchData && this.matchData.phase === 'accept') {
-        this.startAcceptCountdown();
-      }
+      // ✅ CORREÇÃO: Só processar se realmente é uma nova partida
+      const isNewMatch = previousMatchId !== currentMatchId && currentMatchId !== undefined;
+      const isFirstTime = !previousMatchId && currentMatchId && !this.countdownTimer;
 
-      // Carregar ícones de perfil para todos os jogadores
-      this.loadProfileIconsForPlayers();
+      console.log('🎮 [MatchFound] Análise de mudança:', {
+        isNewMatch,
+        isFirstTime,
+        sameId: previousMatchId === currentMatchId,
+        hasTimer: !!this.countdownTimer
+      });
+
+      if (isNewMatch || isFirstTime) {
+        console.log('🎮 [MatchFound] ✅ NOVA PARTIDA CONFIRMADA - configurando timer');
+
+        // ✅ CORREÇÃO: Limpar timer anterior se existir
+        if (this.countdownTimer) {
+          console.log('🎮 [MatchFound] Limpando timer anterior');
+          clearInterval(this.countdownTimer);
+          this.countdownTimer = undefined;
+        }
+
+        // ✅ CORREÇÃO: Configurar timer apenas se backend não está controlando
+        if (this.matchData && this.matchData.phase === 'accept') {
+          // ✅ NOVO: Usar timer do backend como prioridade
+          console.log('🎮 [MatchFound] Aguardando timer do backend...');
+          this.acceptTimeLeft = this.matchData.acceptTimeout || 30;
+          this.isTimerUrgent = this.acceptTimeLeft <= 10;
+
+          // ✅ NOVO: Timer local apenas como fallback após 2 segundos
+          setTimeout(() => {
+            if (this.acceptTimeLeft === (this.matchData?.acceptTimeout || 30)) {
+              console.log('🎮 [MatchFound] Backend não enviou timer, iniciando timer local');
+              this.startAcceptCountdown();
+            }
+          }, 2000);
+        }
+
+        // Carregar ícones de perfil para todos os jogadores
+        this.loadProfileIconsForPlayers();
+      } else {
+        console.log('🎮 [MatchFound] ❌ MESMA PARTIDA - ignorando ngOnChanges');
+        console.log('🎮 [MatchFound] Motivo: previousMatchId =', previousMatchId, ', currentMatchId =', currentMatchId);
+      }
     }
   }
 
   ngOnDestroy() {
+    console.log('🧹 [MatchFound] Destruindo componente - limpando recursos');
+
+    // ✅ CORREÇÃO: Limpar timer local se existir
     if (this.countdownTimer) {
       clearInterval(this.countdownTimer);
+      this.countdownTimer = undefined;
     }
 
     // ✅ NOVO: Remover listener de timer
     document.removeEventListener('matchTimerUpdate', this.onTimerUpdate);
+
+    console.log('✅ [MatchFound] Recursos limpos com sucesso');
   }
 
   // ✅ NOVO: Configurar listener para atualizações de timer do backend
@@ -101,15 +147,38 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
     document.addEventListener('matchTimerUpdate', this.onTimerUpdate);
   }
 
-  // ✅ NOVO: Handler para atualizações de timer do backend
+  // ✅ CORREÇÃO: Handler para atualizações de timer do backend
   private onTimerUpdate = (event: any): void => {
-    if (event.detail) {
-      this.acceptTimeLeft = event.detail.timeLeft;
-      this.isTimerUrgent = event.detail.isUrgent;
+    if (event.detail && this.matchData) {
+      console.log('⏰ [MatchFound] Timer atualizado pelo backend:', event.detail);
 
-      // Auto-decline se tempo esgotar
-      if (this.acceptTimeLeft <= 0) {
-        this.onDeclineMatch();
+      // Verificar se a atualização é para esta partida
+      if (event.detail.matchId && event.detail.matchId !== this.matchData.matchId) {
+        console.log('⏰ [MatchFound] Timer para partida diferente - ignorando');
+        return;
+      }
+
+      // ✅ CORREÇÃO: Só atualizar se o valor mudou significativamente
+      const newTimeLeft = event.detail.timeLeft;
+      const timeDifference = Math.abs(this.acceptTimeLeft - newTimeLeft);
+
+      if (timeDifference > 0) {
+        console.log(`⏰ [MatchFound] Atualizando timer: ${this.acceptTimeLeft} → ${newTimeLeft}`);
+        this.acceptTimeLeft = newTimeLeft;
+        this.isTimerUrgent = event.detail.isUrgent || newTimeLeft <= 10;
+
+        // ✅ NOVO: Parar timer local se backend está controlando
+        if (this.countdownTimer) {
+          console.log('⏰ [MatchFound] Backend assumiu controle - parando timer local');
+          clearInterval(this.countdownTimer);
+          this.countdownTimer = undefined;
+        }
+
+        // Auto-decline se tempo esgotar
+        if (this.acceptTimeLeft <= 0) {
+          console.log('⏰ [MatchFound] Timer expirou via backend - auto-decline');
+          this.onDeclineMatch();
+        }
       }
     }
   }
@@ -160,37 +229,63 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   private startAcceptCountdown(): void {
-    this.acceptTimeLeft = Math.floor((this.matchData?.acceptTimeout || 30000) / 1000); // Converter ms para segundos
-    this.isTimerUrgent = this.acceptTimeLeft <= 10; // Verificar urgência inicial
+    // ✅ CORREÇÃO: Não iniciar se já existe timer ou se backend está controlando
+    if (this.countdownTimer) {
+      console.log('⏰ [MatchFound] Timer já existe - não iniciando novo');
+      return;
+    }
 
-    // ✅ MUDANÇA: Timer local como fallback, sincronizado com backend
+    this.acceptTimeLeft = Math.floor((this.matchData?.acceptTimeout || 30000) / 1000);
+    this.isTimerUrgent = this.acceptTimeLeft <= 10;
+
+    console.log('⏰ [MatchFound] Iniciando timer local como fallback com', this.acceptTimeLeft, 'segundos');
+
+    // ✅ CORREÇÃO: Timer local apenas como fallback quando backend não responde
     this.countdownTimer = window.setInterval(() => {
-      // Só decrementar localmente se não estiver recebendo atualizações do backend
-      // (as atualizações do backend têm prioridade via onTimerUpdate)
+      // ✅ NOVO: Verificar se backend assumiu controle
+      if (!this.countdownTimer) {
+        console.log('⏰ [MatchFound] Timer local cancelado - backend assumiu controle');
+        return;
+      }
+
       this.acceptTimeLeft--;
-      this.isTimerUrgent = this.acceptTimeLeft <= 10; // Atualizar urgência
+      this.isTimerUrgent = this.acceptTimeLeft <= 10;
+
+      console.log('⏰ [MatchFound] Timer local (fallback):', this.acceptTimeLeft, 'segundos restantes');
 
       if (this.acceptTimeLeft <= 0) {
-        this.onDeclineMatch(); // Auto-decline se não aceitar
-        clearInterval(this.countdownTimer);
+        console.log('⏰ [MatchFound] Timer local expirou - auto-decline');
+        this.onDeclineMatch();
+        if (this.countdownTimer) {
+          clearInterval(this.countdownTimer);
+          this.countdownTimer = undefined;
+        }
       }
     }, 1000);
   }
 
   onAcceptMatch(): void {
     if (this.matchData) {
+      console.log('✅ [MatchFound] Emitindo aceitação para:', this.matchData.matchId);
       this.acceptMatch.emit(this.matchData.matchId);
+
+      // ✅ CORREÇÃO: Parar timer imediatamente após aceitar
       if (this.countdownTimer) {
         clearInterval(this.countdownTimer);
+        this.countdownTimer = undefined;
       }
     }
   }
 
   onDeclineMatch(): void {
     if (this.matchData) {
+      console.log('❌ [MatchFound] Emitindo recusa para:', this.matchData.matchId);
       this.declineMatch.emit(this.matchData.matchId);
+
+      // ✅ CORREÇÃO: Parar timer imediatamente após recusar
       if (this.countdownTimer) {
         clearInterval(this.countdownTimer);
+        this.countdownTimer = undefined;
       }
     }
   }

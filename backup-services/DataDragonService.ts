@@ -151,6 +151,13 @@ export class DataDragonService {
   /**
    * Força o recarregamento dos campeões
    */
+  async reloadChampions(): Promise<void> {
+    this.championsLoaded = false;
+    this.championsCache = {};
+    this.championIdToNameMap = {};
+    await this.loadChampions();
+  }
+
   /**
    * Processa dados de participantes do LCU, adicionando nomes de campeões
    * Mantém a mesma estrutura que o frontend espera

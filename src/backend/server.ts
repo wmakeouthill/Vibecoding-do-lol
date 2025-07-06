@@ -15,6 +15,8 @@ import { LCUService } from './services/LCUService';
 import { MatchHistoryService } from './services/MatchHistoryService';
 import { DiscordService } from './services/DiscordService';
 import { DataDragonService } from './services/DataDragonService';
+import { DraftService } from './services/DraftService';
+import { MatchFoundService } from './services/MatchFoundService';
 import { setupChampionRoutes } from './routes/champions';
 
 // Carregar variáveis de ambiente do arquivo .env
@@ -202,6 +204,8 @@ const lcuService = new LCUService(globalRiotAPI);
 const matchHistoryService = new MatchHistoryService(globalRiotAPI, dbManager);
 const discordService = new DiscordService(dbManager);
 const dataDragonService = new DataDragonService();
+const draftService = new DraftService(dbManager, wss);
+const matchFoundService = new MatchFoundService(dbManager, wss);
 
 // WebSocket para comunicação em tempo real
 wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
@@ -360,8 +364,7 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
     case 'accept_match':
       console.log('✅ Recebida mensagem accept_match:', data.data);
       try {
-        await matchmakingService.acceptMatch(
-          data.data.playerId,
+        await matchFoundService.acceptMatch(
           data.data.matchId,
           data.data.summonerName
         );
@@ -380,8 +383,7 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
     case 'decline_match':
       console.log('❌ Recebida mensagem decline_match:', data.data);
       try {
-        await matchmakingService.declineMatch(
-          data.data.playerId,
+        await matchFoundService.declineMatch(
           data.data.matchId,
           data.data.summonerName
         );
@@ -1306,96 +1308,9 @@ app.post('/api/queue/leave', (async (req: Request, res: Response) => {
 }) as RequestHandler);
 
 // Endpoints legacy para compatibilidade
-app.post('/api/queue/join-legacy', (async (req: Request, res: Response) => {
-  try {
-    const { playerId, mmr, role } = req.body;
+// ✅ REMOVED: /api/queue/join-legacy endpoint (legacy, redundant)
 
-    if (!playerId || !mmr || !role) {
-      return res.status(400).json({
-        success: false,
-        error: 'playerId, mmr e role são obrigatórios'
-      });
-    }
-
-    // Buscar jogador no banco
-    const player = await dbManager.getPlayer(playerId);
-    if (!player) {
-      return res.status(404).json({
-        success: false,
-        error: 'Jogador não encontrado'
-      });
-    }
-
-    // Criar WebSocket mock
-    const mockWebSocket = {
-      send: (data: string) => {
-        console.log('📤 Resposta para jogador legacy:', JSON.parse(data));
-      },
-      readyState: 1
-    } as any;
-
-    // Adicionar à fila com preferências legacy
-    await matchmakingService.addPlayerToQueue(mockWebSocket, {
-      player: {
-        summonerName: player.summoner_name,
-        summonerId: player.summoner_id,
-        puuid: player.puuid,
-        region: player.region
-      },
-      preferences: {
-        primaryLane: role,
-        secondaryLane: role
-      }
-    });
-
-    res.json({
-      success: true,
-      message: 'Jogador adicionado à fila legacy com sucesso',
-      queueStatus: await matchmakingService.getQueueStatus()
-    });
-  } catch (error: any) {
-    console.error('Erro ao adicionar jogador à fila legacy:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-}) as RequestHandler);
-
-app.post('/api/queue/leave-legacy', (async (req: Request, res: Response) => {
-  try {
-    const { playerId } = req.body;
-
-    if (!playerId) {
-      return res.status(400).json({
-        success: false,
-        error: 'playerId é obrigatório'
-      });
-    }
-
-    // Usar o método público do MatchmakingService
-    const removed = await matchmakingService.removePlayerFromQueueById(playerId);
-
-    if (removed) {
-      res.json({
-        success: true,
-        message: 'Jogador removido da fila legacy com sucesso',
-        queueStatus: await matchmakingService.getQueueStatus()
-      });
-    } else {
-      res.status(404).json({
-        success: false,
-        error: 'Jogador não encontrado na fila'
-      });
-    }
-  } catch (error: any) {
-    console.error('Erro ao remover jogador da fila legacy:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-}) as RequestHandler);
+// ✅ REMOVED: /api/queue/leave-legacy endpoint (legacy, redundant)
 
 // Rota temporária para adicionar bot na fila (apenas para testes)
 app.post('/api/queue/add-bot', async (req: Request, res: Response) => {
@@ -1441,7 +1356,7 @@ app.post('/api/match/accept', (async (req: Request, res: Response) => {
       });
     }
 
-    await matchmakingService.acceptMatch(playerId || 0, matchId, summonerName);
+    await matchFoundService.acceptMatch(matchId, summonerName);
     res.json({
       success: true,
       message: 'Partida aceita com sucesso'
@@ -1466,7 +1381,7 @@ app.post('/api/match/decline', (async (req: Request, res: Response) => {
       });
     }
 
-    await matchmakingService.declineMatch(playerId || 0, matchId, summonerName);
+    await matchFoundService.declineMatch(matchId, summonerName);
     res.json({
       success: true,
       message: 'Partida recusada com sucesso'
@@ -1491,7 +1406,7 @@ app.post('/api/match/draft-action', (async (req: Request, res: Response) => {
       });
     }
 
-    await matchmakingService.processDraftAction(matchId, playerId, championId, action);
+    await draftService.processDraftAction(matchId, playerId, championId, action);
     res.json({
       success: true,
       message: 'Ação do draft processada com sucesso'
@@ -1563,19 +1478,59 @@ app.post('/api/matchmaking/process-complete', (async (req: Request, res: Respons
 // ✅ ATUALIZADO: Verificação de aceitação agora é automática via WebSocket
 app.get('/api/matchmaking/check-acceptance', (async (req: Request, res: Response) => {
   try {
-    console.log('🔍 [API] A verificação de aceitação agora é automática via WebSocket');
+    console.log('🔍 [API] Verificando status de aceitação...');
     
     // Buscar partidas pendentes de aceitação
     const pendingMatches = await dbManager.getCustomMatchesByStatus('pending');
     
-    res.json({ 
-      success: true, 
-      message: 'A verificação de aceitação é automática via WebSocket',
-      pendingMatches: pendingMatches.length,
-      info: 'Use WebSocket para monitorar aceitações em tempo real'
-    });
+    if (pendingMatches.length > 0) {
+      const latestMatch = pendingMatches[0];
+      
+      // Parsear jogadores dos times
+      let allPlayers: string[] = [];
+      try {
+        const team1 = typeof latestMatch.team1_players === 'string' 
+          ? JSON.parse(latestMatch.team1_players) 
+          : (latestMatch.team1_players || []);
+        const team2 = typeof latestMatch.team2_players === 'string' 
+          ? JSON.parse(latestMatch.team2_players) 
+          : (latestMatch.team2_players || []);
+        
+        allPlayers = [...team1, ...team2];
+      } catch (parseError) {
+        console.error(`❌ [API] Erro ao parsear jogadores da partida ${latestMatch.id}`);
+        return res.status(500).json({ success: false, error: 'Erro ao parsear jogadores' });
+      }
+
+      // Buscar status de aceitação dos jogadores
+      const queuePlayers = await dbManager.getActiveQueuePlayers();
+      const matchPlayers = queuePlayers.filter(p => allPlayers.includes(p.summoner_name));
+      
+      const acceptedPlayers = matchPlayers.filter(p => p.acceptance_status === 1);
+      const declinedPlayers = matchPlayers.filter(p => p.acceptance_status === 2);
+      const pendingPlayers = matchPlayers.filter(p => p.acceptance_status === 0);
+      
+      res.json({ 
+        success: true, 
+        matchId: latestMatch.id,
+        acceptedCount: acceptedPlayers.length,
+        declinedCount: declinedPlayers.length,
+        pendingCount: pendingPlayers.length,
+        totalPlayers: allPlayers.length,
+        acceptedPlayers: acceptedPlayers.map(p => p.summoner_name),
+        declinedPlayers: declinedPlayers.map(p => p.summoner_name),
+        pendingPlayers: pendingPlayers.map(p => p.summoner_name)
+      });
+    } else {
+      res.json({ 
+        success: true, 
+        message: 'Nenhuma partida pendente de aceitação',
+        acceptedCount: 0,
+        totalPlayers: 0
+      });
+    }
   } catch (error: any) {
-    console.error('❌ [API] Erro ao verificar partidas pendentes:', error);
+    console.error('❌ [API] Erro ao verificar status de aceitação:', error);
     res.status(500).json({ 
       success: false, 
       error: error.message
@@ -2089,84 +2044,7 @@ app.post('/api/matches/custom', (async (req: Request, res: Response) => {
 }) as RequestHandler);
 
 // Rota alternativa para compatibilidade com frontend antigo
-app.post('/api/custom_matches', (async (req: Request, res: Response) => {
-  try {
-    const {
-      title,
-      description,
-      team1Players,
-      team2Players,
-      createdBy,
-      gameMode,
-      winnerTeam,
-      duration,
-      pickBanData,
-      participantsData, // Adicionar campo participantsData
-      riotGameId,
-      detectedByLCU,
-      status
-    } = req.body;
-
-    console.log('💾 [POST /api/custom_matches] Recebendo dados (rota de compatibilidade):', {
-      title,
-      team1Count: team1Players?.length,
-      team2Count: team2Players?.length,
-      createdBy,
-      winnerTeam,
-      duration,
-      hasPickBan: !!pickBanData,
-      hasParticipantsData: !!participantsData, // Log do novo campo
-      riotGameId,
-      detectedByLCU,
-      status
-    });
-
-    if (!team1Players || !team2Players || !createdBy) {
-      return res.status(400).json({
-        error: 'team1Players, team2Players e createdBy são obrigatórios'
-      });
-    }
-
-    const matchId = await dbManager.createCustomMatch({
-      title,
-      description,
-      team1Players,
-      team2Players,
-      createdBy,
-      gameMode
-    });
-
-    if (status === 'completed' && winnerTeam) {
-      console.log('🏆 Completando partida imediatamente com vencedor:', winnerTeam);
-
-      await dbManager.completeCustomMatch(matchId, winnerTeam, {
-        duration,
-        pickBanData,
-        participantsData, // Incluir dados preliminares dos participantes
-        riotGameId,
-        detectedByLCU
-      });
-    } else if (participantsData) {
-      // Se não está finalizada mas tem dados preliminares, salvar apenas os dados preliminares
-      console.log('📝 Salvando dados preliminares dos participantes (rota de compatibilidade)');
-      await dbManager.updateCustomMatchWithRealData(matchId, {
-        participantsData: participantsData,
-        notes: 'Dados preliminares salvos durante confirmação da partida'
-      });
-    }
-
-    console.log('✅ [POST /api/custom_matches] Partida salva com ID:', matchId);
-
-    res.json({
-      success: true,
-      matchId,
-      message: 'Partida personalizada criada com sucesso'
-    });
-  } catch (error: any) {
-    console.error('💥 [POST /api/custom_matches] Erro ao criar partida personalizada:', error);
-    res.status(500).json({ error: error.message });
-  }
-}) as RequestHandler);
+// ✅ REMOVED: POST /api/custom_matches (duplicata exata de /api/matches/custom)\n
 
 app.get('/api/matches/custom/:playerId', (req: Request, res: Response) => {
   (async () => {
@@ -2286,76 +2164,8 @@ app.get('/api/matches/custom/:playerId/count', (req: Request, res: Response) => 
   })();
 });
 
-// Rota para limpeza de partidas de teste
-app.delete('/api/matches/cleanup-test-matches', (req: Request, res: Response) => {
-  (async () => {
-    try {
-      console.log('🧹 [DELETE /api/matches/cleanup-test-matches] Iniciando limpeza COMPLETA da tabela custom_matches');
-
-      // Executar limpeza completa
-      const result = await dbManager.cleanupTestMatches();
-
-      console.log('✅ [DELETE /api/matches/cleanup-test-matches] Limpeza completa concluída:', {
-        deletedCount: result.deletedCount,
-        remainingMatches: result.remainingMatches
-      });
-
-      res.json({
-        success: true,
-        deletedCount: result.deletedCount,
-        remainingMatches: result.remainingMatches,
-        deletedMatches: result.deletedMatches,
-        message: `${result.deletedCount} partidas removidas. Tabela custom_matches completamente limpa! Restaram ${result.remainingMatches} partidas.`
-      });
-
-    } catch (error: any) {
-      console.error('💥 [DELETE /api/matches/cleanup-test-matches] Erro:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message
-      });
-    }
-  })();
-});
-
-// Rota para limpeza COMPLETA da tabela custom_matches
-app.delete('/api/matches/clear-all-custom-matches', (req: Request, res: Response) => {
-  (async () => {
-    try {
-      console.log('🧹 [DELETE /api/matches/clear-all-custom-matches] Iniciando limpeza COMPLETA da tabela custom_matches');
-
-      // Contar total antes da limpeza
-      const totalBefore = await dbManager.getCustomMatchesCount();
-
-      // Executar limpeza completa
-      const deletedCount = await dbManager.clearAllCustomMatches();
-
-      // Contar total depois da limpeza
-      const totalAfter = await dbManager.getCustomMatchesCount();
-
-      console.log('✅ [DELETE /api/matches/clear-all-custom-matches] Limpeza completa concluída:', {
-        deletedCount,
-        totalBefore,
-        totalAfter
-      });
-
-      res.json({
-        success: true,
-        deletedCount,
-        totalBefore,
-        totalAfter,
-        message: `${deletedCount} partidas removidas. Tabela custom_matches completamente limpa!`
-      });
-
-    } catch (error: any) {
-      console.error('💥 [DELETE /api/matches/clear-all-custom-matches] Erro:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message
-      });
-    }
-  })();
-});
+// ✅ REMOVED: DELETE /api/matches/cleanup-test-matches (unnecessary admin endpoint)
+// ✅ REMOVED: DELETE /api/matches/clear-all-custom-matches (unnecessary admin endpoint)
 
 // Endpoint para atualizar nickname de um jogador
 app.post('/api/players/update-nickname', (req: Request, res: Response) => {
