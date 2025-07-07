@@ -845,53 +845,54 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
     getPlayerPick(team: 'blue' | 'red', player: any): Champion | null {
         if (!this.session) return null;
 
-        // ✅ CORREÇÃO: Usar teamIndex diretamente em vez de ordenação por lane
+        // ✅ CORREÇÃO: Usar dados reais das fases em vez de lógica de posição
         const teamPlayers = team === 'blue' ? this.session.blueTeam : this.session.redTeam;
 
         // Encontrar o jogador pelo ID ou nome
         const foundPlayer = teamPlayers.find(p => this.botService.comparePlayers(p, player));
         if (!foundPlayer) return null;
 
-        // ✅ CORREÇÃO: Normalizar o teamIndex para usar o índice dentro do time (0-4)
-        let playerIndex = foundPlayer.teamIndex;
+        // ✅ NOVO: Buscar pick diretamente nas fases baseado no nome do jogador
+        const playerName = foundPlayer.summonerName || foundPlayer.name;
 
-        // Se o teamIndex for 5-9 (time vermelho), converter para 0-4
-        if (team === 'red' && playerIndex >= 5) {
-            playerIndex = playerIndex - 5;
-        }
-
-        console.log(`🔍 [getPlayerPick] Debug para ${team} team:`, {
-            playerName: foundPlayer.summonerName || foundPlayer.name,
-            originalTeamIndex: foundPlayer.teamIndex,
-            normalizedPlayerIndex: playerIndex,
+        console.log(`🔍 [getPlayerPick] Buscando pick para ${team} team player:`, {
+            playerName: playerName,
+            teamIndex: foundPlayer.teamIndex,
             lane: foundPlayer.lane
         });
 
-        // Mapear o índice do jogador para as fases de pick correspondentes
-        // Baseado no novo fluxo da partida ranqueada
-        if (team === 'blue') {
-            // Blue team picks: ações 7, 10, 11, 18, 19
-            const bluePickActions = [6, 9, 10, 17, 18]; // -1 porque currentAction é 0-based
-            const playerPickAction = bluePickActions[playerIndex];
+        // ✅ CORREÇÃO: Buscar nas fases de pick pelo nome do jogador
+        const pickPhases = this.session.phases.filter(phase =>
+            phase.action === 'pick' &&
+            phase.team === team &&
+            phase.champion &&
+            phase.locked
+        );
 
-            if (playerPickAction !== undefined) {
-                const pickPhase = this.session.phases[playerPickAction];
-                console.log(`🔍 [getPlayerPick] Blue team player ${playerIndex} -> action ${playerPickAction}:`, pickPhase?.champion?.name || 'nenhum');
-                return pickPhase?.champion || null;
-            }
-        } else {
-            // Red team picks: ações 8, 9, 12, 17, 20
-            const redPickActions = [7, 8, 11, 16, 19]; // -1 porque currentAction é 0-based
-            const playerPickAction = redPickActions[playerIndex];
+        console.log(`🔍 [getPlayerPick] Fases de pick encontradas para time ${team}:`,
+            pickPhases.map(p => ({
+                playerName: p.playerName,
+                playerId: p.playerId,
+                champion: p.champion?.name
+            }))
+        );
 
-            if (playerPickAction !== undefined) {
-                const pickPhase = this.session.phases[playerPickAction];
-                console.log(`🔍 [getPlayerPick] Red team player ${playerIndex} -> action ${playerPickAction}:`, pickPhase?.champion?.name || 'nenhum');
-                return pickPhase?.champion || null;
+        // Buscar pick que corresponde ao jogador
+        for (const pickPhase of pickPhases) {
+            // Comparar usando o mesmo método do BotService
+            const phasePlayerName = pickPhase.playerName || pickPhase.playerId || '';
+
+            // Verificar se é o mesmo jogador
+            if (phasePlayerName === playerName ||
+                pickPhase.playerId === playerName ||
+                this.botService.comparePlayerWithId(foundPlayer, pickPhase.playerId || '')) {
+
+                console.log(`✅ [getPlayerPick] Pick encontrado para ${playerName}: ${pickPhase.champion?.name}`);
+                return pickPhase.champion || null;
             }
         }
 
-        console.log(`❌ [getPlayerPick] Nenhuma ação encontrada para ${team} team player index ${playerIndex}`);
+        console.log(`❌ [getPlayerPick] Nenhum pick encontrado para ${playerName} no time ${team}`);
         return null;
     }
 
@@ -1388,44 +1389,50 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
 
         if (!this.session || !this.matchData) {
             console.log('❌ [sendDraftActionToBackend] Session ou matchData não disponível');
+            console.log('❌ [sendDraftActionToBackend] session:', !!this.session);
+            console.log('❌ [sendDraftActionToBackend] matchData:', !!this.matchData);
             return;
         }
 
         const currentPhase = this.session.phases[this.session.currentAction];
         if (!currentPhase) {
             console.log('❌ [sendDraftActionToBackend] Fase atual não disponível');
+            console.log('❌ [sendDraftActionToBackend] currentAction:', this.session.currentAction);
+            console.log('❌ [sendDraftActionToBackend] total phases:', this.session.phases.length);
             return;
         }
 
-        // ✅ CORREÇÃO: Determinar playerId correto para o backend
-        let playerId: string | number = currentPhase.playerId || '';
+        // ✅ CORREÇÃO: Usar summonerName (gameName#tagLine) como playerId
+        let playerId: string = currentPhase.playerId || '';
 
-        // ✅ NOVO: Usar teamIndex como playerId para manter compatibilidade com backend
+        // ✅ NOVO: Garantir que playerId seja o summonerName correto
         const currentPlayer = this.getCurrentPhasePlayer();
-        if (currentPlayer && currentPlayer.teamIndex !== undefined) {
-            playerId = currentPlayer.teamIndex;
+        if (currentPlayer) {
+            // Priorizar o formato gameName#tagLine se disponível
+            if (currentPlayer.gameName && currentPlayer.tagLine) {
+                playerId = `${currentPlayer.gameName}#${currentPlayer.tagLine}`;
+            } else if (currentPlayer.summonerName) {
+                playerId = currentPlayer.summonerName;
+            } else if (currentPlayer.name) {
+                playerId = currentPlayer.name;
+            } else {
+                playerId = currentPhase.playerId || `Player${currentPlayer.teamIndex || 0}`;
+            }
         }
 
         const requestData = {
             matchId: this.matchData.id,
-            playerId: playerId,
+            playerId: playerId, // Agora é string (summonerName)
             championId: parseInt(champion.id),
             action: action
         };
 
         console.log('🌐 [sendDraftActionToBackend] Dados da requisição:', requestData);
-        console.log('🌐 [sendDraftActionToBackend] CurrentPhase:', {
-            team: currentPhase.team,
-            action: currentPhase.action,
-            playerId: currentPhase.playerId,
-            playerName: currentPhase.playerName,
-            teamIndex: currentPlayer?.teamIndex
-        });
-        console.log('🌐 [sendDraftActionToBackend] Estado do jogador atual:', {
-            hasCurrentPlayer: !!this.currentPlayer,
-            currentPlayerName: this.currentPlayer?.summonerName || this.currentPlayer?.name,
-            isCurrentPlayerBot: this.currentPlayer ? this.botService.isBot(this.currentPlayer) : 'N/A',
-            isLeader: this.isLeader
+        console.log('🌐 [sendDraftActionToBackend] Enviando para backend:', {
+            matchId: this.matchData.id,
+            playerId: playerId,
+            championName: champion.name,
+            action: action
         });
 
         try {
@@ -1433,15 +1440,49 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
             const url = `${baseUrl}/match/draft-action`;
 
             console.log('🌐 [sendDraftActionToBackend] Fazendo POST para:', url);
+            console.log('🌐 [sendDraftActionToBackend] Headers da requisição:', {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            });
+            console.log('🌐 [sendDraftActionToBackend] Body da requisição:', JSON.stringify(requestData, null, 2));
 
-            const response = await this.http.post(url, requestData).toPromise();
+            // ✅ NOVO: Usar observables com logs detalhados
+            const response = await new Promise((resolve, reject) => {
+                this.http.post(url, requestData, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    }
+                }).subscribe({
+                    next: (response) => {
+                        console.log('✅ [sendDraftActionToBackend] Resposta HTTP recebida:', response);
+                        resolve(response);
+                    },
+                    error: (error) => {
+                        console.error('❌ [sendDraftActionToBackend] Erro HTTP:', error);
+                        console.error('❌ [sendDraftActionToBackend] Status:', error.status);
+                        console.error('❌ [sendDraftActionToBackend] StatusText:', error.statusText);
+                        console.error('❌ [sendDraftActionToBackend] Error message:', error.message);
+                        console.error('❌ [sendDraftActionToBackend] Error object:', error.error);
+                        reject(error);
+                    }
+                });
+            });
 
             console.log('✅ [sendDraftActionToBackend] Resposta do backend:', response);
             console.log('✅ [sendDraftActionToBackend] Ação de draft enviada com sucesso para o backend');
             console.log('✅ [sendDraftActionToBackend] pick_ban_data deve ter sido atualizado no MySQL');
 
-        } catch (error) {
+        } catch (error: any) {
             console.error('❌ [sendDraftActionToBackend] Erro ao enviar ação para o backend:', error);
+            console.error('❌ [sendDraftActionToBackend] Detalhes do erro:', {
+                name: error.name,
+                message: error.message,
+                status: error.status,
+                statusText: error.statusText,
+                url: error.url,
+                stack: error.stack
+            });
 
             // ✅ NOVO: Não interromper o fluxo do draft por erro de backend
             // O draft continua funcionando localmente mesmo se o backend falhar
@@ -1449,5 +1490,53 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         }
 
         console.log('🌐 [sendDraftActionToBackend] === FIM DO ENVIO PARA BACKEND ===');
+    }
+
+    // ✅ NOVO: Método para obter bans de um jogador específico
+    getPlayerBans(team: 'blue' | 'red', player: any): Champion[] {
+        if (!this.session) return [];
+
+        const teamPlayers = team === 'blue' ? this.session.blueTeam : this.session.redTeam;
+
+        // Encontrar o jogador pelo ID ou nome
+        const foundPlayer = teamPlayers.find(p => this.botService.comparePlayers(p, player));
+        if (!foundPlayer) return [];
+
+        const playerName = foundPlayer.summonerName || foundPlayer.name;
+
+        console.log(`🔍 [getPlayerBans] Buscando bans para ${team} team player:`, {
+            playerName: playerName,
+            teamIndex: foundPlayer.teamIndex,
+            lane: foundPlayer.lane
+        });
+
+        // ✅ CORREÇÃO: Buscar nas fases de ban pelo nome do jogador
+        const banPhases = this.session.phases.filter(phase =>
+            phase.action === 'ban' &&
+            phase.team === team &&
+            phase.champion &&
+            phase.locked
+        );
+
+        const playerBans: Champion[] = [];
+
+        // Buscar bans que correspondem ao jogador
+        for (const banPhase of banPhases) {
+            const phasePlayerName = banPhase.playerName || banPhase.playerId || '';
+
+            // Verificar se é o mesmo jogador
+            if (phasePlayerName === playerName ||
+                banPhase.playerId === playerName ||
+                this.botService.comparePlayerWithId(foundPlayer, banPhase.playerId || '')) {
+
+                if (banPhase.champion) {
+                    playerBans.push(banPhase.champion);
+                    console.log(`✅ [getPlayerBans] Ban encontrado para ${playerName}: ${banPhase.champion.name}`);
+                }
+            }
+        }
+
+        console.log(`🔍 [getPlayerBans] Total de bans para ${playerName}: ${playerBans.length}`);
+        return playerBans;
     }
 }

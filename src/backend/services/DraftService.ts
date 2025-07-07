@@ -460,24 +460,20 @@ export class DraftService {
     return sortedPlayers;
   }
 
-  // ✅ CORRIGIDO: Processar ação de draft (pick/ban) com salvamento
-  async processDraftAction(matchId: number, playerId: number, championId: number, action: 'pick' | 'ban'): Promise<void> {
+  // ✅ CORRIGIDO: Processar ação de draft (pick/ban) com salvamento (sem necessidade de draft ativo)
+  async processDraftAction(matchId: number, playerId: string, championId: number, action: 'pick' | 'ban'): Promise<void> {
     console.log(`🎯 [Draft] Processando ${action} do campeão ${championId} por jogador ${playerId} na partida ${matchId}`);
     
     try {
-      // 1. Buscar draft ativo
-      const draftData = this.activeDrafts.get(matchId);
-      if (!draftData) {
-        throw new Error(`Draft ${matchId} não encontrado ou não ativo`);
-      }
-
-      // 2. ✅ NOVO: Buscar partida no banco para atualizar pick_ban_data
+      // 1. ✅ NOVO: Buscar partida no banco (não precisa de draft ativo na memória)
       const match = await this.dbManager.getCustomMatchById(matchId);
       if (!match) {
         throw new Error(`Partida ${matchId} não encontrada no banco`);
       }
 
-      // 3. ✅ NOVO: Carregar dados atuais de pick/ban
+      console.log(`✅ [Draft] Partida encontrada: ${match.id} - Status: ${match.status}`);
+
+      // 2. ✅ NOVO: Carregar dados atuais de pick/ban
       let pickBanData: any = {};
       try {
         if (match.pick_ban_data) {
@@ -490,53 +486,92 @@ export class DraftService {
         pickBanData = {};
       }
 
-      // 4. ✅ NOVO: Inicializar estrutura se não existir
+      // 3. ✅ NOVO: Inicializar estrutura se não existir
       if (!pickBanData.team1Picks) pickBanData.team1Picks = [];
       if (!pickBanData.team1Bans) pickBanData.team1Bans = [];
       if (!pickBanData.team2Picks) pickBanData.team2Picks = [];
       if (!pickBanData.team2Bans) pickBanData.team2Bans = [];
       if (!pickBanData.actions) pickBanData.actions = [];
 
-      // 5. ✅ CORRIGIDO: Determinar qual time e jogador está fazendo a ação
+      // 4. ✅ CORREÇÃO: Determinar qual time e jogador com base nos dados da partida
       let teamIndex = 1; // Default team 1 (blue)
-      let playerName = `Player${playerId}`;
+      let playerName = playerId; // Usar playerId como nome
       let playerLane = 'unknown';
-      let foundPlayer = null;
       
-      // ✅ CORREÇÃO: Buscar jogador pelos dados corretos (teamIndex 0-9)
-      const allPlayers = [...draftData.team1, ...draftData.team2];
-      foundPlayer = allPlayers.find(p => p.teamIndex === playerId);
-      
-      if (!foundPlayer) {
-        // ✅ FALLBACK: Buscar por nome se não encontrar por índice
-        foundPlayer = allPlayers.find(p => p.summonerName === playerId.toString());
-      }
-      
-      if (foundPlayer) {
-        // ✅ CORREÇÃO: Determinar time baseado no teamIndex (0-4 = azul, 5-9 = vermelho)
-        teamIndex = foundPlayer.teamIndex <= 4 ? 1 : 2;
-        playerName = foundPlayer.summonerName;
-        playerLane = foundPlayer.assignedLane;
-        
-        console.log(`🔍 [Draft] Jogador encontrado: ${playerName} (teamIndex: ${foundPlayer.teamIndex}, lane: ${playerLane}, team: ${teamIndex})`);
-      } else {
-        console.warn(`⚠️ [Draft] Jogador não encontrado para ID: ${playerId}`);
-        // ✅ FALLBACK: Determinar time pelo playerId diretamente
-        teamIndex = playerId <= 4 ? 1 : 2;
-        playerName = `Player${playerId}`;
+      // ✅ NOVO: Buscar jogador nos dados da partida (team1_players e team2_players)
+      let foundInTeam1 = false;
+      let foundInTeam2 = false;
+      let playerTeamIndex = -1;
+
+      try {
+        // Parsear listas de jogadores da partida
+        const team1Players = typeof match.team1_players === 'string' 
+          ? JSON.parse(match.team1_players) 
+          : (match.team1_players || []);
+        const team2Players = typeof match.team2_players === 'string' 
+          ? JSON.parse(match.team2_players) 
+          : (match.team2_players || []);
+
+        console.log(`🔍 [Draft] Jogadores do time 1:`, team1Players);
+        console.log(`🔍 [Draft] Jogadores do time 2:`, team2Players);
+        console.log(`🔍 [Draft] Buscando jogador:`, playerId);
+
+        // Verificar se o jogador está no team1
+        const team1Index = team1Players.findIndex((player: string) => {
+          return player === playerId || player.includes(playerId) || playerId.includes(player);
+        });
+
+        if (team1Index !== -1) {
+          foundInTeam1 = true;
+          teamIndex = 1;
+          playerTeamIndex = team1Index;
+          playerName = team1Players[team1Index];
+          console.log(`✅ [Draft] Jogador encontrado no Team 1 (índice ${team1Index}): ${playerName}`);
+        } else {
+          // Verificar se o jogador está no team2
+          const team2Index = team2Players.findIndex((player: string) => {
+            return player === playerId || player.includes(playerId) || playerId.includes(player);
+          });
+
+          if (team2Index !== -1) {
+            foundInTeam2 = true;
+            teamIndex = 2;
+            playerTeamIndex = team2Index;
+            playerName = team2Players[team2Index];
+            console.log(`✅ [Draft] Jogador encontrado no Team 2 (índice ${team2Index}): ${playerName}`);
+          }
+        }
+
+        if (!foundInTeam1 && !foundInTeam2) {
+          console.warn(`⚠️ [Draft] Jogador ${playerId} não encontrado em nenhum time, usando dados padrão`);
+          playerName = playerId;
+          teamIndex = 1; // Default para team 1
+          playerTeamIndex = 0;
+        }
+
+        // Determinar lane baseada no índice do jogador
+        const lanes = ['top', 'jungle', 'mid', 'adc', 'support'];
+        playerLane = lanes[playerTeamIndex] || 'unknown';
+
+      } catch (parseError) {
+        console.error(`❌ [Draft] Erro ao parsear jogadores da partida:`, parseError);
+        playerName = playerId;
+        teamIndex = 1;
         playerLane = 'unknown';
       }
 
-      // 6. ✅ CORRIGIDO: Salvar ação baseada no tipo e time com dados completos
+      // 5. ✅ CORRIGIDO: Salvar ação baseada no tipo e time com dados completos
       const actionData = {
         teamIndex,
-        playerIndex: playerId,
+        playerIndex: playerTeamIndex,
         playerName,
         playerLane,
         championId,
         action,
         timestamp: new Date().toISOString()
       };
+
+      console.log(`🎯 [Draft] Dados da ação processada:`, actionData);
 
       // ✅ CORREÇÃO: Salvar em estruturas mais organizadas
       if (action === 'pick') {
@@ -557,10 +592,10 @@ export class DraftService {
         }
       }
 
-      // 7. ✅ NOVO: Adicionar à lista de ações sequenciais
+      // 6. ✅ NOVO: Adicionar à lista de ações sequenciais
       pickBanData.actions.push(actionData);
 
-      // 8. ✅ CORRIGIDO: Salvar no banco de dados com logs detalhados
+      // 7. ✅ CORRIGIDO: Salvar no banco de dados com logs detalhados
       await this.dbManager.updateCustomMatch(matchId, {
         pick_ban_data: JSON.stringify(pickBanData)
       });
@@ -570,7 +605,7 @@ export class DraftService {
         jogador: playerName,
         lane: playerLane,
         team: teamIndex === 1 ? 'AZUL' : 'VERMELHO',
-        teamIndex: foundPlayer?.teamIndex,
+        teamIndex: playerTeamIndex,
         campeao: championId,
         acao: action,
         totalPicks: pickBanData.team1Picks.length + pickBanData.team2Picks.length,
@@ -578,31 +613,14 @@ export class DraftService {
         picksAzul: pickBanData.team1Picks.length,
         picksVermelho: pickBanData.team2Picks.length,
         bansAzul: pickBanData.team1Bans.length,
-        bansVermelho: pickBanData.team2Bans.length
+        bansVermelho: pickBanData.team2Bans.length,
+        totalAcoes: pickBanData.actions.length
       });
 
-      // 9. ✅ CORRIGIDO: Notificar frontend sobre a ação com dados completos
-      this.notifyDraftAction(matchId, playerId, championId, action, {
-        teamIndex,
-        playerName,
-        playerLane,
-        foundPlayer,
-        pickBanData,
-        totalPicks: pickBanData.team1Picks.length + pickBanData.team2Picks.length,
-        totalBans: pickBanData.team1Bans.length + pickBanData.team2Bans.length,
-        // ✅ NOVO: Dados específicos para exibição no frontend
-        teamColor: teamIndex === 1 ? 'blue' : 'red',
-        actionType: action,
-        championSelected: championId,
-        playerInfo: {
-          name: playerName,
-          lane: playerLane,
-          teamIndex: foundPlayer?.teamIndex
-        }
-      });
+      console.log(`🎉 [Draft] Ação do draft processada com sucesso para partida ${matchId}`);
 
     } catch (error) {
-      console.error(`❌ [Draft] Erro ao processar ação de draft:`, error);
+      console.error(`❌ [Draft] Erro ao processar ação do draft:`, error);
       throw error;
     }
   }

@@ -1399,20 +1399,32 @@ app.post('/api/match/draft-action', (async (req: Request, res: Response) => {
   try {
     const { matchId, playerId, championId, action } = req.body;
 
-    if (!matchId || !playerId || !championId || !action) {
+    console.log('🎯 [Draft API] Recebidos parâmetros:', { matchId, playerId, championId, action });
+
+    // ✅ CORREÇÃO: Verificar se os parâmetros existem (playerId pode ser 0)
+    if (matchId === undefined || playerId === undefined || championId === undefined || action === undefined) {
+      console.log('❌ [Draft API] Parâmetros inválidos:', { 
+        matchId: matchId === undefined ? 'UNDEFINED' : matchId,
+        playerId: playerId === undefined ? 'UNDEFINED' : playerId,
+        championId: championId === undefined ? 'UNDEFINED' : championId,
+        action: action === undefined ? 'UNDEFINED' : action
+      });
       return res.status(400).json({
         success: false,
         error: 'Todos os parâmetros são obrigatórios'
       });
     }
 
+    console.log('✅ [Draft API] Parâmetros válidos, processando ação...');
     await draftService.processDraftAction(matchId, playerId, championId, action);
+    
+    console.log('✅ [Draft API] Ação processada com sucesso');
     res.json({
       success: true,
       message: 'Ação do draft processada com sucesso'
     });
   } catch (error: any) {
-    console.error('Erro ao processar ação do draft:', error);
+    console.error('❌ [Draft API] Erro ao processar ação do draft:', error);
     res.status(500).json({
       success: false,
       error: error.message
