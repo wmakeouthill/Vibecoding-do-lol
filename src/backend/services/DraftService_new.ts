@@ -19,6 +19,7 @@ interface DraftPlayer {
   primaryLane: string;
   secondaryLane: string;
   isAutofill: boolean;
+  championId?: number; // ✅ NOVO: Campeão escolhido no draft
 }
 
 interface DraftPhase {
@@ -59,7 +60,7 @@ export class DraftService {
         throw new Error(`Partida ${matchId} não encontrada`);
       }
 
-      // 2. ✅ CORREÇÃO: Usar EXATAMENTE os dados já balanceados do match-found
+      // 2. ✅ CORREÇÃO: Tentar usar draft_data se disponível (já balanceado)
       let draftData: DraftData | null = null;
       
       if (match.draft_data) {
@@ -68,85 +69,21 @@ export class DraftService {
             ? JSON.parse(match.draft_data) 
             : match.draft_data;
           
-          console.log(`🔍 [Draft] Dados encontrados no banco:`, {
+          console.log(`🔍 [Draft] Dados do draft encontrados no banco:`, {
+            team1Count: savedDraftData.lanes?.team1?.length || 0,
+            team2Count: savedDraftData.lanes?.team2?.length || 0,
             hasTeammates: !!savedDraftData.teammates,
-            hasEnemies: !!savedDraftData.enemies,
-            teammatesCount: savedDraftData.teammates?.length || 0,
-            enemiesCount: savedDraftData.enemies?.length || 0
+            hasEnemies: !!savedDraftData.enemies
           });
           
-          // ✅ PRIORIDADE 1: Usar dados do match-found (teammates/enemies) se disponíveis
-          if (savedDraftData.teammates && savedDraftData.enemies) {
-            console.log(`✅ [Draft] Usando dados EXATOS do match-found (teammates/enemies)`);
-            
-            // ✅ CORREÇÃO: Usar EXATAMENTE os índices do match-found (0-4 azul, 5-9 vermelho)
-            // NÃO reordenar! Os dados já vêm na ordem correta: top, jungle, mid, adc, support
-            
-            // Função para normalizar lane (adc/bot são a mesma coisa)
-            const normalizeLane = (lane: string): string => {
-              if (lane === 'bot' || lane === 'adc') return 'adc';
-              return lane;
-            };
-            
-            // ✅ CORREÇÃO: Ordenar teammates por teamIndex (0-4) para manter ordem do match-found
-            const sortedTeammates = [...savedDraftData.teammates].sort((a, b) => {
-              const indexA = a.teamIndex !== undefined ? a.teamIndex : 999;
-              const indexB = b.teamIndex !== undefined ? b.teamIndex : 999;
-              return indexA - indexB;
-            });
-            
-            // ✅ CORREÇÃO: Ordenar enemies por teamIndex (5-9) para manter ordem do match-found
-            const sortedEnemies = [...savedDraftData.enemies].sort((a, b) => {
-              const indexA = a.teamIndex !== undefined ? a.teamIndex : 999;
-              const indexB = b.teamIndex !== undefined ? b.teamIndex : 999;
-              return indexA - indexB;
-            });
-            
-            draftData = {
-              matchId,
-              team1: sortedTeammates.map((p: any) => ({
-                summonerName: p.summonerName,
-                assignedLane: normalizeLane(p.assignedLane || p.lane), // ✅ CORREÇÃO: Normalizar lane
-                teamIndex: p.teamIndex, // ✅ USAR O ÍNDICE EXATO DO MATCH-FOUND (0-4)
-                mmr: p.mmr,
-                primaryLane: p.primaryLane || 'fill',
-                secondaryLane: p.secondaryLane || 'fill',
-                isAutofill: p.isAutofill || false
-              })),
-              team2: sortedEnemies.map((p: any) => ({
-                summonerName: p.summonerName,
-                assignedLane: normalizeLane(p.assignedLane || p.lane), // ✅ CORREÇÃO: Normalizar lane
-                teamIndex: p.teamIndex, // ✅ USAR O ÍNDICE EXATO DO MATCH-FOUND (5-9)
-                mmr: p.mmr,
-                primaryLane: p.primaryLane || 'fill',
-                secondaryLane: p.secondaryLane || 'fill',
-                isAutofill: p.isAutofill || false
-              })),
-              averageMMR: {
-                team1: savedDraftData.teamStats?.team1?.averageMMR || 1200,
-                team2: savedDraftData.teamStats?.team2?.averageMMR || 1200
-              },
-              balanceQuality: savedDraftData.balancingInfo?.mmrDifference || 0,
-              autofillCount: (savedDraftData.balancingInfo?.autofillCount?.team1 || 0) + 
-                           (savedDraftData.balancingInfo?.autofillCount?.team2 || 0),
-              createdAt: new Date().toISOString()
-            };
-            
-            console.log(`✅ [Draft] Times com índices EXATOS do match-found:`, {
-              team1: draftData.team1.map(p => `${p.teamIndex}: ${p.summonerName} (${p.assignedLane})`),
-              team2: draftData.team2.map(p => `${p.teamIndex}: ${p.summonerName} (${p.assignedLane})`)
-            });
-          }
-          // ✅ FALLBACK: Usar dados antigos (lanes.team1/team2) se teammates/enemies não existirem
-          else if (savedDraftData.lanes?.team1 && savedDraftData.lanes?.team2) {
-            console.log(`⚠️ [Draft] Usando dados antigos (lanes.team1/team2) como fallback`);
-            
+          // ✅ CORREÇÃO: Usar dados já balanceados do MatchmakingService
+          if (savedDraftData.lanes?.team1 && savedDraftData.lanes?.team2) {
             draftData = {
               matchId,
               team1: savedDraftData.lanes.team1.map((p: any, index: number) => ({
                 summonerName: p.player,
                 assignedLane: p.lane,
-                teamIndex: index,
+                teamIndex: index, // 0-4 para team1
                 mmr: p.mmr,
                 primaryLane: p.primaryLane || 'fill',
                 secondaryLane: p.secondaryLane || 'fill',
@@ -155,7 +92,7 @@ export class DraftService {
               team2: savedDraftData.lanes.team2.map((p: any, index: number) => ({
                 summonerName: p.player,
                 assignedLane: p.lane,
-                teamIndex: index + 5,
+                teamIndex: index + 5, // 5-9 para team2
                 mmr: p.mmr,
                 primaryLane: p.primaryLane || 'fill',
                 secondaryLane: p.secondaryLane || 'fill',
@@ -169,6 +106,8 @@ export class DraftService {
               autofillCount: 0,
               createdAt: new Date().toISOString()
             };
+            
+            console.log(`✅ [Draft] Usando dados já balanceados do MatchmakingService`);
           }
         } catch (error) {
           console.warn(`⚠️ [Draft] Erro ao parsear draft_data, usando fallback:`, error);
@@ -390,24 +329,18 @@ export class DraftService {
     return { team1, team2 };
   }
 
-  // ✅ CORRIGIDO: Atribuir lanes na ordem EXATA da ranqueada
+  // ✅ Atribuir lanes otimizado
   private assignLanesOptimized(players: any[]): any[] {
-    const laneOrder = ['top', 'jungle', 'mid', 'adc', 'support']; // ✅ ORDEM EXATA DA RANQUEADA
-    const laneAssignments: { [key: string]: number } = { 'top': 0, 'jungle': 0, 'mid': 0, 'adc': 0, 'support': 0 };
+    const laneOrder = ['top', 'jungle', 'mid', 'bot', 'support'];
+    const laneAssignments: { [key: string]: number } = { 'top': 0, 'jungle': 0, 'mid': 0, 'bot': 0, 'support': 0 };
     const playersWithLanes: any[] = [];
-    
-    // Normalizar lanes (bot = adc)
-    const normalizeLane = (lane: string): string => {
-      if (lane === 'bot') return 'adc';
-      return lane;
-    };
     
     // Atribuir lanes baseado em MMR e preferências
     for (const player of players) {
-      const primaryLane = normalizeLane(player.primaryLane || 'fill');
-      const secondaryLane = normalizeLane(player.secondaryLane || 'fill');
+      const primaryLane = player.primaryLane || 'fill';
+      const secondaryLane = player.secondaryLane || 'fill';
       
-      let assignedLane = null;
+      let assignedLane = "";
       let isAutofill = false;
       
       // Tentar lane primária
@@ -422,7 +355,7 @@ export class DraftService {
         isAutofill = false;
         laneAssignments[secondaryLane]++;
       }
-      // Autofill: encontrar primeira lane disponível NA ORDEM CORRETA
+      // Autofill: encontrar primeira lane disponível
       else {
         for (const lane of laneOrder) {
           if (laneAssignments[lane] < 2) {
@@ -445,22 +378,11 @@ export class DraftService {
       console.log(`🎯 [Draft] ${player.summonerName} (MMR: ${player.mmr}) → ${assignedLane} ${isAutofill ? '(autofill)' : '(preferência)'}`);
     }
     
-    // ✅ CORREÇÃO: Ordenar jogadores por lane na ordem EXATA da ranqueada
-    const sortedPlayers = playersWithLanes.sort((a, b) => {
-      const indexA = laneOrder.indexOf(a.assignedLane);
-      const indexB = laneOrder.indexOf(b.assignedLane);
-      return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
-    });
-    
-    console.log('✅ [Draft] Atribuição final (ordem ranqueada):', {
-      lanes: laneAssignments,
-      playerOrder: sortedPlayers.map(p => `${p.summonerName} (${p.assignedLane})`)
-    });
-    
-    return sortedPlayers;
+    console.log('✅ [Draft] Atribuição final:', laneAssignments);
+    return playersWithLanes;
   }
 
-  // ✅ CORRIGIDO: Processar ação de draft (pick/ban) com salvamento
+  // ✅ CORRIGIDO: Processar ação de draft (pick/ban) com salvamento no banco
   async processDraftAction(matchId: number, playerId: number, championId: number, action: 'pick' | 'ban'): Promise<void> {
     console.log(`🎯 [Draft] Processando ${action} do campeão ${championId} por jogador ${playerId} na partida ${matchId}`);
     
@@ -471,13 +393,13 @@ export class DraftService {
         throw new Error(`Draft ${matchId} não encontrado ou não ativo`);
       }
 
-      // 2. ✅ NOVO: Buscar partida no banco para atualizar pick_ban_data
+      // 2. Buscar partida no banco para atualizar pick_ban_data
       const match = await this.dbManager.getCustomMatchById(matchId);
       if (!match) {
         throw new Error(`Partida ${matchId} não encontrada no banco`);
       }
 
-      // 3. ✅ NOVO: Carregar dados atuais de pick/ban
+      // 3. Carregar dados atuais de pick/ban
       let pickBanData: any = {};
       try {
         if (match.pick_ban_data) {
@@ -490,115 +412,121 @@ export class DraftService {
         pickBanData = {};
       }
 
-      // 4. ✅ NOVO: Inicializar estrutura se não existir
-      if (!pickBanData.team1Picks) pickBanData.team1Picks = [];
-      if (!pickBanData.team1Bans) pickBanData.team1Bans = [];
-      if (!pickBanData.team2Picks) pickBanData.team2Picks = [];
-      if (!pickBanData.team2Bans) pickBanData.team2Bans = [];
+      // 4. Inicializar estrutura se não existir
+      if (!pickBanData.picks) pickBanData.picks = { team1: {}, team2: {} };
+      if (!pickBanData.bans) pickBanData.bans = { team1: [], team2: [] };
       if (!pickBanData.actions) pickBanData.actions = [];
 
-      // 5. ✅ CORRIGIDO: Determinar qual time e jogador está fazendo a ação
-      let teamIndex = 1; // Default team 1 (blue)
-      let playerName = `Player${playerId}`;
-      let playerLane = 'unknown';
-      let foundPlayer = null;
-      
-      // ✅ CORREÇÃO: Buscar jogador pelos dados corretos (teamIndex 0-9)
+      // 5. ✅ CORREÇÃO: Identificar jogador pelos dados do draft (usando teamIndex)
       const allPlayers = [...draftData.team1, ...draftData.team2];
-      foundPlayer = allPlayers.find(p => p.teamIndex === playerId);
+      const player = allPlayers.find(p => p.teamIndex === playerId);
       
-      if (!foundPlayer) {
-        // ✅ FALLBACK: Buscar por nome se não encontrar por índice
-        foundPlayer = allPlayers.find(p => p.summonerName === playerId.toString());
-      }
-      
-      if (foundPlayer) {
-        // ✅ CORREÇÃO: Determinar time baseado no teamIndex (0-4 = azul, 5-9 = vermelho)
-        teamIndex = foundPlayer.teamIndex <= 4 ? 1 : 2;
-        playerName = foundPlayer.summonerName;
-        playerLane = foundPlayer.assignedLane;
-        
-        console.log(`🔍 [Draft] Jogador encontrado: ${playerName} (teamIndex: ${foundPlayer.teamIndex}, lane: ${playerLane}, team: ${teamIndex})`);
-      } else {
-        console.warn(`⚠️ [Draft] Jogador não encontrado para ID: ${playerId}`);
-        // ✅ FALLBACK: Determinar time pelo playerId diretamente
-        teamIndex = playerId <= 4 ? 1 : 2;
-        playerName = `Player${playerId}`;
-        playerLane = 'unknown';
+      if (!player) {
+        console.error(`❌ [Draft] Jogador com teamIndex ${playerId} não encontrado:`, {
+          playerId,
+          availableIndexes: allPlayers.map(p => p.teamIndex),
+          team1Indexes: draftData.team1.map(p => p.teamIndex),
+          team2Indexes: draftData.team2.map(p => p.teamIndex)
+        });
+        throw new Error(`Jogador ${playerId} não encontrado na partida ${matchId}`);
       }
 
-      // 6. ✅ CORRIGIDO: Salvar ação baseada no tipo e time com dados completos
+      // 6. ✅ CORREÇÃO: Determinar time baseado no teamIndex (0-4 = team1, 5-9 = team2)
+      const isTeam1 = player.teamIndex <= 4;
+      const teamKey = isTeam1 ? 'team1' : 'team2';
+      const teamNumber = isTeam1 ? 1 : 2;
+      
+      console.log(`🔍 [Draft] Jogador identificado:`, {
+        playerId,
+        playerName: player.summonerName,
+        teamIndex: player.teamIndex,
+        lane: player.assignedLane,
+        isTeam1,
+        teamKey,
+        teamNumber,
+        action,
+        championId
+      });
+
+      // 7. ✅ CORREÇÃO: Salvar ação baseada no tipo e time
       const actionData = {
-        teamIndex,
-        playerIndex: playerId,
-        playerName,
-        playerLane,
+        playerId,
+        playerName: player.summonerName,
+        teamIndex: player.teamIndex,
+        lane: player.assignedLane,
         championId,
         action,
-        timestamp: new Date().toISOString()
+        team: teamNumber,
+        timestamp: Date.now()
       };
 
-      // ✅ CORREÇÃO: Salvar em estruturas mais organizadas
+      // 8. ✅ CORREÇÃO: Salvar pick/ban específico
       if (action === 'pick') {
-        if (teamIndex === 1) {
-          pickBanData.team1Picks.push(actionData);
-          console.log(`✅ [Draft] Pick salvo para time azul: ${playerName} (${playerLane}) escolheu campeão ${championId}`);
-        } else {
-          pickBanData.team2Picks.push(actionData);
-          console.log(`✅ [Draft] Pick salvo para time vermelho: ${playerName} (${playerLane}) escolheu campeão ${championId}`);
-        }
+        pickBanData.picks[teamKey][player.assignedLane] = {
+          championId,
+          playerId,
+          playerName: player.summonerName,
+          teamIndex: player.teamIndex,
+          lane: player.assignedLane,
+          timestamp: Date.now()
+        };
+        console.log(`✅ [Draft] Pick salvo para ${teamKey}.${player.assignedLane}:`, pickBanData.picks[teamKey][player.assignedLane]);
       } else if (action === 'ban') {
-        if (teamIndex === 1) {
-          pickBanData.team1Bans.push(actionData);
-          console.log(`✅ [Draft] Ban salvo para time azul: ${playerName} (${playerLane}) baniu campeão ${championId}`);
-        } else {
-          pickBanData.team2Bans.push(actionData);
-          console.log(`✅ [Draft] Ban salvo para time vermelho: ${playerName} (${playerLane}) baniu campeão ${championId}`);
+        pickBanData.bans[teamKey].push({
+          championId,
+          playerId,
+          playerName: player.summonerName,
+          teamIndex: player.teamIndex,
+          lane: player.assignedLane,
+          timestamp: Date.now()
+        });
+        console.log(`✅ [Draft] Ban salvo para ${teamKey}:`, pickBanData.bans[teamKey]);
+      }
+
+      // 9. Adicionar à lista de ações sequenciais
+      pickBanData.actions.push(actionData);
+
+      // 10. ✅ NOVO: Atualizar draft_data com campeão escolhido (somente para picks)
+      let updatedDraftData = draftData;
+      if (action === 'pick') {
+        // Atualizar o jogador no draft_data com o campeão escolhido
+        const isTeam1Player = player.teamIndex <= 4;
+        const teamArray = isTeam1Player ? updatedDraftData.team1 : updatedDraftData.team2;
+        const playerInTeam = teamArray.find(p => p.teamIndex === player.teamIndex);
+        
+        if (playerInTeam) {
+          playerInTeam.championId = championId;
+          console.log(`✅ [Draft] Campeão ${championId} atribuído ao jogador ${playerInTeam.summonerName} (${playerInTeam.assignedLane}) no draft_data`);
         }
       }
 
-      // 7. ✅ NOVO: Adicionar à lista de ações sequenciais
-      pickBanData.actions.push(actionData);
-
-      // 8. ✅ CORRIGIDO: Salvar no banco de dados com logs detalhados
-      await this.dbManager.updateCustomMatch(matchId, {
+      // 11. ✅ CORREÇÃO: Salvar no banco de dados (pick_ban_data + draft_data atualizado)
+      const updateData: any = {
         pick_ban_data: JSON.stringify(pickBanData)
-      });
+      };
+      
+      // Atualizar draft_data somente se foi um pick
+      if (action === 'pick') {
+        updateData.draft_data = JSON.stringify(updatedDraftData);
+      }
+      
+      await this.dbManager.updateCustomMatch(matchId, updateData);
 
-      console.log(`✅ [Draft] ${action.toUpperCase()} SALVO NO BANCO:`, {
-        partida: matchId,
-        jogador: playerName,
-        lane: playerLane,
-        team: teamIndex === 1 ? 'AZUL' : 'VERMELHO',
-        teamIndex: foundPlayer?.teamIndex,
-        campeao: championId,
-        acao: action,
-        totalPicks: pickBanData.team1Picks.length + pickBanData.team2Picks.length,
-        totalBans: pickBanData.team1Bans.length + pickBanData.team2Bans.length,
-        picksAzul: pickBanData.team1Picks.length,
-        picksVermelho: pickBanData.team2Picks.length,
-        bansAzul: pickBanData.team1Bans.length,
-        bansVermelho: pickBanData.team2Bans.length
-      });
+      console.log(`✅ [Draft] ${action} salvo no banco: ${player.summonerName} (${teamKey}, ${player.assignedLane}) ${action === 'pick' ? 'escolheu' : 'baniu'} campeão ${championId}`);
 
-      // 9. ✅ CORRIGIDO: Notificar frontend sobre a ação com dados completos
+      // 12. ✅ CORREÇÃO: Notificar frontend sobre a ação com dados completos
       this.notifyDraftAction(matchId, playerId, championId, action, {
-        teamIndex,
-        playerName,
-        playerLane,
-        foundPlayer,
+        player: player.summonerName,
+        lane: player.assignedLane,
+        team: teamNumber,
+        teamKey,
+        teamIndex: player.teamIndex,
+        championId,
+        action,
         pickBanData,
-        totalPicks: pickBanData.team1Picks.length + pickBanData.team2Picks.length,
-        totalBans: pickBanData.team1Bans.length + pickBanData.team2Bans.length,
-        // ✅ NOVO: Dados específicos para exibição no frontend
-        teamColor: teamIndex === 1 ? 'blue' : 'red',
-        actionType: action,
-        championSelected: championId,
-        playerInfo: {
-          name: playerName,
-          lane: playerLane,
-          teamIndex: foundPlayer?.teamIndex
-        }
+        draftData: updatedDraftData, // ✅ NOVO: Enviar draft_data atualizado
+        totalPicks: Object.keys(pickBanData.picks.team1).length + Object.keys(pickBanData.picks.team2).length,
+        totalBans: pickBanData.bans.team1.length + pickBanData.bans.team2.length
       });
 
     } catch (error) {
@@ -719,32 +647,40 @@ export class DraftService {
     if (!this.wss) return;
 
     // ✅ CORREÇÃO: Preparar dados estruturados EXATAMENTE igual ao match-found
-    const teammates = draftData.team1.map(player => ({
+    const teammates = draftData.team1.map((player, index) => ({
       id: player.summonerName,
       summonerName: player.summonerName,
       name: player.summonerName,
       assignedLane: player.assignedLane,
       lane: player.assignedLane,
       teamIndex: player.teamIndex, // 0-4 para team1
+      index: index, // ✅ NOVO: Índice no array (0-4)
       mmr: player.mmr,
       primaryLane: player.primaryLane,
       secondaryLane: player.secondaryLane,
       isAutofill: player.isAutofill,
-      team: 'blue' // ✅ NOVO: Identificação do time igual ao match-found
+      team: 'blue', // ✅ NOVO: Identificação do time igual ao match-found
+      side: 'left', // ✅ NOVO: Time azul fica do lado esquerdo
+      isBot: player.summonerName.includes('#BOT'), // ✅ NOVO: Identificar bots
+      championId: player.championId || null // ✅ NOVO: Campeão escolhido
     }));
 
-    const enemies = draftData.team2.map(player => ({
+    const enemies = draftData.team2.map((player, index) => ({
       id: player.summonerName,
       summonerName: player.summonerName,
       name: player.summonerName,
       assignedLane: player.assignedLane,
       lane: player.assignedLane,
       teamIndex: player.teamIndex, // 5-9 para team2
+      index: index, // ✅ NOVO: Índice no array (0-4)
       mmr: player.mmr,
       primaryLane: player.primaryLane,
       secondaryLane: player.secondaryLane,
       isAutofill: player.isAutofill,
-      team: 'red' // ✅ NOVO: Identificação do time igual ao match-found
+      team: 'red', // ✅ NOVO: Identificação do time igual ao match-found
+      side: 'right', // ✅ NOVO: Time vermelho fica do lado direito
+      isBot: player.summonerName.includes('#BOT'), // ✅ NOVO: Identificar bots
+      championId: player.championId || null // ✅ NOVO: Campeão escolhido
     }));
 
     // ✅ CORREÇÃO: Estruturar dados EXATAMENTE como match-found
@@ -761,6 +697,9 @@ export class DraftService {
         team2: enemies,
         blueTeam: teammates,
         redTeam: enemies,
+        // ✅ NOVO: Dados com posicionamento correto
+        leftTeam: teammates, // Time azul fica à esquerda
+        rightTeam: enemies,  // Time vermelho fica à direita
         // ✅ CORREÇÃO: Estatísticas detalhadas dos times (igual match-found)
         teamStats: {
           team1: {
@@ -797,6 +736,9 @@ export class DraftService {
         gameMode: 'RANKED_SOLO_5x5',
         mapId: 11, // Summoner's Rift
         queueType: 'RANKED',
+        // ✅ NOVO: Estrutura inicial dos picks/bans
+        picks: { team1: {}, team2: {} },
+        bans: { team1: [], team2: [] },
         // ✅ COMPATIBILIDADE: Campo draftData para compatibilidade com código antigo
         draftData
       },
@@ -810,7 +752,9 @@ export class DraftService {
       team1MMR: Math.round(draftData.averageMMR.team1),
       team2MMR: Math.round(draftData.averageMMR.team2),
       team1Lanes: teammates.map(p => `${p.summonerName}:${p.assignedLane}`),
-      team2Lanes: enemies.map(p => `${p.summonerName}:${p.assignedLane}`)
+      team2Lanes: enemies.map(p => `${p.summonerName}:${p.assignedLane}`),
+      leftTeam: 'blue (teammates)',
+      rightTeam: 'red (enemies)'
     });
   }
 
@@ -824,34 +768,38 @@ export class DraftService {
         playerId,
         championId,
         action,
-        // ✅ NOVO: Dados essenciais para o frontend
-        playerName: extraData?.playerName || `Player${playerId}`,
-        playerLane: extraData?.playerLane || 'unknown',
-        teamIndex: extraData?.teamIndex || 1,
-        teamColor: extraData?.teamColor || 'blue',
-        actionType: extraData?.actionType || action,
-        championSelected: extraData?.championSelected || championId,
-        playerInfo: extraData?.playerInfo || {},
-        // ✅ NOVO: Estado completo do draft
-        draftState: {
-          totalPicks: extraData?.totalPicks || 0,
-          totalBans: extraData?.totalBans || 0,
-          pickBanData: extraData?.pickBanData || {}
-        },
-        ...extraData
+        // ✅ CORREÇÃO: Incluir dados detalhados da ação
+        player: extraData?.player,
+        lane: extraData?.lane,
+        team: extraData?.team,
+        teamKey: extraData?.teamKey,
+        teamIndex: extraData?.teamIndex,
+        // ✅ CORREÇÃO: Incluir dados completos de picks/bans para o frontend
+        picks: extraData?.pickBanData?.picks || { team1: {}, team2: {} },
+        bans: extraData?.pickBanData?.bans || { team1: [], team2: [] },
+        // ✅ CORREÇÃO: Incluir informações de progresso
+        totalPicks: extraData?.totalPicks || 0,
+        totalBans: extraData?.totalBans || 0,
+        // ✅ CORREÇÃO: Incluir se é bot para o frontend
+        isBot: extraData?.player?.includes('#BOT') || false
       },
       timestamp: Date.now()
     };
 
     this.broadcastMessage(message);
-    
-    console.log(`📢 [Draft] Notificação de ${action} enviada:`, {
+    console.log(`📢 [Draft] Notificação de ação enviada:`, {
       matchId,
       playerId,
-      playerName: extraData?.playerName,
-      teamColor: extraData?.teamColor,
       championId,
-      action
+      action,
+      player: extraData?.player,
+      lane: extraData?.lane,
+      team: extraData?.team,
+      teamKey: extraData?.teamKey,
+      teamIndex: extraData?.teamIndex,
+      totalPicks: extraData?.totalPicks,
+      totalBans: extraData?.totalBans,
+      picksSaved: extraData?.pickBanData?.picks ? 'YES' : 'NO'
     });
   }
 
@@ -904,36 +852,36 @@ export class DraftService {
     });
   }
 
-  // ✅ CORRIGIDO: Gerar fases do draft (sequência EXATA da ranqueada do LoL)
+  // ✅ Gerar fases do draft (sequência de picks/bans)
   private generateDraftPhases(): DraftPhase[] {
     return [
-      // ===== PRIMEIRA FASE DE BANS (6 bans) =====
-      { phase: 'bans', team: 1, action: 'ban', playerIndex: 0 },   // Blue Ban 1 (Top)
-      { phase: 'bans', team: 2, action: 'ban', playerIndex: 0 },   // Red Ban 1 (Top)
-      { phase: 'bans', team: 1, action: 'ban', playerIndex: 1 },   // Blue Ban 2 (Jungle)
-      { phase: 'bans', team: 2, action: 'ban', playerIndex: 1 },   // Red Ban 2 (Jungle)
-      { phase: 'bans', team: 1, action: 'ban', playerIndex: 2 },   // Blue Ban 3 (Mid)
-      { phase: 'bans', team: 2, action: 'ban', playerIndex: 2 },   // Red Ban 3 (Mid)
+      // Primeira rodada de bans
+      { phase: 'bans', team: 1, action: 'ban', playerIndex: 0 },
+      { phase: 'bans', team: 2, action: 'ban', playerIndex: 0 },
+      { phase: 'bans', team: 1, action: 'ban', playerIndex: 1 },
+      { phase: 'bans', team: 2, action: 'ban', playerIndex: 1 },
+      { phase: 'bans', team: 1, action: 'ban', playerIndex: 2 },
+      { phase: 'bans', team: 2, action: 'ban', playerIndex: 2 },
       
-      // ===== PRIMEIRA FASE DE PICKS (6 picks) =====
-      { phase: 'picks', team: 1, action: 'pick', playerIndex: 0 }, // Blue Pick 1 (Top) - FIRST PICK
-      { phase: 'picks', team: 2, action: 'pick', playerIndex: 0 }, // Red Pick 1 (Top)
-      { phase: 'picks', team: 2, action: 'pick', playerIndex: 1 }, // Red Pick 2 (Jungle)
-      { phase: 'picks', team: 1, action: 'pick', playerIndex: 1 }, // Blue Pick 2 (Jungle)
-      { phase: 'picks', team: 1, action: 'pick', playerIndex: 2 }, // Blue Pick 3 (Mid)
-      { phase: 'picks', team: 2, action: 'pick', playerIndex: 2 }, // Red Pick 3 (Mid)
+      // Primeira rodada de picks
+      { phase: 'picks', team: 1, action: 'pick', playerIndex: 0 },
+      { phase: 'picks', team: 2, action: 'pick', playerIndex: 0 },
+      { phase: 'picks', team: 2, action: 'pick', playerIndex: 1 },
+      { phase: 'picks', team: 1, action: 'pick', playerIndex: 1 },
+      { phase: 'picks', team: 1, action: 'pick', playerIndex: 2 },
+      { phase: 'picks', team: 2, action: 'pick', playerIndex: 2 },
       
-      // ===== SEGUNDA FASE DE BANS (4 bans) =====
-      { phase: 'bans', team: 2, action: 'ban', playerIndex: 3 },   // Red Ban 4 (ADC)
-      { phase: 'bans', team: 1, action: 'ban', playerIndex: 3 },   // Blue Ban 4 (ADC)
-      { phase: 'bans', team: 2, action: 'ban', playerIndex: 4 },   // Red Ban 5 (Support)
-      { phase: 'bans', team: 1, action: 'ban', playerIndex: 4 },   // Blue Ban 5 (Support)
+      // Segunda rodada de bans
+      { phase: 'bans', team: 2, action: 'ban', playerIndex: 3 },
+      { phase: 'bans', team: 1, action: 'ban', playerIndex: 3 },
+      { phase: 'bans', team: 2, action: 'ban', playerIndex: 4 },
+      { phase: 'bans', team: 1, action: 'ban', playerIndex: 4 },
       
-      // ===== SEGUNDA FASE DE PICKS (4 picks) =====
-      { phase: 'picks', team: 2, action: 'pick', playerIndex: 3 }, // Red Pick 4 (ADC)
-      { phase: 'picks', team: 1, action: 'pick', playerIndex: 3 }, // Blue Pick 4 (ADC)
-      { phase: 'picks', team: 1, action: 'pick', playerIndex: 4 }, // Blue Pick 5 (Support)
-      { phase: 'picks', team: 2, action: 'pick', playerIndex: 4 }  // Red Pick 5 (Support) - LAST PICK
+      // Picks finais
+      { phase: 'picks', team: 2, action: 'pick', playerIndex: 3 },
+      { phase: 'picks', team: 1, action: 'pick', playerIndex: 3 },
+      { phase: 'picks', team: 2, action: 'pick', playerIndex: 4 },
+      { phase: 'picks', team: 1, action: 'pick', playerIndex: 4 }
     ];
   }
 

@@ -48,7 +48,7 @@ export class DraftService {
     console.log('✅ [Draft] DraftService inicializado com sucesso');
   }
 
-  // ✅ CORRIGIDO: Iniciar draft para partida aceita
+  // ✅ Iniciar draft para partida aceita
   async startDraft(matchId: number): Promise<void> {
     console.log(`🎯 [Draft] Iniciando draft para partida ${matchId}...`);
     
@@ -59,7 +59,7 @@ export class DraftService {
         throw new Error(`Partida ${matchId} não encontrada`);
       }
 
-      // 2. ✅ CORREÇÃO: Usar EXATAMENTE os dados já balanceados do match-found
+      // 2. ✅ CORREÇÃO: Tentar usar draft_data se disponível (já balanceado)
       let draftData: DraftData | null = null;
       
       if (match.draft_data) {
@@ -68,85 +68,21 @@ export class DraftService {
             ? JSON.parse(match.draft_data) 
             : match.draft_data;
           
-          console.log(`🔍 [Draft] Dados encontrados no banco:`, {
+          console.log(`🔍 [Draft] Dados do draft encontrados no banco:`, {
+            team1Count: savedDraftData.lanes?.team1?.length || 0,
+            team2Count: savedDraftData.lanes?.team2?.length || 0,
             hasTeammates: !!savedDraftData.teammates,
-            hasEnemies: !!savedDraftData.enemies,
-            teammatesCount: savedDraftData.teammates?.length || 0,
-            enemiesCount: savedDraftData.enemies?.length || 0
+            hasEnemies: !!savedDraftData.enemies
           });
           
-          // ✅ PRIORIDADE 1: Usar dados do match-found (teammates/enemies) se disponíveis
-          if (savedDraftData.teammates && savedDraftData.enemies) {
-            console.log(`✅ [Draft] Usando dados EXATOS do match-found (teammates/enemies)`);
-            
-            // ✅ CORREÇÃO: Usar EXATAMENTE os índices do match-found (0-4 azul, 5-9 vermelho)
-            // NÃO reordenar! Os dados já vêm na ordem correta: top, jungle, mid, adc, support
-            
-            // Função para normalizar lane (adc/bot são a mesma coisa)
-            const normalizeLane = (lane: string): string => {
-              if (lane === 'bot' || lane === 'adc') return 'adc';
-              return lane;
-            };
-            
-            // ✅ CORREÇÃO: Ordenar teammates por teamIndex (0-4) para manter ordem do match-found
-            const sortedTeammates = [...savedDraftData.teammates].sort((a, b) => {
-              const indexA = a.teamIndex !== undefined ? a.teamIndex : 999;
-              const indexB = b.teamIndex !== undefined ? b.teamIndex : 999;
-              return indexA - indexB;
-            });
-            
-            // ✅ CORREÇÃO: Ordenar enemies por teamIndex (5-9) para manter ordem do match-found
-            const sortedEnemies = [...savedDraftData.enemies].sort((a, b) => {
-              const indexA = a.teamIndex !== undefined ? a.teamIndex : 999;
-              const indexB = b.teamIndex !== undefined ? b.teamIndex : 999;
-              return indexA - indexB;
-            });
-            
-            draftData = {
-              matchId,
-              team1: sortedTeammates.map((p: any) => ({
-                summonerName: p.summonerName,
-                assignedLane: normalizeLane(p.assignedLane || p.lane), // ✅ CORREÇÃO: Normalizar lane
-                teamIndex: p.teamIndex, // ✅ USAR O ÍNDICE EXATO DO MATCH-FOUND (0-4)
-                mmr: p.mmr,
-                primaryLane: p.primaryLane || 'fill',
-                secondaryLane: p.secondaryLane || 'fill',
-                isAutofill: p.isAutofill || false
-              })),
-              team2: sortedEnemies.map((p: any) => ({
-                summonerName: p.summonerName,
-                assignedLane: normalizeLane(p.assignedLane || p.lane), // ✅ CORREÇÃO: Normalizar lane
-                teamIndex: p.teamIndex, // ✅ USAR O ÍNDICE EXATO DO MATCH-FOUND (5-9)
-                mmr: p.mmr,
-                primaryLane: p.primaryLane || 'fill',
-                secondaryLane: p.secondaryLane || 'fill',
-                isAutofill: p.isAutofill || false
-              })),
-              averageMMR: {
-                team1: savedDraftData.teamStats?.team1?.averageMMR || 1200,
-                team2: savedDraftData.teamStats?.team2?.averageMMR || 1200
-              },
-              balanceQuality: savedDraftData.balancingInfo?.mmrDifference || 0,
-              autofillCount: (savedDraftData.balancingInfo?.autofillCount?.team1 || 0) + 
-                           (savedDraftData.balancingInfo?.autofillCount?.team2 || 0),
-              createdAt: new Date().toISOString()
-            };
-            
-            console.log(`✅ [Draft] Times com índices EXATOS do match-found:`, {
-              team1: draftData.team1.map(p => `${p.teamIndex}: ${p.summonerName} (${p.assignedLane})`),
-              team2: draftData.team2.map(p => `${p.teamIndex}: ${p.summonerName} (${p.assignedLane})`)
-            });
-          }
-          // ✅ FALLBACK: Usar dados antigos (lanes.team1/team2) se teammates/enemies não existirem
-          else if (savedDraftData.lanes?.team1 && savedDraftData.lanes?.team2) {
-            console.log(`⚠️ [Draft] Usando dados antigos (lanes.team1/team2) como fallback`);
-            
+          // ✅ CORREÇÃO: Usar dados já balanceados do MatchmakingService
+          if (savedDraftData.lanes?.team1 && savedDraftData.lanes?.team2) {
             draftData = {
               matchId,
               team1: savedDraftData.lanes.team1.map((p: any, index: number) => ({
                 summonerName: p.player,
                 assignedLane: p.lane,
-                teamIndex: index,
+                teamIndex: index, // 0-4 para team1
                 mmr: p.mmr,
                 primaryLane: p.primaryLane || 'fill',
                 secondaryLane: p.secondaryLane || 'fill',
@@ -155,7 +91,7 @@ export class DraftService {
               team2: savedDraftData.lanes.team2.map((p: any, index: number) => ({
                 summonerName: p.player,
                 assignedLane: p.lane,
-                teamIndex: index + 5,
+                teamIndex: index + 5, // 5-9 para team2
                 mmr: p.mmr,
                 primaryLane: p.primaryLane || 'fill',
                 secondaryLane: p.secondaryLane || 'fill',
@@ -169,6 +105,8 @@ export class DraftService {
               autofillCount: 0,
               createdAt: new Date().toISOString()
             };
+            
+            console.log(`✅ [Draft] Usando dados já balanceados do MatchmakingService`);
           }
         } catch (error) {
           console.warn(`⚠️ [Draft] Erro ao parsear draft_data, usando fallback:`, error);
@@ -390,22 +328,16 @@ export class DraftService {
     return { team1, team2 };
   }
 
-  // ✅ CORRIGIDO: Atribuir lanes na ordem EXATA da ranqueada
+  // ✅ Atribuir lanes otimizado
   private assignLanesOptimized(players: any[]): any[] {
-    const laneOrder = ['top', 'jungle', 'mid', 'adc', 'support']; // ✅ ORDEM EXATA DA RANQUEADA
-    const laneAssignments: { [key: string]: number } = { 'top': 0, 'jungle': 0, 'mid': 0, 'adc': 0, 'support': 0 };
+    const laneOrder = ['top', 'jungle', 'mid', 'bot', 'support'];
+    const laneAssignments: { [key: string]: number } = { 'top': 0, 'jungle': 0, 'mid': 0, 'bot': 0, 'support': 0 };
     const playersWithLanes: any[] = [];
-    
-    // Normalizar lanes (bot = adc)
-    const normalizeLane = (lane: string): string => {
-      if (lane === 'bot') return 'adc';
-      return lane;
-    };
     
     // Atribuir lanes baseado em MMR e preferências
     for (const player of players) {
-      const primaryLane = normalizeLane(player.primaryLane || 'fill');
-      const secondaryLane = normalizeLane(player.secondaryLane || 'fill');
+      const primaryLane = player.primaryLane || 'fill';
+      const secondaryLane = player.secondaryLane || 'fill';
       
       let assignedLane = null;
       let isAutofill = false;
@@ -422,7 +354,7 @@ export class DraftService {
         isAutofill = false;
         laneAssignments[secondaryLane]++;
       }
-      // Autofill: encontrar primeira lane disponível NA ORDEM CORRETA
+      // Autofill: encontrar primeira lane disponível
       else {
         for (const lane of laneOrder) {
           if (laneAssignments[lane] < 2) {
@@ -445,161 +377,27 @@ export class DraftService {
       console.log(`🎯 [Draft] ${player.summonerName} (MMR: ${player.mmr}) → ${assignedLane} ${isAutofill ? '(autofill)' : '(preferência)'}`);
     }
     
-    // ✅ CORREÇÃO: Ordenar jogadores por lane na ordem EXATA da ranqueada
-    const sortedPlayers = playersWithLanes.sort((a, b) => {
-      const indexA = laneOrder.indexOf(a.assignedLane);
-      const indexB = laneOrder.indexOf(b.assignedLane);
-      return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
-    });
-    
-    console.log('✅ [Draft] Atribuição final (ordem ranqueada):', {
-      lanes: laneAssignments,
-      playerOrder: sortedPlayers.map(p => `${p.summonerName} (${p.assignedLane})`)
-    });
-    
-    return sortedPlayers;
+    console.log('✅ [Draft] Atribuição final:', laneAssignments);
+    return playersWithLanes;
   }
 
-  // ✅ CORRIGIDO: Processar ação de draft (pick/ban) com salvamento
+  // ✅ Processar ação de draft (pick/ban)
   async processDraftAction(matchId: number, playerId: number, championId: number, action: 'pick' | 'ban'): Promise<void> {
     console.log(`🎯 [Draft] Processando ${action} do campeão ${championId} por jogador ${playerId} na partida ${matchId}`);
     
     try {
-      // 1. Buscar draft ativo
+      // Buscar draft ativo
       const draftData = this.activeDrafts.get(matchId);
       if (!draftData) {
         throw new Error(`Draft ${matchId} não encontrado ou não ativo`);
       }
 
-      // 2. ✅ NOVO: Buscar partida no banco para atualizar pick_ban_data
-      const match = await this.dbManager.getCustomMatchById(matchId);
-      if (!match) {
-        throw new Error(`Partida ${matchId} não encontrada no banco`);
-      }
+      // Aqui você pode implementar a lógica específica de pick/ban
+      // Por enquanto, apenas logging
+      console.log(`✅ [Draft] Ação processada: ${action} de ${championId} na partida ${matchId}`);
 
-      // 3. ✅ NOVO: Carregar dados atuais de pick/ban
-      let pickBanData: any = {};
-      try {
-        if (match.pick_ban_data) {
-          pickBanData = typeof match.pick_ban_data === 'string' 
-            ? JSON.parse(match.pick_ban_data) 
-            : match.pick_ban_data;
-        }
-      } catch (error) {
-        console.warn(`⚠️ [Draft] Erro ao parsear pick_ban_data existente:`, error);
-        pickBanData = {};
-      }
-
-      // 4. ✅ NOVO: Inicializar estrutura se não existir
-      if (!pickBanData.team1Picks) pickBanData.team1Picks = [];
-      if (!pickBanData.team1Bans) pickBanData.team1Bans = [];
-      if (!pickBanData.team2Picks) pickBanData.team2Picks = [];
-      if (!pickBanData.team2Bans) pickBanData.team2Bans = [];
-      if (!pickBanData.actions) pickBanData.actions = [];
-
-      // 5. ✅ CORRIGIDO: Determinar qual time e jogador está fazendo a ação
-      let teamIndex = 1; // Default team 1 (blue)
-      let playerName = `Player${playerId}`;
-      let playerLane = 'unknown';
-      let foundPlayer = null;
-      
-      // ✅ CORREÇÃO: Buscar jogador pelos dados corretos (teamIndex 0-9)
-      const allPlayers = [...draftData.team1, ...draftData.team2];
-      foundPlayer = allPlayers.find(p => p.teamIndex === playerId);
-      
-      if (!foundPlayer) {
-        // ✅ FALLBACK: Buscar por nome se não encontrar por índice
-        foundPlayer = allPlayers.find(p => p.summonerName === playerId.toString());
-      }
-      
-      if (foundPlayer) {
-        // ✅ CORREÇÃO: Determinar time baseado no teamIndex (0-4 = azul, 5-9 = vermelho)
-        teamIndex = foundPlayer.teamIndex <= 4 ? 1 : 2;
-        playerName = foundPlayer.summonerName;
-        playerLane = foundPlayer.assignedLane;
-        
-        console.log(`🔍 [Draft] Jogador encontrado: ${playerName} (teamIndex: ${foundPlayer.teamIndex}, lane: ${playerLane}, team: ${teamIndex})`);
-      } else {
-        console.warn(`⚠️ [Draft] Jogador não encontrado para ID: ${playerId}`);
-        // ✅ FALLBACK: Determinar time pelo playerId diretamente
-        teamIndex = playerId <= 4 ? 1 : 2;
-        playerName = `Player${playerId}`;
-        playerLane = 'unknown';
-      }
-
-      // 6. ✅ CORRIGIDO: Salvar ação baseada no tipo e time com dados completos
-      const actionData = {
-        teamIndex,
-        playerIndex: playerId,
-        playerName,
-        playerLane,
-        championId,
-        action,
-        timestamp: new Date().toISOString()
-      };
-
-      // ✅ CORREÇÃO: Salvar em estruturas mais organizadas
-      if (action === 'pick') {
-        if (teamIndex === 1) {
-          pickBanData.team1Picks.push(actionData);
-          console.log(`✅ [Draft] Pick salvo para time azul: ${playerName} (${playerLane}) escolheu campeão ${championId}`);
-        } else {
-          pickBanData.team2Picks.push(actionData);
-          console.log(`✅ [Draft] Pick salvo para time vermelho: ${playerName} (${playerLane}) escolheu campeão ${championId}`);
-        }
-      } else if (action === 'ban') {
-        if (teamIndex === 1) {
-          pickBanData.team1Bans.push(actionData);
-          console.log(`✅ [Draft] Ban salvo para time azul: ${playerName} (${playerLane}) baniu campeão ${championId}`);
-        } else {
-          pickBanData.team2Bans.push(actionData);
-          console.log(`✅ [Draft] Ban salvo para time vermelho: ${playerName} (${playerLane}) baniu campeão ${championId}`);
-        }
-      }
-
-      // 7. ✅ NOVO: Adicionar à lista de ações sequenciais
-      pickBanData.actions.push(actionData);
-
-      // 8. ✅ CORRIGIDO: Salvar no banco de dados com logs detalhados
-      await this.dbManager.updateCustomMatch(matchId, {
-        pick_ban_data: JSON.stringify(pickBanData)
-      });
-
-      console.log(`✅ [Draft] ${action.toUpperCase()} SALVO NO BANCO:`, {
-        partida: matchId,
-        jogador: playerName,
-        lane: playerLane,
-        team: teamIndex === 1 ? 'AZUL' : 'VERMELHO',
-        teamIndex: foundPlayer?.teamIndex,
-        campeao: championId,
-        acao: action,
-        totalPicks: pickBanData.team1Picks.length + pickBanData.team2Picks.length,
-        totalBans: pickBanData.team1Bans.length + pickBanData.team2Bans.length,
-        picksAzul: pickBanData.team1Picks.length,
-        picksVermelho: pickBanData.team2Picks.length,
-        bansAzul: pickBanData.team1Bans.length,
-        bansVermelho: pickBanData.team2Bans.length
-      });
-
-      // 9. ✅ CORRIGIDO: Notificar frontend sobre a ação com dados completos
-      this.notifyDraftAction(matchId, playerId, championId, action, {
-        teamIndex,
-        playerName,
-        playerLane,
-        foundPlayer,
-        pickBanData,
-        totalPicks: pickBanData.team1Picks.length + pickBanData.team2Picks.length,
-        totalBans: pickBanData.team1Bans.length + pickBanData.team2Bans.length,
-        // ✅ NOVO: Dados específicos para exibição no frontend
-        teamColor: teamIndex === 1 ? 'blue' : 'red',
-        actionType: action,
-        championSelected: championId,
-        playerInfo: {
-          name: playerName,
-          lane: playerLane,
-          teamIndex: foundPlayer?.teamIndex
-        }
-      });
+      // Notificar frontend sobre a ação
+      this.notifyDraftAction(matchId, playerId, championId, action);
 
     } catch (error) {
       console.error(`❌ [Draft] Erro ao processar ação de draft:`, error);
@@ -628,63 +426,6 @@ export class DraftService {
 
     } catch (error) {
       console.error(`❌ [Draft] Erro ao finalizar draft:`, error);
-      throw error;
-    }
-  }
-
-  // ✅ NOVO: Cancelar draft e remover partida do banco
-  async cancelDraft(matchId: number, reason: string): Promise<void> {
-    console.log(`🚫 [Draft] Cancelando draft ${matchId}: ${reason}`);
-    
-    try {
-      // 1. Buscar dados do draft antes de cancelar
-      const draftData = this.activeDrafts.get(matchId);
-      
-      // 2. ✅ CORREÇÃO: Remover partida do banco de dados (igual ao recusar match-found)
-      await this.dbManager.deleteCustomMatch(matchId);
-      console.log(`✅ [Draft] Partida ${matchId} removida do banco de dados`);
-      
-      // 3. Remover do tracking local
-      this.activeDrafts.delete(matchId);
-      
-      // 4. ✅ NOVO: Se temos dados do draft, retornar jogadores para a fila
-      if (draftData) {
-        const allPlayerNames = [
-          ...draftData.team1.map(p => p.summonerName),
-          ...draftData.team2.map(p => p.summonerName)
-        ];
-        
-        console.log(`🔄 [Draft] Retornando ${allPlayerNames.length} jogadores para a fila...`);
-        
-        // Buscar dados dos jogadores para retorná-los à fila
-        for (const playerName of allPlayerNames) {
-          try {
-            // Buscar jogador no banco
-            const player = await this.dbManager.getPlayerBySummonerName(playerName);
-            if (player && player.id) {
-              // Adicionar de volta à fila com preferências padrão
-              await this.dbManager.addPlayerToQueue(
-                player.id,
-                playerName,
-                player.region || 'br1',
-                player.custom_lp || 1200,
-                { primaryLane: 'fill', secondaryLane: 'fill' }
-              );
-              console.log(`✅ [Draft] Jogador ${playerName} retornado à fila`);
-            }
-          } catch (error) {
-            console.error(`❌ [Draft] Erro ao retornar jogador ${playerName} à fila:`, error);
-          }
-        }
-      }
-      
-      // 5. Notificar frontend sobre cancelamento
-      this.notifyDraftCancelled(matchId, reason);
-      
-      console.log(`✅ [Draft] Draft ${matchId} cancelado com sucesso`);
-      
-    } catch (error) {
-      console.error(`❌ [Draft] Erro ao cancelar draft ${matchId}:`, error);
       throw error;
     }
   }
@@ -814,7 +555,7 @@ export class DraftService {
     });
   }
 
-  private notifyDraftAction(matchId: number, playerId: number, championId: number, action: string, extraData?: any): void {
+  private notifyDraftAction(matchId: number, playerId: number, championId: number, action: string): void {
     if (!this.wss) return;
 
     const message = {
@@ -823,36 +564,12 @@ export class DraftService {
         matchId,
         playerId,
         championId,
-        action,
-        // ✅ NOVO: Dados essenciais para o frontend
-        playerName: extraData?.playerName || `Player${playerId}`,
-        playerLane: extraData?.playerLane || 'unknown',
-        teamIndex: extraData?.teamIndex || 1,
-        teamColor: extraData?.teamColor || 'blue',
-        actionType: extraData?.actionType || action,
-        championSelected: extraData?.championSelected || championId,
-        playerInfo: extraData?.playerInfo || {},
-        // ✅ NOVO: Estado completo do draft
-        draftState: {
-          totalPicks: extraData?.totalPicks || 0,
-          totalBans: extraData?.totalBans || 0,
-          pickBanData: extraData?.pickBanData || {}
-        },
-        ...extraData
+        action
       },
       timestamp: Date.now()
     };
 
     this.broadcastMessage(message);
-    
-    console.log(`📢 [Draft] Notificação de ${action} enviada:`, {
-      matchId,
-      playerId,
-      playerName: extraData?.playerName,
-      teamColor: extraData?.teamColor,
-      championId,
-      action
-    });
   }
 
   private notifyGameStarting(matchId: number, draftResults: any): void {
@@ -872,6 +589,232 @@ export class DraftService {
     console.log(`📢 [Draft] Notificação de início de jogo enviada (${matchId})`);
   }
 
+  private broadcastMessage(message: any): void {
+    if (!this.wss?.clients) return;
+
+    this.wss.clients.forEach((client: WebSocket) => {
+      if (client.readyState === WebSocket.OPEN) {
+        try {
+          client.send(JSON.stringify(message));
+        } catch (error) {
+          console.error('❌ [Draft] Erro ao enviar mensagem:', error);
+        }
+      }
+    });
+  }
+
+  // ✅ Gerar fases do draft (sequência de picks/bans)
+  private generateDraftPhases(): DraftPhase[] {
+    return [
+      // Primeira rodada de bans
+      { phase: 'bans', team: 1, action: 'ban', playerIndex: 0 },
+      { phase: 'bans', team: 2, action: 'ban', playerIndex: 0 },
+      { phase: 'bans', team: 1, action: 'ban', playerIndex: 1 },
+      { phase: 'bans', team: 2, action: 'ban', playerIndex: 1 },
+      { phase: 'bans', team: 1, action: 'ban', playerIndex: 2 },
+      { phase: 'bans', team: 2, action: 'ban', playerIndex: 2 },
+      
+      // Primeira rodada de picks
+      { phase: 'picks', team: 1, action: 'pick', playerIndex: 0 },
+      { phase: 'picks', team: 2, action: 'pick', playerIndex: 0 },
+      { phase: 'picks', team: 2, action: 'pick', playerIndex: 1 },
+      { phase: 'picks', team: 1, action: 'pick', playerIndex: 1 },
+      { phase: 'picks', team: 1, action: 'pick', playerIndex: 2 },
+      { phase: 'picks', team: 2, action: 'pick', playerIndex: 2 },
+      
+      // Segunda rodada de bans
+      { phase: 'bans', team: 2, action: 'ban', playerIndex: 3 },
+      { phase: 'bans', team: 1, action: 'ban', playerIndex: 3 },
+      { phase: 'bans', team: 2, action: 'ban', playerIndex: 4 },
+      { phase: 'bans', team: 1, action: 'ban', playerIndex: 4 },
+      
+      // Picks finais
+      { phase: 'picks', team: 2, action: 'pick', playerIndex: 3 },
+      { phase: 'picks', team: 1, action: 'pick', playerIndex: 3 },
+      { phase: 'picks', team: 2, action: 'pick', playerIndex: 4 },
+      { phase: 'picks', team: 1, action: 'pick', playerIndex: 4 }
+    ];
+  }
+
+  // ✅ NOVO: Cancelar draft e remover partida do banco
+  async cancelDraft(matchId: number, reason: string): Promise<void> {
+    console.log(`🚫 [Draft] Cancelando draft ${matchId}: ${reason}`);
+    
+    try {
+      // 1. Buscar partida no banco
+      const match = await this.dbManager.getCustomMatchById(matchId);
+      if (!match) {
+        console.warn(`⚠️ [Draft] Partida ${matchId} não encontrada para cancelamento`);
+        return;
+      }
+
+      // 2. Remover do tracking local
+      this.activeDrafts.delete(matchId);
+      console.log(`🗑️ [Draft] Draft ${matchId} removido do tracking local`);
+
+      // 3. Recolocar jogadores na fila se necessário
+      await this.readdPlayersToQueue(matchId);
+
+      // 4. Remover partida do banco (igual ao recusar partida)
+      await this.dbManager.deleteCustomMatch(matchId);
+      console.log(`🗑️ [Draft] Partida ${matchId} removida do banco de dados`);
+
+      // 5. Notificar frontend sobre cancelamento
+      this.notifyDraftCancelled(matchId, reason);
+
+      console.log(`✅ [Draft] Draft ${matchId} cancelado com sucesso`);
+
+    } catch (error) {
+      console.error(`❌ [Draft] Erro ao cancelar draft ${matchId}:`, error);
+      throw error;
+    }
+  }
+
+  // ✅ NOVO: Recolocar jogadores na fila após cancelamento
+  private async readdPlayersToQueue(matchId: number): Promise<void> {
+    try {
+      const match = await this.dbManager.getCustomMatchById(matchId);
+      if (!match) return;
+
+      // Parsear jogadores dos times
+      let team1Players: string[] = [];
+      let team2Players: string[] = [];
+      
+      try {
+        team1Players = typeof match.team1_players === 'string' 
+          ? JSON.parse(match.team1_players) 
+          : (match.team1_players || []);
+        team2Players = typeof match.team2_players === 'string' 
+          ? JSON.parse(match.team2_players) 
+          : (match.team2_players || []);
+      } catch (parseError) {
+        console.warn('⚠️ [Draft] Erro ao parsear jogadores, não será possível recolocar na fila');
+        return;
+      }
+
+      const allPlayers = [...team1Players, ...team2Players];
+      console.log(`🔄 [Draft] Recolocando ${allPlayers.length} jogadores na fila:`, allPlayers);
+
+      // Recolocar jogadores na fila (se não são bots)
+      for (const playerName of allPlayers) {
+        // Verificar se não é um bot
+        const isBot = playerName.toLowerCase().includes('bot') || 
+                     playerName.toLowerCase().includes('ai') ||
+                     playerName.toLowerCase().includes('computer') ||
+                     playerName.toLowerCase().includes('cpu') ||
+                     playerName.includes('#BOT');
+        
+        if (!isBot) {
+          try {
+            // Buscar dados do jogador no banco
+            const player = await this.dbManager.getPlayerBySummonerName(playerName);
+            if (player && player.id) {
+              // Recolocar na fila com preferências padrão
+              await this.dbManager.addPlayerToQueue(
+                player.id,
+                playerName,
+                player.region || 'br1',
+                player.custom_lp || 1200,
+                { primaryLane: 'fill', secondaryLane: 'fill' }
+              );
+              console.log(`✅ [Draft] Jogador ${playerName} recolocado na fila`);
+            } else {
+              console.warn(`⚠️ [Draft] Jogador ${playerName} não encontrado no banco ou ID inválido`);
+            }
+          } catch (error) {
+            console.error(`❌ [Draft] Erro ao recolocar jogador ${playerName} na fila:`, error);
+          }
+        } else {
+          console.log(`🤖 [Draft] Bot ${playerName} não será recolocado na fila`);
+        }
+      }
+
+      console.log(`✅ [Draft] Jogadores recolocados na fila após cancelamento`);
+
+    } catch (error) {
+      console.error(`❌ [Draft] Erro ao recolocar jogadores na fila:`, error);
+    }
+  }
+
+  // ✅ NOVO: Notificar frontend sobre cancelamento
+  private notifyDraftCancelled(matchId: number, reason: string): void {
+    if (!this.wss) return;
+
+    const message = {
+      type: 'draft_cancelled',
+      data: {
+        matchId,
+        reason,
+        message: `Draft cancelado: ${reason}`
+      },
+      timestamp: Date.now()
+    };
+
+    this.broadcastMessage(message);
+    console.log(`📢 [Draft] Notificação de draft cancelado enviada (${matchId})`);
+  }
+
+  // ✅ NOVO: Cancelar draft e remover partida do banco
+  async cancelDraft(matchId: number, reason: string): Promise<void> {
+    console.log(`🚫 [Draft] Cancelando draft ${matchId}: ${reason}`);
+    
+    try {
+      // 1. Buscar dados do draft antes de cancelar
+      const draftData = this.activeDrafts.get(matchId);
+      
+      // 2. ✅ CORREÇÃO: Remover partida do banco de dados (igual ao recusar match-found)
+      const deleted = await this.dbManager.deleteCustomMatch(matchId);
+      if (deleted) {
+        console.log(`✅ [Draft] Partida ${matchId} removida do banco de dados`);
+      } else {
+        console.warn(`⚠️ [Draft] Partida ${matchId} não foi encontrada no banco para remoção`);
+      }
+      
+      // 3. Remover do tracking local
+      this.activeDrafts.delete(matchId);
+      
+      // 4. ✅ NOVO: Se temos dados do draft, retornar jogadores para a fila
+      if (draftData) {
+        const allPlayerNames = [
+          ...draftData.team1.map(p => p.summonerName),
+          ...draftData.team2.map(p => p.summonerName)
+        ];
+        
+        console.log(`🔄 [Draft] Retornando ${allPlayerNames.length} jogadores para a fila...`);
+        
+        // Buscar dados dos jogadores para retorná-los à fila
+        for (const playerName of allPlayerNames) {
+          try {
+            // Buscar jogador no banco
+            const player = await this.dbManager.getPlayerBySummonerName(playerName);
+            if (player) {
+              // Adicionar de volta à fila com preferências padrão
+              await this.dbManager.addPlayerToQueue(
+                player.id,
+                playerName,
+                player.region || 'br1',
+                player.custom_lp || 1200,
+                { primaryLane: 'fill', secondaryLane: 'fill' }
+              );
+              console.log(`✅ [Draft] Jogador ${playerName} retornado à fila`);
+            }
+          } catch (error) {
+            console.error(`❌ [Draft] Erro ao retornar jogador ${playerName} à fila:`, error);
+          }
+        }
+      }
+      
+      // 5. Notificar frontend sobre cancelamento
+      this.notifyDraftCancelled(matchId, reason);
+      
+      console.log(`✅ [Draft] Draft ${matchId} cancelado com sucesso`);
+      
+    } catch (error) {
+      console.error(`❌ [Draft] Erro ao cancelar draft ${matchId}:`, error);
+      throw error;
+    }
+  }
+
   // ✅ NOVO: Notificar frontend sobre cancelamento do draft
   private notifyDraftCancelled(matchId: number, reason: string): void {
     if (!this.wss) return;
@@ -889,56 +832,6 @@ export class DraftService {
     this.broadcastMessage(message);
     console.log(`📢 [Draft] Notificação de cancelamento enviada (${matchId}): ${reason}`);
   }
-
-  private broadcastMessage(message: any): void {
-    if (!this.wss?.clients) return;
-
-    this.wss.clients.forEach((client: WebSocket) => {
-      if (client.readyState === WebSocket.OPEN) {
-        try {
-          client.send(JSON.stringify(message));
-        } catch (error) {
-          console.error('❌ [Draft] Erro ao enviar mensagem:', error);
-        }
-      }
-    });
-  }
-
-  // ✅ CORRIGIDO: Gerar fases do draft (sequência EXATA da ranqueada do LoL)
-  private generateDraftPhases(): DraftPhase[] {
-    return [
-      // ===== PRIMEIRA FASE DE BANS (6 bans) =====
-      { phase: 'bans', team: 1, action: 'ban', playerIndex: 0 },   // Blue Ban 1 (Top)
-      { phase: 'bans', team: 2, action: 'ban', playerIndex: 0 },   // Red Ban 1 (Top)
-      { phase: 'bans', team: 1, action: 'ban', playerIndex: 1 },   // Blue Ban 2 (Jungle)
-      { phase: 'bans', team: 2, action: 'ban', playerIndex: 1 },   // Red Ban 2 (Jungle)
-      { phase: 'bans', team: 1, action: 'ban', playerIndex: 2 },   // Blue Ban 3 (Mid)
-      { phase: 'bans', team: 2, action: 'ban', playerIndex: 2 },   // Red Ban 3 (Mid)
-      
-      // ===== PRIMEIRA FASE DE PICKS (6 picks) =====
-      { phase: 'picks', team: 1, action: 'pick', playerIndex: 0 }, // Blue Pick 1 (Top) - FIRST PICK
-      { phase: 'picks', team: 2, action: 'pick', playerIndex: 0 }, // Red Pick 1 (Top)
-      { phase: 'picks', team: 2, action: 'pick', playerIndex: 1 }, // Red Pick 2 (Jungle)
-      { phase: 'picks', team: 1, action: 'pick', playerIndex: 1 }, // Blue Pick 2 (Jungle)
-      { phase: 'picks', team: 1, action: 'pick', playerIndex: 2 }, // Blue Pick 3 (Mid)
-      { phase: 'picks', team: 2, action: 'pick', playerIndex: 2 }, // Red Pick 3 (Mid)
-      
-      // ===== SEGUNDA FASE DE BANS (4 bans) =====
-      { phase: 'bans', team: 2, action: 'ban', playerIndex: 3 },   // Red Ban 4 (ADC)
-      { phase: 'bans', team: 1, action: 'ban', playerIndex: 3 },   // Blue Ban 4 (ADC)
-      { phase: 'bans', team: 2, action: 'ban', playerIndex: 4 },   // Red Ban 5 (Support)
-      { phase: 'bans', team: 1, action: 'ban', playerIndex: 4 },   // Blue Ban 5 (Support)
-      
-      // ===== SEGUNDA FASE DE PICKS (4 picks) =====
-      { phase: 'picks', team: 2, action: 'pick', playerIndex: 3 }, // Red Pick 4 (ADC)
-      { phase: 'picks', team: 1, action: 'pick', playerIndex: 3 }, // Blue Pick 4 (ADC)
-      { phase: 'picks', team: 1, action: 'pick', playerIndex: 4 }, // Blue Pick 5 (Support)
-      { phase: 'picks', team: 2, action: 'pick', playerIndex: 4 }  // Red Pick 5 (Support) - LAST PICK
-    ];
-  }
-
-  // ✅ Shutdown
-  shutdown(): void {
     if (this.monitoringInterval) {
       clearInterval(this.monitoringInterval);
       this.monitoringInterval = null;
