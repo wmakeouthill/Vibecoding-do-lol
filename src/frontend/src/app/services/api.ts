@@ -146,18 +146,18 @@ export class ApiService {
   private isWindows(): boolean {
     const platform = (window as any).process?.platform || navigator.platform;
     const userAgent = navigator.userAgent;
-    
-    const isWin = platform === 'win32' || 
+
+    const isWin = platform === 'win32' ||
                   platform.toLowerCase().includes('win') ||
                   userAgent.includes('Windows');
-    
+
     console.log('🖥️ Platform detection:', { platform, userAgent, isWindows: isWin });
     return isWin;
   }  private tryWithFallback<T>(endpoint: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET', body?: any): Observable<T> {
     const tryUrl = (url: string): Observable<T> => {
       const fullUrl = `${url}${endpoint}`;
       console.log(`🔄 Tentando requisição: ${method} ${fullUrl}`);
-      
+
       switch (method) {
         case 'GET':
           return this.http.get<T>(fullUrl);
@@ -176,7 +176,7 @@ export class ApiService {
     return tryUrl(this.baseUrl).pipe(
       catchError((primaryError: HttpErrorResponse) => {
         console.warn(`❌ Falha na URL primária (${this.baseUrl}):`, primaryError.message);
-        
+
         // Se há URLs de fallback e estamos no Electron, tentar a primeira
         if (this.fallbackUrls.length > 0 && this.isElectron()) {
           console.log('🔄 Tentando primeira URL de fallback...');
@@ -188,7 +188,7 @@ export class ApiService {
             })
           );
         }
-        
+
         // Se não há fallbacks, retornar erro original
         return throwError(() => primaryError);
       })
@@ -251,7 +251,7 @@ export class ApiService {
         catchError(this.handleError)
       );
     }
-    
+
     // Caso contrário, usar método padrão
     return this.http.get(`${this.baseUrl}/health`)
       .pipe(
@@ -375,13 +375,13 @@ export class ApiService {
   // Queue endpoints
   getQueueStatus(currentPlayerDisplayName?: string): Observable<QueueStatus> {
     let url = `${this.baseUrl}/queue/status`;
-    
+
     // Se temos o displayName do jogador atual, incluir na query para detecção no backend
     if (currentPlayerDisplayName) {
       const params = new URLSearchParams({ currentPlayerDisplayName });
       url += `?${params.toString()}`;
     }
-    
+
     return this.http.get<QueueStatus>(url)
       .pipe(catchError(this.handleError));
   }
@@ -690,7 +690,7 @@ export class ApiService {
     // ✅ CORREÇÃO: Construir displayName no formato gameName#tagLine
     const gameName = riotAccount.gameName || riotApi.gameName || lcuData.gameName || null;
     const tagLine = riotAccount.tagLine || riotApi.tagLine || lcuData.tagLine || null;
-    
+
     let displayName: string | undefined = undefined;
     if (gameName && tagLine) {
       displayName = `${gameName}#${tagLine}`;
@@ -878,7 +878,7 @@ export class ApiService {
     const body: any = {};
     if (playerId) body.playerId = playerId;
     if (summonerName) body.summonerName = summonerName;
-    
+
     return this.http.post(`${this.baseUrl}/queue/leave`, body)
       .pipe(
         retry(1),
@@ -921,7 +921,7 @@ export class ApiService {
   // ✅ NOVO: Criar partida a partir do frontend (SIMPLIFICADO - backend processa automaticamente)
   createMatchFromFrontend(matchData: any): Observable<any> {
     console.log('🎮 [API] Criando partida a partir do frontend:', matchData);
-    
+
     return this.http.post(`${this.baseUrl}/match/create-from-frontend`, matchData)
       .pipe(
         retry(1),
@@ -975,7 +975,7 @@ export class ApiService {
     // Garantir que offset e limit sejam números válidos
     const offsetValue = Math.max(0, parseInt(offset.toString()) || 0);
     const limitValue = Math.max(1, Math.min(100, parseInt(limit.toString()) || 10));
-    
+
     return this.http.get(`${this.baseUrl}/matches/custom/${encodeURIComponent(playerIdentifier)}?offset=${offsetValue}&limit=${limitValue}`)
       .pipe(
         catchError(this.handleError)
@@ -1000,13 +1000,13 @@ export class ApiService {
     try {
       const wsUrl = this.baseUrl.replace('/api', '').replace('http', 'ws') + '/ws';
       console.log('🔌 [ApiService] Conectando ao WebSocket:', wsUrl);
-      
+
       this.webSocket = new WebSocket(wsUrl);
-      
+
       this.webSocket.onopen = () => {
         console.log('✅ [ApiService] WebSocket conectado com sucesso');
       };
-      
+
       this.webSocket.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
@@ -1016,11 +1016,11 @@ export class ApiService {
           console.error('❌ [ApiService] Erro ao processar mensagem WebSocket:', error);
         }
       };
-      
+
       this.webSocket.onerror = (error) => {
         console.error('❌ [ApiService] Erro no WebSocket:', error);
       };
-      
+
       this.webSocket.onclose = () => {
         console.log('🔌 [ApiService] WebSocket desconectado');
         // Tentar reconectar após 5 segundos
@@ -1028,7 +1028,7 @@ export class ApiService {
           this.connectWebSocket();
         }, 5000);
       };
-      
+
     } catch (error) {
       console.error('❌ [ApiService] Erro ao conectar WebSocket:', error);
     }
@@ -1039,5 +1039,16 @@ export class ApiService {
     console.log('📤 [ApiService] Emitindo mensagem WebSocket:', message.type);
     this.webSocketMessageSubject.next(message);
     console.log('✅ [ApiService] Mensagem emitida com sucesso');
+  }
+
+  // ✅ NOVO: Método para enviar mensagens WebSocket
+  sendWebSocketMessage(message: any): void {
+    if (this.webSocket && this.webSocket.readyState === WebSocket.OPEN) {
+      console.log('📤 [ApiService] Enviando mensagem WebSocket:', message.type);
+      this.webSocket.send(JSON.stringify(message));
+      console.log('✅ [ApiService] Mensagem enviada com sucesso');
+    } else {
+      console.error('❌ [ApiService] WebSocket não conectado');
+    }
   }
 }

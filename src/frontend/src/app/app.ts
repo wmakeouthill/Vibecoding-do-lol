@@ -233,6 +233,11 @@ export class App implements OnInit, OnDestroy {
         this.handleDraftStarted(message.data);
         break;
 
+      case 'draft_cancelled':
+        console.log('🚫 [App] Draft cancelado pelo backend');
+        this.handleDraftCancelled(message.data);
+        break;
+
       case 'draft_action':
         console.log('🎯 [App] Ação de draft');
         this.handleDraftAction(message.data);
@@ -472,6 +477,18 @@ export class App implements OnInit, OnDestroy {
 
     console.log('🎯 [App] Estado limpo para draft');
     this.addNotification('success', 'Draft Iniciado!', 'A fase de draft começou.');
+  }
+
+  private handleDraftCancelled(data: any): void {
+    console.log('🚫 [App] Draft cancelado:', data);
+
+    // Limpar estado do draft
+    this.inDraftPhase = false;
+    this.draftData = null;
+    this.currentView = 'dashboard';
+
+    // Mostrar notificação
+    this.addNotification('warning', 'Draft Cancelado', data.reason || 'O draft foi cancelado.');
   }
 
   private handleDraftAction(data: any): void {
@@ -1257,9 +1274,27 @@ export class App implements OnInit, OnDestroy {
 
   exitDraft(): void {
     console.log('🚪 [App] Saindo do draft');
+
+    // ✅ CORREÇÃO: Notificar backend sobre cancelamento antes de limpar estado
+    if (this.draftData?.matchId) {
+      console.log(`📤 [App] Enviando cancelamento de draft para backend: ${this.draftData.matchId}`);
+
+      this.apiService.sendWebSocketMessage({
+        type: 'cancel_draft',
+        data: {
+          matchId: this.draftData.matchId,
+          reason: 'Cancelado pelo usuário'
+        }
+      });
+    }
+
+    // Limpar estado local
     this.inDraftPhase = false;
     this.draftData = null;
     this.currentView = 'dashboard';
+
+    // Adicionar notificação
+    this.addNotification('info', 'Draft Cancelado', 'O draft foi cancelado e você retornará à fila.');
   }
 
   onGameComplete(event: any): void {

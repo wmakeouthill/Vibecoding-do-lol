@@ -402,11 +402,48 @@ export class DraftService {
   private notifyDraftStarted(matchId: number, draftData: DraftData): void {
     if (!this.wss) return;
 
+    // ✅ CORREÇÃO: Preparar dados estruturados igual ao match-found
+    const teammates = draftData.team1.map(player => ({
+      id: player.summonerName,
+      summonerName: player.summonerName,
+      name: player.summonerName,
+      assignedLane: player.assignedLane,
+      lane: player.assignedLane,
+      teamIndex: player.teamIndex,
+      mmr: player.mmr,
+      primaryLane: player.primaryLane,
+      secondaryLane: player.secondaryLane,
+      isAutofill: player.isAutofill
+    }));
+
+    const enemies = draftData.team2.map(player => ({
+      id: player.summonerName,
+      summonerName: player.summonerName,
+      name: player.summonerName,
+      assignedLane: player.assignedLane,
+      lane: player.assignedLane,
+      teamIndex: player.teamIndex,
+      mmr: player.mmr,
+      primaryLane: player.primaryLane,
+      secondaryLane: player.secondaryLane,
+      isAutofill: player.isAutofill
+    }));
+
     const message = {
       type: 'draft_started',
       data: {
         matchId,
         draftData,
+        // ✅ CORREÇÃO: Incluir teammates e enemies estruturados
+        teammates,
+        enemies,
+        team1: teammates, // Compatibilidade
+        team2: enemies,   // Compatibilidade
+        blueTeam: teammates, // Compatibilidade
+        redTeam: enemies,    // Compatibilidade
+        averageMMR: draftData.averageMMR,
+        balanceQuality: draftData.balanceQuality,
+        autofillCount: draftData.autofillCount,
         message: 'Draft iniciado! Todos os jogadores aceitaram a partida.',
         phases: this.generateDraftPhases()
       },
@@ -414,7 +451,12 @@ export class DraftService {
     };
 
     this.broadcastMessage(message);
-    console.log(`📢 [Draft] Notificação de draft iniciado enviada (${matchId})`);
+    console.log(`📢 [Draft] Notificação de draft iniciado enviada (${matchId}) com dados completos:`, {
+      teammates: teammates.length,
+      enemies: enemies.length,
+      team1MMR: Math.round(draftData.averageMMR.team1),
+      team2MMR: Math.round(draftData.averageMMR.team2)
+    });
   }
 
   private notifyDraftAction(matchId: number, playerId: number, championId: number, action: string): void {
@@ -496,6 +538,124 @@ export class DraftService {
       { phase: 'picks', team: 2, action: 'pick', playerIndex: 4 },
       { phase: 'picks', team: 1, action: 'pick', playerIndex: 4 }
     ];
+  }
+
+  // ✅ NOVO: Cancelar draft e remover partida do banco
+  async cancelDraft(matchId: number, reason: string): Promise<void> {
+    console.log(`🚫 [Draft] Cancelando draft ${matchId}: ${reason}`);
+    
+    try {
+      // 1. Buscar partida no banco
+      const match = await this.dbManager.getCustomMatchById(matchId);
+      if (!match) {
+        console.warn(`⚠️ [Draft] Partida ${matchId} não encontrada para cancelamento`);
+        return;
+      }
+
+      // 2. Remover do tracking local
+      this.activeDrafts.delete(matchId);
+      console.log(`🗑️ [Draft] Draft ${matchId} removido do tracking local`);
+
+      // 3. Recolocar jogadores na fila se necessário
+      await this.readdPlayersToQueue(matchId);
+
+      // 4. Remover partida do banco (igual ao recusar partida)
+      await this.dbManager.deleteCustomMatch(matchId);
+      console.log(`🗑️ [Draft] Partida ${matchId} removida do banco de dados`);
+
+      // 5. Notificar frontend sobre cancelamento
+      this.notifyDraftCancelled(matchId, reason);
+
+      console.log(`✅ [Draft] Draft ${matchId} cancelado com sucesso`);
+
+    } catch (error) {
+      console.error(`❌ [Draft] Erro ao cancelar draft ${matchId}:`, error);
+      throw error;
+    }
+  }
+
+  // ✅ NOVO: Recolocar jogadores na fila após cancelamento
+  private async readdPlayersToQueue(matchId: number): Promise<void> {
+    try {
+      const match = await this.dbManager.getCustomMatchById(matchId);
+      if (!match) return;
+
+      // Parsear jogadores dos times
+      let team1Players: string[] = [];
+      let team2Players: string[] = [];
+      
+      try {
+        team1Players = typeof match.team1_players === 'string' 
+          ? JSON.parse(match.team1_players) 
+          : (match.team1_players || []);
+        team2Players = typeof match.team2_players === 'string' 
+          ? JSON.parse(match.team2_players) 
+          : (match.team2_players || []);
+      } catch (parseError) {
+        console.warn('⚠️ [Draft] Erro ao parsear jogadores, não será possível recolocar na fila');
+        return;
+      }
+
+      const allPlayers = [...team1Players, ...team2Players];
+      console.log(`🔄 [Draft] Recolocando ${allPlayers.length} jogadores na fila:`, allPlayers);
+
+      // Recolocar jogadores na fila (se não são bots)
+      for (const playerName of allPlayers) {
+        // Verificar se não é um bot
+        const isBot = playerName.toLowerCase().includes('bot') || 
+                     playerName.toLowerCase().includes('ai') ||
+                     playerName.toLowerCase().includes('computer') ||
+                     playerName.toLowerCase().includes('cpu') ||
+                     playerName.includes('#BOT');
+        
+        if (!isBot) {
+          try {
+            // Buscar dados do jogador no banco
+            const player = await this.dbManager.getPlayerBySummonerName(playerName);
+            if (player && player.id) {
+              // Recolocar na fila com preferências padrão
+              await this.dbManager.addPlayerToQueue(
+                player.id,
+                playerName,
+                player.region || 'br1',
+                player.custom_lp || 1200,
+                { primaryLane: 'fill', secondaryLane: 'fill' }
+              );
+              console.log(`✅ [Draft] Jogador ${playerName} recolocado na fila`);
+            } else {
+              console.warn(`⚠️ [Draft] Jogador ${playerName} não encontrado no banco ou ID inválido`);
+            }
+          } catch (error) {
+            console.error(`❌ [Draft] Erro ao recolocar jogador ${playerName} na fila:`, error);
+          }
+        } else {
+          console.log(`🤖 [Draft] Bot ${playerName} não será recolocado na fila`);
+        }
+      }
+
+      console.log(`✅ [Draft] Jogadores recolocados na fila após cancelamento`);
+
+    } catch (error) {
+      console.error(`❌ [Draft] Erro ao recolocar jogadores na fila:`, error);
+    }
+  }
+
+  // ✅ NOVO: Notificar frontend sobre cancelamento
+  private notifyDraftCancelled(matchId: number, reason: string): void {
+    if (!this.wss) return;
+
+    const message = {
+      type: 'draft_cancelled',
+      data: {
+        matchId,
+        reason,
+        message: `Draft cancelado: ${reason}`
+      },
+      timestamp: Date.now()
+    };
+
+    this.broadcastMessage(message);
+    console.log(`📢 [Draft] Notificação de draft cancelado enviada (${matchId})`);
   }
 
   // ✅ Shutdown
