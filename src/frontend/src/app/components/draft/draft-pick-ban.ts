@@ -828,8 +828,20 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         const foundPlayer = teamPlayers.find(p => this.botService.comparePlayers(p, player));
         if (!foundPlayer) return null;
 
-        // ✅ CORREÇÃO: Usar teamIndex do jogador encontrado
-        const playerIndex = foundPlayer.teamIndex;
+        // ✅ CORREÇÃO: Normalizar o teamIndex para usar o índice dentro do time (0-4)
+        let playerIndex = foundPlayer.teamIndex;
+
+        // Se o teamIndex for 5-9 (time vermelho), converter para 0-4
+        if (team === 'red' && playerIndex >= 5) {
+            playerIndex = playerIndex - 5;
+        }
+
+        console.log(`🔍 [getPlayerPick] Debug para ${team} team:`, {
+            playerName: foundPlayer.summonerName || foundPlayer.name,
+            originalTeamIndex: foundPlayer.teamIndex,
+            normalizedPlayerIndex: playerIndex,
+            lane: foundPlayer.lane
+        });
 
         // Mapear o índice do jogador para as fases de pick correspondentes
         // Baseado no novo fluxo da partida ranqueada
@@ -840,6 +852,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
 
             if (playerPickAction !== undefined) {
                 const pickPhase = this.session.phases[playerPickAction];
+                console.log(`🔍 [getPlayerPick] Blue team player ${playerIndex} -> action ${playerPickAction}:`, pickPhase?.champion?.name || 'nenhum');
                 return pickPhase?.champion || null;
             }
         } else {
@@ -849,10 +862,12 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
 
             if (playerPickAction !== undefined) {
                 const pickPhase = this.session.phases[playerPickAction];
+                console.log(`🔍 [getPlayerPick] Red team player ${playerIndex} -> action ${playerPickAction}:`, pickPhase?.champion?.name || 'nenhum');
                 return pickPhase?.champion || null;
             }
         }
 
+        console.log(`❌ [getPlayerPick] Nenhuma ação encontrada para ${team} team player index ${playerIndex}`);
         return null;
     }
 
