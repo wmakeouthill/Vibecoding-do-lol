@@ -242,8 +242,18 @@ export class MatchFoundService {
     }
   }
 
+  // ✅ CORREÇÃO: Proteção contra múltiplas execuções
+  private processingMatches = new Set<number>();
+
   // ✅ Lidar com todos os jogadores tendo aceitado
   private async handleAllPlayersAccepted(matchId: number): Promise<void> {
+    // ✅ PROTEÇÃO: Verificar se já está sendo processado
+    if (this.processingMatches.has(matchId)) {
+      console.log(`⏳ [MatchFound] Partida ${matchId} já está sendo processada, ignorando chamada duplicada`);
+      return;
+    }
+    
+    this.processingMatches.add(matchId);
     console.log(`🎉 [MatchFound] Todos os jogadores aceitaram partida ${matchId}!`);
     
     try {
@@ -261,20 +271,29 @@ export class MatchFoundService {
         return;
       }
 
-      // 3. Atualizar status da partida para 'accepted'
+      // 3. ✅ VERIFICAÇÃO: Se partida já foi aceita, não processar novamente
+      if (match.status === 'accepted' || match.status === 'draft') {
+        console.log(`✅ [MatchFound] Partida ${matchId} já foi aceita (status: ${match.status}), ignorando`);
+        return;
+      }
+
+      // 4. Atualizar status da partida para 'accepted'
       await this.dbManager.updateCustomMatchStatus(matchId, 'accepted');
 
-      // 4. ✅ CORREÇÃO: NÃO remover jogadores da fila aqui - deixar o DraftService fazer isso
+      // 5. ✅ CORREÇÃO: NÃO remover jogadores da fila aqui - deixar o DraftService fazer isso
       // Os jogadores precisam permanecer na fila para o DraftService buscar seus dados
       console.log(`✅ [MatchFound] Jogadores mantidos na fila para o DraftService`);
 
-      // 5. Notificar que todos aceitaram (será processado pelo DraftService)
+      // 6. Notificar que todos aceitaram (será processado pelo DraftService)
       this.notifyAllPlayersAccepted(matchId, match);
 
       console.log(`✅ [MatchFound] Partida ${matchId} totalmente aceita - encaminhando para Draft`);
 
     } catch (error) {
       console.error(`❌ [MatchFound] Erro ao processar aceitação completa:`, error);
+    } finally {
+      // ✅ IMPORTANTE: Remover da proteção após processamento
+      this.processingMatches.delete(matchId);
     }
   }
 

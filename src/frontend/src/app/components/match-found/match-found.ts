@@ -13,7 +13,11 @@ export interface MatchFoundData {
   };
   estimatedGameDuration: number;
   phase: 'accept' | 'draft' | 'in_game';
-  acceptTimeout: number;
+  acceptTimeout?: number; // ✅ CORREÇÃO: Compatibilidade com dados antigos
+  acceptanceTimer?: number; // ✅ NOVO: Timer em segundos do backend
+  acceptanceDeadline?: string; // ✅ NOVO: Deadline ISO string
+  teamStats?: any; // ✅ NOVO: Estatísticas dos times
+  balancingInfo?: any; // ✅ NOVO: Informações de balanceamento
 }
 
 export interface PlayerInfo {
@@ -104,14 +108,17 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
 
         // ✅ CORREÇÃO: Configurar timer apenas se backend não está controlando
         if (this.matchData && this.matchData.phase === 'accept') {
-          // ✅ NOVO: Usar timer do backend como prioridade
-          console.log('🎮 [MatchFound] Aguardando timer do backend...');
-          this.acceptTimeLeft = this.matchData.acceptTimeout || 30;
+          // ✅ CORREÇÃO: Usar acceptanceTimer do backend primeiro, depois acceptTimeout como fallback
+          const backendTimer = this.matchData.acceptanceTimer || this.matchData.acceptTimeout || 30;
+
+          console.log('🎮 [MatchFound] Timer recebido do backend:', backendTimer);
+          this.acceptTimeLeft = backendTimer;
           this.isTimerUrgent = this.acceptTimeLeft <= 10;
 
-          // ✅ NOVO: Timer local apenas como fallback após 2 segundos
+          // ✅ CORREÇÃO: Timer local apenas como fallback após 2 segundos
           setTimeout(() => {
-            if (this.acceptTimeLeft === (this.matchData?.acceptTimeout || 30)) {
+            const expectedTimer = this.matchData?.acceptanceTimer || this.matchData?.acceptTimeout || 30;
+            if (this.acceptTimeLeft === expectedTimer) {
               console.log('🎮 [MatchFound] Backend não enviou timer, iniciando timer local');
               this.startAcceptCountdown();
             }
@@ -235,7 +242,11 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
       return;
     }
 
-    this.acceptTimeLeft = Math.floor((this.matchData?.acceptTimeout || 30000) / 1000);
+    // ✅ CORREÇÃO: Usar acceptanceTimer do backend primeiro, depois acceptTimeout como fallback
+    const backendTimer = this.matchData?.acceptanceTimer || this.matchData?.acceptTimeout || 30;
+
+    // ✅ CORREÇÃO: Se já é um número em segundos, não dividir por 1000
+    this.acceptTimeLeft = typeof backendTimer === 'number' ? backendTimer : 30;
     this.isTimerUrgent = this.acceptTimeLeft <= 10;
 
     console.log('⏰ [MatchFound] Iniciando timer local como fallback com', this.acceptTimeLeft, 'segundos');

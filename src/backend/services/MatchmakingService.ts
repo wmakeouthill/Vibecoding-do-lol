@@ -252,11 +252,13 @@ export class MatchmakingService {
    * REGRA 2: Buscar status da fila baseado na fila local
    */
   async getQueueStatus(): Promise<QueueStatus> {
-    try {
-      // ✅ ATUALIZADO: Usar fila local como fonte primária
+    try {      // ✅ ATUALIZADO: Usar fila local como fonte primária
       const playersCount = this.queue.length;
-
-      console.log(`📊 [Queue Status] Fila local: ${playersCount} jogadores`);
+      
+      // ✅ REDUZIR LOGS: Só logar quando há jogadores
+      if (playersCount > 0) {
+        console.log(`📊 [Queue Status] Fila local: ${playersCount} jogadores`);
+      }
 
       // Construir lista de jogadores a partir da fila local
       const playersInQueueList: QueuedPlayerInfo[] = this.queue.map(player => {
@@ -279,7 +281,10 @@ export class MatchmakingService {
         };
       });
 
-      console.log(`✅ [Queue Status] Retornando: ${playersCount} jogadores da fila local`);
+      // ✅ REDUZIR LOGS: Só logar quando há jogadores
+      if (playersCount > 0) {
+        console.log(`✅ [Queue Status] Retornando: ${playersCount} jogadores da fila local`);
+      }
 
       return {
         playersInQueue: playersCount,
@@ -668,80 +673,177 @@ export class MatchmakingService {
 
   // ✅ ATUALIZADO: Métodos de sistema
   private startMatchmakingInterval(): void {
-    // ✅ NOVO: Processamento automático de matchmaking a cada 5 segundos
+    // ✅ CORRIGIDO: Processamento automático apenas quando há jogadores suficientes
     this.matchmakingInterval = setInterval(async () => {
       if (this.isActive) {
-        await this.processMatchmaking();
+        // ✅ OTIMIZAÇÃO: Só processar se há pelo menos 10 jogadores
+        if (this.queue.length >= 10) {
+          await this.processMatchmaking();
+        }
       }
     }, 5000);
-    console.log('🎯 Matchmaking interval iniciado com processamento automático');
+    console.log('🎯 Matchmaking interval iniciado - só processa com 10+ jogadores');
   }
 
-  // ✅ NOVO: Processar matchmaking automaticamente
+  // ✅ NOVO: Sincronizar cache local com MySQL
+  private async syncCacheWithDatabase(): Promise<void> {
+    try {
+      console.log('🔄 [Sync] Sincronizando cache local com MySQL...');
+      
+      // Buscar jogadores ativos no MySQL (fonte da verdade)
+      const dbQueuePlayers = await this.dbManager.getActiveQueuePlayers();
+      
+      // Limpar cache local
+      this.queue = [];
+      
+      // Reconstruir cache baseado no MySQL
+      for (const dbPlayer of dbQueuePlayers) {
+        const queuedPlayer: QueuedPlayer = {
+          id: dbPlayer.player_id,
+          summonerName: dbPlayer.summoner_name,
+          region: dbPlayer.region,
+          currentMMR: dbPlayer.custom_lp || 0,
+          joinTime: new Date(dbPlayer.join_time),
+          websocket: null as any, // WebSocket será null pois precisa reconectar
+          queuePosition: dbPlayer.queue_position,
+          preferences: {
+            primaryLane: dbPlayer.primary_lane || 'fill',
+            secondaryLane: dbPlayer.secondary_lane || 'fill'
+          }
+        };
+        
+        this.queue.push(queuedPlayer);
+      }
+      
+      console.log(`✅ [Sync] Cache sincronizado: ${this.queue.length} jogadores do MySQL carregados`);
+      
+      if (this.queue.length !== dbQueuePlayers.length) {
+        console.error(`❌ [Sync] ERRO: Cache tem ${this.queue.length} mas MySQL tem ${dbQueuePlayers.length}!`);
+      }
+      
+    } catch (error) {
+      console.error('❌ [Sync] Erro ao sincronizar cache com MySQL:', error);
+    }
+  }
+
+  // ✅ CORRIGIDO: Processar matchmaking apenas quando necessário
   private async processMatchmaking(): Promise<void> {
     try {
+      // ✅ VERIFICAÇÃO: Primeiro verificar se já existe uma partida pending/accepted
+      const existingPendingMatches = await this.dbManager.getCustomMatchesByStatus('pending');
+      const existingAcceptedMatches = await this.dbManager.getCustomMatchesByStatus('accepted');
+      
+      if (existingPendingMatches && existingPendingMatches.length > 0) {
+        console.log(`⏳ [Matchmaking] Já existe partida pending (${existingPendingMatches[0].id}), aguardando...`);
+        return;
+      }
+      
+      if (existingAcceptedMatches && existingAcceptedMatches.length > 0) {
+        console.log(`⏳ [Matchmaking] Já existe partida accepted (${existingAcceptedMatches[0].id}), aguardando...`);
+        return;
+      }
+      
+      // ✅ NOVO: Sincronizar cache com MySQL antes de verificar quantidade
+      await this.syncCacheWithDatabase();
+      
       const queueStatus = await this.getQueueStatus();
       
-      // Se há 10 ou mais jogadores, processar matchmaking
-      if (queueStatus.playersInQueue >= 10) {
-        console.log(`🎯 [Matchmaking] ${queueStatus.playersInQueue} jogadores detectados! Processando matchmaking...`);
-        // ✅ CORRIGIDO: Chamar método que realmente tenta criar partida
-        await this.tryCreateMatchFromQueue();
+      // ✅ DUPLA VERIFICAÇÃO: Cache local E MySQL
+      const dbQueuePlayers = await this.dbManager.getActiveQueuePlayers();
+      
+      console.log(`🔍 [Matchmaking] Cache local: ${this.queue.length} jogadores`);
+      console.log(`🔍 [Matchmaking] MySQL: ${dbQueuePlayers.length} jogadores`);
+      
+      // Se há 10 ou mais jogadores no MYSQL (fonte da verdade), processar matchmaking
+      if (dbQueuePlayers.length >= 10) {
+        console.log(`🎯 [Matchmaking] ${dbQueuePlayers.length} jogadores confirmados no MySQL! Criando partida...`);
+        // ✅ CORRIGIDO: Chamar método interno que cria partida
+        await this.createMatchFromQueue();
+      } else if (this.queue.length >= 10) {
+        console.log(`⚠️ [Matchmaking] Cache tem ${this.queue.length} mas MySQL tem apenas ${dbQueuePlayers.length} - sincronizando...`);
       }
     } catch (error) {
       console.error('❌ [Matchmaking] Erro no processamento automático:', error);
     }
   }
 
-  // ✅ NOVO: Tentar criar partida com os jogadores da fila
-  private async tryCreateMatchFromQueue(): Promise<void> {
+  // ✅ CORRIGIDO: Criar partida única quando há 10 jogadores
+  private async createMatchFromQueue(): Promise<void> {
     try {
-      console.log('🎯 [AutoMatch] Tentando criar partida automaticamente...');
+      console.log('🎯 [AutoMatch] Criando partida automaticamente...');
       
-      // Usar a fila local em memória que já está sincronizada
-      if (this.queue.length < 10) {
-        console.log(`⏳ [AutoMatch] Apenas ${this.queue.length} jogadores na fila, necessário 10`);
+      // ✅ VERIFICAÇÃO: Primeiro verificar se já existe uma partida pending/accepted
+      const existingPendingMatches = await this.dbManager.getCustomMatchesByStatus('pending');
+      const existingAcceptedMatches = await this.dbManager.getCustomMatchesByStatus('accepted');
+      
+      if (existingPendingMatches && existingPendingMatches.length > 0) {
+        console.log(`⏳ [AutoMatch] Já existe partida pending (${existingPendingMatches[0].id}), cancelando criação`);
         return;
       }
       
-      // Pegar os 10 primeiros jogadores (mais antigos)
-      const playersForMatch = this.queue.slice(0, 10);
+      if (existingAcceptedMatches && existingAcceptedMatches.length > 0) {
+        console.log(`⏳ [AutoMatch] Já existe partida accepted (${existingAcceptedMatches[0].id}), cancelando criação`);
+        return;
+      }
       
-      console.log('🎯 [AutoMatch] Jogadores selecionados:', playersForMatch.map((p: QueuedPlayer) => ({
-        name: p.summonerName,
-        mmr: p.currentMMR || 1200,
-        primaryLane: p.preferences?.primaryLane || 'fill'
+      // ✅ VERIFICAÇÃO DUPLA: MySQL como fonte da verdade
+      const dbQueuePlayers = await this.dbManager.getActiveQueuePlayers();
+      if (dbQueuePlayers.length < 10) {
+        console.log(`⏳ [AutoMatch] MySQL tem apenas ${dbQueuePlayers.length} jogadores, necessário 10`);
+        return;
+      }
+      
+      // Pegar os 10 primeiros jogadores do MySQL (mais antigos)
+      const playersForMatch = dbQueuePlayers.slice(0, 10);
+      
+      console.log('🎯 [AutoMatch] Jogadores selecionados do MySQL:', playersForMatch.map((p: any) => ({
+        name: p.summoner_name,
+        mmr: p.custom_lp || 1200,
+        primaryLane: p.primary_lane || 'fill'
       })));
       
       // Preparar dados dos jogadores para balanceamento
-      const playerData = playersForMatch.map((p: QueuedPlayer) => ({
-        summonerName: p.summonerName,
-        mmr: p.currentMMR || 1200,
-        primaryLane: p.preferences?.primaryLane || 'fill',
-        secondaryLane: p.preferences?.secondaryLane || 'fill'
+      const playerData = playersForMatch.map((p: any) => ({
+        summonerName: p.summoner_name,
+        mmr: p.custom_lp || 1200,
+        primaryLane: p.primary_lane || 'fill',
+        secondaryLane: p.secondary_lane || 'fill'
       }));
       
-      // Balancear times e atribuir lanes
-      const balancedData = this.balanceTeamsAndAssignLanes(playerData);
+      // Dividir em dois times (5 vs 5) baseado em MMR
+      playerData.sort((a, b) => b.mmr - a.mmr); // Ordenar por MMR decrescente
       
-      if (!balancedData) {
-        console.error('❌ [AutoMatch] Erro ao balancear times');
-        return;
+      const team1 = [];
+      const team2 = [];
+      
+      // Distribuir alternadamente para balancear
+      for (let i = 0; i < playerData.length; i++) {
+        if (i % 2 === 0) {
+          team1.push(playerData[i]);
+        } else {
+          team2.push(playerData[i]);
+        }
       }
       
       // Calcular MMR médio dos times
-      const team1MMR = balancedData.team1.reduce((sum: number, p: any) => sum + p.mmr, 0) / balancedData.team1.length;
-      const team2MMR = balancedData.team2.reduce((sum: number, p: any) => sum + p.mmr, 0) / balancedData.team2.length;
+      const team1MMR = team1.reduce((sum: number, p: any) => sum + p.mmr, 0) / team1.length;
+      const team2MMR = team2.reduce((sum: number, p: any) => sum + p.mmr, 0) / team2.length;
       
-      // Criar partida completa
-      const matchId = await this.createCompleteMatch(balancedData.team1, balancedData.team2, team1MMR, team2MMR);
+      console.log(`🎯 [AutoMatch] Times balanceados: Team1 MMR=${Math.round(team1MMR)}, Team2 MMR=${Math.round(team2MMR)}`);
+      
+      // ✅ CORRIGIDO: Criar partida única no banco com status 'pending'
+      const matchId = await this.dbManager.createCustomMatch({
+        title: `Partida Automática ${Date.now()}`,
+        description: `Partida criada automaticamente - MMR: Team1(${Math.round(team1MMR)}) vs Team2(${Math.round(team2MMR)})`,
+        team1Players: team1.map(p => p.summonerName),
+        team2Players: team2.map(p => p.summonerName),
+        createdBy: 'Sistema',
+        gameMode: 'Ranked 5v5',
+        matchLeader: team1[0].summonerName // Primeiro jogador do team1 como líder
+      });
       
       if (matchId) {
         console.log(`✅ [AutoMatch] Partida ${matchId} criada automaticamente!`);
-        
-        // ✅ CORREÇÃO: NÃO remover jogadores da fila aqui
-        // Eles devem permanecer na fila até que todos aceitem
-        // await this.removePlayersFromQueue(playerData);
         
         // Adicionar atividade
         this.addActivity(
@@ -749,25 +851,13 @@ export class MatchmakingService {
           `Partida ${matchId} criada automaticamente! 10 jogadores encontrados - MMR médio: Team1(${Math.round(team1MMR)}) vs Team2(${Math.round(team2MMR)})`
         );
         
-        // Notificar que partida foi criada via MatchFoundService
-        await this.matchFoundService.createMatchForAcceptance({
-          matchId: matchId, // ✅ NOVO: Passar o ID da partida já criada
-          team1Players: balancedData.team1.map((p: any) => p.summonerName),
-          team2Players: balancedData.team2.map((p: any) => p.summonerName),
-          averageMMR: {
-            team1: Math.round(team1MMR),
-            team2: Math.round(team2MMR)
-          },
-          balancedTeams: {
-            team1: balancedData.team1,
-            team2: balancedData.team2
-          }
-        });
+        // ✅ NOVO: Notificar frontend sobre partida encontrada (para mostrar tela de aceitar)
+        await this.notifyMatchFound(matchId, team1, team2, team1MMR, team2MMR);
         
-        // Broadcast atualização da fila
-        await this.broadcastQueueUpdate(true);
+        // ✅ IMPORTANTE: NÃO REMOVER JOGADORES DA FILA AINDA
+        // Eles serão removidos apenas quando aceitarem a partida
+        console.log(`🎉 [AutoMatch] Partida ${matchId} criada, aguardando aceitação dos jogadores`);
         
-        console.log(`🎉 [AutoMatch] Matchmaking automático concluído com sucesso!`);
       } else {
         console.error('❌ [AutoMatch] Falha ao criar partida');
       }
@@ -1396,200 +1486,106 @@ export class MatchmakingService {
     return orderedPlayers;
   }
 
-  // ✅ NOVO: Preparar dados completos para o draft
-  // ✅ NOVO: Balancear times e atribuir lanes baseado em MMR e preferências
-  private balanceTeamsAndAssignLanes(players: any[]): { team1: any[], team2: any[] } | null {
-    console.log('🎯 [TeamBalance] Balanceando times e atribuindo lanes...');
-    
-    if (players.length !== 10) {
-      console.error(`❌ [TeamBalance] Número incorreto de jogadores: ${players.length}`);
-      return null;
-    }
+  // ✅ NOVO: Notificar frontend sobre partida encontrada
+  private async notifyMatchFound(matchId: number, team1: any[], team2: any[], team1MMR: number, team2MMR: number): Promise<void> {
+    try {
+      console.log(`📡 [MatchFound] Notificando frontend sobre partida ${matchId}...`);
+      
+      if (!this.wss || !this.wss.clients) {
+        console.warn('⚠️ [MatchFound] WebSocket Server não disponível');
+        return;
+      }
 
-    // Ordenar jogadores por MMR (maior primeiro)
-    const sortedPlayers = [...players].sort((a, b) => b.mmr - a.mmr);
-    
-    // Atribuir lanes únicas baseado em MMR e preferências
-    const playersWithLanes = this.assignLanesOptimized(sortedPlayers);
-    
-    if (playersWithLanes.length !== 10) {
-      console.error('❌ [TeamBalance] Erro na atribuição de lanes');
-      return null;
-    }
-    
-    // Verificar se temos exatamente 5 lanes únicas (2 de cada)
-    const laneCount: { [key: string]: number } = {};
-    playersWithLanes.forEach(p => {
-      laneCount[p.assignedLane] = (laneCount[p.assignedLane] || 0) + 1;
-    });
-    
-    const hasCorrectDistribution = Object.values(laneCount).every(count => count === 2);
-    if (!hasCorrectDistribution) {
-      console.error('❌ [TeamBalance] Distribuição incorreta de lanes:', laneCount);
-      return null;
-    }
-    
-    // ✅ CORREÇÃO: Organizar times por lanes e índices corretos
-    const laneOrder = ['top', 'jungle', 'mid', 'bot', 'support'];
-    const team1: any[] = [];
-    const team2: any[] = [];
-    
-    // Separar jogadores por lanes
-    const playersByLane: { [key: string]: any[] } = {};
-    laneOrder.forEach(lane => {
-      // ✅ CORREÇÃO: Converter assignedLane para backend antes de filtrar
-      playersByLane[lane] = playersWithLanes.filter(p => this.mapLaneToBackend(p.assignedLane) === lane);
-    });
-    
-    // Distribuir cada lane entre os times (maior MMR no team1, menor no team2)
-    laneOrder.forEach((lane, laneIndex) => {
-      const lanePlayers = playersByLane[lane];
-      if (lanePlayers.length === 2) {
-        // Ordenar por MMR (maior primeiro)
-        lanePlayers.sort((a, b) => b.mmr - a.mmr);
-        
-        // ✅ CORREÇÃO: Definir teamIndex corretamente baseado na lane
-        // Team1 (azul): índices 0-4, Team2 (vermelho): índices 5-9
-        const team1Player = {
-          ...lanePlayers[0],
-          teamIndex: laneIndex, // 0=TOP, 1=JUNGLE, 2=MID, 3=ADC, 4=SUPPORT
-          assignedLane: this.mapLaneToFrontend(lane) // ✅ CORREÇÃO: Usar lane do frontend
-        };
-        
-        const team2Player = {
-          ...lanePlayers[1],
-          teamIndex: laneIndex + 5, // 5=TOP, 6=JUNGLE, 7=MID, 8=ADC, 9=SUPPORT
-          assignedLane: this.mapLaneToFrontend(lane) // ✅ CORREÇÃO: Usar lane do frontend
-        };
-        
-        team1.push(team1Player);
-        team2.push(team2Player);
-      }
-    });
-    
-    // ✅ CORREÇÃO: Ordenar times por teamIndex para garantir ordem correta
-    team1.sort((a, b) => a.teamIndex - b.teamIndex);
-    team2.sort((a, b) => a.teamIndex - b.teamIndex);
-    
-    console.log('✅ [TeamBalance] Times balanceados com índices corretos:', {
-      team1: team1.map(p => ({ 
-        name: p.summonerName, 
-        lane: p.assignedLane, 
-        mmr: p.mmr, 
-        teamIndex: p.teamIndex,
-        autofill: p.isAutofill 
-      })),
-      team2: team2.map(p => ({ 
-        name: p.summonerName, 
-        lane: p.assignedLane, 
-        mmr: p.mmr, 
-        teamIndex: p.teamIndex,
-        autofill: p.isAutofill 
-      }))
-    });
-    
-    return { team1, team2 };
-  }
+      // ✅ CORREÇÃO: Preparar dados completos da partida para o frontend com lanes atribuídas
+      const matchFoundData = {
+        type: 'match_found',
+        data: {
+          matchId: matchId,
+          // ✅ CORREÇÃO: Incluir todas as informações necessárias para o frontend
+          teammates: team1.map((p, index) => ({
+            summonerName: p.summonerName,
+            mmr: p.mmr,
+            primaryLane: p.primaryLane,
+            secondaryLane: p.secondaryLane,
+            assignedLane: p.assignedLane, // ✅ NOVO: Lane atribuída após balanceamento
+            teamIndex: index, // ✅ NOVO: Índice no time (0-4)
+            isAutofill: p.isAutofill || false, // ✅ NOVO: Se foi autofill
+            team: 'blue' // ✅ NOVO: Identificação do time
+          })),
+          enemies: team2.map((p, index) => ({
+            summonerName: p.summonerName,
+            mmr: p.mmr,
+            primaryLane: p.primaryLane,
+            secondaryLane: p.secondaryLane,
+            assignedLane: p.assignedLane, // ✅ NOVO: Lane atribuída após balanceamento
+            teamIndex: index + 5, // ✅ NOVO: Índice no time (5-9)
+            isAutofill: p.isAutofill || false, // ✅ NOVO: Se foi autofill
+            team: 'red' // ✅ NOVO: Identificação do time
+          })),
+          // ✅ CORREÇÃO: Estatísticas detalhadas dos times
+          teamStats: {
+            team1: {
+              averageMMR: Math.round(team1MMR),
+              totalMMR: Math.round(team1MMR * 5),
+              players: team1.length,
+              lanes: team1.map(p => p.assignedLane).sort()
+            },
+            team2: {
+              averageMMR: Math.round(team2MMR),
+              totalMMR: Math.round(team2MMR * 5),
+              players: team2.length,
+              lanes: team2.map(p => p.assignedLane).sort()
+            }
+          },
+          // ✅ CORREÇÃO: Informações de balanceamento
+          balancingInfo: {
+            mmrDifference: Math.abs(team1MMR - team2MMR),
+            isWellBalanced: Math.abs(team1MMR - team2MMR) <= 100,
+            autofillCount: {
+              team1: team1.filter(p => p.isAutofill).length,
+              team2: team2.filter(p => p.isAutofill).length
+            }
+          },
+          // ✅ CORREÇÃO: Timer e deadline
+          acceptanceDeadline: new Date(Date.now() + 30000).toISOString(), // 30 segundos para aceitar
+          acceptanceTimer: 30, // ✅ NOVO: Timer em segundos para o frontend
+          acceptTimeout: 30, // ✅ COMPATIBILIDADE: Campo antigo para compatibilidade
+          phase: 'accept', // ✅ NOVO: Fase da partida
+          message: 'Partida encontrada! Aceite para continuar.',
+          // ✅ NOVO: Informações adicionais para o frontend
+          gameMode: 'RANKED_SOLO_5x5',
+          mapId: 11, // Summoner's Rift
+          queueType: 'RANKED'
+        },
+        timestamp: new Date().toISOString()
+      };
 
-  // ✅ NOVO: Atribuir lanes otimizado
-  private assignLanesOptimized(players: any[]): any[] {
-    // ✅ CORREÇÃO: Usar nomenclatura correta das lanes
-    const laneOrder = ['top', 'jungle', 'mid', 'bot', 'support']; // Ordem dos índices 0-4
-    const laneAssignments: { [key: string]: number } = { 
-      'top': 0, 'jungle': 0, 'mid': 0, 'bot': 0, 'support': 0 
-    };
-    const playersWithLanes: any[] = [];
-    
-    console.log('🎯 [LaneAssign] Iniciando atribuição de lanes para', players.length, 'jogadores');
-    
-    // Primeira passada: atribuir lanes preferidas para jogadores com maior MMR
-    for (const player of players) {
-      // ✅ CORREÇÃO: Mapear lanes do frontend para backend
-      const primaryLane = this.mapLaneToBackend(player.primaryLane || 'fill');
-      const secondaryLane = this.mapLaneToBackend(player.secondaryLane || 'fill');
+      // Enviar notificação para todos os jogadores da partida
+      const allPlayerNames = [...team1.map(p => p.summonerName), ...team2.map(p => p.summonerName)];
       
-      let assignedLane = null;
-      let isAutofill = false;
-      
-      console.log(`🎯 [LaneAssign] Processando ${player.summonerName} (MMR: ${player.mmr}) - Preferências: ${primaryLane}/${secondaryLane}`);
-      
-      // Tentar lane primária
-      if (primaryLane !== 'fill' && laneAssignments[primaryLane] < 2) {
-        assignedLane = primaryLane;
-        isAutofill = false;
-        laneAssignments[primaryLane]++;
-        console.log(`✅ [LaneAssign] ${player.summonerName} → ${assignedLane} (primária)`);
-      }
-      // Tentar lane secundária
-      else if (secondaryLane !== 'fill' && laneAssignments[secondaryLane] < 2) {
-        assignedLane = secondaryLane;
-        isAutofill = false;
-        laneAssignments[secondaryLane]++;
-        console.log(`✅ [LaneAssign] ${player.summonerName} → ${assignedLane} (secundária)`);
-      }
-      // Autofill: encontrar primeira lane disponível
-      else {
-        for (const lane of laneOrder) {
-          if (laneAssignments[lane] < 2) {
-            assignedLane = lane;
-            isAutofill = true;
-            laneAssignments[lane]++;
-            console.log(`🔄 [LaneAssign] ${player.summonerName} → ${assignedLane} (autofill)`);
-            break;
+      let sentCount = 0;
+      this.wss.clients.forEach((client: any) => {
+        if (client.readyState === 1) { // WebSocket.OPEN
+          try {
+            // Enviar para todos os clientes (o frontend filtrará se o jogador está na partida)
+            client.send(JSON.stringify(matchFoundData));
+            sentCount++;
+          } catch (error) {
+            console.error('❌ [MatchFound] Erro ao enviar notificação:', error);
           }
         }
-      }
-      
-      if (!assignedLane) {
-        console.error(`❌ [LaneAssign] Não foi possível atribuir lane para ${player.summonerName}`);
-        continue;
-      }
-      
-      const playerWithLane = {
-        ...player,
-        assignedLane: this.mapLaneToFrontend(assignedLane), // ✅ CORREÇÃO: Converter de volta para frontend
-        isAutofill
-      };
-      
-      playersWithLanes.push(playerWithLane);
+      });
+
+      console.log(`✅ [MatchFound] Notificação enviada para ${sentCount} clientes sobre partida ${matchId}`);
+      console.log(`📋 [MatchFound] Jogadores da partida:`, allPlayerNames);
+      console.log(`📊 [MatchFound] Dados da partida:`, {
+        team1Stats: matchFoundData.data.teamStats.team1,
+        team2Stats: matchFoundData.data.teamStats.team2,
+        balancing: matchFoundData.data.balancingInfo
+      });
+
+    } catch (error) {
+      console.error('❌ [MatchFound] Erro ao notificar frontend:', error);
     }
-    
-    console.log('✅ [LaneAssign] Atribuição final:', laneAssignments);
-    console.log('✅ [LaneAssign] Jogadores com lanes:', playersWithLanes.map(p => ({
-      name: p.summonerName,
-      lane: p.assignedLane,
-      mmr: p.mmr,
-      autofill: p.isAutofill
-    })));
-    
-    return playersWithLanes;
   }
-
-  // ✅ NOVO: Mapear lanes do frontend para backend
-  public mapLaneToBackend(lane: string): string {
-    const mapping: { [key: string]: string } = {
-      'TOP': 'top',
-      'JUNGLE': 'jungle', 
-      'MID': 'mid',
-      'ADC': 'bot',
-      'SUPPORT': 'support',
-      'BOTTOM': 'bot', // Alias
-      'BOT': 'bot',    // Alias
-      'fill': 'fill'
-    };
-    return mapping[lane.toUpperCase()] || 'fill';
-  }
-
-  // ✅ NOVO: Mapear lanes do backend para frontend
-  public mapLaneToFrontend(lane: string): string {
-    const mapping: { [key: string]: string } = {
-      'top': 'TOP',
-      'jungle': 'JUNGLE',
-      'mid': 'MID', 
-      'bot': 'ADC',
-      'support': 'SUPPORT'
-    };
-    return mapping[lane] || 'FILL';
-  }
-
-} 
+}
