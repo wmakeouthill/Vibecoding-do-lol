@@ -810,26 +810,26 @@ export class MatchmakingService {
         secondaryLane: p.secondary_lane || 'fill'
       }));
       
-      // Dividir em dois times (5 vs 5) baseado em MMR
-      playerData.sort((a, b) => b.mmr - a.mmr); // Ordenar por MMR decrescente
+      // ✅ CORREÇÃO: Usar método de balanceamento completo com lanes
+      console.log('🎯 [AutoMatch] Aplicando balanceamento completo com lanes...');
+      const balancedResult = this.balanceTeamsByMMRAndLanes(playerData);
       
-      const team1 = [];
-      const team2 = [];
-      
-      // Distribuir alternadamente para balancear
-      for (let i = 0; i < playerData.length; i++) {
-        if (i % 2 === 0) {
-          team1.push(playerData[i]);
-        } else {
-          team2.push(playerData[i]);
-        }
+      if (!balancedResult) {
+        console.error('❌ [AutoMatch] Falha no balanceamento de times e lanes');
+        return;
       }
       
-      // Calcular MMR médio dos times
+      const { team1, team2 } = balancedResult;
+      
+      // Calcular MMR médio dos times balanceados
       const team1MMR = team1.reduce((sum: number, p: any) => sum + p.mmr, 0) / team1.length;
       const team2MMR = team2.reduce((sum: number, p: any) => sum + p.mmr, 0) / team2.length;
       
-      console.log(`🎯 [AutoMatch] Times balanceados: Team1 MMR=${Math.round(team1MMR)}, Team2 MMR=${Math.round(team2MMR)}`);
+      console.log(`🎯 [AutoMatch] Times balanceados com lanes:`, {
+        team1: team1.map(p => ({ name: p.summonerName, lane: p.assignedLane, mmr: p.mmr })),
+        team2: team2.map(p => ({ name: p.summonerName, lane: p.assignedLane, mmr: p.mmr })),
+        avgMMR: { team1: Math.round(team1MMR), team2: Math.round(team2MMR) }
+      });
       
       // ✅ CORRIGIDO: Criar partida única no banco com status 'pending'
       const matchId = await this.dbManager.createCustomMatch({

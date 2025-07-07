@@ -308,60 +308,67 @@ export class App implements OnInit, OnDestroy {
     this.lastMatchId = data.matchId;
     console.log('🎮 [App] ✅ PROCESSANDO NOVA PARTIDA:', data.matchId);
 
-    // ✅ NOVO: Converter dados do backend para formato do frontend
+    // ✅ CORREÇÃO: Converter dados do backend para formato do frontend
     const matchFoundData: MatchFoundData = {
       matchId: data.matchId,
       playerSide: 'blue', // Determinar lado do jogador
       teammates: [],
       enemies: [],
-      averageMMR: data.averageMMR || { yourTeam: 1200, enemyTeam: 1200 },
+      averageMMR: { yourTeam: 1200, enemyTeam: 1200 },
       estimatedGameDuration: 25,
       phase: 'accept',
-      acceptTimeout: Math.floor((data.acceptanceTimeout || 30000) / 1000)
+      acceptTimeout: data.acceptTimeout || data.acceptanceTimer || 30,
+      acceptanceTimer: data.acceptanceTimer || data.acceptTimeout || 30,
+      acceptanceDeadline: data.acceptanceDeadline,
+      teamStats: data.teamStats,
+      balancingInfo: data.balancingInfo
     };
 
-    // ✅ NOVO: Processar times e determinar lado do jogador
-    console.log('🎮 [App] Processando balancedTeams:', data.balancedTeams);
+    // ✅ CORREÇÃO: Usar dados diretos do backend (teammates e enemies)
+    console.log('🎮 [App] Processando dados diretos do backend:');
+    console.log('🎮 [App] Teammates recebidos:', data.teammates);
+    console.log('🎮 [App] Enemies recebidos:', data.enemies);
 
-    if (data.balancedTeams) {
-      const team1 = data.balancedTeams.team1 || [];
-      const team2 = data.balancedTeams.team2 || [];
+    if (data.teammates && data.enemies) {
+      const teammates = data.teammates || [];
+      const enemies = data.enemies || [];
 
-      console.log('🎮 [App] Team1:', team1);
-      console.log('🎮 [App] Team2:', team2);
+      console.log('🎮 [App] Teammates count:', teammates.length);
+      console.log('🎮 [App] Enemies count:', enemies.length);
 
       // Determinar em qual time o jogador atual está
       const currentPlayerName = this.currentPlayer?.displayName || this.currentPlayer?.summonerName;
       console.log('🎮 [App] Current player name:', currentPlayerName);
-      console.log('🎮 [App] Team1 players:', team1.map((p: any) => p.summonerName));
-      console.log('🎮 [App] Team2 players:', team2.map((p: any) => p.summonerName));
+      console.log('🎮 [App] Teammates players:', teammates.map((p: any) => p.summonerName));
+      console.log('🎮 [App] Enemies players:', enemies.map((p: any) => p.summonerName));
 
-      // ✅ CORREÇÃO: Verificar se o jogador está em qualquer um dos times
-      const isInTeam1 = team1.some((p: any) => p.summonerName === currentPlayerName);
-      const isInTeam2 = team2.some((p: any) => p.summonerName === currentPlayerName);
+      // ✅ CORREÇÃO: Verificar se o jogador está nos teammates (time azul por padrão)
+      const isInTeammates = teammates.some((p: any) => p.summonerName === currentPlayerName);
+      const isInEnemies = enemies.some((p: any) => p.summonerName === currentPlayerName);
 
-      console.log('🎮 [App] Is in team1:', isInTeam1);
-      console.log('🎮 [App] Is in team2:', isInTeam2);
+      console.log('🎮 [App] Is in teammates:', isInTeammates);
+      console.log('🎮 [App] Is in enemies:', isInEnemies);
 
-      // Se o jogador não está em nenhum time, usar team1 como padrão
-      if (!isInTeam1 && !isInTeam2) {
-        console.warn('🎮 [App] Jogador atual não encontrado em nenhum time, usando team1 como padrão');
+      // ✅ CORREÇÃO: Usar teammates e enemies diretos do backend
+      matchFoundData.playerSide = isInTeammates ? 'blue' : 'red';
+      matchFoundData.teammates = this.convertPlayersToPlayerInfo(teammates);
+      matchFoundData.enemies = this.convertPlayersToPlayerInfo(enemies);
+
+      console.log('🎮 [App] Final teammates:', matchFoundData.teammates);
+      console.log('🎮 [App] Final enemies:', matchFoundData.enemies);
+
+      // ✅ CORREÇÃO: Usar teamStats do backend se disponível
+      if (data.teamStats) {
+        matchFoundData.averageMMR = {
+          yourTeam: isInTeammates ? data.teamStats.team1.averageMMR : data.teamStats.team2.averageMMR,
+          enemyTeam: isInTeammates ? data.teamStats.team2.averageMMR : data.teamStats.team1.averageMMR
+        };
+      } else {
+        console.warn('🎮 [App] teamStats não encontrado nos dados');
       }
-
-      matchFoundData.playerSide = isInTeam1 ? 'blue' : 'red';
-      matchFoundData.teammates = isInTeam1 ? this.convertPlayersToPlayerInfo(team1) : this.convertPlayersToPlayerInfo(team2);
-      matchFoundData.enemies = isInTeam1 ? this.convertPlayersToPlayerInfo(team2) : this.convertPlayersToPlayerInfo(team1);
-
-      console.log('🎮 [App] Teammates:', matchFoundData.teammates);
-      console.log('🎮 [App] Enemies:', matchFoundData.enemies);
-
-      // Atualizar MMR médio
-      matchFoundData.averageMMR = {
-        yourTeam: isInTeam1 ? data.averageMMR.team1 : data.averageMMR.team2,
-        enemyTeam: isInTeam1 ? data.averageMMR.team2 : data.averageMMR.team1
-      };
     } else {
-      console.warn('🎮 [App] balancedTeams não encontrado nos dados');
+      console.error('🎮 [App] ❌ ERRO: teammates ou enemies não encontrados nos dados');
+      console.log('🎮 [App] Dados recebidos:', data);
     }
 
     this.matchFoundData = matchFoundData;
