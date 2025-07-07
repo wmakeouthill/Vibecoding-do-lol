@@ -839,7 +839,7 @@ export class MatchmakingService {
         team2Players: team2.map(p => p.summonerName),
         createdBy: 'Sistema',
         gameMode: 'Ranked 5v5',
-        matchLeader: team1[0].summonerName // Primeiro jogador do team1 como líder
+        matchLeader: this.selectHumanLeader(team1, team2) // ✅ NOVO: Escolher líder humano
       });
       
       if (matchId) {
@@ -1687,5 +1687,52 @@ export class MatchmakingService {
     } catch (error) {
       console.error('❌ [MatchFound] Erro ao notificar frontend:', error);
     }
+  }
+
+  // ✅ NOVO: Função para escolher um líder humano da partida
+  private selectHumanLeader(team1: any[], team2: any[]): string {
+    console.log('🎯 [selectHumanLeader] === SELECIONANDO LÍDER HUMANO ===');
+    
+    // Combinar ambos os times para buscar um líder
+    const allPlayers = [...team1, ...team2];
+    
+    console.log('🎯 [selectHumanLeader] Todos os jogadores:', allPlayers.map(p => ({
+      name: p.summonerName,
+      isBot: this.isPlayerBot(p.summonerName)
+    })));
+    
+    // ✅ PRIORIDADE 1: Buscar humanos no team1 primeiro
+    for (const player of team1) {
+      if (!this.isPlayerBot(player.summonerName)) {
+        console.log(`✅ [selectHumanLeader] Líder escolhido (Team1): ${player.summonerName}`);
+        return player.summonerName;
+      }
+    }
+    
+    // ✅ PRIORIDADE 2: Se não há humanos no team1, buscar no team2
+    for (const player of team2) {
+      if (!this.isPlayerBot(player.summonerName)) {
+        console.log(`✅ [selectHumanLeader] Líder escolhido (Team2): ${player.summonerName}`);
+        return player.summonerName;
+      }
+    }
+    
+    // ✅ FALLBACK: Se todos são bots, escolher o primeiro jogador do team1
+    console.warn(`⚠️ [selectHumanLeader] TODOS OS JOGADORES SÃO BOTS - usando fallback: ${team1[0]?.summonerName}`);
+    return team1[0]?.summonerName || 'Sistema';
+  }
+
+  // ✅ NOVO: Função para verificar se um jogador é bot
+  private isPlayerBot(playerName: string): boolean {
+    if (!playerName) return false;
+    
+    const nameCheck = playerName.toLowerCase();
+    const isBot = nameCheck.includes('bot') || 
+                 nameCheck.includes('ai') ||
+                 nameCheck.includes('computer') ||
+                 nameCheck.includes('cpu') ||
+                 playerName.includes('#BOT'); // Padrão específico dos bots
+    
+    return isBot;
   }
 }

@@ -1,6 +1,7 @@
 import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, ChangeDetectorRef, ChangeDetectionStrategy, OnChanges, SimpleChanges, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { HttpClient, HttpClientModule } from '@angular/common/http';
 import { ChampionService, Champion } from '../../services/champion.service';
 import { BotService, PickBanPhase, CustomPickBanSession } from '../../services/bot.service';
 import { DraftChampionModalComponent } from './draft-champion-modal';
@@ -12,6 +13,7 @@ import { interval, Subscription } from 'rxjs';
     imports: [
         CommonModule,
         FormsModule,
+        HttpClientModule,
         DraftChampionModalComponent,
         DraftConfirmationModalComponent
     ],
@@ -50,7 +52,8 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
     constructor(
         public championService: ChampionService,
         public botService: BotService,
-        public cdr: ChangeDetectorRef
+        public cdr: ChangeDetectorRef,
+        private http: HttpClient
     ) { }
 
     ngOnInit() {
@@ -530,6 +533,19 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
                     // Agora invalidar cache e forçar detecção de mudanças
                     this.forceInterfaceUpdate();
 
+                    // ✅ NOVO: Enviar ação de bot para backend se eu for um jogador humano
+                    // Buscar a fase que acabou de ser completada (currentAction - 1)
+                    if (this.session && this.session.currentAction > 0) {
+                        const completedPhase = this.session.phases[this.session.currentAction - 1];
+                        if (completedPhase && completedPhase.champion && this.currentPlayer &&
+                            !this.botService.isBot(this.currentPlayer) && this.matchData?.id) {
+                            console.log('🤖 [checkForBotAutoAction] Enviando ação de bot para backend');
+                            this.sendDraftActionToBackend(completedPhase.champion, completedPhase.action).catch(error => {
+                                console.error('❌ [checkForBotAutoAction] Erro ao enviar ação de bot para backend:', error);
+                            });
+                        }
+                    }
+
                     if (this.session && this.session.currentAction >= this.session.phases.length) {
                         console.log('🤖 [checkForBotAutoAction] Sessão completada pelo bot');
                         this.session.phase = 'completed';
@@ -606,7 +622,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
 
         // ✅ NOVO: Log específico para ação 6
         if (this.session && this.session.currentAction === 5) {
-            console.log('🔍 [DEBUG AÇÃO 6 - checkIfMyTurn] === DETALHES ESPECÍFICOS ===');
+            console.log('🔍 [DEBUG AÇÃO 6 - checkIfMyTurn] === DETALHES ESPECÍFICAS ===');
             console.log('🔍 [DEBUG AÇÃO 6 - checkIfMyTurn] currentPlayer:', this.currentPlayer);
             console.log('🔍 [DEBUG AÇÃO 6 - checkIfMyTurn] phase:', phase);
             console.log('🔍 [DEBUG AÇÃO 6 - checkIfMyTurn] isMyTurn:', isMyTurn);
@@ -670,6 +686,14 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         // ✅ CORREÇÃO: Auto-pick/ban para o jogador atual usando o BotService
         // O BotService já configura a fase e incrementa currentAction
         this.botService.performBotAction(currentPhase, this.session, this.champions);
+
+        // ✅ NOVO: Enviar ação de timeout para backend se eu for um jogador humano
+        if (currentPhase.champion && this.currentPlayer && !this.botService.isBot(this.currentPlayer) && this.matchData?.id) {
+            console.log('⏰ [handleTimeOut] Enviando ação de timeout para backend');
+            this.sendDraftActionToBackend(currentPhase.champion, currentPhase.action).catch(error => {
+                console.error('❌ [handleTimeOut] Erro ao enviar timeout para backend:', error);
+            });
+        }
 
         // ✅ CORREÇÃO: AGORA invalidar cache e forçar detecção de mudanças
         this.forceInterfaceUpdate();
@@ -1091,6 +1115,35 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
 
         console.log('✅ [onChampionSelected] Fase atualizada com campeão:', champion.name);
 
+        // ✅ NOVO: Enviar ação para o backend (qualquer jogador humano pode atualizar)
+        // Isso resolve o problema de quando o líder é um bot
+        if (this.currentPlayer && !this.botService.isBot(this.currentPlayer) && this.matchData?.id) {
+            console.log('🎯 [onChampionSelected] Enviando ação para backend (jogador humano)');
+            console.log('🎯 [onChampionSelected] Detalhes do jogador:', {
+                name: this.currentPlayer.summonerName || this.currentPlayer.name,
+                isBot: this.botService.isBot(this.currentPlayer),
+                isLeader: this.isLeader,
+                matchId: this.matchData.id,
+                reasoning: 'Jogador humano pode atualizar independente de ser líder'
+            });
+
+            this.sendDraftActionToBackend(champion, currentPhase.action).catch(error => {
+                console.error('❌ [onChampionSelected] Erro ao enviar para backend:', error);
+            });
+        } else if (this.currentPlayer && this.botService.isBot(this.currentPlayer)) {
+            console.log('ℹ️ [onChampionSelected] Jogador atual é bot - não enviando para backend');
+            console.log('ℹ️ [onChampionSelected] Detalhes do bot:', {
+                name: this.currentPlayer.summonerName || this.currentPlayer.name,
+                isBot: this.botService.isBot(this.currentPlayer),
+                isLeader: this.isLeader
+            });
+        } else if (!this.currentPlayer) {
+            console.log('ℹ️ [onChampionSelected] currentPlayer não disponível - não enviando para backend');
+        } else {
+            console.log('ℹ️ [onChampionSelected] matchData.id não disponível - não enviando para backend');
+            console.log('ℹ️ [onChampionSelected] matchData disponível:', !!this.matchData);
+        }
+
         // ✅ CORREÇÃO: Fechar modal imediatamente
         this.showChampionModal = false;
 
@@ -1214,7 +1267,12 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         const currentPhase = this.session.phases[this.session.currentAction];
         if (!currentPhase) return null;
 
-        return this.getPlayerByTeamIndex(currentPhase.team, currentPhase.playerIndex || 0);
+        // ✅ CORREÇÃO: Calcular teamIndex correto baseado no team e playerIndex
+        const playerIndex = currentPhase.playerIndex || 0;
+        const targetTeamIndex = currentPhase.team === 'red' ? playerIndex + 5 : playerIndex;
+
+        const teamPlayers = currentPhase.team === 'blue' ? this.session.blueTeam : this.session.redTeam;
+        return teamPlayers.find(p => p.teamIndex === targetTeamIndex) || null;
     }
 
     // ✅ NOVO: Método para forçar atualização do isMyTurn
@@ -1292,5 +1350,104 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         if (totalPhases === 0) return 0;
 
         return Math.round((currentPhase / totalPhases) * 100);
+    }
+
+    // ✅ NOVO: Método para obter URL base do servidor (baseado no ChampionService)
+    private getBaseUrl(): string {
+        // Detectar se está no Electron (tanto dev quanto produção)
+        if (this.isElectron()) {
+            // No Windows, o Electron muitas vezes resolve localhost para 127.0.0.1
+            if (this.isWindows()) {
+                return 'http://127.0.0.1:3000/api';
+            } else {
+                return 'http://localhost:3000/api';
+            }
+        }
+
+        // Em desenvolvimento web (Angular dev server)
+        const host = window.location.hostname;
+        if (host === 'localhost' || host === '127.0.0.1') {
+            return 'http://localhost:3000/api';
+        }
+
+        // Em produção web (não Electron), usar URL relativa
+        return `/api`;
+    }
+
+    private isElectron(): boolean {
+        return !!(window && (window as any).require);
+    }
+
+    private isWindows(): boolean {
+        return navigator.platform.indexOf('Win') > -1;
+    }
+
+    // ✅ NOVO: Método para enviar ação de draft para o backend
+    private async sendDraftActionToBackend(champion: Champion, action: 'pick' | 'ban'): Promise<void> {
+        console.log('🌐 [sendDraftActionToBackend] === ENVIANDO AÇÃO PARA BACKEND ===');
+
+        if (!this.session || !this.matchData) {
+            console.log('❌ [sendDraftActionToBackend] Session ou matchData não disponível');
+            return;
+        }
+
+        const currentPhase = this.session.phases[this.session.currentAction];
+        if (!currentPhase) {
+            console.log('❌ [sendDraftActionToBackend] Fase atual não disponível');
+            return;
+        }
+
+        // ✅ CORREÇÃO: Determinar playerId correto para o backend
+        let playerId: string | number = currentPhase.playerId || '';
+
+        // ✅ NOVO: Usar teamIndex como playerId para manter compatibilidade com backend
+        const currentPlayer = this.getCurrentPhasePlayer();
+        if (currentPlayer && currentPlayer.teamIndex !== undefined) {
+            playerId = currentPlayer.teamIndex;
+        }
+
+        const requestData = {
+            matchId: this.matchData.id,
+            playerId: playerId,
+            championId: parseInt(champion.id),
+            action: action
+        };
+
+        console.log('🌐 [sendDraftActionToBackend] Dados da requisição:', requestData);
+        console.log('🌐 [sendDraftActionToBackend] CurrentPhase:', {
+            team: currentPhase.team,
+            action: currentPhase.action,
+            playerId: currentPhase.playerId,
+            playerName: currentPhase.playerName,
+            teamIndex: currentPlayer?.teamIndex
+        });
+        console.log('🌐 [sendDraftActionToBackend] Estado do jogador atual:', {
+            hasCurrentPlayer: !!this.currentPlayer,
+            currentPlayerName: this.currentPlayer?.summonerName || this.currentPlayer?.name,
+            isCurrentPlayerBot: this.currentPlayer ? this.botService.isBot(this.currentPlayer) : 'N/A',
+            isLeader: this.isLeader
+        });
+
+        try {
+            const baseUrl = this.getBaseUrl();
+            const url = `${baseUrl}/match/draft-action`;
+
+            console.log('🌐 [sendDraftActionToBackend] Fazendo POST para:', url);
+
+            const response = await this.http.post(url, requestData).toPromise();
+
+            console.log('✅ [sendDraftActionToBackend] Resposta do backend:', response);
+            console.log('✅ [sendDraftActionToBackend] Ação de draft enviada com sucesso para o backend');
+            console.log('✅ [sendDraftActionToBackend] pick_ban_data deve ter sido atualizado no MySQL');
+
+        } catch (error) {
+            console.error('❌ [sendDraftActionToBackend] Erro ao enviar ação para o backend:', error);
+
+            // ✅ NOVO: Não interromper o fluxo do draft por erro de backend
+            // O draft continua funcionando localmente mesmo se o backend falhar
+            console.warn('⚠️ [sendDraftActionToBackend] Draft continuará funcionando localmente apesar do erro no backend');
+        }
+
+        console.log('🌐 [sendDraftActionToBackend] === FIM DO ENVIO PARA BACKEND ===');
     }
 }
