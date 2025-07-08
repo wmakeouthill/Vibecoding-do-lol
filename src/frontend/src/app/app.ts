@@ -1290,12 +1290,21 @@ export class App implements OnInit, OnDestroy {
     console.log('🎯 [App] Draft completado:', event);
     console.log('🔍 [App] DEBUG - Criando gameData a partir do event:', JSON.stringify(event, null, 2));
 
+    // ✅ CORREÇÃO: Extrair picks de cada jogador das phases
+    const blueTeamWithChampions = this.assignChampionsToTeam(event.blueTeam || [], event.session, 'blue');
+    const redTeamWithChampions = this.assignChampionsToTeam(event.redTeam || [], event.session, 'red');
+
+    console.log('🔍 [App] Times com campeões atribuídos:', {
+      blueTeam: blueTeamWithChampions,
+      redTeam: redTeamWithChampions
+    });
+
     // ✅ CORREÇÃO: Criar gameData corretamente a partir dos dados do draft
     const gameData = {
       sessionId: `game_${event.session?.id || Date.now()}`,
       gameId: `custom_${event.session?.id || Date.now()}`,
-      team1: event.blueTeam || [],
-      team2: event.redTeam || [],
+      team1: blueTeamWithChampions,
+      team2: redTeamWithChampions,
       startTime: new Date(),
       pickBanData: event.session || {},
       isCustomGame: true,
@@ -1304,12 +1313,61 @@ export class App implements OnInit, OnDestroy {
       riotId: null
     };
 
-    console.log('✅ [App] gameData criado:', gameData);
+    console.log('✅ [App] gameData criado com campeões:', gameData);
 
     this.draftData = event;
     this.gameData = gameData; // ✅ CORREÇÃO: Definir gameData
     this.inDraftPhase = false;
     this.inGamePhase = true;
+  }
+
+  // ✅ NOVO: Método para atribuir campeões aos jogadores baseado nas phases
+  private assignChampionsToTeam(team: any[], session: any, teamSide: 'blue' | 'red'): any[] {
+    if (!session?.phases || !Array.isArray(session.phases)) {
+      console.warn('⚠️ [App] Sessão não tem phases, retornando time original');
+      return team;
+    }
+
+    console.log(`🎯 [App] Atribuindo campeões ao time ${teamSide}:`, {
+      teamPlayersCount: team.length,
+      phasesCount: session.phases.length,
+      teamPlayers: team.map((p: any) => ({ name: p.summonerName || p.name, id: p.id }))
+    });
+
+    // Obter picks do time
+    const teamPicks = session.phases
+      .filter((phase: any) =>
+        phase.action === 'pick' &&
+        phase.team === teamSide &&
+        phase.champion &&
+        phase.locked
+      )
+      .map((phase: any) => ({
+        championId: phase.champion.id,
+        championName: phase.champion.name,
+        champion: phase.champion
+      }));
+
+    console.log(`✅ [App] Picks encontrados para time ${teamSide}:`, teamPicks);
+
+    // Atribuir campeões aos jogadores (assumindo ordem)
+    return team.map((player: any, index: number) => {
+      const pick = teamPicks[index]; // Por ordem (pode ser melhorado com lógica mais específica)
+
+      const playerWithChampion = {
+        ...player,
+        champion: pick?.champion || null,
+        championId: pick?.championId || null,
+        championName: pick?.championName || null
+      };
+
+      console.log(`🎯 [App] Jogador ${player.summonerName || player.name} recebeu campeão:`, {
+        championName: pick?.championName || 'Nenhum',
+        hasChampion: !!pick?.champion
+      });
+
+      return playerWithChampion;
+    });
   }
 
   exitDraft(): void {

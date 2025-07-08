@@ -2179,6 +2179,40 @@ app.get('/api/matches/custom/:playerId/count', (req: Request, res: Response) => 
 // ✅ REMOVED: DELETE /api/matches/cleanup-test-matches (unnecessary admin endpoint)
 // ✅ REMOVED: DELETE /api/matches/clear-all-custom-matches (unnecessary admin endpoint)
 
+// ✅ NOVO: Endpoint para cancelar/deletar uma partida específica
+app.delete('/api/matches/:matchId', (req: Request, res: Response) => {
+  (async () => {
+    try {
+      const matchId = parseInt(req.params.matchId, 10);
+      
+      if (isNaN(matchId)) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'ID da partida inválido' 
+        });
+      }
+
+      console.log(`🗑️ [DELETE /api/matches] Cancelando partida ID: ${matchId}`);
+
+      // Deletar a partida do banco de dados
+      await dbManager.deleteCustomMatch(matchId);
+
+      console.log(`✅ [DELETE /api/matches] Partida ${matchId} cancelada com sucesso`);
+      
+      res.json({ 
+        success: true, 
+        message: `Partida ${matchId} cancelada e removida do banco de dados`
+      });
+    } catch (error: any) {
+      console.error('💥 [DELETE /api/matches] Erro ao cancelar partida:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error.message 
+      });
+    }
+  })();
+});
+
 // Endpoint para atualizar nickname de um jogador
 app.post('/api/players/update-nickname', (req: Request, res: Response) => {
   (async () => {

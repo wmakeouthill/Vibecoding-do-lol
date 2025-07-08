@@ -1071,21 +1071,40 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
 
     try {
       const pickBanData = this.gameData.pickBanData;
+      console.log(`🔍 [GameInProgress] Buscando bans do time ${team}:`, {
+        hasPickBanData: !!pickBanData,
+        hasPhases: !!pickBanData.phases,
+        phasesLength: pickBanData.phases?.length || 0,
+        pickBanDataStructure: Object.keys(pickBanData)
+      });
 
-      // Verificar se temos dados de bans
+      // ✅ CORREÇÃO: Extrair bans das phases (estrutura correta)
+      if (pickBanData.phases && Array.isArray(pickBanData.phases)) {
+        const teamBans = pickBanData.phases
+          .filter((phase: any) =>
+            phase.action === 'ban' &&
+            phase.team === team &&
+            phase.champion &&
+            phase.locked
+          )
+          .map((phase: any) => ({
+            champion: phase.champion,
+            championName: phase.champion?.name,
+            championId: phase.champion?.id
+          }));
+
+        console.log(`✅ [GameInProgress] Bans encontrados para time ${team}:`, teamBans);
+        return teamBans;
+      }
+
+      // ✅ FALLBACK: Verificar estrutura alternativa
       if (team === 'blue' && pickBanData.team1Bans) {
         return pickBanData.team1Bans || [];
       } else if (team === 'red' && pickBanData.team2Bans) {
         return pickBanData.team2Bans || [];
       }
 
-      console.log(`🔍 [GameInProgress] Bans do time ${team}:`, {
-        hasPickBanData: !!pickBanData,
-        team1Bans: pickBanData.team1Bans?.length || 0,
-        team2Bans: pickBanData.team2Bans?.length || 0,
-        requestedTeam: team
-      });
-
+      console.log(`⚠️ [GameInProgress] Nenhum ban encontrado para time ${team}`);
       return [];
     } catch (error) {
       console.error('❌ [GameInProgress] Erro ao obter bans do time:', error);
