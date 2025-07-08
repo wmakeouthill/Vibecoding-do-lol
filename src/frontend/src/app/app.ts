@@ -501,6 +501,27 @@ export class App implements OnInit, OnDestroy {
 
   private handleGameStarting(data: any): void {
     console.log('🎮 [App] Jogo iniciando:', data);
+    console.log('🔍 [App] DEBUG - gameData originalMatchId:', data.originalMatchId);
+    console.log('🔍 [App] DEBUG - gameData matchId:', data.matchId);
+    console.log('🔍 [App] DEBUG - gameData completo:', JSON.stringify(data, null, 2));
+
+    // ✅ CORREÇÃO: Verificar se os dados dos times estão presentes
+    if (!data.team1 || !data.team2) {
+      console.error('❌ [App] Dados dos times ausentes no evento game_starting:', {
+        hasTeam1: !!data.team1,
+        hasTeam2: !!data.team2,
+        team1Length: data.team1?.length || 0,
+        team2Length: data.team2?.length || 0,
+        dataKeys: Object.keys(data)
+      });
+    } else {
+      console.log('✅ [App] Dados dos times recebidos:', {
+        team1Length: data.team1.length,
+        team2Length: data.team2.length,
+        team1Players: data.team1.map((p: any) => p.summonerName || p.name),
+        team2Players: data.team2.map((p: any) => p.summonerName || p.name)
+      });
+    }
 
     this.inDraftPhase = false;
     this.draftData = null;
@@ -1267,7 +1288,26 @@ export class App implements OnInit, OnDestroy {
 
   onPickBanComplete(event: any): void {
     console.log('🎯 [App] Draft completado:', event);
+    console.log('🔍 [App] DEBUG - Criando gameData a partir do event:', JSON.stringify(event, null, 2));
+
+    // ✅ CORREÇÃO: Criar gameData corretamente a partir dos dados do draft
+    const gameData = {
+      sessionId: `game_${event.session?.id || Date.now()}`,
+      gameId: `custom_${event.session?.id || Date.now()}`,
+      team1: event.blueTeam || [],
+      team2: event.redTeam || [],
+      startTime: new Date(),
+      pickBanData: event.session || {},
+      isCustomGame: true,
+      originalMatchId: event.session?.id || null,
+      originalMatchData: event.session || null,
+      riotId: null
+    };
+
+    console.log('✅ [App] gameData criado:', gameData);
+
     this.draftData = event;
+    this.gameData = gameData; // ✅ CORREÇÃO: Definir gameData
     this.inDraftPhase = false;
     this.inGamePhase = true;
   }

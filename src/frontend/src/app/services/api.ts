@@ -397,6 +397,15 @@ export class ApiService {
         catchError(this.handleError)
       );
   }
+
+  // ✅ NOVO: Cancelar partida e apagar do banco
+  cancelMatch(matchId: number): Observable<any> {
+    return this.http.delete(`${this.baseUrl}/matches/${matchId}`)
+      .pipe(
+        catchError(this.handleError)
+      );
+  }
+
   getMatchHistory(playerId: string, offset: number = 0, limit: number = 10): Observable<any> {
     return this.http.get(`${this.baseUrl}/match-history/${playerId}?offset=${offset}&limit=${limit}`)
       .pipe(

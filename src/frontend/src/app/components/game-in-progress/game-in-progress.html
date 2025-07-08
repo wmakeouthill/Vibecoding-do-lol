@@ -30,15 +30,34 @@
         </div>
       </div>
 
+      <!-- ✅ NOVO: Bans do Time Azul -->
+      <div class="team-bans" *ngIf="getTeamBans('blue').length > 0">
+        <div class="bans-header">
+          <span class="bans-title">🚫 Bans:</span>
+        </div>
+        <div class="bans-list">
+          <div class="ban-item" *ngFor="let ban of getTeamBans('blue')">
+            <span class="ban-champion" *ngIf="ban.champion">{{ ban.champion.name || ban.championName || 'Campeão' }}</span>
+            <span class="ban-champion" *ngIf="!ban.champion && ban.championId">ID: {{ ban.championId }}</span>
+          </div>
+        </div>
+      </div>
+
       <div class="team-players">
         <div class="player" *ngFor="let player of getTeamPlayers('blue')"
              [class.current-player]="currentPlayer && player.id === currentPlayer.id">
+          <div class="player-lane">
+            <span class="lane-icon">{{ getLaneIcon(player.assignedLane || player.lane || player.role) }}</span>
+            <span class="lane-name">{{ getLaneName(player.assignedLane || player.lane || player.role) }}</span>
+          </div>
           <div class="player-info">
             <span class="player-name">{{ player.summonerName || player.name }}</span>
-            <span class="player-role" *ngIf="player.role">{{ player.role }}</span>
           </div>
           <div class="player-champion" *ngIf="player.champion">
-            <span class="champion-name">{{ player.champion.name }}</span>
+            <span class="champion-name">🏆 {{ player.champion.name }}</span>
+          </div>
+          <div class="player-champion" *ngIf="!player.champion">
+            <span class="champion-placeholder">⚔️ Campeão não selecionado</span>
           </div>
         </div>
       </div>
@@ -60,15 +79,34 @@
         </div>
       </div>
 
+      <!-- ✅ NOVO: Bans do Time Vermelho -->
+      <div class="team-bans" *ngIf="getTeamBans('red').length > 0">
+        <div class="bans-header">
+          <span class="bans-title">🚫 Bans:</span>
+        </div>
+        <div class="bans-list">
+          <div class="ban-item" *ngFor="let ban of getTeamBans('red')">
+            <span class="ban-champion" *ngIf="ban.champion">{{ ban.champion.name || ban.championName || 'Campeão' }}</span>
+            <span class="ban-champion" *ngIf="!ban.champion && ban.championId">ID: {{ ban.championId }}</span>
+          </div>
+        </div>
+      </div>
+
       <div class="team-players">
         <div class="player" *ngFor="let player of getTeamPlayers('red')"
              [class.current-player]="currentPlayer && player.id === currentPlayer.id">
+          <div class="player-lane">
+            <span class="lane-icon">{{ getLaneIcon(player.assignedLane || player.lane || player.role) }}</span>
+            <span class="lane-name">{{ getLaneName(player.assignedLane || player.lane || player.role) }}</span>
+          </div>
           <div class="player-info">
             <span class="player-name">{{ player.summonerName || player.name }}</span>
-            <span class="player-role" *ngIf="player.role">{{ player.role }}</span>
           </div>
           <div class="player-champion" *ngIf="player.champion">
-            <span class="champion-name">{{ player.champion.name }}</span>
+            <span class="champion-name">🏆 {{ player.champion.name }}</span>
+          </div>
+          <div class="player-champion" *ngIf="!player.champion">
+            <span class="champion-placeholder">⚔️ Campeão não selecionado</span>
           </div>
         </div>
       </div>

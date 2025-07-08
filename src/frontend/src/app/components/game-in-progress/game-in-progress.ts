@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, OnInit, OnDestroy } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api';
@@ -39,7 +39,7 @@ interface GameResult {
   templateUrl: './game-in-progress.html',
   styleUrl: './game-in-progress.scss'
 })
-export class GameInProgressComponent implements OnInit, OnDestroy {
+export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
   @Input() gameData: GameData | null = null;
   @Input() currentPlayer: any = null;
   @Output() onGameComplete = new EventEmitter<GameResult>();
@@ -80,25 +80,84 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
   private currentGameSession: any = null;
 
   constructor(private apiService: ApiService) {}  ngOnInit() {
-    this.initializeGame();
-    // Removed automatic LCU detection and auto-resolve
-    // These will only happen when user manually clicks buttons
+    console.log('🚀 [GameInProgress] Inicializando componente...');
+    console.log('📊 [GameInProgress] gameData recebido:', {
+      hasGameData: !!this.gameData,
+      originalMatchId: this.gameData?.originalMatchId, // ✅ VERIFICAR ESTE VALOR
+      gameDataKeys: this.gameData ? Object.keys(this.gameData) : [],
+      hasTeam1: !!(this.gameData?.team1),
+      hasTeam2: !!(this.gameData?.team2),
+      team1Length: this.gameData?.team1?.length || 0,
+      team2Length: this.gameData?.team2?.length || 0,
+      fullGameData: this.gameData // ✅ LOG COMPLETO
+    });
+    console.log('👤 [GameInProgress] currentPlayer:', this.currentPlayer);
+
+    // ✅ CORREÇÃO: Só inicializar se temos gameData
+    if (this.gameData) {
+      this.initializeGame();
+    } else {
+      console.log('⏳ [GameInProgress] Aguardando gameData...');
+    }
+  }
+
+  ngOnChanges(changes: SimpleChanges) {
+    console.log('🔄 [GameInProgress] ngOnChanges detectado:', changes);
+
+    // ✅ CORREÇÃO: Detectar quando gameData é recebido
+    if (changes['gameData'] && changes['gameData'].currentValue && !changes['gameData'].previousValue) {
+      console.log('🎮 [GameInProgress] gameData recebido via ngOnChanges, inicializando jogo...');
+      this.initializeGame();
+    }
   }
 
   ngOnDestroy() {
     this.stopTimers();
   }  private initializeGame() {
-    if (!this.gameData) return;
+    console.log('🎮 [GameInProgress] Inicializando jogo...');
+    console.log('📊 [GameInProgress] gameData atual:', {
+      gameData: this.gameData,
+      hasGameData: !!this.gameData,
+      sessionId: this.gameData?.sessionId,
+      team1Length: this.gameData?.team1?.length || 0,
+      team2Length: this.gameData?.team2?.length || 0,
+      team1Sample: this.gameData?.team1?.[0],
+      team2Sample: this.gameData?.team2?.[0]
+    });
 
-    this.gameStartTime = new Date();    this.gameStatus = 'waiting';
+    if (!this.gameData) {
+      console.error('❌ [GameInProgress] gameData não está disponível');
+      return;
+    }
+
+    // ✅ CORREÇÃO: Verificar se temos os dados mínimos necessários
+    if (!this.gameData.team1 || !this.gameData.team2) {
+      console.error('❌ [GameInProgress] Dados dos times não estão disponíveis:', {
+        hasTeam1: !!this.gameData.team1,
+        hasTeam2: !!this.gameData.team2,
+        gameDataKeys: Object.keys(this.gameData)
+      });
+      return;
+    }
+
+    if (this.gameData.team1.length === 0 || this.gameData.team2.length === 0) {
+      console.error('❌ [GameInProgress] Times estão vazios:', {
+        team1Length: this.gameData.team1.length,
+        team2Length: this.gameData.team2.length
+      });
+      return;
+    }
+
+    this.gameStartTime = new Date();
+    this.gameStatus = 'waiting';
     this.linkingStartTime = Date.now(); // Inicializar tempo para vinculação
 
-    // console.log('🎮 Partida iniciada:', {
-    //   sessionId: this.gameData.sessionId,
-    //   team1: this.gameData.team1.length,
-    //   team2: this.gameData.team2.length,
-    //   isCustom: this.gameData.isCustomGame
-    // });
+    console.log('✅ [GameInProgress] Partida inicializada com sucesso:', {
+      sessionId: this.gameData.sessionId,
+      team1: this.gameData.team1?.length || 0,
+      team2: this.gameData.team2?.length || 0,
+      isCustom: this.gameData.isCustomGame
+    });
 
     // Start game timer
     this.startGameTimer();
@@ -394,9 +453,30 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
 
       this.onGameComplete.emit(result);
     }
-  }// Cancel game
-  cancelGame() {
-    // console.log('❌ Partida cancelada');
+  }  // Cancel game
+  async cancelGame() {
+    console.log('❌ [GameInProgress] Cancelando partida...');
+
+    try {
+      // ✅ NOVO: Notificar backend para apagar a partida do banco
+      if (this.gameData?.originalMatchId) {
+        console.log('🗑️ [GameInProgress] Notificando backend para apagar partida:', this.gameData.originalMatchId);
+
+        // Chamar API para cancelar/apagar a partida
+        const response = await this.apiService.cancelMatch(this.gameData.originalMatchId).toPromise();
+        if (response?.success) {
+          console.log('✅ [GameInProgress] Partida apagada do banco com sucesso');
+        } else {
+          console.warn('⚠️ [GameInProgress] Erro ao apagar partida do banco:', response?.message);
+        }
+      } else {
+        console.warn('⚠️ [GameInProgress] originalMatchId não disponível para apagar do banco');
+      }
+    } catch (error) {
+      console.error('❌ [GameInProgress] Erro ao cancelar partida no backend:', error);
+    }
+
+    // Emitir evento de cancelamento para o componente pai
     this.onGameCancel.emit();
   }
   // Try to auto-resolve winner on component load (useful after app restart)
@@ -922,8 +1002,29 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
   }
 
   getTeamPlayers(team: 'blue' | 'red'): any[] {
-    if (!this.gameData) return [];
-    return team === 'blue' ? this.gameData.team1 : this.gameData.team2;
+    if (!this.gameData) {
+      console.warn('⚠️ [GameInProgress] gameData não disponível');
+      return [];
+    }
+
+    const players = team === 'blue' ? this.gameData.team1 : this.gameData.team2;
+
+    console.log(`🔍 [GameInProgress] Buscando jogadores do time ${team}:`, {
+      gameDataKeys: Object.keys(this.gameData),
+      hasTeam1: !!this.gameData.team1,
+      hasTeam2: !!this.gameData.team2,
+      team1Length: this.gameData.team1?.length || 0,
+      team2Length: this.gameData.team2?.length || 0,
+      requestedTeam: team,
+      playersFound: players?.length || 0,
+      players: players?.map((p: any) => ({
+        name: p.summonerName || p.name,
+        id: p.id,
+        champion: p.champion?.name
+      })) || []
+    });
+
+    return players || [];
   }
 
   getMyTeam(): 'blue' | 'red' | null {
@@ -959,5 +1060,64 @@ export class GameInProgressComponent implements OnInit, OnDestroy {
   private showErrorNotification(title: string, message: string): void {
     // Por enquanto usar alert, mas pode ser substituído por um toast/notification service
     alert(`❌ ${title}\n${message}`);
+  }
+
+  // ✅ NOVO: Métodos para obter bans dos times
+  getTeamBans(team: 'blue' | 'red'): any[] {
+    if (!this.gameData?.pickBanData) {
+      console.warn('⚠️ [GameInProgress] pickBanData não disponível para bans');
+      return [];
+    }
+
+    try {
+      const pickBanData = this.gameData.pickBanData;
+
+      // Verificar se temos dados de bans
+      if (team === 'blue' && pickBanData.team1Bans) {
+        return pickBanData.team1Bans || [];
+      } else if (team === 'red' && pickBanData.team2Bans) {
+        return pickBanData.team2Bans || [];
+      }
+
+      console.log(`🔍 [GameInProgress] Bans do time ${team}:`, {
+        hasPickBanData: !!pickBanData,
+        team1Bans: pickBanData.team1Bans?.length || 0,
+        team2Bans: pickBanData.team2Bans?.length || 0,
+        requestedTeam: team
+      });
+
+      return [];
+    } catch (error) {
+      console.error('❌ [GameInProgress] Erro ao obter bans do time:', error);
+      return [];
+    }
+  }
+
+  // ✅ NOVO: Método para obter ícone da lane
+  getLaneIcon(lane: string): string {
+    const laneIcons: { [key: string]: string } = {
+      'top': '⚔️',
+      'jungle': '🌲',
+      'mid': '🔮',
+      'adc': '🏹',
+      'support': '🛡️',
+      'fill': '❓'
+    };
+
+    return laneIcons[lane?.toLowerCase()] || '❓';
+  }
+
+  // ✅ NOVO: Método para formatar nome da lane
+  getLaneName(lane: string): string {
+    const laneNames: { [key: string]: string } = {
+      'top': 'Top',
+      'jungle': 'Jungle',
+      'mid': 'Mid',
+      'adc': 'ADC',
+      'support': 'Support',
+      'fill': 'Fill'
+    };
+
+    return laneNames[lane?.toLowerCase()] || lane || 'Fill';
   }
 }

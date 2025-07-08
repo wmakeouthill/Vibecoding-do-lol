@@ -49,7 +49,7 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
         rank: this.player.rank,
         rankedData: this.player.rankedData
       });
-      
+
       // Carregar dados apenas uma vez
       this.loadAllData();
       this.dataLoaded = true;
@@ -681,7 +681,7 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
 
     // Usar o formato correto do Riot ID (gameName#tagLine) se disponível
     let playerIdentifier = this.player.summonerName || this.player.id.toString();
-    
+
     // Se temos gameName e tagLine, usar o formato Riot ID
     if (this.player.gameName && this.player.tagLine) {
       playerIdentifier = `${this.player.gameName}#${this.player.tagLine}`;
@@ -783,7 +783,7 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
 
     // Usar o formato correto do Riot ID (gameName#tagLine) se disponível
     let playerIdentifier = this.player.summonerName || this.player.id?.toString() || '';
-    
+
     // Priorizar displayName se disponível (formato gameName#tagLine)
     if (this.player.displayName && this.player.displayName.trim() !== '') {
       playerIdentifier = this.player.displayName;
@@ -830,7 +830,7 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
               player_won: response.matches[0].player_won,
               player_lp_change: response.matches[0].player_lp_change
             });
-            
+
             // Log completo do primeiro match para debug
             console.log('🔍 Complete first match data:', JSON.stringify(response.matches[0], null, 2));
 
@@ -864,6 +864,7 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
     return customMatches.map((match: any, index: number) => {
       console.log(`🔍 [Dashboard] Processing match ${index + 1}:`, {
         id: match.id,
+        rawMatchData: match, // ✅ LOG COMPLETO DA PARTIDA
         hasParticipantsData: !!match.participants_data,
         participantsDataType: typeof match.participants_data,
         participantsDataLength: Array.isArray(match.participants_data) ? match.participants_data.length : 'not array'
@@ -888,7 +889,7 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
       // Usar os dados já processados do backend
       if (match.participants_data && Array.isArray(match.participants_data)) {
         console.log(`📊 [Dashboard] Participants data found:`, match.participants_data.length, 'participants');
-        
+
         // Log dos primeiros participantes para debug
         match.participants_data.slice(0, 2).forEach((p: any, i: number) => {
           console.log(`👤 [Dashboard] Participant ${i + 1}:`, {
@@ -902,19 +903,19 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
             assists: p.assists
           });
         });
-        
+
         // Buscar o participante atual nos dados já processados
         playerStats = match.participants_data.find((participant: any) => {
           const participantRiotId = (participant.riotIdGameName || '').toLowerCase();
           const participantGameName = (participant.gameName || '').toLowerCase();
           const participantSummonerName = (participant.summonerName || '').toLowerCase();
-          
+
           const isMatch = participantRiotId === currentGameName ||
                          participantGameName === currentGameName ||
                          participantSummonerName === currentPlayerName ||
                          participantRiotId === currentDisplayName ||
                          participantGameName === currentDisplayName;
-          
+
           if (isMatch) {
             console.log(`✅ [Dashboard] Found player match:`, {
               participant: {
@@ -929,7 +930,7 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
               }
             });
           }
-          
+
           return isMatch;
         });
 
@@ -937,7 +938,7 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
           // Usar o championName já processado pelo backend
           playerChampion = playerStats.championName || 'Unknown';
           playerKDA = `${playerStats.kills || 0}/${playerStats.deaths || 0}/${playerStats.assists || 0}`;
-          
+
           console.log(`🏆 [Dashboard] Player stats found:`, {
             championName: playerChampion,
             kda: playerKDA,
@@ -957,9 +958,9 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
       // Fallback: Se não encontramos nos participants_data, tentar pick_ban_data
       if (playerChampion === 'Unknown' && match.pick_ban_data) {
         try {
-          const pickBanData = typeof match.pick_ban_data === 'string' ? 
+          const pickBanData = typeof match.pick_ban_data === 'string' ?
                               JSON.parse(match.pick_ban_data) : match.pick_ban_data;
-          
+
           if (pickBanData && pickBanData.team1Picks) {
             const playerTeam = match.player_team || (match.player_won && match.winner_team === 1 ? 1 : 2);
             const picks = playerTeam === 1 ? pickBanData.team1Picks : pickBanData.team2Picks;

@@ -640,7 +640,7 @@ export class DraftService {
       this.activeDrafts.delete(matchId);
 
       // 3. Notificar frontend que jogo está iniciando
-      this.notifyGameStarting(matchId, draftResults);
+      await this.notifyGameStarting(matchId, draftResults);
 
       console.log(`✅ [Draft] Draft finalizado, partida ${matchId} iniciando...`);
 
@@ -873,21 +873,159 @@ export class DraftService {
     });
   }
 
-  private notifyGameStarting(matchId: number, draftResults: any): void {
+  private async notifyGameStarting(matchId: number, draftResults: any): Promise<void> {
     if (!this.wss) return;
 
-    const message = {
-      type: 'game_starting',
-      data: {
-        matchId,
-        draftResults,
-        message: 'Draft finalizado! O jogo está iniciando...'
-      },
-      timestamp: Date.now()
-    };
+    try {
+      // Buscar dados completos da partida no banco
+      const matchData = await this.dbManager.getCustomMatchById(matchId);
+      if (!matchData) {
+        console.error(`❌ [Draft] Partida ${matchId} não encontrada no banco`);
+        return;
+      }
 
-    this.broadcastMessage(message);
-    console.log(`📢 [Draft] Notificação de início de jogo enviada (${matchId})`);
+      // ✅ CORREÇÃO: Extrair e processar times dos dados da partida
+      let team1 = [];
+      let team2 = [];
+      
+      try {
+        team1 = typeof matchData.team1_players === 'string' 
+          ? JSON.parse(matchData.team1_players) 
+          : (matchData.team1_players || []);
+        team2 = typeof matchData.team2_players === 'string' 
+          ? JSON.parse(matchData.team2_players) 
+          : (matchData.team2_players || []);
+      } catch (parseError) {
+        console.error(`❌ [Draft] Erro ao parsear dados dos times:`, parseError);
+        team1 = [];
+        team2 = [];
+      }
+
+      // ✅ NOVO: Buscar dados completos dos jogadores se estão em formato string
+      if (team1.length > 0 && typeof team1[0] === 'string') {
+        console.log('🔍 [Draft] Times em formato string, buscando dados completos...');
+        
+        // Tentar recuperar dados do draft_data se disponível
+        let draftData = null;
+        try {
+          if (matchData.draft_data) {
+            draftData = typeof matchData.draft_data === 'string' 
+              ? JSON.parse(matchData.draft_data) 
+              : matchData.draft_data;
+          }
+        } catch (error) {
+          console.warn('⚠️ [Draft] Erro ao parsear draft_data:', error);
+        }
+
+        // Se temos dados do draft com informações completas dos jogadores
+        if (draftData && draftData.team1 && draftData.team2) {
+          console.log('✅ [Draft] Usando dados completos do draft');
+          team1 = draftData.team1.map((player: any) => ({
+            id: player.summonerName,
+            name: player.summonerName,
+            summonerName: player.summonerName,
+            assignedLane: player.assignedLane,
+            lane: player.assignedLane,
+            role: player.assignedLane,
+            teamIndex: player.teamIndex,
+            mmr: player.mmr,
+            primaryLane: player.primaryLane,
+            secondaryLane: player.secondaryLane,
+            isAutofill: player.isAutofill
+          }));
+          team2 = draftData.team2.map((player: any) => ({
+            id: player.summonerName,
+            name: player.summonerName,
+            summonerName: player.summonerName,
+            assignedLane: player.assignedLane,
+            lane: player.assignedLane,
+            role: player.assignedLane,
+            teamIndex: player.teamIndex,
+            mmr: player.mmr,
+            primaryLane: player.primaryLane,
+            secondaryLane: player.secondaryLane,
+            isAutofill: player.isAutofill
+          }));
+        } else {
+          // ✅ FALLBACK: Converter strings para objetos com lanes baseadas no índice
+          const lanes = ['top', 'jungle', 'mid', 'adc', 'support'];
+          team1 = team1.map((playerName: string, index: number) => ({
+            id: playerName,
+            name: playerName,
+            summonerName: playerName,
+            assignedLane: lanes[index] || 'fill',
+            lane: lanes[index] || 'fill',
+            role: lanes[index] || 'fill',
+            teamIndex: index,
+            mmr: 1200,
+            primaryLane: 'fill',
+            secondaryLane: 'fill',
+            isAutofill: false
+          }));
+          team2 = team2.map((playerName: string, index: number) => ({
+            id: playerName,
+            name: playerName,
+            summonerName: playerName,
+            assignedLane: lanes[index] || 'fill',
+            lane: lanes[index] || 'fill',
+            role: lanes[index] || 'fill',
+            teamIndex: index + 5,
+            mmr: 1200,
+            primaryLane: 'fill',
+            secondaryLane: 'fill',
+            isAutofill: false
+          }));
+        }
+      } else if (team1.length > 0 && typeof team1[0] === 'object') {
+        // ✅ Os dados já estão em formato de objeto, garantir propriedades necessárias
+        team1 = team1.map((player: any) => ({
+          ...player,
+          id: player.id || player.summonerName,
+          name: player.name || player.summonerName,
+          role: player.role || player.assignedLane || player.lane
+        }));
+        team2 = team2.map((player: any) => ({
+          ...player,
+          id: player.id || player.summonerName,
+          name: player.name || player.summonerName,
+          role: player.role || player.assignedLane || player.lane
+        }));
+      }
+
+      const pickBanData = JSON.parse(matchData.pick_ban_data || '{}');
+
+      console.log(`📢 [Draft] Enviando dados completos da partida ${matchId}:`, {
+        team1Count: team1.length,
+        team2Count: team2.length,
+        hasPickBanData: Object.keys(pickBanData).length > 0,
+        team1Sample: team1.length > 0 ? team1[0] : null,
+        team2Sample: team2.length > 0 ? team2[0] : null
+      });
+
+      const message = {
+        type: 'game_starting',
+        data: {
+          sessionId: `game_${matchId}`,
+          gameId: `custom_${matchId}`,
+          matchId,
+          team1,
+          team2,
+          pickBanData,
+          startTime: new Date(),
+          isCustomGame: true,
+          originalMatchId: matchId,
+          originalMatchData: matchData,
+          message: 'Draft finalizado! O jogo está iniciando...'
+        },
+        timestamp: Date.now()
+      };
+
+      this.broadcastMessage(message);
+      console.log(`✅ [Draft] Notificação de início de jogo enviada com dados completos (${matchId})`);
+
+    } catch (error) {
+      console.error(`❌ [Draft] Erro ao buscar dados da partida para notificação:`, error);
+    }
   }
 
   // ✅ NOVO: Notificar frontend sobre cancelamento do draft
