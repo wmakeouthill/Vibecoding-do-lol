@@ -1,4 +1,4 @@
-import axios, { AxiosInstance } from 'axios';
+import axios from 'axios';
 
 interface SummonerData {
   id: string;
@@ -35,7 +35,7 @@ interface AccountData {
 export class RiotAPIService {
   private apiKey: string | null = null; // MODIFICADO: Permitir null e inicializar com null
   private apiKeyConfigured: boolean = false;
-  private axiosInstance: AxiosInstance;
+  private axiosInstance: any;
   private readonly MAX_RETRIES = 3;
   private readonly RETRY_DELAY_MS = 1000;
 
@@ -97,7 +97,7 @@ export class RiotAPIService {
     this.axiosInstance = this.createAxiosInstance();
   }
 
-  private createAxiosInstance(): AxiosInstance {
+  private createAxiosInstance(): any {
     const instance = axios.create({
       timeout: 10000, // 10 segundos de timeout
       headers: {
@@ -106,8 +106,8 @@ export class RiotAPIService {
     });
 
     instance.interceptors.response.use(
-      response => response,
-      error => {
+      (response: any) => response,
+      (error: any) => {
         // Aqui você pode adicionar lógica para tratar erros globalmente
         return Promise.reject(error);
       }
@@ -161,7 +161,7 @@ export class RiotAPIService {
     // Usar um endpoint que não consome muita cota, como o status da plataforma.
     const statusUrl = `${platformUrl}/lol/status/v4/platform-data`;
     try {
-      await axios.get(statusUrl, {
+      await this.axiosInstance.get(statusUrl, {
         headers: { 'X-Riot-Token': this.apiKey },
         timeout: 8000
       });

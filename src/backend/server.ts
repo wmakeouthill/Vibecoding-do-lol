@@ -1,5 +1,5 @@
 import express, { Request, Response, NextFunction, RequestHandler } from 'express';
-import dotenv from 'dotenv';
+import * as dotenv from 'dotenv';
 import * as path from 'path';
 import * as fs from 'fs';
 import cors from 'cors';
@@ -127,7 +127,7 @@ let frontendPath: string = '';
 // app.use(helmet({...})); // CSP desabilitado para Electron
 
 app.use(cors({
-  origin: function (origin, callback) {
+  origin: function (origin: any, callback: any) {
     console.log('🌐 CORS request from origin:', origin);
     
     // Em desenvolvimento, permitir localhost:4200
@@ -617,12 +617,13 @@ app.get('/api/health', (req: Request, res: Response) => {
 });
 
 // Rotas de jogador
-app.post('/api/player/register', (async (req: Request, res: Response) => {
+app.post('/api/player/register', async (req: Request, res: Response) => {
   try {
     const { riotId, region } = req.body;
 
     if (!riotId || !riotId.includes('#')) {
-      return res.status(400).json({ error: 'Riot ID inválido. Use formato: gameName#tagLine' });
+      res.status(400).json({ error: 'Riot ID inválido. Use formato: gameName#tagLine' });
+      return;
     }
 
     // Use the refresh endpoint logic to register/get player data
@@ -631,24 +632,26 @@ app.post('/api/player/register', (async (req: Request, res: Response) => {
   } catch (error: any) {
     res.status(400).json({ error: error.message });
   }
-}) as RequestHandler);
+});
 
 // PRIMARY ENDPOINT for fetching current player data (LCU + Riot API)
 // IMPORTANT: This must come BEFORE the generic /api/player/:playerId route
-app.get('/api/player/current-details', (async (req: Request, res: Response) => {
+app.get('/api/player/current-details', async (req: Request, res: Response) => {
   try {
     console.log('[CURRENT DETAILS] Endpoint called');
 
     if (!lcuService.isClientConnected()) {
       console.log('[CURRENT DETAILS] LCU client not connected');
-      return res.status(503).json({ error: 'Cliente do LoL não conectado' });
+      res.status(503).json({ error: 'Cliente do LoL não conectado' });
+      return;
     }
 
     console.log('[CURRENT DETAILS] Getting client status from LCU...');
     const clientStatus = await lcuService.getClientStatus();
     if (!clientStatus || !clientStatus.summoner) {
       console.log('[CURRENT DETAILS] No client status data from LCU');
-      return res.status(404).json({ error: 'Não foi possível obter dados do jogador no LCU.' });
+      res.status(404).json({ error: 'Não foi possível obter dados do jogador no LCU.' });
+      return;
     }
 
     const lcuSummoner = clientStatus.summoner;
@@ -661,7 +664,8 @@ app.get('/api/player/current-details', (async (req: Request, res: Response) => {
     // ✅ CORREÇÃO: O getClientStatus() já garante que displayName está disponível
     if (!lcuSummoner.displayName) {
       console.log('[CURRENT DETAILS] LCU data missing displayName after processing');
-      return res.status(404).json({ error: 'displayName não disponível no LCU.' });
+      res.status(404).json({ error: 'displayName não disponível no LCU.' });
+      return;
     }
 
     // ✅ CORREÇÃO: Extrair gameName e tagLine do displayName
@@ -722,7 +726,7 @@ app.get('/api/player/current-details', (async (req: Request, res: Response) => {
     console.error(`[CURRENT DETAILS] Erro ao buscar dados detalhados do jogador atual:`, error.message);
     res.status(500).json({ error: 'Erro interno ao processar a solicitação para current-details' });
   }
-}) as RequestHandler);
+});
 
 app.get('/api/player/:playerId', async (req: Request, res: Response) => {
   try {
@@ -733,7 +737,7 @@ app.get('/api/player/:playerId', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/api/player/:playerId/stats', (async (req: Request, res: Response) => {
+app.get('/api/player/:playerId/stats', async (req: Request, res: Response) => {
   try {
     const playerId = parseInt(req.params.playerId);
     // Ensure matchHistoryService.getPlayerStats exists and is appropriate
@@ -743,10 +747,10 @@ app.get('/api/player/:playerId/stats', (async (req: Request, res: Response) => {
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
-}) as RequestHandler);
+});
 
 // Endpoint para buscar leaderboard
-app.get('/api/stats/leaderboard', (async (req: Request, res: Response) => {
+app.get('/api/stats/leaderboard', async (req: Request, res: Response) => {
   try {
     const limit = parseInt(req.query.limit as string) || 100;
     const leaderboard = await playerService.getLeaderboard(limit);
@@ -755,10 +759,10 @@ app.get('/api/stats/leaderboard', (async (req: Request, res: Response) => {
     console.error('❌ Erro ao buscar leaderboard:', error);
     res.status(500).json({ error: error.message });
   }
-}) as RequestHandler);
+});
 
 // Novo endpoint para buscar leaderboard baseado nos participantes das partidas customizadas
-app.get('/api/stats/participants-leaderboard', (async (req: Request, res: Response) => {
+app.get('/api/stats/participants-leaderboard', async (req: Request, res: Response) => {
   try {
     const limit = parseInt(req.query.limit as string) || 100;
 
@@ -794,7 +798,7 @@ app.get('/api/stats/participants-leaderboard', (async (req: Request, res: Respon
       error: error.message // Para debug, mas não quebra o frontend
     });
   }
-}) as RequestHandler);
+});
 
 // Endpoint para buscar dados do summoner por Display Name usando LCU
 app.get('/api/summoner/:displayName', (async (req: Request, res: Response) => {
@@ -1125,6 +1129,64 @@ app.get('/api/player/puuid/:puuid', (async (req: Request, res: Response) => {
       res.status(503).json({ error: error.message }); // Service Unavailable
     } else if (error.message.includes('PUUID inválido') || error.message.includes('corrompido')) {
       res.status(400).json({ error: error.message }); // Bad Request for invalid PUUID
+    } else if (error.message.includes('Requisição inválida')) {
+      res.status(400).json({ error: error.message }); // Bad Request
+    } else {
+      res.status(500).json({ error: 'Erro interno ao processar a solicitação' });
+    }
+  }
+}) as RequestHandler);
+
+// GET MATCH HISTORY FROM RIOT API BY PUUID
+app.get('/api/player/match-history-riot/:puuid', (async (req: Request, res: Response) => {
+  const puuid = req.params.puuid;
+  const region = (req.query.region as string) || 'br1'; // Default to br1 if no region is provided
+  const count = parseInt(req.query.count as string) || 20; // Default to 20 matches
+  
+  if (!puuid) {
+    return res.status(400).json({ error: 'PUUID é obrigatório' });
+  }
+
+  try {
+    console.log(`🔍 Buscando histórico de partidas via Riot API para PUUID: ${puuid}, região: ${region}, count: ${count}`);
+    
+    // Get match history using Riot API
+    const matchIds = await globalRiotAPI.getMatchHistory(puuid, region, count);
+    
+    if (!matchIds || matchIds.length === 0) {
+      return res.json({ matches: [], message: 'Nenhuma partida encontrada' });
+    }
+
+    // Get detailed match data for each match ID
+    const matchDetails = [];
+    for (const matchId of matchIds) {
+      try {
+        const matchDetail = await globalRiotAPI.getMatchDetails(matchId, region);
+        matchDetails.push(matchDetail);
+      } catch (error: any) {
+        console.warn(`⚠️ Falha ao obter detalhes da partida ${matchId}:`, error.message);
+        // Continue with other matches even if one fails
+      }
+    }
+
+    console.log(`✅ Histórico de partidas carregado com sucesso: ${matchDetails.length} partidas`);
+    res.json({ 
+      matches: matchDetails,
+      totalMatches: matchIds.length,
+      loadedMatches: matchDetails.length 
+    });
+
+  } catch (error: any) {
+    console.error(`❌ Erro ao buscar histórico de partidas via Riot API para PUUID (${puuid}):`, error.message);
+    
+    if (error.message.includes('não encontrado') || error.message.includes('não encontrada')) {
+      res.status(404).json({ error: error.message });
+    } else if (error.message.includes('Chave da Riot API')) {
+      res.status(503).json({ error: error.message }); // Service Unavailable
+    } else if (error.message.includes('PUUID inválido') || error.message.includes('formato')) {
+      res.status(400).json({ error: error.message }); // Bad Request for invalid PUUID
+    } else if (error.message.includes('Limite de requisições')) {
+      res.status(429).json({ error: error.message }); // Too Many Requests
     } else if (error.message.includes('Requisição inválida')) {
       res.status(400).json({ error: error.message }); // Bad Request
     } else {
@@ -1901,6 +1963,7 @@ app.post('/api/lcu/fetch-and-save-match/:gameId', (req: Request, res: Response) 
           player = await dbManager.getPlayerBySummonerName(playerIdentifier);
         } else {
           const numericId = parseInt(playerIdentifier);
+
           if (!isNaN(numericId)) {
             player = await dbManager.getPlayer(numericId);
           }

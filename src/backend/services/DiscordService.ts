@@ -20,6 +20,7 @@ export interface DiscordMatch {
   redChannelId: string;
   categoryId: string;
   startTime: number;
+  originalChannels: Map<string, string>; // userId -> originalChannelId
 }
 
 export class DiscordService {
@@ -51,6 +52,9 @@ export class DiscordService {
   private lastKnownLCUData?: { gameName: string, tagLine: string };
 
   constructor(databaseManager: DatabaseManager) {
+    console.log('🔧 [DiscordService] Construtor chamado');
+    console.log('🔧 [DiscordService] DatabaseManager recebido:', !!databaseManager);
+    
     this.databaseManager = databaseManager;
     this.client = new Client({
       intents: [
@@ -61,7 +65,9 @@ export class DiscordService {
       ]
     });
 
+    console.log('🔧 [DiscordService] Client criado:', !!this.client);
     this.setupDiscordEvents();
+    console.log('🔧 [DiscordService] Construtor finalizado');
   }
 
   private setupDiscordEvents(): void {
@@ -420,6 +426,14 @@ export class DiscordService {
       return;
     }
 
+    console.log(`🎮 [DiscordService] Criando match ${matchId} com ${players.length} jogadores:`);
+    players.forEach((player, index) => {
+      console.log(`   ${index + 1}. ${player.username} (${player.role}) - Discord ID: ${player.userId}`);
+      if (player.linkedNickname) {
+        console.log(`      ↳ Vinculado: ${player.linkedNickname.gameName}#${player.linkedNickname.tagLine}`);
+      }
+    });
+
     try {
       // Criar canais temporários
       const category = await guild.channels.create({
@@ -439,14 +453,22 @@ export class DiscordService {
         parent: category.id
       });
 
+      console.log(`✅ [DiscordService] Canais criados para match ${matchId}:`);
+      console.log(`   📁 Categoria: ${category.name} (${category.id})`);
+      console.log(`   🔵 Blue Team: ${blueChannel.name} (${blueChannel.id})`);
+      console.log(`   🔴 Red Team: ${redChannel.name} (${redChannel.id})`);
+
       // Dividir times (5v5)
       const blueTeam = players.slice(0, 5);
       const redTeam = players.slice(5, 10);
 
-      // Mover players para canais
-      await this.movePlayersToChannels(blueTeam, blueChannel, redTeam, redChannel);
+      console.log(`🔵 Blue Team (${blueTeam.length} jogadores):`);
+      blueTeam.forEach((p, i) => console.log(`   ${i + 1}. ${p.username} (${p.role}) ${p.linkedNickname ? `[${p.linkedNickname.gameName}#${p.linkedNickname.tagLine}]` : '[Sem vinculação]'}`));
+      
+      console.log(`🔴 Red Team (${redTeam.length} jogadores):`);
+      redTeam.forEach((p, i) => console.log(`   ${i + 1}. ${p.username} (${p.role}) ${p.linkedNickname ? `[${p.linkedNickname.gameName}#${p.linkedNickname.tagLine}]` : '[Sem vinculação]'}`));
 
-      // Salvar match ativo
+      // Salvar match ativo ANTES de mover jogadores para poder armazenar canais originais
       const match: DiscordMatch = {
         id: matchId,
         blueTeam,
@@ -454,10 +476,14 @@ export class DiscordService {
         blueChannelId: blueChannel.id,
         redChannelId: redChannel.id,
         categoryId: category.id,
-        startTime: Date.now()
+        startTime: Date.now(),
+        originalChannels: new Map<string, string>()
       };
 
       this.activeMatches.set(matchId, match);
+
+      // Mover players para canais e armazenar canais de origem
+      await this.movePlayersToChannels(blueTeam, blueChannel, redTeam, redChannel, matchId);
 
       // ✅ CORREÇÃO: Limpar fila dos players que entraram no match
       players.forEach(player => {
@@ -501,31 +527,80 @@ export class DiscordService {
     }
   }
 
-  private async movePlayersToChannels(blueTeam: DiscordPlayer[], blueChannel: any, redTeam: DiscordPlayer[], redChannel: any): Promise<void> {
+  private async movePlayersToChannels(blueTeam: DiscordPlayer[], blueChannel: any, redTeam: DiscordPlayer[], redChannel: any, matchId: string): Promise<void> {
     const guild = this.client.guilds.cache.first();
     if (!guild) return;
     
+    const match = this.activeMatches.get(matchId);
+    if (!match) return;
+
+    console.log(`🔄 [DiscordService] Movendo jogadores para canais de match ${matchId}`);
+
+    // Armazenar canais de origem para cada jogador do Blue Team
     for (const player of blueTeam) {
-      const member = guild.members.cache.get(player.userId);
+      console.log(`🔵 [DiscordService] Processando jogador Blue Team:`, player);
+      
+      let discordId = player.userId;
+      
+      // Se o jogador tem vinculação, usar ela para encontrar o Discord ID correto
+      if (player.linkedNickname) {
+        const foundDiscordId = await this.findDiscordIdByLinkedNickname(
+          player.linkedNickname.gameName, 
+          player.linkedNickname.tagLine
+        );
+        if (foundDiscordId) {
+          discordId = foundDiscordId;
+          console.log(`🔗 [DiscordService] Usando Discord ID da vinculação: ${discordId} para ${player.linkedNickname.gameName}#${player.linkedNickname.tagLine}`);
+        }
+      }
+      
+      const member = guild.members.cache.get(discordId);
       if (member && member.voice.channel) {
         try {
+          // Salvar canal de origem ANTES de mover
+          const originalChannelName = member.voice.channel.name;
+          match.originalChannels.set(discordId, member.voice.channel.id);
           await member.voice.setChannel(blueChannel);
-          console.log(`🔵 ${player.username} movido para Blue Team`);
+          console.log(`🔵 ${member.user.username} (${player.linkedNickname ? `${player.linkedNickname.gameName}#${player.linkedNickname.tagLine}` : player.username}) movido para Blue Team (origem: ${originalChannelName})`);
         } catch (error) {
-          console.error(`❌ Erro ao mover ${player.username}:`, error);
+          console.error(`❌ Erro ao mover ${member.user.username}:`, error);
         }
+      } else {
+        console.log(`⚠️ [DiscordService] Jogador não encontrado no Discord ou não está em canal de voz: ${player.username} (ID: ${discordId})`);
       }
     }
 
+    // Armazenar canais de origem para cada jogador do Red Team
     for (const player of redTeam) {
-      const member = guild.members.cache.get(player.userId);
+      console.log(`🔴 [DiscordService] Processando jogador Red Team:`, player);
+      
+      let discordId = player.userId;
+      
+      // Se o jogador tem vinculação, usar ela para encontrar o Discord ID correto
+      if (player.linkedNickname) {
+        const foundDiscordId = await this.findDiscordIdByLinkedNickname(
+          player.linkedNickname.gameName, 
+          player.linkedNickname.tagLine
+        );
+        if (foundDiscordId) {
+          discordId = foundDiscordId;
+          console.log(`🔗 [DiscordService] Usando Discord ID da vinculação: ${discordId} para ${player.linkedNickname.gameName}#${player.linkedNickname.tagLine}`);
+        }
+      }
+      
+      const member = guild.members.cache.get(discordId);
       if (member && member.voice.channel) {
         try {
+          // Salvar canal de origem ANTES de mover
+          const originalChannelName = member.voice.channel.name;
+          match.originalChannels.set(discordId, member.voice.channel.id);
           await member.voice.setChannel(redChannel);
-          console.log(`🔴 ${player.username} movido para Red Team`);
+          console.log(`🔴 ${member.user.username} (${player.linkedNickname ? `${player.linkedNickname.gameName}#${player.linkedNickname.tagLine}` : player.username}) movido para Red Team (origem: ${originalChannelName})`);
         } catch (error) {
-          console.error(`❌ Erro ao mover ${player.username}:`, error);
+          console.error(`❌ Erro ao mover ${member.user.username}:`, error);
         }
+      } else {
+        console.log(`⚠️ [DiscordService] Jogador não encontrado no Discord ou não está em canal de voz: ${player.username} (ID: ${discordId})`);
       }
     }
   }
@@ -538,6 +613,14 @@ export class DiscordService {
     if (!guild) return;
     
     try {
+      // 1. Primeiro, mover jogadores de volta aos canais de origem
+      console.log(`🔄 [DiscordService] Movendo jogadores de volta aos canais de origem antes de limpar match ${matchId}`);
+      await this.movePlayersBackToOrigin(matchId);
+
+      // 2. Aguardar um pouco para garantir que todos foram movidos
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // 3. Deletar canais temporários
       const blueChannel = guild.channels.cache.get(match.blueChannelId);
       const redChannel = guild.channels.cache.get(match.redChannelId);
       const category = guild.channels.cache.get(match.categoryId);
@@ -546,11 +629,70 @@ export class DiscordService {
       if (redChannel) await redChannel.delete();
       if (category) await category.delete();
 
+      // 4. Remover match da lista de matches ativos
       this.activeMatches.delete(matchId);
       console.log(`🧹 Match ${matchId} limpo automaticamente`);
       
     } catch (error) {
       console.error(`❌ Erro ao limpar match ${matchId}:`, error);
+    }
+  }
+
+  // Método para mover jogadores de volta ao canal de origem
+  private async movePlayersBackToOrigin(matchId: string): Promise<void> {
+    const match = this.activeMatches.get(matchId);
+    if (!match) return;
+
+    const guild = this.client.guilds.cache.first();
+    if (!guild) return;
+
+    console.log(`🏠 [DiscordService] Movendo jogadores de volta aos canais de origem para match ${matchId}`);
+
+    // Combinar todos os jogadores do match
+    const allPlayers = [...match.blueTeam, ...match.redTeam];
+
+    for (const player of allPlayers) {
+      console.log(`🏠 [DiscordService] Processando retorno do jogador:`, player);
+      
+      let discordId = player.userId;
+      
+      // Se o jogador tem vinculação, usar ela para encontrar o Discord ID correto
+      if (player.linkedNickname) {
+        const foundDiscordId = await this.findDiscordIdByLinkedNickname(
+          player.linkedNickname.gameName, 
+          player.linkedNickname.tagLine
+        );
+        if (foundDiscordId) {
+          discordId = foundDiscordId;
+          console.log(`🔗 [DiscordService] Usando Discord ID da vinculação: ${discordId} para ${player.linkedNickname.gameName}#${player.linkedNickname.tagLine}`);
+        }
+      }
+      
+      const member = guild.members.cache.get(discordId);
+      const originalChannelId = match.originalChannels.get(discordId);
+
+      if (member && member.voice.channel && originalChannelId) {
+        try {
+          const originalChannel = guild.channels.cache.get(originalChannelId);
+          if (originalChannel && originalChannel.type === ChannelType.GuildVoice) {
+            await member.voice.setChannel(originalChannel);
+            console.log(`🏠 ${member.user.username} (${player.linkedNickname ? `${player.linkedNickname.gameName}#${player.linkedNickname.tagLine}` : player.username}) movido de volta para ${originalChannel.name}`);
+          } else {
+            // Se o canal original não existe mais, mover para o canal de matchmaking
+            const matchmakingChannel = guild.channels.cache.find(
+              channel => channel.name === this.targetChannelName && channel.type === ChannelType.GuildVoice
+            );
+            if (matchmakingChannel && matchmakingChannel.type === ChannelType.GuildVoice) {
+              await member.voice.setChannel(matchmakingChannel);
+              console.log(`🏠 ${member.user.username} (${player.linkedNickname ? `${player.linkedNickname.gameName}#${player.linkedNickname.tagLine}` : player.username}) movido para ${this.targetChannelName} (canal original não encontrado)`);
+            }
+          }
+        } catch (error) {
+          console.error(`❌ Erro ao mover ${member.user.username} de volta:`, error);
+        }
+      } else {
+        console.log(`⚠️ [DiscordService] Jogador não encontrado, não está em canal de voz, ou canal original não foi salvo: ${player.username} (ID: ${discordId})`);
+      }
     }
   }
 
@@ -1033,7 +1175,7 @@ export class DiscordService {
         const allMembers = guild.members.cache;
         const membersInChannel: any[] = [];
         
-        for (const member of allMembers.values()) {
+        for (const member of Array.from(allMembers.values())) {
           if (member.voice.channel && member.voice.channel.id === matchmakingChannel.id) {
             membersInChannel.push(member);
           }
@@ -1388,5 +1530,529 @@ export class DiscordService {
     
     // Também fazer broadcast dos usuários no canal com informações do usuário atual
     await this.performBroadcast(true); // Broadcast crítico para incluir usuário atual
+  }
+
+  // ===== MÉTODOS PÚBLICOS PARA GERENCIAMENTO DE MATCHES =====
+
+  // Obter match ativo por ID
+  getActiveMatch(matchId: string): DiscordMatch | undefined {
+    return this.activeMatches.get(matchId);
+  }
+
+  // Obter todos os matches ativos
+  getAllActiveMatches(): Map<string, DiscordMatch> {
+    return new Map(this.activeMatches);
+  }
+
+  // Verificar se um jogador está em um match ativo
+  isPlayerInActiveMatch(userId: string): boolean {
+    for (const match of Array.from(this.activeMatches.values())) {
+      const isInMatch = match.blueTeam.some(p => p.userId === userId) || 
+                       match.redTeam.some(p => p.userId === userId);
+      if (isInMatch) return true;
+    }
+    return false;
+  }
+
+  // Obter match de um jogador específico
+  getPlayerMatch(userId: string): DiscordMatch | undefined {
+    for (const match of Array.from(this.activeMatches.values())) {
+      const isInMatch = match.blueTeam.some(p => p.userId === userId) || 
+                       match.redTeam.some(p => p.userId === userId);
+      if (isInMatch) return match;
+    }
+    return undefined;
+  }
+
+  // Finalizar partida (chamado quando a partida termina normalmente)
+  async finishMatch(matchId: string, winner?: 'blue' | 'red'): Promise<void> {
+    const match = this.activeMatches.get(matchId);
+    if (!match) {
+      console.log(`❌ Match ${matchId} não encontrado para finalizar`);
+      return;
+    }
+
+    console.log(`🏆 [DiscordService] Finalizando match ${matchId}${winner ? ` - Vencedor: ${winner} team` : ''}`);
+
+    try {
+      // 1. Mover jogadores de volta aos canais de origem
+      await this.movePlayersBackToOrigin(matchId);
+
+      // 2. Aguardar um pouco para garantir que todos foram movidos
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // 3. Limpar canais temporários
+      await this.cleanupMatch(matchId);
+
+      // 4. Broadcast da finalização
+      this.broadcastToClients({
+        type: 'match_finished',
+        matchId,
+        winner,
+        timestamp: Date.now()
+      });
+
+      console.log(`✅ [DiscordService] Match ${matchId} finalizado com sucesso`);
+
+    } catch (error) {
+      console.error(`❌ Erro ao finalizar match ${matchId}:`, error);
+    }
+  }
+
+  // Cancelar partida (chamado quando a partida é cancelada no draft ou durante o jogo)
+  async cancelMatch(matchId: string, reason: string = 'Cancelada'): Promise<void> {
+    const match = this.activeMatches.get(matchId);
+    if (!match) {
+      console.log(`❌ Match ${matchId} não encontrado para cancelar`);
+      return;
+    }
+
+    console.log(`❌ [DiscordService] Cancelando match ${matchId} - Motivo: ${reason}`);
+
+    try {
+      // 1. Mover jogadores de volta aos canais de origem
+      await this.movePlayersBackToOrigin(matchId);
+
+      // 2. Aguardar um pouco para garantir que todos foram movidos
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // 3. Limpar canais temporários
+      await this.cleanupMatch(matchId);
+
+      // 4. Broadcast do cancelamento
+      this.broadcastToClients({
+        type: 'match_cancelled',
+        matchId,
+        reason,
+        timestamp: Date.now()
+      });
+
+      console.log(`✅ [DiscordService] Match ${matchId} cancelado com sucesso`);
+
+    } catch (error) {
+      console.error(`❌ Erro ao cancelar match ${matchId}:`, error);
+    }
+  }
+
+  // Método para ser chamado quando uma partida termina (integração externa)
+  async onGameEnd(gameData: { 
+    gameId?: string, 
+    matchId?: string, 
+    winner?: 'blue' | 'red',
+    players?: string[] // IDs dos jogadores
+  }): Promise<void> {
+    console.log('🎮 [DiscordService] Partida finalizada detectada:', gameData);
+
+    // Tentar encontrar o match Discord correspondente
+    let discordMatch: DiscordMatch | undefined;
+
+    if (gameData.matchId) {
+      // Se temos o ID do match Discord, usar diretamente
+      discordMatch = this.activeMatches.get(gameData.matchId);
+    } else if (gameData.players && gameData.players.length > 0) {
+      // Se temos lista de jogadores, tentar encontrar o match por jogadores
+      for (const match of Array.from(this.activeMatches.values())) {
+        const allPlayerIds = [...match.blueTeam, ...match.redTeam].map(p => p.userId);
+        const hasCommonPlayers = gameData.players.some(playerId => allPlayerIds.includes(playerId));
+        
+        if (hasCommonPlayers) {
+          discordMatch = match;
+          break;
+        }
+      }
+    }
+
+    if (discordMatch) {
+      console.log(`🏆 [DiscordService] Finalizando match Discord ${discordMatch.id} baseado no fim da partida`);
+      await this.finishMatch(discordMatch.id, gameData.winner);
+    } else {
+      console.log('⚠️ [DiscordService] Nenhum match Discord correspondente encontrado para a partida finalizada');
+    }
+  }
+
+  // Método para ser chamado quando uma partida é cancelada (draft dodged, game cancelled, etc.)
+  async onGameCancel(gameData: { 
+    gameId?: string, 
+    matchId?: string, 
+    reason?: string,
+    players?: string[] // IDs dos jogadores
+  }): Promise<void> {
+    console.log('❌ [DiscordService] Cancelamento de partida detectado:', gameData);
+
+    // Tentar encontrar o match Discord correspondente
+    let discordMatch: DiscordMatch | undefined;
+
+    if (gameData.matchId) {
+      // Se temos o ID do match Discord, usar diretamente
+      discordMatch = this.activeMatches.get(gameData.matchId);
+    } else if (gameData.players && gameData.players.length > 0) {
+      // Se temos lista de jogadores, tentar encontrar o match por jogadores
+      for (const match of Array.from(this.activeMatches.values())) {
+        const allPlayerIds = [...match.blueTeam, ...match.redTeam].map(p => p.userId);
+        const hasCommonPlayers = gameData.players.some(playerId => allPlayerIds.includes(playerId));
+        
+        if (hasCommonPlayers) {
+          discordMatch = match;
+          break;
+        }
+      }
+    }
+
+    if (discordMatch) {
+      console.log(`❌ [DiscordService] Cancelando match Discord ${discordMatch.id} baseado no cancelamento da partida`);
+      await this.cancelMatch(discordMatch.id, gameData.reason || 'Partida cancelada');
+    } else {
+      console.log('⚠️ [DiscordService] Nenhum match Discord correspondente encontrado para a partida cancelada');
+    }
+  }
+
+  // Método auxiliar para encontrar Discord ID por vinculação
+  private async findDiscordIdByLinkedNickname(gameName: string, tagLine: string): Promise<string | null> {
+    try {
+      console.log(`🔍 [DiscordService] Buscando Discord ID para ${gameName}#${tagLine}`);
+      const link = await this.databaseManager.getDiscordLinkByGameName(gameName, tagLine);
+      
+      if (link) {
+        console.log(`✅ [DiscordService] Discord ID encontrado: ${link.discord_id} para ${gameName}#${tagLine}`);
+        return link.discord_id;
+      } else {
+        console.log(`❌ [DiscordService] Nenhuma vinculação encontrada para ${gameName}#${tagLine}`);
+        return null;
+      }
+    } catch (error) {
+      console.error(`❌ [DiscordService] Erro ao buscar Discord ID para ${gameName}#${tagLine}:`, error);
+      return null;
+    }
+  }
+
+  // ===== MÉTODO PÚBLICO PARA CRIAR MATCH (CHAMADO EXTERNAMENTE) =====
+
+  // Método público para criar match a partir de dados externos
+  async createMatchFromExternal(players: {
+    userId?: string,
+    username: string,
+    role: string,
+    linkedNickname?: {
+      gameName: string,
+      tagLine: string
+    }
+  }[]): Promise<string | null> {
+    console.log(`🎮 [DiscordService] ========== createMatchFromExternal INICIADO ==========`);
+    console.log(`🎮 [DiscordService] Solicitação para criar match com ${players.length} jogadores externos`);
+    
+    if (players.length !== 10) {
+      console.error(`❌ [DiscordService] Número inválido de jogadores: ${players.length}. Esperado: 10`);
+      return null;
+    }
+
+    // Converter para formato DiscordPlayer
+    const discordPlayers: DiscordPlayer[] = players.map(player => ({
+      userId: player.userId || 'unknown', // Será resolvido pela vinculação
+      username: player.username,
+      role: player.role,
+      timestamp: Date.now(),
+      linkedNickname: player.linkedNickname
+    }));
+
+    console.log(`🎮 [DiscordService] ========== CHAMANDO createMatch INTERNO ==========`);
+    console.log(`🎮 [DiscordService] Jogadores convertidos:`, discordPlayers.length);
+    await this.createMatch(discordPlayers);
+    console.log(`🎮 [DiscordService] ========== createMatch INTERNO EXECUTADO ==========`);
+    
+    // Retornar o ID do match criado
+    const matchIds = Array.from(this.activeMatches.keys());
+    const lastMatchId = matchIds[matchIds.length - 1] || null;
+    console.log(`🎮 [DiscordService] Match IDs ativos:`, matchIds);
+    console.log(`🎮 [DiscordService] Último Match ID:`, lastMatchId);
+    console.log(`🎮 [DiscordService] ========== createMatchFromExternal FINALIZADO ==========`);
+    return lastMatchId;
+  }
+
+  // Método público para criar match no Discord a partir dos dados do MatchFoundService
+  async createDiscordMatch(matchId: number, match: any): Promise<void> {
+    try {
+      console.log(`🎮 [DiscordService] ========== CRIANDO DISCORD MATCH ==========`);
+      console.log(`🎮 [DiscordService] Match ID: ${matchId}`);
+      console.log(`🎮 [DiscordService] Match Object:`, match);
+      console.log(`🎮 [DiscordService] Timestamp: ${new Date().toISOString()}`);
+      
+      if (!match) {
+        console.error(`❌ [DiscordService] Objeto match não fornecido para ${matchId}`);
+        return;
+      }
+
+      // Verificar se o Discord está conectado
+      const discordConnected = this.isDiscordConnected();
+      console.log(`🔍 [DiscordService] Discord conectado: ${discordConnected}`);
+      if (!discordConnected) {
+        console.warn(`⚠️ [DiscordService] Discord não está conectado, não é possível criar match para partida ${matchId}`);
+        return;
+      }
+
+      // Extrair e parsear times da partida
+      let team1Players: string[] = [];
+      let team2Players: string[] = [];
+
+      try {
+        team1Players = JSON.parse(match.team1_players || '[]');
+        team2Players = JSON.parse(match.team2_players || '[]');
+      } catch (error) {
+        console.error(`❌ [DiscordService] Erro ao parsear times da partida ${matchId}:`, error);
+        return;
+      }
+
+      console.log(`📊 [DiscordService] Time 1: ${team1Players.length} jogadores:`, team1Players);
+      console.log(`📊 [DiscordService] Time 2: ${team2Players.length} jogadores:`, team2Players);
+
+      // Verificar se temos exatamente 10 jogadores (5v5)
+      if (team1Players.length !== 5 || team2Players.length !== 5) {
+        console.error(`❌ [DiscordService] Número inválido de jogadores - Time 1: ${team1Players.length}, Time 2: ${team2Players.length}. Esperado: 5 em cada time`);
+        return;
+      }
+
+      // Converter nomes de jogadores em objetos com vinculação e buscar Discord IDs
+      const allPlayers: Array<{
+        userId?: string,
+        username: string,
+        role: string,
+        linkedNickname?: {
+          gameName: string,
+          tagLine: string
+        }
+      }> = [];
+
+      // Processar Time 1 (Blue Team)
+      for (let i = 0; i < team1Players.length; i++) {
+        const playerName = team1Players[i];
+        const linkedNickname = this.parseLinkedNickname(playerName);
+        
+        // Tentar encontrar Discord ID pela vinculação
+        let discordId: string | undefined;
+        if (linkedNickname) {
+          try {
+            discordId = await this.findDiscordIdByLinkedNickname(linkedNickname.gameName, linkedNickname.tagLine) || undefined;
+            console.log(`🔍 [DiscordService] Discord ID para ${playerName}:`, discordId || 'Não encontrado');
+          } catch (error) {
+            console.error(`❌ [DiscordService] Erro ao buscar Discord ID para ${playerName}:`, error);
+          }
+        }
+        
+        allPlayers.push({
+          userId: discordId,
+          username: playerName,
+          role: this.getDefaultRole(i), // Atribuir roles padrão
+          linkedNickname: linkedNickname
+        });
+      }
+
+      // Processar Time 2 (Red Team)
+      for (let i = 0; i < team2Players.length; i++) {
+        const playerName = team2Players[i];
+        const linkedNickname = this.parseLinkedNickname(playerName);
+        
+        // Tentar encontrar Discord ID pela vinculação
+        let discordId: string | undefined;
+        if (linkedNickname) {
+          try {
+            discordId = await this.findDiscordIdByLinkedNickname(linkedNickname.gameName, linkedNickname.tagLine) || undefined;
+            console.log(`🔍 [DiscordService] Discord ID para ${playerName}:`, discordId || 'Não encontrado');
+          } catch (error) {
+            console.error(`❌ [DiscordService] Erro ao buscar Discord ID para ${playerName}:`, error);
+                   }
+        }
+        
+        allPlayers.push({
+          userId: discordId,
+          username: playerName,
+          role: this.getDefaultRole(i), // Atribuir roles padrão
+          linkedNickname: linkedNickname
+        });
+      }
+
+      console.log(`🔗 [DiscordService] Jogadores processados para Discord match:`, allPlayers.map(p => ({
+        username: p.username,
+        role: p.role,
+        discordId: p.userId || 'Não encontrado',
+        linkedNickname: p.linkedNickname ? `${p.linkedNickname.gameName}#${p.linkedNickname.tagLine}` : 'Não vinculado'
+      })));
+
+      // Verificar quantos jogadores têm Discord ID válido
+      const playersWithDiscordId = allPlayers.filter(p => p.userId).length;
+      console.log(`📊 [DiscordService] Jogadores com Discord ID válido: ${playersWithDiscordId}/${allPlayers.length}`);
+
+      if (playersWithDiscordId === 0) {
+        console.warn(`⚠️ [DiscordService] Nenhum jogador tem Discord ID válido, não é possível criar match no Discord`);
+        return;
+      }
+
+      // Criar o match no Discord usando o método existente
+      console.log(`🎯 [DiscordService] ========== CHAMANDO createMatchFromExternal ==========`);
+      console.log(`🎯 [DiscordService] Jogadores para criação:`, allPlayers.length);
+      const discordMatchId = await this.createMatchFromExternal(allPlayers);
+      console.log(`🎯 [DiscordService] ========== createMatchFromExternal RETORNOU ==========`);
+      console.log(`🎯 [DiscordService] Discord Match ID retornado:`, discordMatchId);
+      
+      if (discordMatchId) {
+        console.log(`✅ [DiscordService] ========== DISCORD MATCH CRIADO COM SUCESSO ==========`);
+        console.log(`✅ [DiscordService] Discord match criado: ${discordMatchId} para partida ${matchId}`);
+      } else {
+        console.error(`❌ [DiscordService] ========== FALHA AO CRIAR DISCORD MATCH ==========`);
+        console.error(`❌ [DiscordService] Falha ao criar Discord match para partida ${matchId}`);
+      }
+      
+    } catch (error) {
+      console.error(`❌ [DiscordService] Erro ao criar Discord match para partida ${matchId}:`, error);
+    }
+  }
+
+  // Método auxiliar para parsear linkedNickname do nome do jogador
+  private parseLinkedNickname(playerName: string): { gameName: string, tagLine: string } | undefined {
+    if (playerName && playerName.includes('#')) {
+      const parts = playerName.split('#');
+      if (parts.length === 2) {
+        return {
+          gameName: parts[0].trim(),
+          tagLine: parts[1].trim()
+        };
+      }
+    }
+    return undefined;
+  }
+
+  // Método auxiliar para atribuir roles padrão baseado na posição
+  private getDefaultRole(index: number): string {
+    const roles = ['top', 'jungle', 'mid', 'adc', 'support'];
+    return roles[index] || 'fill';
+  }
+
+  // Método para listar canais do servidor Discord
+  async getChannels(): Promise<any[]> {
+    try {
+      console.log('🔍 [DiscordService] Listando canais do servidor...');
+      
+      if (!this.isConnected || !this.client.guilds.cache.size) {
+        console.warn('⚠️ [DiscordService] Discord não está conectado ou não há guilds');
+        return [];
+      }
+
+      const guild = this.client.guilds.cache.first();
+      if (!guild) {
+        console.warn('⚠️ [DiscordService] Nenhuma guild encontrada');
+        return [];
+      }
+
+      const channels = guild.channels.cache
+        .filter(channel => channel.type === ChannelType.GuildVoice || channel.type === ChannelType.GuildText)
+        .map(channel => ({
+          id: channel.id,
+          name: channel.name,
+          type: channel.type === ChannelType.GuildVoice ? 'voice' : 'text',
+          parentId: channel.parentId,
+          members: channel.type === ChannelType.GuildVoice ? channel.members?.size || 0 : undefined
+        }));
+
+      console.log(`📋 [DiscordService] ${channels.length} canais encontrados`);
+      return channels;
+      
+    } catch (error) {
+      console.error('❌ [DiscordService] Erro ao listar canais:', error);
+      return [];
+    }
+  }
+
+  // Método para mover jogadores para canais de match
+  async movePlayersToMatchChannels(matchId: number, linkedPlayers: any[]): Promise<any[]> {
+    try {
+      console.log(`🎯 [DiscordService] Movendo jogadores para canais da partida ${matchId}...`);
+      console.log(`🎯 [DiscordService] Jogadores vinculados:`, linkedPlayers);
+      
+      if (!this.isConnected || !linkedPlayers.length) {
+        console.warn('⚠️ [DiscordService] Discord não conectado ou nenhum jogador vinculado');
+        return [];
+      }
+
+      // Verificar se o match existe nos activeMatches
+      const matchKey = matchId.toString();
+      const discordMatch = this.activeMatches.get(matchKey);
+      
+      if (!discordMatch) {
+        console.warn(`⚠️ [DiscordService] Match Discord ${matchId} não encontrado nos activeMatches`);
+        return [];
+      }
+
+      const guild = this.client.guilds.cache.first();
+      if (!guild) {
+        console.warn('⚠️ [DiscordService] Nenhuma guild encontrada');
+        return [];
+      }
+
+      const movedPlayers = [];
+
+      // Mover jogadores para seus respectivos canais
+      for (const linkedPlayer of linkedPlayers) {
+        try {
+          const { player, discordId } = linkedPlayer;
+          
+          // Buscar o membro na guild
+          const member = await guild.members.fetch(discordId);
+          if (!member) {
+            console.warn(`⚠️ [DiscordService] Membro ${discordId} não encontrado na guild`);
+            continue;
+          }
+
+          // Verificar se o membro está em um canal de voz
+          if (!member.voice.channel) {
+            console.warn(`⚠️ [DiscordService] Membro ${member.displayName} não está em um canal de voz`);
+            continue;
+          }
+
+          // Determinar qual time o jogador pertence
+          const isTeam1 = discordMatch.blueTeam.some(p => p.linkedNickname && 
+            `${p.linkedNickname.gameName}#${p.linkedNickname.tagLine}` === player);
+          
+          const isTeam2 = discordMatch.redTeam.some(p => p.linkedNickname && 
+            `${p.linkedNickname.gameName}#${p.linkedNickname.tagLine}` === player);
+
+          let targetChannelId: string | null = null;
+          let teamName = '';
+
+          if (isTeam1) {
+            targetChannelId = discordMatch.blueChannelId;
+            teamName = 'Blue Team';
+          } else if (isTeam2) {
+            targetChannelId = discordMatch.redChannelId;
+            teamName = 'Red Team';
+          }
+
+          if (!targetChannelId) {
+            console.warn(`⚠️ [DiscordService] Canal alvo não encontrado para ${player}`);
+            continue;
+          }
+
+          // Mover o jogador
+          await member.voice.setChannel(targetChannelId);
+          
+          console.log(`✅ [DiscordService] ${member.displayName} movido para ${teamName}`);
+          
+          movedPlayers.push({
+            discordId,
+            displayName: member.displayName,
+            player,
+            team: teamName,
+            channelId: targetChannelId
+          });
+
+        } catch (error) {
+          console.error(`❌ [DiscordService] Erro ao mover jogador ${linkedPlayer.player}:`, error);
+        }
+      }
+
+      console.log(`✅ [DiscordService] ${movedPlayers.length} jogadores movidos com sucesso`);
+      return movedPlayers;
+
+    } catch (error) {
+      console.error(`❌ [DiscordService] Erro ao mover jogadores para partida ${matchId}:`, error);
+      return [];
+    }
   }
 }

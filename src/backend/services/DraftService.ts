@@ -1,5 +1,6 @@
 import { WebSocket } from 'ws';
 import { DatabaseManager } from '../database/DatabaseManager';
+import { DiscordService } from './DiscordService';
 
 interface DraftData {
   matchId: number;
@@ -33,10 +34,19 @@ export class DraftService {
   private wss: any; // WebSocketServer
   private activeDrafts = new Map<number, DraftData>();
   private monitoringInterval: NodeJS.Timeout | null = null;
+  private discordService?: DiscordService;
 
-  constructor(dbManager: DatabaseManager, wss?: any) {
+  constructor(dbManager: DatabaseManager, wss?: any, discordService?: DiscordService) {
+    console.log('🔧 [DraftService] Construtor chamado');
+    console.log('🔧 [DraftService] DiscordService recebido:', !!discordService);
+    if (discordService) {
+      console.log('🔧 [DraftService] DiscordService tipo:', typeof discordService);
+      console.log('🔧 [DraftService] DiscordService constructor:', discordService.constructor.name);
+    }
+    
     this.dbManager = dbManager;
     this.wss = wss;
+    this.discordService = discordService;
   }
 
   async initialize(): Promise<void> {
@@ -234,6 +244,28 @@ export class DraftService {
 
       // 7. ✅ CORREÇÃO: Notificar frontend sobre início do draft com dados completos
       this.notifyDraftStarted(matchId, draftData);
+
+      // 8. ✅ NOVO: Criar match no Discord se o serviço estiver disponível
+      console.log(`🤖 [Draft] ========== VERIFICANDO DISCORD SERVICE ==========`);
+      console.log(`🤖 [Draft] DiscordService existe:`, !!this.discordService);
+      console.log(`🤖 [Draft] DiscordService referência:`, this.discordService ? 'VÁLIDA' : 'NULL/UNDEFINED');
+      if (this.discordService) {
+        try {
+          console.log(`🤖 [Draft] DiscordService tipo:`, typeof this.discordService);
+          console.log(`🤖 [Draft] DiscordService constructor:`, this.discordService.constructor.name);
+          console.log(`🎮 [Draft] Criando match no Discord para partida ${matchId}...`);
+          const match = await this.dbManager.getCustomMatchById(matchId);
+          if (match) {
+            await this.discordService.createDiscordMatch(matchId, match);
+            console.log(`✅ [Draft] Match criado no Discord para partida ${matchId}`);
+          }
+        } catch (discordError) {
+          console.error(`❌ [Draft] Erro ao criar match no Discord:`, discordError);
+        }
+      } else {
+        console.warn(`⚠️ [Draft] DiscordService não disponível, não foi possível criar match no Discord`);
+        console.warn(`⚠️ [Draft] this.discordService =`, this.discordService);
+      }
 
       console.log(`✅ [Draft] Draft iniciado com sucesso para partida ${matchId} com dados completos`);
 

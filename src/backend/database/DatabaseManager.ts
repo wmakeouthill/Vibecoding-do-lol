@@ -1,4 +1,4 @@
-import mysql from 'mysql2/promise';
+import * as mysql from 'mysql2/promise';
 import * as path from 'path';
 import * as fs from 'fs';
 import { DataDragonService } from '../services/DataDragonService';
@@ -1356,7 +1356,7 @@ export class DatabaseManager {
       if (lpChanges) {
         totalLp = Object.values(lpChanges).reduce((sum: number, lpChange: any) => {
           return sum + Math.abs(Number(lpChange));
-        }, 0);
+        }, 0) as number;
       }
 
       // Atualizar status da partida
@@ -2122,7 +2122,7 @@ export class DatabaseManager {
       }
 
       // Atualizar estatísticas dos jogadores
-      for (const summonerName of allPlayers) {
+      for (const summonerName of Array.from(allPlayers)) {
         try {
           const existingPlayer = await this.getPlayerBySummonerName(summonerName);
           const stats = playerStats[summonerName] || { games: 0, wins: 0, losses: 0, totalMMR: 0 };

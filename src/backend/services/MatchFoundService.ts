@@ -1,5 +1,6 @@
 import { WebSocket } from 'ws';
 import { DatabaseManager } from '../database/DatabaseManager';
+import { DiscordService } from './DiscordService';
 
 interface AcceptanceStatus {
   matchId: number;
@@ -16,10 +17,26 @@ export class MatchFoundService {
   private pendingMatches = new Map<number, AcceptanceStatus>();
   private monitoringInterval: NodeJS.Timeout | null = null;
   private readonly ACCEPTANCE_TIMEOUT_MS = 30000; // 30 segundos para aceitar
+  private discordService?: DiscordService; // ✅ NOVO: Referência ao DiscordService
 
-  constructor(dbManager: DatabaseManager, wss?: any) {
+  constructor(dbManager: DatabaseManager, wss?: any, discordService?: DiscordService) {
     this.dbManager = dbManager;
     this.wss = wss;
+    this.discordService = discordService; // ✅ NOVO: Armazenar referência
+    
+    // ✅ DEBUG: Verificar se DiscordService foi injetado
+    console.log('🔧 [MatchFound] Construtor chamado');
+    console.log('🔧 [MatchFound] DiscordService recebido:', !!discordService);
+    if (discordService) {
+      console.log('🔧 [MatchFound] DiscordService tipo:', typeof discordService);
+      console.log('🔧 [MatchFound] DiscordService é instância:', discordService.constructor.name);
+    }
+  }
+
+  // ✅ NOVO: Método para definir DiscordService após construção
+  setDiscordService(discordService: DiscordService): void {
+    this.discordService = discordService;
+    console.log('🔗 [MatchFound] DiscordService configurado');
   }
 
   async initialize(): Promise<void> {
@@ -131,24 +148,33 @@ export class MatchFoundService {
 
   // ✅ Processar aceitação de jogador
   async acceptMatch(matchId: number, summonerName: string): Promise<void> {
+    console.log(`✅ [MatchFound] ========== JOGADOR ACEITOU MATCH ==========`);
     console.log(`✅ [MatchFound] Jogador ${summonerName} aceitou partida ${matchId}`);
+    console.log(`✅ [MatchFound] Timestamp: ${new Date().toISOString()}`);
     
     try {
       // 1. Atualizar no banco de dados
       await this.dbManager.updatePlayerAcceptanceStatus(summonerName, 1);
+      console.log(`✅ [MatchFound] Status de aceitação atualizado no banco para ${summonerName}`);
       
       // 2. Atualizar tracking local
       const matchStatus = this.pendingMatches.get(matchId);
       if (matchStatus) {
         matchStatus.acceptedPlayers.add(summonerName);
+        console.log(`✅ [MatchFound] Match ${matchId} - Jogadores que aceitaram: ${matchStatus.acceptedPlayers.size}/${matchStatus.players.length}`);
+        console.log(`✅ [MatchFound] Jogadores que aceitaram:`, Array.from(matchStatus.acceptedPlayers));
         
         // Verificar se todos aceitaram
         if (matchStatus.acceptedPlayers.size === matchStatus.players.length) {
+          console.log(`🎉 [MatchFound] TODOS OS JOGADORES ACEITARAM! Iniciando handleAllPlayersAccepted...`);
           await this.handleAllPlayersAccepted(matchId);
         } else {
+          console.log(`⏳ [MatchFound] Aguardando mais jogadores aceitar...`);
           // Notificar progresso da aceitação
           this.notifyAcceptanceProgress(matchId, matchStatus);
         }
+      } else {
+        console.error(`❌ [MatchFound] Match ${matchId} não encontrado no tracking local!`);
       }
 
     } catch (error) {
@@ -254,7 +280,9 @@ export class MatchFoundService {
     }
     
     this.processingMatches.add(matchId);
+    console.log(`🎉 [MatchFound] ========== TODOS JOGADORES ACEITARAM ==========`);
     console.log(`🎉 [MatchFound] Todos os jogadores aceitaram partida ${matchId}!`);
+    console.log(`🎉 [MatchFound] Timestamp: ${new Date().toISOString()}`);
     
     try {
       // 1. Limpar timeout se existir
@@ -270,6 +298,12 @@ export class MatchFoundService {
         console.error(`❌ [MatchFound] Partida ${matchId} não encontrada`);
         return;
       }
+      console.log(`📊 [MatchFound] Dados da partida encontrados:`, {
+        id: match.id,
+        team1_players: match.team1_players,
+        team2_players: match.team2_players,
+        status: match.status
+      });
 
       // 3. ✅ VERIFICAÇÃO: Se partida já foi aceita, não processar novamente
       if (match.status === 'accepted' || match.status === 'draft') {
@@ -279,6 +313,7 @@ export class MatchFoundService {
 
       // 4. Atualizar status da partida para 'accepted'
       await this.dbManager.updateCustomMatchStatus(matchId, 'accepted');
+      console.log(`✅ [MatchFound] Status da partida atualizado para 'accepted'`);
 
       // 5. ✅ CORREÇÃO: NÃO remover jogadores da fila aqui - deixar o DraftService fazer isso
       // Os jogadores precisam permanecer na fila para o DraftService buscar seus dados
@@ -287,6 +322,23 @@ export class MatchFoundService {
       // 6. Notificar que todos aceitaram (será processado pelo DraftService)
       this.notifyAllPlayersAccepted(matchId, match);
 
+      // 7. ✅ NOVO: Criar match no Discord se o serviço estiver disponível
+      console.log(`🤖 [MatchFound] ========== VERIFICANDO DISCORD SERVICE ==========`);
+      console.log(`🤖 [MatchFound] DiscordService existe:`, !!this.discordService);
+      console.log(`🤖 [MatchFound] DiscordService referência:`, this.discordService ? 'VÁLIDA' : 'NULL/UNDEFINED');
+      if (this.discordService) {
+        console.log(`🤖 [MatchFound] DiscordService tipo:`, typeof this.discordService);
+        console.log(`🤖 [MatchFound] DiscordService constructor:`, this.discordService.constructor.name);
+        console.log(`🤖 [MatchFound] DiscordService disponível! Verificando conexão...`);
+        console.log(`🤖 [MatchFound] Discord conectado:`, this.discordService.isDiscordConnected());
+        console.log(`🤖 [MatchFound] ========== CHAMANDO createDiscordMatch ==========`);
+        await this.discordService.createDiscordMatch(matchId, match);
+        console.log(`🤖 [MatchFound] ========== createDiscordMatch EXECUTADO ==========`);
+      } else {
+        console.warn(`⚠️ [MatchFound] PROBLEMA: DiscordService não disponível!`);
+        console.warn(`⚠️ [MatchFound] this.discordService =`, this.discordService);
+      }
+
       console.log(`✅ [MatchFound] Partida ${matchId} totalmente aceita - encaminhando para Draft`);
 
     } catch (error) {
@@ -294,6 +346,7 @@ export class MatchFoundService {
     } finally {
       // ✅ IMPORTANTE: Remover da proteção após processamento
       this.processingMatches.delete(matchId);
+      console.log(`🔒 [MatchFound] Proteção removida para partida ${matchId}`);
     }
   }
 
@@ -594,4 +647,4 @@ export class MatchFoundService {
 
     console.log('🛑 [MatchFound] MatchFoundService desligado');
   }
-} 
+}

@@ -1,4 +1,4 @@
-import axios, { AxiosInstance } from 'axios';
+import axios from 'axios';
 import * as https from 'https';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -35,7 +35,7 @@ interface CurrentSummoner {
 }
 
 export class LCUService {
-  private client: AxiosInstance | null = null;
+  private client: any | null = null;
   private connectionInfo: LCUConnectionInfo | null = null;
   private isConnected = false;
   private dbManager: DatabaseManager | null = null;
@@ -45,6 +45,7 @@ export class LCUService {
   private currentGameId: string | null = null;
   private riotAPI: any = null; // Add RiotAPIService reference
   private dataDragonService: DataDragonService; // Add DataDragonService
+  private discordService: any = null; // Add DiscordService reference
 
   constructor(riotAPI?: any) {
     this.riotAPI = riotAPI; // Store the global RiotAPIService instance
@@ -59,26 +60,32 @@ export class LCUService {
   setMatchHistoryService(service: any): void {
     this.matchHistoryService = service;
   }
+  // Método para definir referência ao DiscordService
+  setDiscordService(discordService: any): void {
+    this.discordService = discordService;
+    console.log('🔗 [LCUService] DiscordService conectado para notificações de fim de partida');
+  }
+
   async initialize(): Promise<void> {
     const maxRetries = 3;
     let retryCount = 0;
-    
+
     while (retryCount < maxRetries) {
       try {
         console.log(`🚀 Tentativa ${retryCount + 1}/${maxRetries} de conectar ao LCU...`);
         await this.findLeagueClient();
         await this.connectToLCU();
-        
+
         // Carregar dados dos campeões da Data Dragon
         console.log('🔍 Carregando dados dos campeões da Data Dragon...');
         await this.dataDragonService.loadChampions();
-        
+
         console.log('✅ Conectado ao League Client Update (LCU)');
         return;
       } catch (error) {
         retryCount++;
         console.log(`❌ Tentativa ${retryCount} falhou:`, error);
-        
+
         if (retryCount < maxRetries) {
           console.log(`⏳ Aguardando 2 segundos antes da próxima tentativa...`);
           await new Promise(resolve => setTimeout(resolve, 2000));
@@ -92,16 +99,16 @@ export class LCUService {
   private async findLeagueClient(): Promise<void> {
     try {
       console.log('🔍 Procurando cliente do League of Legends...');
-      
+
       // Método 1: Procurar pelo arquivo lockfile (Windows) - MAIS CONFIÁVEL
       const lockfilePath = this.findLockfile();
-      
+
       if (lockfilePath && fs.existsSync(lockfilePath)) {
         console.log('📁 Lockfile encontrado em:', lockfilePath);
         const lockfileContent = fs.readFileSync(lockfilePath, 'utf8');
         console.log('📄 Conteúdo do lockfile:', lockfileContent);
         const parts = lockfileContent.split(':');
-        
+
         if (parts.length >= 5) {
           this.connectionInfo = {
             port: parseInt(parts[2]),
@@ -125,13 +132,13 @@ export class LCUService {
       );
 
       console.log('📤 Saída do WMIC:', stdout);
-      
+
       const lines = stdout.split('\n');
       for (const line of lines) {
         if (line.includes('--app-port=') && line.includes('--remoting-auth-token=')) {
           const portMatch = line.match(/--app-port=(\d+)/);
           const tokenMatch = line.match(/--remoting-auth-token=([a-zA-Z0-9_-]+)/);
-          
+
           if (portMatch && tokenMatch) {
             this.connectionInfo = {
               port: parseInt(portMatch[1]),
@@ -158,12 +165,12 @@ export class LCUService {
       // Caminhos mais comuns primeiro
       path.join(process.env.LOCALAPPDATA || '', 'Riot Games/League of Legends/lockfile'),
       path.join(process.env.PROGRAMDATA || '', 'Riot Games/League of Legends/lockfile'),
-      
+
       // Caminhos alternativos
       'C:/Riot Games/League of Legends/lockfile',
       'C:/Program Files/Riot Games/League of Legends/lockfile',
       'C:/Program Files (x86)/Riot Games/League of Legends/lockfile',
-      
+
       // Mais caminhos possíveis
       path.join(process.env.USERPROFILE || '', 'AppData/Local/Riot Games/League of Legends/lockfile'),
       path.join(process.env.APPDATA || '', '../Local/Riot Games/League of Legends/lockfile'),
@@ -172,7 +179,7 @@ export class LCUService {
     console.log('🔍 Procurando lockfile nos seguintes caminhos:');
     for (const lockfilePath of possiblePaths) {
       console.log(`  - ${lockfilePath}`);
-      
+
       try {
         if (fs.existsSync(lockfilePath)) {
           console.log(`✅ Lockfile encontrado em: ${lockfilePath}`);
@@ -203,13 +210,14 @@ export class LCUService {
         username: 'riot',
         password: this.connectionInfo.password
       },
-      httpsAgent: new https.Agent({
-        rejectUnauthorized: false
-      }),
       timeout: 15000, // Aumentei o timeout
       headers: {
         'Content-Type': 'application/json'
-      }
+      },
+      // Configurar HTTPS agent para ignorar certificados auto-assinados
+      httpsAgent: new https.Agent({
+        rejectUnauthorized: false // Ignora certificados auto-assinados do LCU
+      })
     });
 
     try {
@@ -231,16 +239,16 @@ export class LCUService {
     try {
       console.log('👤 Buscando summoner atual do LCU...');
       const response = await this.client.get('/lol-summoner/v1/current-summoner');
-      
+
       const summoner = response.data;
-      
+
       console.log('✅ Summoner encontrado:', {
         displayName: summoner.displayName,
         summonerLevel: summoner.summonerLevel,
         puuid: summoner.puuid ? 'presente' : 'ausente',
         summonerId: summoner.summonerId
       });
-      
+
       return summoner;
     } catch (error: any) {
       console.error('❌ Erro ao buscar summoner atual:', {
@@ -248,7 +256,7 @@ export class LCUService {
         message: error.message,
         url: error.config?.url
       });
-      
+
       if (error.response?.status === 404) {
         throw new Error('Nenhum invocador logado no cliente');
       }
@@ -280,7 +288,7 @@ export class LCUService {
     } catch (error) {
       return null;
     }
-  }  async getCurrentMatchDetails(): Promise<any> {
+  } async getCurrentMatchDetails(): Promise<any> {
     if (!this.client) {
       throw new Error('Cliente LCU não conectado');
     }
@@ -288,7 +296,7 @@ export class LCUService {
     try {
       const gameflowPhase = await this.getGameflowPhase();
       console.log(`🔍 [LCU] Gameflow phase atual: ${gameflowPhase}`);
-      
+
       // Check if in champion select
       if (gameflowPhase === 'ChampSelect') {
         console.log('🎯 [LCU] Em seleção de campeões, buscando dados...');
@@ -299,7 +307,7 @@ export class LCUService {
           isInGame: false
         };
       }
-      
+
       // Check if in game
       if (['InProgress', 'WaitingForStats', 'PreEndOfGame', 'EndOfGame'].includes(gameflowPhase)) {
         console.log(`🎮 [LCU] Em partida (${gameflowPhase}), buscando dados...`);
@@ -311,7 +319,7 @@ export class LCUService {
           isInGame: true
         };
       }
-      
+
       console.log(`⚠️ [LCU] Fase não ativa para detecção de partida: ${gameflowPhase}`);
       return {
         phase: gameflowPhase,
@@ -327,18 +335,18 @@ export class LCUService {
       };
     }
   }
-  
+
   // ========== MÉTODOS PARA CAPTURA AUTOMÁTICA (como Porofessor) ==========
 
   async captureAllPlayerData(): Promise<any> {
     console.log('🔍 Capturando todos os dados do jogador automaticamente...');
-    
+
     try {
       const summoner = await this.getCurrentSummoner();
       const rankedStats = await this.getRankedStats();
       const champMastery = await this.getChampionMastery();
       const matchHistory = await this.getLocalMatchHistory();
-      
+
       const playerData = {
         summoner,
         rankedStats,
@@ -351,11 +359,11 @@ export class LCUService {
       console.log(`📊 Dados capturados para: ${playerData.summoner.displayName}`);
       console.log(`🏆 Level: ${playerData.summoner.summonerLevel}`);
       console.log(`🎮 PUUID: ${playerData.summoner.puuid}`);
-      
+
       if (playerData.rankedStats) {
         console.log(`⚔️ Ranked: ${JSON.stringify(playerData.rankedStats)}`);
       }
-      
+
       return playerData;
     } catch (error) {
       console.error('Erro na captura automática:', error);
@@ -407,7 +415,7 @@ export class LCUService {
     }
 
     console.log('🎮 Iniciando monitoramento de partidas...');
-    
+
     this.gameMonitorInterval = setInterval(async () => {
       try {
         await this.checkGameStatus();
@@ -422,13 +430,20 @@ export class LCUService {
 
     try {
       const currentPhase = await this.getGameflowPhase();
-      
+
       // Detectar quando a partida termina
       if (this.lastGameflowPhase === 'InProgress' && currentPhase === 'EndOfGame') {
         console.log('🏁 Partida finalizada! Capturando dados...');
         await this.handleGameEnd();
       }
-      
+
+      // Detectar cancelamento de partida (draft dodge, lobby fechado, etc.)
+      if (['ChampSelect', 'InProgress'].includes(this.lastGameflowPhase || '') &&
+        ['None', 'Lobby'].includes(currentPhase)) {
+        console.log('❌ Partida cancelada/interrompida!');
+        await this.handleGameCancel();
+      }
+
       // Detectar início de partida
       if (this.lastGameflowPhase !== 'InProgress' && currentPhase === 'InProgress') {
         console.log('🎮 Partida iniciada!');
@@ -453,12 +468,13 @@ export class LCUService {
       try {
         const playerData = await this.captureAllPlayerData();
         console.log('🎮 Dados do jogador capturados automaticamente!');
-        
+
         // Registrar jogador no banco se não existir
         const summoner = playerData.summoner;
         const existingPlayer = await this.dbManager?.getPlayerBySummonerName(summoner.displayName);
-        
-        if (!existingPlayer && this.dbManager) {          await this.dbManager.createPlayer({
+
+        if (!existingPlayer && this.dbManager) {
+          await this.dbManager.createPlayer({
             summoner_name: summoner.displayName,
             summoner_id: summoner.summonerId.toString(),
             puuid: summoner.puuid,
@@ -485,17 +501,55 @@ export class LCUService {
       // Aguardar um pouco para garantir que os dados estejam disponíveis
       setTimeout(async () => {
         const summoner = await this.getCurrentSummoner();
-        
+
         // Capturar histórico usando o serviço
         if (this.matchHistoryService) {
           this.matchHistoryService.captureLatestMatch(summoner.puuid, this.currentGameId);
         }
-        
+
         console.log('📊 Solicitando captura do histórico da partida finalizada');
+
+        // Notificar DiscordService sobre o fim da partida
+        if (this.discordService) {
+          try {
+            // Por enquanto, apenas notificar o fim sem dados específicos
+            // O DiscordService tentará encontrar o match correspondente
+            await this.discordService.onGameEnd({
+              gameId: this.currentGameId
+            });
+          } catch (error) {
+            console.error('❌ Erro ao notificar DiscordService sobre fim de partida:', error);
+          }
+        }
+
       }, 3000); // Aguarda 3 segundos
-      
+
     } catch (error) {
       console.error('Erro ao processar fim de partida:', error);
+    }
+  }
+
+  private async handleGameCancel(): Promise<void> {
+    try {
+      console.log('❌ [LCU] Processando cancelamento de partida');
+
+      // Notificar DiscordService sobre o cancelamento
+      if (this.discordService) {
+        try {
+          await this.discordService.onGameCancel({
+            gameId: this.currentGameId,
+            reason: 'Partida cancelada/interrompida'
+          });
+        } catch (error) {
+          console.error('❌ Erro ao notificar DiscordService sobre cancelamento:', error);
+        }
+      }
+
+      // Limpar game ID atual
+      this.currentGameId = null;
+
+    } catch (error) {
+      console.error('Erro ao processar cancelamento de partida:', error);
     }
   }
 
@@ -512,7 +566,7 @@ export class LCUService {
 
       // ✅ CORREÇÃO: Construir displayName se não estiver disponível
       let processedSummoner: any = { ...summoner };
-      
+
       if (!processedSummoner.displayName || processedSummoner.displayName.trim() === '') {
         // Tentar construir displayName a partir de outros campos
         if (summoner.gameName && summoner.tagLine) {
@@ -527,8 +581,8 @@ export class LCUService {
             const aliasResponse = await this.client.get('/lol-summoner/v1/current-summoner/alias');
             if (aliasResponse.data && aliasResponse.data.gameName) {
               const alias = aliasResponse.data;
-              processedSummoner.displayName = alias.tagLine ? 
-                `${alias.gameName}#${alias.tagLine}` : 
+              processedSummoner.displayName = alias.tagLine ?
+                `${alias.gameName}#${alias.tagLine}` :
                 alias.gameName;
               processedSummoner.gameName = alias.gameName;
               processedSummoner.tagLine = alias.tagLine || 'BR1';
@@ -573,12 +627,12 @@ export class LCUService {
 
       // 1. Buscar dados básicos do LCU
       const summonerResponse = await this.client!.get('/lol-summoner/v1/current-summoner');
-      const summoner = summonerResponse.data;      console.log('📊 Dados completos do LCU:', JSON.stringify(summoner, null, 2));
+      const summoner = summonerResponse.data; console.log('📊 Dados completos do LCU:', JSON.stringify(summoner, null, 2));
 
       // Tentar diferentes campos para o nome do jogador
       let playerName = summoner.displayName || summoner.internalName || summoner.gameName || 'Unknown';
       let tagLine = summoner.tagLine || '';
-      
+
       // Se temos gameName e tagLine, usar o formato Riot ID
       if (summoner.gameName) {
         playerName = summoner.gameName;
@@ -587,7 +641,7 @@ export class LCUService {
           console.log('🎮 Nome do jogador encontrado:', `${summoner.gameName}#${summoner.tagLine}`);
         }
       }
-      
+
       // Se ainda estiver vazio, tentar endpoint alternativo
       if (!playerName || playerName === 'Unknown') {
         try {
@@ -629,7 +683,7 @@ export class LCUService {
         console.log('ℹ️ Dados de ranked não disponíveis localmente');
       }      // 4. Buscar dados adicionais via Riot API (se configurada)
       let riotApiData = null;
-      
+
       // Use the stored riotAPI instance
       if (this.riotAPI && this.riotAPI.isApiKeyConfigured()) {
         try {          // Buscar por nome do summoner se tivermos um nome válido
@@ -656,13 +710,13 @@ export class LCUService {
         profileIconId: summoner.profileIconId,
         summonerLevel: summoner.summonerLevel,
         region: region.toLowerCase(),
-        
+
         // Dados de ranked do LCU (se disponível)
         rankedStats: rankedData,
-        
+
         // Dados da Riot API (se disponível)
         riotApiData: riotApiData,
-        
+
         // Timestamp da última atualização
         lastUpdated: new Date().toISOString()
       };
@@ -683,7 +737,7 @@ export class LCUService {
 
       console.log(`🔍 Buscando histórico LCU: índice ${startIndex}, quantidade ${count}`);
       const response = await this.client!.get(`/lol-match-history/v1/products/lol/current-summoner/matches?begIndex=${startIndex}&endIndex=${startIndex + count}`);
-      
+
       const basicMatches = response.data.games?.games || [];
       console.log(`📋 Partidas básicas encontradas: ${basicMatches.length}`);
 
@@ -693,7 +747,7 @@ export class LCUService {
 
       // Para cada partida, buscar dados detalhados incluindo todos os participantes
       const detailedMatches = [];
-      
+
       for (const match of basicMatches) {
         try {
           if (match.gameId) {
@@ -754,16 +808,16 @@ export class LCUService {
         try {
           console.log(`🔗 Tentando endpoint: ${endpoint}`);
           const response = await this.client!.get(endpoint);
-          
+
           if (response.data && response.data.participants) {
             console.log(`✅ Dados completos obtidos via ${endpoint}: ${response.data.participants.length} participantes`);
-            
+
             // Processar participantes com dados da Data Dragon
             const processedData = {
               ...response.data,
               participants: this.dataDragonService.processParticipants(response.data.participants)
             };
-            
+
             return processedData;
           }
         } catch (error) {
@@ -789,7 +843,8 @@ export class LCUService {
       }
 
       const response = await this.client!.get('/lol-ranked/v1/current-ranked-stats');
-      return response.data;    } catch (error) {
+      return response.data;
+    } catch (error) {
       console.log('ℹ️ Dados de rank não disponíveis:', error instanceof Error ? error.message : 'Erro desconhecido');
       return null;
     }

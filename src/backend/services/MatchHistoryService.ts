@@ -1,6 +1,6 @@
 import { RiotAPIService } from './RiotAPIService';
 import { DatabaseManager } from '../database/DatabaseManager';
-import axios from 'axios';
+import * as axios from 'axios';
 
 interface MatchData {
   gameId: string;
