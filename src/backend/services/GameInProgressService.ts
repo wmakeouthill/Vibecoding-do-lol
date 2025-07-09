@@ -1,5 +1,6 @@
 import { WebSocket } from 'ws';
 import { DatabaseManager } from '../database/DatabaseManager';
+import { DiscordService } from './DiscordService';
 
 interface GameData {
   matchId: number;
@@ -42,10 +43,15 @@ export class GameInProgressService {
   private wss: any; // WebSocketServer
   private activeGames = new Map<number, GameData>();
   private monitoringInterval: NodeJS.Timeout | null = null;
+  private discordService?: DiscordService;
 
-  constructor(dbManager: DatabaseManager, wss?: any) {
+  constructor(dbManager: DatabaseManager, wss?: any, discordService?: DiscordService) {
+    console.log('🔧 [GameInProgress] Construtor chamado');
+    console.log('🔧 [GameInProgress] DiscordService recebido:', !!discordService);
+    
     this.dbManager = dbManager;
     this.wss = wss;
+    this.discordService = discordService;
   }
 
   async initialize(): Promise<void> {
@@ -214,10 +220,23 @@ export class GameInProgressService {
       // 5. Processar alterações de LP/MMR
       await this.processPostGameRewards(matchId, gameResult);
 
-      // 6. Notificar frontend sobre fim do jogo
+      // 6. ✅ NOVO: Limpar canais do Discord se disponível
+      if (this.discordService) {
+        try {
+          console.log(`🤖 [GameInProgress] Limpando canais do Discord para partida ${matchId}...`);
+          await this.discordService.cleanupMatchByCustomId(matchId);
+          console.log(`🤖 [GameInProgress] Canais do Discord limpos para partida ${matchId}`);
+        } catch (discordError) {
+          console.error(`❌ [GameInProgress] Erro ao limpar Discord para partida ${matchId}:`, discordError);
+        }
+      } else {
+        console.warn(`⚠️ [GameInProgress] DiscordService não disponível para limpar partida ${matchId}`);
+      }
+
+      // 7. Notificar frontend sobre fim do jogo
       this.notifyGameFinished(matchId, gameResult);
 
-      // 7. Remover do tracking local
+      // 8. Remover do tracking local
       this.activeGames.delete(matchId);
 
       console.log(`✅ [GameInProgress] Jogo ${matchId} finalizado com sucesso`);
@@ -321,6 +340,19 @@ export class GameInProgressService {
 
       // Atualizar no banco
       await this.dbManager.updateCustomMatchStatus(matchId, 'cancelled');
+
+      // ✅ NOVO: Limpar canais do Discord se disponível
+      if (this.discordService) {
+        try {
+          console.log(`🤖 [GameInProgress] Limpando canais do Discord para partida cancelada ${matchId}...`);
+          await this.discordService.cleanupMatchByCustomId(matchId);
+          console.log(`🤖 [GameInProgress] Canais do Discord limpos para partida cancelada ${matchId}`);
+        } catch (discordError) {
+          console.error(`❌ [GameInProgress] Erro ao limpar Discord para partida cancelada ${matchId}:`, discordError);
+        }
+      } else {
+        console.warn(`⚠️ [GameInProgress] DiscordService não disponível para limpar partida cancelada ${matchId}`);
+      }
 
       // Notificar frontend
       this.notifyGameCancelled(matchId, reason);

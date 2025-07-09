@@ -198,14 +198,14 @@ app.use((req, res, next) => {
 const dbManager = new DatabaseManager();
 console.log('🔍 [Server] WebSocket Server criado:', !!wss);
 console.log('🔍 [Server] WebSocket clients iniciais:', wss?.clients?.size || 0);
-const matchmakingService = new MatchmakingService(dbManager, wss);
+const discordService = new DiscordService(dbManager);
+const matchmakingService = new MatchmakingService(dbManager, wss, discordService);
 const playerService = new PlayerService(globalRiotAPI, dbManager);
 const lcuService = new LCUService(globalRiotAPI);
 const matchHistoryService = new MatchHistoryService(globalRiotAPI, dbManager);
-const discordService = new DiscordService(dbManager);
 const dataDragonService = new DataDragonService();
-const draftService = new DraftService(dbManager, wss);
-const matchFoundService = new MatchFoundService(dbManager, wss);
+const draftService = new DraftService(dbManager, wss, discordService);
+const matchFoundService = new MatchFoundService(dbManager, wss, discordService);
 
 // WebSocket para comunicação em tempo real
 wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
@@ -1487,6 +1487,78 @@ app.post('/api/match/draft-action', (async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('❌ [Draft API] Erro ao processar ação do draft:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}) as RequestHandler);
+
+// ✅ NOVO: Endpoint para finalizar partida
+app.post('/api/match/finish', (async (req: Request, res: Response) => {
+  try {
+    const { matchId, winnerTeam, duration, endReason } = req.body;
+
+    console.log('🏁 [Match API] Finalizando partida:', { matchId, winnerTeam, duration, endReason });
+
+    if (!matchId) {
+      return res.status(400).json({
+        success: false,
+        error: 'ID da partida é obrigatório'
+      });
+    }
+
+    const gameResult = {
+      matchId: parseInt(matchId),
+      winnerTeam: winnerTeam || 1,
+      duration: duration || 0,
+      endReason: endReason || 'victory',
+      finalStats: {}
+    };
+
+    // Usar o GameInProgressService através do MatchmakingService
+    await matchmakingService.finishGame(gameResult.matchId, gameResult);
+    
+    console.log('✅ [Match API] Partida finalizada com sucesso');
+    res.json({
+      success: true,
+      message: 'Partida finalizada com sucesso'
+    });
+
+  } catch (error: any) {
+    console.error('❌ [Match API] Erro ao finalizar partida:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}) as RequestHandler);
+
+// ✅ NOVO: Endpoint para cancelar partida
+app.post('/api/match/cancel', (async (req: Request, res: Response) => {
+  try {
+    const { matchId, reason } = req.body;
+
+    console.log('🚫 [Match API] Cancelando partida:', { matchId, reason });
+
+    if (!matchId) {
+      return res.status(400).json({
+        success: false,
+        error: 'ID da partida é obrigatório'
+      });
+    }
+
+    // Usar o GameInProgressService através do MatchmakingService
+    await matchmakingService.cancelGameInProgress(parseInt(matchId), reason || 'Partida cancelada pelo usuário');
+    
+    console.log('✅ [Match API] Partida cancelada com sucesso');
+    res.json({
+      success: true,
+      message: 'Partida cancelada com sucesso'
+    });
+
+  } catch (error: any) {
+    console.error('❌ [Match API] Erro ao cancelar partida:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -2796,6 +2868,10 @@ async function initializeServices() {
     // Matchmaking
     await matchmakingService.initialize();
     console.log('✅ Serviço de matchmaking inicializado');
+
+    // MatchFoundService
+    await matchFoundService.initialize();
+    console.log('✅ Serviço de match found inicializado');
 
     // DataDragonService
     await dataDragonService.loadChampions();

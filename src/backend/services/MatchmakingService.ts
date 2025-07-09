@@ -76,17 +76,18 @@ export class MatchmakingService {
   private draftService: DraftService;
   private gameInProgressService: GameInProgressService;
 
-  constructor(dbManager: DatabaseManager, wss?: any) {
+  constructor(dbManager: DatabaseManager, wss?: any, discordService?: any) {
     this.dbManager = dbManager;
     this.wss = wss;
     
     console.log('🔍 [Matchmaking] WebSocket Server recebido:', !!wss);
     console.log('🔍 [Matchmaking] WebSocket clients:', wss?.clients?.size || 0);
+    console.log('🔍 [Matchmaking] DiscordService recebido:', !!discordService);
     
-    // ✅ NOVO: Inicializar serviços separados
-    this.matchFoundService = new MatchFoundService(dbManager, wss);
-    this.draftService = new DraftService(dbManager, wss);
-    this.gameInProgressService = new GameInProgressService(dbManager, wss);
+    // ✅ NOVO: Inicializar serviços separados com DiscordService
+    this.matchFoundService = new MatchFoundService(dbManager, wss, discordService);
+    this.draftService = new DraftService(dbManager, wss, discordService);
+    this.gameInProgressService = new GameInProgressService(dbManager, wss, discordService);
   }
 
   async initialize(): Promise<void> {
@@ -1066,6 +1067,16 @@ export class MatchmakingService {
 
   // ✅ NOVO: Finalizar draft usando DraftService
   // ✅ NOVO: Finalizar jogo usando GameInProgressService
+  async finishGame(matchId: number, gameResult: any): Promise<void> {
+    try {
+      console.log(`🏁 [Matchmaking] Redirecionando finalização para GameInProgressService`);
+      await this.gameInProgressService.finishGame(matchId, gameResult);
+    } catch (error) {
+      console.error('❌ [Matchmaking] Erro ao finalizar jogo:', error);
+      throw error;
+    }
+  }
+
   // ✅ NOVO: Cancelar jogo usando GameInProgressService
   async cancelGameInProgress(matchId: number, reason: string): Promise<void> {
     try {

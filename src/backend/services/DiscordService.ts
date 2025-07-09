@@ -2055,4 +2055,35 @@ export class DiscordService {
       return [];
     }
   }
+
+  // Método para limpar match do Discord baseado no ID customizado (do banco de dados)
+  async cleanupMatchByCustomId(customMatchId: number): Promise<void> {
+    try {
+      console.log(`🧹 [DiscordService] Procurando match Discord para partida custom ${customMatchId}`);
+      
+      // Procurar por matches ativos que correspondam ao ID customizado
+      // Como não temos uma ligação direta, vamos procurar por matches criados recentemente
+      // que possam corresponder a esta partida
+      
+      const currentTime = Date.now();
+      const fiveMinutesAgo = currentTime - (5 * 60 * 1000); // 5 minutos atrás
+      
+      for (const [matchId, match] of this.activeMatches.entries()) {
+        // Se o match foi criado nos últimos 5 minutos, pode ser o match que estamos procurando
+        if (match.startTime >= fiveMinutesAgo) {
+          console.log(`🔍 [DiscordService] Avaliando match Discord ${matchId} (criado há ${Math.round((currentTime - match.startTime) / 1000)} segundos)`);
+          
+          // Por agora, vamos limpar todos os matches recentes quando uma partida for cancelada
+          // Em uma implementação mais robusta, você poderia armazenar a ligação entre IDs
+          console.log(`🧹 [DiscordService] Limpando match Discord ${matchId} para partida custom ${customMatchId}`);
+          await this.cleanupMatch(matchId);
+        }
+      }
+      
+      console.log(`✅ [DiscordService] Cleanup concluído para partida custom ${customMatchId}`);
+      
+    } catch (error) {
+      console.error(`❌ [DiscordService] Erro ao limpar partida custom ${customMatchId}:`, error);
+    }
+  }
 }

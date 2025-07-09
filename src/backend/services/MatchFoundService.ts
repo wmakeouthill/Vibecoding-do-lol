@@ -371,7 +371,18 @@ export class MatchFoundService {
       // 3. Deletar a partida
       await this.dbManager.deleteCustomMatch(matchId);
 
-      // 4. ✅ CORREÇÃO: Resetar status apenas dos jogadores restantes (não removidos)
+      // 4. ✅ NOVO: Limpar match no Discord se existir
+      if (this.discordService) {
+        try {
+          console.log(`🤖 [MatchFound] Limpando match ${matchId} no Discord...`);
+          await this.discordService.cleanupMatchByCustomId(matchId);
+          console.log(`🤖 [MatchFound] Match ${matchId} limpo no Discord`);
+        } catch (discordError) {
+          console.error(`❌ [MatchFound] Erro ao limpar match ${matchId} no Discord:`, discordError);
+        }
+      }
+
+      // 6. ✅ CORREÇÃO: Resetar status apenas dos jogadores restantes (não removidos)
       const currentMatchStatus = this.pendingMatches.get(matchId);
       if (currentMatchStatus) {
         const remainingPlayers = currentMatchStatus.players.filter(p => !declinedPlayerNames.includes(p));
@@ -381,7 +392,7 @@ export class MatchFoundService {
         console.log(`✅ [MatchFound] Status resetado para ${remainingPlayers.length} jogadores restantes`);
       }
 
-      // 5. Notificar frontend sobre cancelamento
+      // 7. Notificar frontend sobre cancelamento
       this.notifyMatchCancelled(matchId, declinedPlayerNames);
 
       console.log(`✅ [MatchFound] Partida ${matchId} cancelada e jogadores removidos`);

@@ -728,7 +728,20 @@ export class DraftService {
         }
       }
       
-      // 5. Notificar frontend sobre cancelamento
+      // 5. ✅ NOVO: Limpar canais do Discord se disponível
+      if (this.discordService) {
+        try {
+          console.log(`🤖 [Draft] Limpando canais do Discord para partida ${matchId}...`);
+          await this.discordService.cleanupMatchByCustomId(matchId);
+          console.log(`🤖 [Draft] Canais do Discord limpos para partida ${matchId}`);
+        } catch (discordError) {
+          console.error(`❌ [Draft] Erro ao limpar Discord para partida ${matchId}:`, discordError);
+        }
+      } else {
+        console.warn(`⚠️ [Draft] DiscordService não disponível para limpar partida ${matchId}`);
+      }
+
+      // 6. Notificar frontend sobre cancelamento
       this.notifyDraftCancelled(matchId, reason);
       
       console.log(`✅ [Draft] Draft ${matchId} cancelado com sucesso`);
