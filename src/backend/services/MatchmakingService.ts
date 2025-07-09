@@ -1090,7 +1090,20 @@ export class MatchmakingService {
 
   // ✅ NOVO: Métodos de consulta dos serviços
   // ✅ NOVO: Aceitar partida usando MatchFoundService
+  async acceptMatch(matchId: number, summonerName: string): Promise<void> {
+    return await this.matchFoundService.acceptMatch(matchId, summonerName);
+  }
+
   // ✅ ATUALIZADO: Recusar partida usando MatchFoundService
+  async declineMatch(matchId: number, summonerName: string): Promise<void> {
+    return await this.matchFoundService.declineMatch(matchId, summonerName);
+  }
+
+  // ✅ NOVO: Inicializar MatchFoundService
+  async initializeMatchFoundService(): Promise<void> {
+    return await this.matchFoundService.initialize();
+  }
+
   // ✅ NOVO: Método para criar partida quando frontend detecta 10 jogadores
   async createMatchFromFrontend(matchData: any): Promise<number> {
     console.log('🎮 [Match] Criando partida a partir do frontend:', matchData);

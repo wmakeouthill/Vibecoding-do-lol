@@ -205,7 +205,7 @@ const lcuService = new LCUService(globalRiotAPI);
 const matchHistoryService = new MatchHistoryService(globalRiotAPI, dbManager);
 const dataDragonService = new DataDragonService();
 const draftService = new DraftService(dbManager, wss, discordService);
-const matchFoundService = new MatchFoundService(dbManager, wss, discordService);
+// matchFoundService agora está dentro do matchmakingService - removido para evitar duplicação
 
 // WebSocket para comunicação em tempo real
 wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
@@ -364,7 +364,7 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
     case 'accept_match':
       console.log('✅ Recebida mensagem accept_match:', data.data);
       try {
-        await matchFoundService.acceptMatch(
+        await matchmakingService.acceptMatch(
           data.data.matchId,
           data.data.summonerName
         );
@@ -383,7 +383,7 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
     case 'decline_match':
       console.log('❌ Recebida mensagem decline_match:', data.data);
       try {
-        await matchFoundService.declineMatch(
+        await matchmakingService.declineMatch(
           data.data.matchId,
           data.data.summonerName
         );
@@ -1418,7 +1418,7 @@ app.post('/api/match/accept', (async (req: Request, res: Response) => {
       });
     }
 
-    await matchFoundService.acceptMatch(matchId, summonerName);
+    await matchmakingService.acceptMatch(matchId, summonerName);
     res.json({
       success: true,
       message: 'Partida aceita com sucesso'
@@ -1443,7 +1443,7 @@ app.post('/api/match/decline', (async (req: Request, res: Response) => {
       });
     }
 
-    await matchFoundService.declineMatch(matchId, summonerName);
+    await matchmakingService.declineMatch(matchId, summonerName);
     res.json({
       success: true,
       message: 'Partida recusada com sucesso'
@@ -2869,8 +2869,8 @@ async function initializeServices() {
     await matchmakingService.initialize();
     console.log('✅ Serviço de matchmaking inicializado');
 
-    // MatchFoundService
-    await matchFoundService.initialize();
+    // MatchFoundService (via MatchmakingService)
+    await matchmakingService.initializeMatchFoundService();
     console.log('✅ Serviço de match found inicializado');
 
     // DataDragonService

@@ -332,8 +332,16 @@ export class MatchFoundService {
         console.log(`🤖 [MatchFound] DiscordService disponível! Verificando conexão...`);
         console.log(`🤖 [MatchFound] Discord conectado:`, this.discordService.isDiscordConnected());
         console.log(`🤖 [MatchFound] ========== CHAMANDO createDiscordMatch ==========`);
-        await this.discordService.createDiscordMatch(matchId, match);
-        console.log(`🤖 [MatchFound] ========== createDiscordMatch EXECUTADO ==========`);
+        
+        // ✅ PROTEÇÃO ADICIONAL: Verificar se já existe um match Discord para esta partida
+        try {
+          console.log(`🤖 [MatchFound] Verificando se já existe match Discord para partida ${matchId}...`);
+          await this.discordService.createDiscordMatch(matchId, match);
+          console.log(`🤖 [MatchFound] ========== createDiscordMatch EXECUTADO ==========`);
+        } catch (discordError) {
+          console.error(`❌ [MatchFound] Erro ao criar match Discord:`, discordError);
+          // Não falhar o processo todo se o Discord falhar
+        }
       } else {
         console.warn(`⚠️ [MatchFound] PROBLEMA: DiscordService não disponível!`);
         console.warn(`⚠️ [MatchFound] this.discordService =`, this.discordService);

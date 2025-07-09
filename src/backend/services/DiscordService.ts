@@ -1781,6 +1781,17 @@ export class DiscordService {
         return;
       }
 
+      // ✅ PROTEÇÃO: Verificar se já existe um match ativo para evitar duplicação
+      const currentTime = Date.now();
+      const oneMinuteAgo = currentTime - (1 * 60 * 1000); // 1 minuto atrás
+      
+      for (const [discordMatchId, discordMatch] of this.activeMatches.entries()) {
+        if (discordMatch.startTime >= oneMinuteAgo) {
+          console.warn(`⚠️ [DiscordService] Já existe um match Discord criado recentemente (${discordMatchId}), pulando criação para evitar duplicação`);
+          return;
+        }
+      }
+
       // Verificar se o Discord está conectado
       const discordConnected = this.isDiscordConnected();
       console.log(`🔍 [DiscordService] Discord conectado: ${discordConnected}`);
