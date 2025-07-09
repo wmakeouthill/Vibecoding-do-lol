@@ -158,15 +158,48 @@ export class DiscordService {
       await this.databaseManager.setSetting('discord_channel', channelName.trim());
       this.targetChannelName = channelName.trim();
       console.log(`🎯 [DiscordService] Canal atualizado para: ${this.targetChannelName}`);
+      
+      // ✅ NOVO: Invalidar cache e fazer broadcast para todos os clientes
+      await this.invalidateChannelCache();
+      await this.broadcastChannelConfigurationUpdate();
     } catch (error) {
       console.error('❌ [DiscordService] Erro ao atualizar configuração do canal:', error);
       throw error;
     }
   }
 
-  // Método público para obter configuração atual do canal
-  getCurrentChannelName(): string {
-    return this.targetChannelName;
+  // ✅ NOVO: Invalidar cache de configuração do canal
+  private async invalidateChannelCache(): Promise<void> {
+    try {
+      // Recarregar configuração do banco de dados
+      await this.loadChannelConfiguration();
+      
+      // Forçar uma nova verificação do canal após mudança
+      setTimeout(async () => {
+        await this.performInitialChannelCheck();
+        await this.broadcastUsersInChannelCritical();
+      }, 1000);
+      
+      console.log('🔄 [DiscordService] Cache de configuração invalidado e recarregado');
+    } catch (error) {
+      console.error('❌ [DiscordService] Erro ao invalidar cache:', error);
+    }
+  }
+
+  // ✅ NOVO: Broadcast de atualização de configuração do canal
+  private async broadcastChannelConfigurationUpdate(): Promise<void> {
+    try {
+      const configUpdate = {
+        type: 'discord_channel_config_update',
+        channelName: this.targetChannelName,
+        timestamp: Date.now()
+      };
+      
+      this.broadcastToClients(configUpdate);
+      console.log(`📡 [DiscordService] Broadcast de atualização de configuração enviado`);
+    } catch (error) {
+      console.error('❌ [DiscordService] Erro ao fazer broadcast de configuração:', error);
+    }
   }
 
   // Método para verificação inicial do canal
@@ -1832,7 +1865,7 @@ export class DiscordService {
         }
       }> = [];
 
-      // Processar Time 1 (Blue Team)
+      // Processar Time  1 (Blue Team)
       for (let i = 0; i < team1Players.length; i++) {
         const playerName = team1Players[i];
         const linkedNickname = this.parseLinkedNickname(playerName);

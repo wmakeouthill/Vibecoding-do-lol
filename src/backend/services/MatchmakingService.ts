@@ -76,6 +76,10 @@ export class MatchmakingService {
   private draftService: DraftService;
   private gameInProgressService: GameInProgressService;
 
+  // ✅ NOVO: Sistema de sincronização automática do cache com MySQL
+  private cacheSyncInterval: NodeJS.Timeout | null = null;
+  private readonly CACHE_SYNC_INTERVAL_MS = 5000; // Sincronizar a cada 5 segundos
+
   constructor(dbManager: DatabaseManager, wss?: any, discordService?: any) {
     this.dbManager = dbManager;
     this.wss = wss;
@@ -88,6 +92,9 @@ export class MatchmakingService {
     this.matchFoundService = new MatchFoundService(dbManager, wss, discordService);
     this.draftService = new DraftService(dbManager, wss, discordService);
     this.gameInProgressService = new GameInProgressService(dbManager, wss, discordService);
+    
+    // ✅ NOVO: Configurar sincronização automática do cache com MySQL
+    this.startCacheSyncInterval();
   }
 
   async initialize(): Promise<void> {
@@ -689,15 +696,20 @@ export class MatchmakingService {
   // ✅ NOVO: Sincronizar cache local com MySQL
   private async syncCacheWithDatabase(): Promise<void> {
     try {
-      console.log('🔄 [Sync] Sincronizando cache local com MySQL...');
-      
-      // Buscar jogadores ativos no MySQL (fonte da verdade)
       const dbQueuePlayers = await this.dbManager.getActiveQueuePlayers();
+      const originalCacheSize = this.queue.length;
       
-      // Limpar cache local
+      // Preservar websockets dos jogadores que ainda estão na fila
+      const websocketMap = new Map<number, WebSocket>();
+      this.queue.forEach(player => {
+        if (player.websocket && player.websocket.readyState === WebSocket.OPEN) {
+          websocketMap.set(player.id, player.websocket);
+        }
+      });
+      
+      // Recarregar cache baseado no MySQL (fonte da verdade)
       this.queue = [];
       
-      // Reconstruir cache baseado no MySQL
       for (const dbPlayer of dbQueuePlayers) {
         const queuedPlayer: QueuedPlayer = {
           id: dbPlayer.player_id,
@@ -705,7 +717,7 @@ export class MatchmakingService {
           region: dbPlayer.region,
           currentMMR: dbPlayer.custom_lp || 0,
           joinTime: new Date(dbPlayer.join_time),
-          websocket: null as any, // WebSocket será null pois precisa reconectar
+          websocket: websocketMap.get(dbPlayer.player_id) || null as any,
           queuePosition: dbPlayer.queue_position,
           preferences: {
             primaryLane: dbPlayer.primary_lane || 'fill',
@@ -716,16 +728,43 @@ export class MatchmakingService {
         this.queue.push(queuedPlayer);
       }
       
-      console.log(`✅ [Sync] Cache sincronizado: ${this.queue.length} jogadores do MySQL carregados`);
-      
-      if (this.queue.length !== dbQueuePlayers.length) {
-        console.error(`❌ [Sync] ERRO: Cache tem ${this.queue.length} mas MySQL tem ${dbQueuePlayers.length}!`);
+      // Só fazer broadcast se houve mudança significativa
+      if (originalCacheSize !== this.queue.length) {
+        console.log(`🔄 [Matchmaking] Cache sincronizado: ${originalCacheSize} → ${this.queue.length} jogadores`);
+        await this.broadcastQueueUpdate(true); // Force broadcast
       }
       
     } catch (error) {
-      console.error('❌ [Sync] Erro ao sincronizar cache com MySQL:', error);
+      console.error('❌ [Matchmaking] Erro ao sincronizar cache com MySQL:', error);
     }
   }
+
+  // ✅ NOVO: Iniciar sincronização automática do cache com MySQL
+  private startCacheSyncInterval(): void {
+    if (this.cacheSyncInterval) {
+      clearInterval(this.cacheSyncInterval);
+    }
+
+    console.log('🔄 [Matchmaking] Iniciando sincronização automática de cache a cada 5s...');
+    
+    this.cacheSyncInterval = setInterval(async () => {
+      try {
+        await this.syncCacheWithDatabase();
+      } catch (error) {
+        console.error('❌ [Matchmaking] Erro na sincronização automática de cache:', error);
+      }
+    }, this.CACHE_SYNC_INTERVAL_MS);
+  }
+
+  private stopCacheSyncInterval(): void {
+    if (this.cacheSyncInterval) {
+      clearInterval(this.cacheSyncInterval);
+      this.cacheSyncInterval = null;
+      console.log('🛑 [Matchmaking] Sincronização automática de cache parada');
+    }
+  }
+
+
 
   // ✅ CORRIGIDO: Processar matchmaking apenas quando necessário
   private async processMatchmaking(): Promise<void> {
@@ -1610,7 +1649,7 @@ export class MatchmakingService {
     return orderedPlayers;
   }
 
-  // ✅ NOVO: Notificar frontend sobre partida encontrada
+  // ✅ NOVO: Notificar frontend que partida foi cancelada
   private async notifyMatchFound(matchId: number, team1: any[], team2: any[], team1MMR: number, team2MMR: number): Promise<void> {
     try {
       console.log(`📡 [MatchFound] Notificando frontend sobre partida ${matchId}...`);

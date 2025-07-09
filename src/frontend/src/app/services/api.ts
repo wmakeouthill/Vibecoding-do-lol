@@ -81,10 +81,40 @@ export class ApiService {
       protocol: window.location.protocol
     });
 
-    // ✅ NOVO: Conectar ao WebSocket do backend
+    // ✅ MELHORADO: Aguardar backend estar pronto antes de conectar WebSocket
+    if (this.isElectron()) {
+      // Em Electron, aguardar um pouco antes de tentar WebSocket
+      console.log('🔄 [ApiService] Aguardando backend estar pronto...');
+      setTimeout(() => {
+        this.waitForBackendAndConnect();
+      }, 3000); // Aguardar 3 segundos
+    } else {
+      // Em modo web, conectar imediatamente
+      this.connectWebSocket();
+    }
+  }
+
+  // ✅ NOVO: Aguardar backend estar pronto antes de conectar WebSocket
+  private async waitForBackendAndConnect() {
+    console.log('🔍 [ApiService] Verificando se backend está pronto...');
+
+    for (let attempt = 1; attempt <= 10; attempt++) {
+      try {
+        const response = await this.http.get(`${this.baseUrl}/health`).toPromise();
+        if (response && (response as any).status === 'ok') {
+          console.log('✅ [ApiService] Backend confirmado como pronto, conectando WebSocket...');
+          this.connectWebSocket();
+          return;
+        }
+      } catch (error) {
+        console.log(`⏳ [ApiService] Backend não pronto ainda (tentativa ${attempt}/10)`);
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Aguardar 2 segundos
+    }
+
+    console.warn('⚠️ [ApiService] Backend não ficou pronto, tentando WebSocket mesmo assim...');
     this.connectWebSocket();
-
-
   }
 
 
@@ -92,27 +122,28 @@ export class ApiService {
   private getBaseUrl(): string {
     // Detectar se está no Electron (tanto dev quanto produção)
     if (this.isElectron()) {
-      // No Windows, o Electron muitas vezes resolve localhost para 127.0.0.1
-      // Configurar URL primária e fallbacks
-      if (this.isWindows()) {
-        this.fallbackUrls = ['http://localhost:3000/api', 'http://127.0.0.1:3000'];
-        console.log('🔧 Backend URL primária para Windows:', 'http://127.0.0.1:3000/api');
-        return 'http://127.0.0.1:3000/api';
-      } else {
-        this.fallbackUrls = ['http://127.0.0.1:3000/api', 'http://localhost:3000/api'];
-        console.log('🔧 Backend URL primária para não-Windows:', 'http://localhost:3000/api');
-        return 'http://localhost:3000/api';
-      }
+      // ✅ PRIORIDADE: SEMPRE usar 127.0.0.1 em produção Electron (mais confiável)
+      // localhost pode falhar em algumas configurações de rede/Windows
+      console.log('🔧 Electron detectado - configurando URLs para produção');
+
+      // URL primária: SEMPRE 127.0.0.1 (IP direto é mais confiável)
+      this.fallbackUrls = ['http://localhost:3000/api']; // localhost como fallback apenas
+      console.log('🔧 Backend URL primária (Electron):', 'http://127.0.0.1:3000/api');
+      console.log('🔧 URL de fallback:', this.fallbackUrls);
+
+      return 'http://127.0.0.1:3000/api';
     }
 
     // Em desenvolvimento web (Angular dev server)
     const host = window.location.hostname;
     if (host === 'localhost' || host === '127.0.0.1') {
-      // Sempre usar localhost em desenvolvimento
-      return 'http://localhost:3000/api';
+      // Em dev web, usar 127.0.0.1 por consistência
+      console.log('🔧 Modo desenvolvimento web detectado');
+      return 'http://127.0.0.1:3000/api';
     }
 
     // Em produção web (não Electron), usar URL relativa
+    console.log('🔧 Modo produção web detectado');
     return `/api`;
   }
   public isElectron(): boolean {
@@ -1021,16 +1052,36 @@ export class ApiService {
     return this.webSocketMessageSubject.asObservable();
   }
 
-  // ✅ NOVO: Conectar ao WebSocket do backend
+  // ✅ NOVO: Conectar ao WebSocket do backend com detecção de falhas
   private connectWebSocket(): void {
     try {
       const wsUrl = this.baseUrl.replace('/api', '').replace('http', 'ws') + '/ws';
       console.log('🔌 [ApiService] Conectando ao WebSocket:', wsUrl);
 
+      // ✅ MELHORADO: Verificar se já há uma conexão ativa
+      if (this.webSocket && this.webSocket.readyState === WebSocket.OPEN) {
+        console.log('🔄 [ApiService] WebSocket já conectado, pulando...');
+        return;
+      }
+
+      // Fechar conexão anterior se existir
+      if (this.webSocket) {
+        this.webSocket.close();
+      }
+
       this.webSocket = new WebSocket(wsUrl);
 
       this.webSocket.onopen = () => {
         console.log('✅ [ApiService] WebSocket conectado com sucesso');
+
+        // ✅ NOVO: Notificar sobre conexão bem-sucedida
+        this.webSocketMessageSubject.next({
+          type: 'backend_connection_success',
+          data: {
+            message: 'Backend conectado com sucesso',
+            timestamp: new Date().toISOString()
+          }
+        });
       };
 
       this.webSocket.onmessage = (event) => {
@@ -1045,18 +1096,54 @@ export class ApiService {
 
       this.webSocket.onerror = (error) => {
         console.error('❌ [ApiService] Erro no WebSocket:', error);
+
+        // ✅ MELHORADO: Detectar problemas específicos de conexão
+        if (this.isElectron()) {
+          console.log('🔧 [ApiService] Detectado erro de WebSocket no Electron');
+          console.log('💡 [ApiService] Possível causa: Backend ainda não está pronto');
+          console.log('🔄 [ApiService] WebSocket será reconectado automaticamente...');
+
+          // ✅ MELHORADO: Não emitir erro imediatamente, aguardar reconexão
+          // Emitir evento para notificar a UI sobre problemas de conectividade apenas após várias tentativas
+        }
       };
 
-      this.webSocket.onclose = () => {
-        console.log('🔌 [ApiService] WebSocket desconectado');
-        // Tentar reconectar após 5 segundos
-        setTimeout(() => {
-          this.connectWebSocket();
-        }, 5000);
+      this.webSocket.onclose = (event) => {
+        console.log('🔌 [ApiService] WebSocket desconectado', { code: event.code, reason: event.reason });
+
+        // ✅ MELHORADO: Reconexão mais inteligente baseada no código de fechamento
+        if (this.isElectron()) {
+          if (event.code === 1006) { // Conexão anormal, provavelmente backend não está pronto
+            console.log('🔄 [ApiService] Backend provavelmente não está pronto, tentando reconectar em 5 segundos...');
+            setTimeout(() => {
+              this.connectWebSocket();
+            }, 5000);
+          } else {
+            console.log('🔄 [ApiService] Tentando reconectar WebSocket em 10 segundos...');
+            setTimeout(() => {
+              this.connectWebSocket();
+            }, 10000);
+          }
+        } else {
+          // Em modo web, reconectar mais rapidamente
+          setTimeout(() => {
+            this.connectWebSocket();
+          }, 5000);
+        }
       };
 
     } catch (error) {
       console.error('❌ [ApiService] Erro ao conectar WebSocket:', error);
+
+      // ✅ NOVO: Log diagnóstico para problemas no Electron
+      if (this.isElectron()) {
+        console.log('🔧 [ApiService] Diagnóstico de conectividade:');
+        console.log('   - Base URL:', this.baseUrl);
+        console.log('   - Fallback URLs:', this.fallbackUrls);
+        console.log('   - User Agent:', navigator.userAgent.substring(0, 100));
+        console.log('   - Protocol:', window.location.protocol);
+        console.log('   - Hostname:', window.location.hostname);
+      }
     }
   }
 

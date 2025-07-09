@@ -608,7 +608,21 @@ app.get('/', (req: Request, res: Response) => {
     return res.redirect('http://localhost:4200');
   }
 
-  res.status(404).send('Frontend não encontrado');
+  // ✅ CORRIGIDO: Em produção, informar que deve usar Electron
+  console.log('⚠️ Acesso direto ao backend em produção - use o aplicativo Electron');
+  res.status(404).send(`
+    <html>
+      <head><title>LoL Matchmaking - Backend</title></head>
+      <body style="font-family: Arial; padding: 20px; background: #1a1a1a; color: #fff;">
+        <h1>🎮 LoL Matchmaking Backend</h1>
+        <p>O backend está funcionando corretamente!</p>
+        <p><strong>Para usar a aplicação, execute o arquivo .exe do Electron.</strong></p>
+        <p>Acesso direto ao backend não é recomendado em produção.</p>
+        <hr>
+        <p><em>Health check: <a href="/api/health" style="color: #4fc3f7;">/api/health</a></em></p>
+      </body>
+    </html>
+  `);
 });
 
 // Rotas da API
@@ -2792,20 +2806,23 @@ async function startServer() {
     // Iniciar servidor
     server.listen(PORT as number, '0.0.0.0', () => {
       console.log(`🚀 Servidor rodando na porta ${PORT}`);
-      console.log(`🌐 WebSocket disponível em ws://localhost:${PORT}`);
-      console.log(`🔧 API disponível em: http://localhost:${PORT}/api`);
-      console.log(`🔧 Health check: http://localhost:${PORT}/api/health`);
+      
+      // ✅ CORRIGIDO: Usar 127.0.0.1 em produção para melhor compatibilidade
+      const baseUrl = isDev ? 'localhost' : '127.0.0.1';
+      console.log(`🌐 WebSocket disponível em ws://${baseUrl}:${PORT}`);
+      console.log(`🔧 API disponível em: http://${baseUrl}:${PORT}/api`);
+      console.log(`🔧 Health check: http://${baseUrl}:${PORT}/api/health`);
       
       if (isDev) {
         console.log(`📱 Frontend Angular: http://localhost:4200`);
       } else {
-        console.log(`📱 Frontend Electron: http://localhost:${PORT}`);
+        console.log(`📱 Frontend Electron: http://${baseUrl}:${PORT}`);
       }
 
-      // Test de conectividade imediato
+      // ✅ CORRIGIDO: Teste de conectividade usando IP apropriado
       setTimeout(() => {
         console.log('🧪 Testando conectividade interna...');
-        fetch(`http://localhost:${PORT}/api/health`)
+        fetch(`http://${baseUrl}:${PORT}/api/health`)
           .then(res => res.json())
           .then(data => console.log('✅ Teste de conectividade bem-sucedido:', data))
           .catch(err => console.error('❌ Teste de conectividade falhou:', err.message));

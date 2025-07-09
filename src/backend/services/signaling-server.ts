@@ -125,7 +125,10 @@ export class SignalingServer {
   private startServer(port: number): void {
     this.httpServer.listen(port, () => {
       console.log(`🌐 Servidor de sinalização P2P iniciado na porta ${port}`);
-      console.log(`🔗 Endpoint: http://localhost:${port}`);
+      // ✅ CORRIGIDO: Usar 127.0.0.1 em produção
+      const isDev = process.env.NODE_ENV === 'development';
+      const baseUrl = isDev ? 'localhost' : '127.0.0.1';
+      console.log(`🔗 Endpoint: http://${baseUrl}:${port}`);
     });
 
     // Limpeza de peers inativos a cada 30 segundos

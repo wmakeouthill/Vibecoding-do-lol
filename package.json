@@ -28,7 +28,7 @@
     "copy:all-assets": "npm run copy:backend-deps && npm run copy:database && npm run copy:env-file",
     "copy:backend-deps": "node -e \"const fs=require('fs'); console.log('📦 Copiando dependências do backend...'); const srcModules='src/backend/node_modules'; const destModules='dist/backend/node_modules'; if(fs.existsSync(srcModules)){if(fs.existsSync(destModules)){fs.rmSync(destModules,{recursive:true,force:true});} fs.cpSync(srcModules,destModules,{recursive:true}); console.log('✅ Dependências do backend copiadas para dist/backend/node_modules');} else {console.error('❌ src/backend/node_modules não encontrado! Execute npm run install:backend-deps primeiro');}\"",
     "copy:database": "node -e \"const fs=require('fs'); const sourcePath='src/backend/database/database.sqlite'; if(fs.existsSync(sourcePath)){if(!fs.existsSync('dist/backend/database')){fs.mkdirSync('dist/backend/database',{recursive:true});} fs.copyFileSync(sourcePath,'dist/backend/database/database.sqlite'); console.log('✅ Banco de dados copiado');} else {console.log('⚠️ Banco de dados será criado automaticamente');}\"",
-    "copy:env-file": "node -e \"const fs=require('fs'); if(fs.existsSync('.env')){fs.copyFileSync('.env','dist/.env'); console.log('✅ Arquivo .env copiado');} else {console.log('⚠️ Arquivo .env não encontrado');}\"",
+    "copy:env-file": "node -e \"const fs=require('fs'); if(fs.existsSync('.env')){if(!fs.existsSync('dist/backend')){fs.mkdirSync('dist/backend',{recursive:true});} fs.copyFileSync('.env','dist/backend/.env'); fs.copyFileSync('.env','dist/.env'); console.log('✅ Arquivo .env copiado para dist/ e dist/backend/');} else {console.log('⚠️ Arquivo .env não encontrado');}\"",
     "verify:build": "node -e \"const fs=require('fs'); console.log('🔍 Verificando build...'); const checks=[{path:'dist/backend/server.js',name:'Backend JS'},{path:'dist/backend/node_modules',name:'Backend deps'},{path:'dist/backend/node_modules/mysql2',name:'MySQL2'},{path:'dist/backend/node_modules/discord.js',name:'Discord.js'},{path:'dist/frontend/browser/index.html',name:'Frontend build'},{path:'dist/electron/main.js',name:'Electron main'}]; let allOk=true; checks.forEach(check=>{const exists=fs.existsSync(check.path); console.log(`${exists?'✅':'❌'} ${check.name}: ${check.path}`); if(!exists)allOk=false;}); if(allOk){console.log('🎉 Build completo!');}else{console.error('❌ Arquivos faltando');}\"",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:electron:wait\"",
     "dev:full": "echo 🚀 Iniciando TUDO (Backend + Frontend + Electron)... && npm run dev",
@@ -52,7 +52,11 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "check:production": "node check-production-config.js",
     "verify:build-complete": "node verify-build-complete.js",
-    "test:build": "node test-build-production.js"
+    "test:build": "node test-build-production.js",
+    "test:connectivity": "node scripts/diagnose-connection-issues.js",
+    "diagnose": "node scripts/diagnose-connection-issues.js",
+    "verify:connectivity": "node scripts/verify-production-connectivity.js",
+    "test:backend-paths": "node scripts/test-backend-paths.js"
   },
   "keywords": [
     "league of legends",
@@ -72,11 +76,11 @@
     },
     "files": [
       "dist/electron/**/*",
-      "dist/backend/**/*",
       "dist/frontend/**/*",
       "package.json",
       "!node_modules/**/*",
-      "!src/**/*"
+      "!src/**/*",
+      "!dist/backend/**/*"
     ],
     "extraResources": [
       {
