@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, OnChanges, ChangeDetectorRef } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, OnChanges, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { Player, QueueStatus, Match } from '../../interfaces';
@@ -9,7 +9,8 @@ import { Subscription } from 'rxjs';
   selector: 'app-dashboard',
   imports: [CommonModule],
   templateUrl: './dashboard.html',
-  styleUrl: './dashboard.scss'
+  styleUrl: './dashboard.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
   @Input() player: Player | null = null;
@@ -27,6 +28,16 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
   leaderboardPosition: number = 0;
   private subscriptions: Subscription[] = [];
   private dataLoaded = false; // Flag para controlar se os dados já foram carregados
+  private lastPlayerIdentifier = ''; // ✅ NOVO: Controlar última identificação do player
+  private lastPlayerObject: Player | null = null; // ✅ NOVO: Referência do último player processado
+  private lcuFallbackAttempted = false; // ✅ NOVO: Controlar se já tentou LCU para evitar loop
+  private lastLoadTime = 0; // ✅ NOVO: Throttle para loadAllData
+  private loadThrottleMs = 5000; // ✅ CORREÇÃO: 5 segundos entre tentativas para evitar loops
+  private customMatchesAttempted = false; // ✅ NOVO: Flag para custom matches
+  private fallbackCompleted = false; // ✅ NOVO: Flag para fallback completo
+  private processingPlayer = false; // ✅ NOVO: Flag para evitar processamento simultâneo
+  private lcuCacheKey = 'dashboard_lcu_cache'; // ✅ NOVO: Chave para cache do LCU
+  private cacheExpireMs = 30 * 60 * 1000; // ✅ NOVO: Cache expira em 30 minutos
 
   // Dados de partidas - agora preenchidos com dados reais
   recentMatches: Match[] = [];
@@ -38,22 +49,115 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
   isLoadingCustomCount: boolean = false;
 
   constructor(private apiService: ApiService, private cdr: ChangeDetectorRef, private http: HttpClient) {}
-
   // Detectar mudanças no player - APENAS quando o player muda pela primeira vez
   ngOnChanges(): void {
-    if (this.player && !this.dataLoaded) {
-      console.log('🎮 [DASHBOARD] Player data received:', {
-        summonerName: this.player.summonerName,
-        gameName: this.player.gameName,
-        tagLine: this.player.tagLine,
-        rank: this.player.rank,
-        rankedData: this.player.rankedData
-      });
-
-      // Carregar dados apenas uma vez
-      this.loadAllData();
-      this.dataLoaded = true;
+    // ✅ CORREÇÃO CRÍTICA: Evitar processamento se já está processando
+    if (this.processingPlayer) {
+      console.log('🔒 [DASHBOARD] Already processing player, blocking ngOnChanges');
+      return;
     }
+
+    // ✅ CORREÇÃO: Se não há player, apenas reset se necessário
+    if (!this.player) {
+      if (this.lastPlayerObject) {
+        console.log('🚪 [DASHBOARD] Player removed, resetting state');
+        this.resetDashboardState();
+        this.lastPlayerObject = null;
+      }
+      return;
+    }
+
+    // ✅ CORREÇÃO: Verificar se é realmente o mesmo objeto player
+    if (this.player === this.lastPlayerObject) {
+      console.log('🔄 [DASHBOARD] Same player object reference, skipping...');
+      return;
+    }
+
+    const currentPlayerIdentifier = this.getPlayerIdentifier(this.player);
+    const now = Date.now();
+
+    // ✅ CORREÇÃO: Se é o mesmo player identifier E já carregamos dados, skip
+    if (this.lastPlayerIdentifier === currentPlayerIdentifier && this.dataLoaded && this.fallbackCompleted) {
+      console.log('✅ [DASHBOARD] Same player with completed data, skipping:', currentPlayerIdentifier);
+      this.lastPlayerObject = this.player; // Atualizar referência
+      return;
+    }
+
+    // ✅ THROTTLE: Evitar chamadas muito frequentes
+    if (this.lastLoadTime && (now - this.lastLoadTime) < this.loadThrottleMs) {
+      console.log('⏳ [DASHBOARD] Throttling: Too frequent attempts, skipping:', currentPlayerIdentifier);
+      return;
+    }
+
+    // ✅ NOVO PLAYER: Processar apenas se mudou ou ainda não carregou
+    console.log('🎮 [DASHBOARD] Processing player:', {
+      from: this.lastPlayerIdentifier || 'none',
+      to: currentPlayerIdentifier,
+      dataLoaded: this.dataLoaded,
+      fallbackCompleted: this.fallbackCompleted
+    });
+
+    // ✅ LOCK: Marcar como processando
+    this.processingPlayer = true;
+    this.lastLoadTime = now;
+
+    // Se é um player diferente, reset completo
+    if (currentPlayerIdentifier !== this.lastPlayerIdentifier) {
+      this.resetDashboardState();
+      this.lastPlayerIdentifier = currentPlayerIdentifier;
+    }
+
+    // Atualizar referência do objeto
+    this.lastPlayerObject = this.player;
+
+    // ✅ CARREGAMENTO: Apenas se ainda não carregamos dados
+    if (!this.dataLoaded || !this.fallbackCompleted) {
+      console.log('📊 [DASHBOARD] Loading data for player:', currentPlayerIdentifier);
+
+      // Carregar dados de forma assíncrona
+      setTimeout(() => {
+        this.loadAllData();
+        this.dataLoaded = true;
+        this.processingPlayer = false; // ✅ UNLOCK
+      }, 100); // Delay mínimo para evitar chamadas simultâneas
+    } else {
+      this.processingPlayer = false; // ✅ UNLOCK
+    }
+  }
+
+  // ✅ NOVO: Método para reset completo do estado
+  private resetDashboardState(): void {
+    this.dataLoaded = false;
+    this.isLoadingMatches = false;
+    this.isLoadingCustomCount = false;
+    this.recentMatches = [];
+    this.customMatchesCount = 0;
+    this.leaderboardPosition = 0;
+    this.matchHistoryError = null;
+    this.lcuFallbackAttempted = false;
+    this.customMatchesAttempted = false;
+    this.fallbackCompleted = false;
+    this.processingPlayer = false; // ✅ NOVO: Reset lock
+    this.lastLoadTime = 0;
+
+    // ✅ NOVO: Limpar cache apenas quando player muda (não quando reseta estado)
+    // O cache será mantido para o mesmo player
+
+    console.log('🔄 [DASHBOARD] Dashboard state reset');
+  }
+
+  // ✅ NOVO: Método para criar identificador único do player
+  private getPlayerIdentifier(player: Player): string {
+    if (player.displayName && player.displayName.trim() !== '') {
+      return player.displayName;
+    }
+    if (player.summonerName) {
+      return player.summonerName;
+    }
+    if (player.gameName && player.tagLine) {
+      return `${player.gameName}#${player.tagLine}`;
+    }
+    return player.id?.toString() || 'unknown';
   }
 
   // Tips array
@@ -195,69 +299,44 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
 
   getHighestMMR(): number {
     return this.player?.currentMMR ? this.player.currentMMR + 50 : 1200; // Mock highest MMR
-  }
-  // Método para buscar dados reais de partidas
+  }  // Método para buscar dados reais de partidas
   loadRecentMatches(): void {
-    if (!this.player) {
-      this.generateMockData();
-      return;
-    }
-
-    // Evitar chamadas duplicadas
+    // ✅ CORREÇÃO CRÍTICA: Verificar se já está carregando ou já tem dados
     if (this.isLoadingMatches) {
-      console.log('🔄 [DASHBOARD] Already loading matches, skipping...');
+      console.log('⏳ [DASHBOARD] Already loading matches, skipping...');
       return;
     }
 
-    this.isLoadingMatches = true;
-    this.matchHistoryError = null;
+    // ✅ CORREÇÃO: Se já tem dados e não precisa recarregar, skip
+    if (this.recentMatches && this.recentMatches.length > 0 && this.dataLoaded) {
+      console.log('✅ [DASHBOARD] Already have recent matches, skipping reload...');
+      return;
+    }
 
-    // Priorizar partidas customizadas do banco de dados primeiro
+    console.log('📊 [DASHBOARD] Starting match loading process...');
+
+    // ✅ NOVA ESTRATÉGIA: Tentar custom matches primeiro, depois LCU como fallback
     this.loadCustomMatchesFromDatabase();
   }
 
   private loadFromLCU(): void {
-    console.log('🎮 Loading match history from LCU (primary source)...');
-
-    // First try to load custom matches from database
-    this.loadCustomMatchesFromDatabase();
-
-    const lcuHistorySub = this.apiService.getLCUMatchHistoryAll(0, 3, true) // customOnly = true
-      .subscribe({
-        next: (response) => {
-          this.processLCUMatches(response);
-          this.isLoadingMatches = false;
-          console.log('✅ Match history loaded from LCU successfully');
-        },
-        error: (error) => {
-          console.warn('⚠️ Primary LCU method failed, trying alternative LCU endpoint:', error.message);
-          // Fallback para método original
-          this.loadFromLCUOriginal();
-        }
-      });
-
-    this.subscriptions.push(lcuHistorySub);
+    // ✅ CORREÇÃO TEMPORÁRIA: Desabilitar completamente para evitar loop
+    console.log('🚫 [DASHBOARD] LCU loading temporariamente desabilitado para evitar loop');
+    this.recentMatches = [];
+    this.isLoadingMatches = false;
+    this.matchHistoryError = 'Carregamento do LCU desabilitado temporariamente.';
+    return;
   }
 
   private loadFromLCUOriginal(): void {
-    console.log('🔄 Trying alternative LCU endpoint...');
-
-    const lcuHistorySub = this.apiService.getLCUMatchHistoryAll(0, 3, false) // customOnly = false para tentar pegar mais dados
-      .subscribe({
-        next: (response) => {
-          this.processLCUMatches(response);
-          this.isLoadingMatches = false;
-          console.log('✅ Match history loaded from alternative LCU method');
-        },
-        error: (error) => {
-          console.warn('⚠️ All LCU methods failed, trying Riot API as last resort:', error.message);
-          // Fallback para Riot API apenas como último recurso
-          this.loadFromRiotAPI();
-        }
-      });
-
-    this.subscriptions.push(lcuHistorySub);
+    // ✅ CORREÇÃO TEMPORÁRIA: Desabilitar completamente para evitar loop
+    console.log('� [DASHBOARD] LCU Original loading temporariamente desabilitado para evitar loop');
+    this.recentMatches = [];
+    this.isLoadingMatches = false;
+    this.matchHistoryError = 'Carregamento alternativo do LCU desabilitado temporariamente.';
+    return;
   }
+
   private loadFromRiotAPI(): void {
     // Only attempt Riot API if absolutely necessary and show minimal error feedback
     console.log('📡 Attempting to load match history from Riot API as fallback...');
@@ -438,7 +517,9 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
     return this.recentMatches.filter(match =>
       match.timestamp && match.timestamp >= todayTimestamp && match.isVictory
     ).length;
-  }  loadLeaderboardPosition(): void {
+  }
+
+  loadLeaderboardPosition(): void {
     if (!this.player?.summonerName) {
       this.leaderboardPosition = 0;
       return;
@@ -658,10 +739,32 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
   ngOnDestroy(): void {
     // Limpar todas as subscriptions
     this.subscriptions.forEach(sub => sub.unsubscribe());
+
+    // ✅ CORREÇÃO: Reset completo no destroy
+    this.processingPlayer = false;
+    this.isLoadingMatches = false;
+    this.customMatchesAttempted = false;
+    this.lcuFallbackAttempted = false;
+    this.fallbackCompleted = false;
+    this.dataLoaded = false;
+
+    // ✅ NOVO: Manter cache do LCU mesmo após destroy do componente
+    // O cache só será limpo quando o app for recarregado ou manualmente
+
+    console.log('🧹 [DASHBOARD] Component destroyed and cleaned up (cache preserved)');
   }
 
   // Método centralizado para carregar todos os dados
   private loadAllData(): void {
+    // ✅ CORREÇÃO: Verificar se já carregou dados para evitar loops
+    if (!this.player) {
+      console.log('❌ [DASHBOARD] No player available for loadAllData');
+      return;
+    }
+
+    console.log('📊 [DASHBOARD] Loading all data for player:', this.getPlayerIdentifier(this.player));
+
+    // Carregar apenas se necessário e não duplicar carregamentos
     this.loadRecentMatches();
     this.loadCustomMatchesCount();
     this.loadLeaderboardPosition();
@@ -670,9 +773,23 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
   // Public method to refresh all dashboard data (para uso manual)
   public refreshAllData(): void {
     console.log('🔄 Atualizando todos os dados do dashboard');
+
+    // ✅ NOVO: Limpar cache do LCU para forçar nova busca
+    this.clearLCUCache();
+
     this.dataLoaded = false; // Reset flag para permitir recarregamento
+    this.lcuFallbackAttempted = false; // ✅ CORREÇÃO: Reset flag LCU para permitir nova tentativa
+    this.customMatchesAttempted = false; // ✅ NOVO: Reset flag custom matches
+    this.fallbackCompleted = false; // ✅ NOVO: Reset flag fallback
+
     this.loadAllData();
     this.dataLoaded = true;
+  }
+
+  // ✅ NOVO: Método público para limpar cache do LCU
+  public clearLCUCacheManually(): void {
+    console.log('🗑️ [DASHBOARD] Manually clearing LCU cache...');
+    this.clearLCUCache();
   }
 
   // Método para carregar contagem de partidas customizadas
@@ -773,92 +890,129 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
   public loadCustomMatchesFromDatabase(): void {
     if (!this.player) return;
 
-    // Evitar chamadas duplicadas
-    if (this.isLoadingMatches && this.recentMatches.length > 0) {
-      console.log('🔄 [DASHBOARD] Already have recent matches, skipping database load...');
+    // ✅ CORREÇÃO CRÍTICA: Múltiplas verificações para evitar execução
+    if (this.customMatchesAttempted) {
+      console.log('⏭️ [DASHBOARD] Custom matches already attempted for this player, BLOCKING...');
       return;
     }
 
-    console.log('💾 Loading custom matches from database...');
-
-    // Usar o formato correto do Riot ID (gameName#tagLine) se disponível
-    let playerIdentifier = this.player.summonerName || this.player.id?.toString() || '';
-
-    // Priorizar displayName se disponível (formato gameName#tagLine)
-    if (this.player.displayName && this.player.displayName.trim() !== '') {
-      playerIdentifier = this.player.displayName;
-    }
-    // Fallback para summonerName (que deveria ser igual ao displayName)
-    else if (this.player.summonerName) {
-      playerIdentifier = this.player.summonerName;
-    }
-    // Se temos gameName e tagLine, construir o formato
-    else if (this.player.gameName && this.player.tagLine) {
-      playerIdentifier = `${this.player.gameName}#${this.player.tagLine}`;
-    }
-    // Último recurso: usar ID
-    else {
-      playerIdentifier = this.player.id?.toString() || 'unknown';
+    if (this.isLoadingMatches) {
+      console.log('⏳ [DASHBOARD] Already loading matches, BLOCKING custom matches...');
+      return;
     }
 
-    console.log('🔍 [DASHBOARD] Player data received:', {
-      summonerName: this.player.summonerName,
-      gameName: this.player.gameName,
-      tagLine: this.player.tagLine,
-      rank: this.player.rank,
-      rankedData: this.player.rankedData
-    });
+    if (this.fallbackCompleted) {
+      console.log('✅ [DASHBOARD] Fallback already completed, BLOCKING custom matches...');
+      return;
+    }
 
+    // ✅ VERIFICAÇÃO EXTRA: Throttle por player
+    const now = Date.now();
+    if (this.lastLoadTime && (now - this.lastLoadTime) < 3000) { // 3 segundos mínimo
+      console.log('⏱️ [DASHBOARD] Too soon since last attempt, BLOCKING...');
+      return;
+    }
+
+    console.log('💾 [DASHBOARD] Attempting to load custom matches from database...');
+
+    // ✅ MARCAR IMEDIATAMENTE para evitar chamadas simultâneas
+    this.customMatchesAttempted = true;
+    this.isLoadingMatches = true;
+    this.lastLoadTime = now;
+
+    const playerIdentifier = this.getPlayerIdentifier(this.player);
     console.log('🎯 [DASHBOARD] Using player identifier for search:', playerIdentifier);
-    console.log('🎯 [DASHBOARD] Player object:', {
-      summonerName: this.player.summonerName,
-      gameName: this.player.gameName,
-      displayName: this.player.displayName,
-      tagLine: this.player.tagLine
-    });
 
     const customMatchesSub = this.apiService.getCustomMatches(playerIdentifier, 0, 3)
       .subscribe({
         next: (response) => {
           if (response && response.success && response.matches && response.matches.length > 0) {
-            console.log('✅ Custom matches loaded from database:', response.matches.length);
-            console.log('🔍 First match raw data:', {
-              id: response.matches[0].id,
-              participants_data: response.matches[0].participants_data,
-              pick_ban_data: response.matches[0].pick_ban_data,
-              created_at: response.matches[0].created_at,
-              player_won: response.matches[0].player_won,
-              player_lp_change: response.matches[0].player_lp_change
-            });
-
-            // Log completo do primeiro match para debug
-            console.log('🔍 Complete first match data:', JSON.stringify(response.matches[0], null, 2));
+            console.log('✅ [DASHBOARD] Custom matches loaded from database:', response.matches.length);
 
             // Convert custom matches to dashboard format
             const customMatchesForDashboard = this.convertCustomMatchesToDashboard(response.matches);
-
-            // Use ONLY custom matches for recent activity - prioritize database data
             this.recentMatches = customMatchesForDashboard.slice(0, 3);
 
-            console.log('🎯 Recent matches from database:', this.recentMatches.length);
-            console.log('🔍 Processed match data:', this.recentMatches[0]);
+            console.log('🎯 [DASHBOARD] Recent matches from database:', this.recentMatches.length);
             this.isLoadingMatches = false;
             this.matchHistoryError = null;
+            this.fallbackCompleted = true; // ✅ MARCAR COMO CONCLUÍDO
+            this.cdr.detectChanges(); // Forçar detecção de mudanças
           } else {
-            console.log('📝 No custom matches found in database, falling back to LCU data');
-            // Only fallback to LCU if no custom matches exist
-            this.loadFromLCU();
+            console.log('📝 [DASHBOARD] No custom matches found in database');
+            this.handleNoCustomMatches();
           }
         },
-        error: (error) => {
-          console.warn('⚠️ Failed to load custom matches from database:', error);
-          // Fallback to LCU on error
-          this.loadFromLCU();
+        error: (error: any) => {
+          console.warn('⚠️ [DASHBOARD] Error loading custom matches from database:', error);
+          this.handleNoCustomMatches();
         }
       });
 
     this.subscriptions.push(customMatchesSub);
   }
+
+  // ✅ NOVO: Método para lidar com ausência de partidas customizadas
+  private handleNoCustomMatches(): void {
+    const playerIdentifier = this.getPlayerIdentifier(this.player!);
+
+    // ✅ NOVO: Verificar cache do LCU primeiro
+    const cachedData = this.getCachedLCUData(playerIdentifier);
+    if (cachedData) {
+      console.log('🎯 [DASHBOARD] Using cached LCU data instead of new request');
+      this.processLCUMatches(cachedData);
+      this.isLoadingMatches = false;
+      this.fallbackCompleted = true;
+      this.cdr.detectChanges();
+      return;
+    }
+
+    // ✅ CORREÇÃO CRÍTICA: Fazer fallback para LCU apenas UMA VEZ
+    if (!this.lcuFallbackAttempted && !this.fallbackCompleted) {
+      console.log('🔄 [DASHBOARD] No custom matches found, attempting LCU fallback...');
+      this.lcuFallbackAttempted = true;
+      this.loadFromLCUSafe();
+    } else {
+      console.log('📝 [DASHBOARD] Using mock data (fallback already attempted)');
+      this.generateMockData();
+      this.isLoadingMatches = false;
+      this.matchHistoryError = 'Nenhuma partida customizada encontrada. Jogue partidas customizadas para ver o histórico.';
+      this.fallbackCompleted = true; // ✅ MARCAR COMO CONCLUÍDO
+      this.cdr.detectChanges(); // Forçar detecção de mudanças
+    }
+  }
+
+  // ✅ NOVO: Método seguro para carregar do LCU
+  private loadFromLCUSafe(): void {
+    console.log('🎮 [DASHBOARD] Attempting safe LCU load (one-time fallback)...');
+
+    const playerIdentifier = this.getPlayerIdentifier(this.player!);
+    const lcuSub = this.apiService.getLCUMatchHistoryAll(3) // Buscar últimas 3 partidas
+      .subscribe({
+        next: (response) => {
+          console.log('✅ [DASHBOARD] LCU match history loaded:', response);
+
+          // ✅ NOVO: Salvar no cache antes de processar
+          this.setCachedLCUData(playerIdentifier, response);
+
+          this.processLCUMatches(response);
+          this.isLoadingMatches = false;
+          this.fallbackCompleted = true; // ✅ MARCAR COMO CONCLUÍDO
+          this.cdr.detectChanges(); // Forçar detecção de mudanças
+        },
+        error: (error) => {
+          console.warn('⚠️ [DASHBOARD] LCU fallback failed:', error);
+          this.generateMockData();
+          this.isLoadingMatches = false;
+          this.matchHistoryError = 'Histórico indisponível - usando dados de exemplo';
+          this.fallbackCompleted = true; // ✅ MARCAR COMO CONCLUÍDO
+          this.cdr.detectChanges(); // Forçar detecção de mudanças
+        }
+      });
+
+    this.subscriptions.push(lcuSub);
+  }
+
   private convertCustomMatchesToDashboard(customMatches: any[]): any[] {
     console.log('🔄 [Dashboard] convertCustomMatchesToDashboard called with', customMatches.length, 'matches');
     return customMatches.map((match: any, index: number) => {
@@ -997,8 +1151,64 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
         gameMode: 'Personalizada',
         champion: playerChampion,
         kda: playerKDA,
-        isCustomMatch: true // Flag to identify custom matches
+        isCustomMatch: true // Flag to identificar custom matches
       };
     });
+  }
+
+  // ✅ NOVO: Métodos para gerenciar cache do LCU
+  private getCachedLCUData(playerIdentifier: string): any | null {
+    try {
+      const cacheData = sessionStorage.getItem(this.lcuCacheKey);
+      if (!cacheData) return null;
+
+      const parsed = JSON.parse(cacheData);
+
+      // Verificar se o cache é para o mesmo player
+      if (parsed.playerIdentifier !== playerIdentifier) {
+        console.log('🗑️ [DASHBOARD] Cache is for different player, clearing...');
+        this.clearLCUCache();
+        return null;
+      }
+
+      // Verificar se o cache não expirou
+      const now = Date.now();
+      if (now - parsed.timestamp > this.cacheExpireMs) {
+        console.log('⏰ [DASHBOARD] Cache expired, clearing...');
+        this.clearLCUCache();
+        return null;
+      }
+
+      console.log('✅ [DASHBOARD] Found valid LCU cache for player:', playerIdentifier);
+      return parsed.data;
+    } catch (error) {
+      console.warn('⚠️ [DASHBOARD] Error reading LCU cache:', error);
+      this.clearLCUCache();
+      return null;
+    }
+  }
+
+  private setCachedLCUData(playerIdentifier: string, data: any): void {
+    try {
+      const cacheData = {
+        playerIdentifier: playerIdentifier,
+        timestamp: Date.now(),
+        data: data
+      };
+
+      sessionStorage.setItem(this.lcuCacheKey, JSON.stringify(cacheData));
+      console.log('💾 [DASHBOARD] LCU data cached for player:', playerIdentifier);
+    } catch (error) {
+      console.warn('⚠️ [DASHBOARD] Error saving to LCU cache:', error);
+    }
+  }
+
+  private clearLCUCache(): void {
+    try {
+      sessionStorage.removeItem(this.lcuCacheKey);
+      console.log('🗑️ [DASHBOARD] LCU cache cleared');
+    } catch (error) {
+      console.warn('⚠️ [DASHBOARD] Error clearing LCU cache:', error);
+    }
   }
 }

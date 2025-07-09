@@ -860,13 +860,30 @@ export class ApiService {
 
   // LCU Match History
   getLCUMatchHistory(startIndex: number = 0, count: number = 20): Observable<any> {
+    // ✅ CORREÇÃO: Usar tryWithFallback para suporte a localhost e 127.0.0.1
+    if (this.isElectron()) {
+      return this.tryWithFallback(`/lcu/match-history?startIndex=${startIndex}&count=${count}`, 'GET').pipe(
+        catchError(this.handleError)
+      );
+    }
+
+    // Em modo web, usar método padrão
     return this.http.get(`${this.baseUrl}/lcu/match-history?startIndex=${startIndex}&count=${count}`)
       .pipe(
         catchError(this.handleError)
       );
   }
+
   // LCU Match History - ALL matches (including custom) for dashboard
   getLCUMatchHistoryAll(startIndex: number = 0, count: number = 5, customOnly: boolean = true): Observable<any> {
+    // ✅ CORREÇÃO: Usar tryWithFallback para suporte a localhost e 127.0.0.1
+    if (this.isElectron()) {
+      return this.tryWithFallback(`/lcu/match-history-all?startIndex=${startIndex}&count=${count}&customOnly=${customOnly}`, 'GET').pipe(
+        catchError(this.handleError)
+      );
+    }
+
+    // Em modo web, usar método padrão
     return this.http.get(`${this.baseUrl}/lcu/match-history-all?startIndex=${startIndex}&count=${count}&customOnly=${customOnly}`)
       .pipe(
         catchError(this.handleError)

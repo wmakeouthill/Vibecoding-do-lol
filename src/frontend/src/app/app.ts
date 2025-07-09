@@ -1560,34 +1560,65 @@ export class App implements OnInit, OnDestroy {
     return false;
   }
 
-  simulateLastCustomMatch(): void {
-    console.log('🎮 [App] Simulando última partida customizada');
+  simulateLastMatch(): void {
+    console.log('🎮 [App] Simulando última partida ranqueada do LCU');
+    console.log('🎮 [App] Current player:', this.currentPlayer);
 
     if (!this.currentPlayer) {
       this.addNotification('warning', 'Nenhum Jogador', 'Carregue os dados do jogador primeiro');
       return;
     }
 
-    // Chamará endpoint do backend para simular partida (buscar até 300 partidas)
-    this.apiService.getCustomMatches(this.currentPlayer.summonerName, 0, 300).subscribe({
-      next: (matches) => {
-        if (matches && matches.length > 0) {
-          const lastMatch = matches[0];
-          console.log('🎮 [App] Simulando partida:', lastMatch);
-          console.log(`🎮 [App] Total de partidas encontradas: ${matches.length}`);
-          this.addNotification('success', 'Simulação Iniciada', `Simulando partida ${lastMatch.id} (${matches.length} partidas disponíveis)...`);
+    // ✅ CORREÇÃO: Buscar TODAS as partidas do histórico do LCU (incluindo ranqueadas)
+    console.log('🎮 [App] Chamando getLCUMatchHistoryAll com customOnly=false...');
+    this.apiService.getLCUMatchHistoryAll(0, 20, false).subscribe({
+      next: (response) => {
+        console.log('🎮 [App] Resposta completa do LCU Match History All:', JSON.stringify(response, null, 2));
 
-          // Simular que a partida está sendo executada
-          setTimeout(() => {
-            this.addNotification('info', 'Simulação Completa', 'Partida simulada com sucesso');
-          }, 3000);
+        // Verificar se a resposta existe e tem dados
+        const matches = response?.matches || response?.games || [];
+        console.log('🎮 [App] Matches encontrados:', matches.length);
+
+        if (matches && matches.length > 0) {
+          // Buscar a primeira partida ranqueada (RANKED_FLEX_SR ou RANKED_SOLO_5x5)
+          const rankedMatch = matches.find((game: any) =>
+            game.queueId === 440 || // RANKED_FLEX_SR
+            game.queueId === 420    // RANKED_SOLO_5x5
+          );
+
+          console.log('🎮 [App] Partida ranqueada encontrada:', rankedMatch);
+
+          if (rankedMatch) {
+            console.log('🎮 [App] Simulando partida ranqueada do LCU:', rankedMatch);
+            console.log(`🎮 [App] Total de partidas encontradas: ${matches.length}, Tipo: ${rankedMatch.queueId === 440 ? 'Flex' : 'Solo/Duo'}`);
+
+            this.addNotification('success', 'Simulação Iniciada',
+              `Simulando partida ranqueada ${rankedMatch.queueId === 440 ? 'Flex' : 'Solo/Duo'} (ID: ${rankedMatch.gameId})...`);
+
+            // Simular que a partida está sendo executada
+            setTimeout(() => {
+              this.addNotification('info', 'Simulação Completa', 'Partida ranqueada simulada com sucesso');
+            }, 3000);
+          } else {
+            // Se não houver partidas ranqueadas, usar a última partida disponível
+            const lastMatch = matches[0];
+            console.log('🎮 [App] Nenhuma partida ranqueada encontrada, simulando última partida:', lastMatch);
+
+            this.addNotification('warning', 'Simulando Última Partida',
+              `Nenhuma partida ranqueada encontrada. Simulando última partida (ID: ${lastMatch.gameId || lastMatch.id})...`);
+
+            setTimeout(() => {
+              this.addNotification('info', 'Simulação Completa', 'Última partida simulada com sucesso');
+            }, 3000);
+          }
         } else {
-          this.addNotification('warning', 'Nenhuma Partida', 'Não há partidas customizadas para simular');
+          console.log('🎮 [App] Nenhuma partida encontrada no LCU');
+          this.addNotification('warning', 'Nenhuma Partida', 'Não há partidas no histórico do LCU para simular');
         }
       },
       error: (error) => {
-        console.error('❌ [App] Erro ao buscar partidas para simulação:', error);
-        this.addNotification('error', 'Erro Simulação', 'Não foi possível carregar partidas para simular');
+        console.error('❌ [App] Erro detalhado ao buscar partidas do LCU:', error);
+        this.addNotification('error', 'Erro Simulação LCU', 'Não foi possível carregar partidas do LCU. Verifique se o LoL está aberto.');
       }
     });
   }
