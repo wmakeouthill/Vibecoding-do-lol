@@ -1568,13 +1568,14 @@ export class App implements OnInit, OnDestroy {
       return;
     }
 
-    // Chamará endpoint do backend para simular partida
-    this.apiService.getCustomMatches(this.currentPlayer.summonerName, 0, 1).subscribe({
+    // Chamará endpoint do backend para simular partida (buscar até 300 partidas)
+    this.apiService.getCustomMatches(this.currentPlayer.summonerName, 0, 300).subscribe({
       next: (matches) => {
         if (matches && matches.length > 0) {
           const lastMatch = matches[0];
           console.log('🎮 [App] Simulando partida:', lastMatch);
-          this.addNotification('success', 'Simulação Iniciada', `Simulando partida ${lastMatch.id}...`);
+          console.log(`🎮 [App] Total de partidas encontradas: ${matches.length}`);
+          this.addNotification('success', 'Simulação Iniciada', `Simulando partida ${lastMatch.id} (${matches.length} partidas disponíveis)...`);
 
           // Simular que a partida está sendo executada
           setTimeout(() => {

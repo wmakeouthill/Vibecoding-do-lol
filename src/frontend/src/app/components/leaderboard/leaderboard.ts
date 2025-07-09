@@ -454,7 +454,7 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
   }
 
   async refreshAndRebuildPlayers() {
-    console.log('🔄 Iniciando refresh completo (apaga tudo e recarrega)...');
+    console.log('🔄 Iniciando refresh completo (apaga tabela players e recarrega)...');
     this.isLoading = true;
     this.error = null;
 
@@ -468,11 +468,22 @@ export class LeaderboardComponent implements OnInit, OnDestroy {
     console.log('🗑️ Cache limpo (dados + ícones compartilhados)');
 
     try {
-      await this.loadLeaderboard(true);
-      console.log('✅ Refresh completo concluído');
+      // ✅ CORREÇÃO: Chamar endpoint para limpar tabela players e recalcular
+      console.log('🔄 Chamando rebuild completo da tabela players...');
+      const response = await this.http.post<any>('http://localhost:3000/api/stats/refresh-rebuild-players', {}).toPromise();
+
+      if (response.success) {
+        console.log(`✅ Tabela players rebuilded com sucesso. Total: ${response.playerCount} jogadores`);
+
+        // Agora carregar os dados atualizados
+        await this.loadLeaderboard(true);
+        console.log('✅ Refresh completo concluído');
+      } else {
+        throw new Error(response.error || 'Erro no rebuild da tabela players');
+      }
     } catch (error) {
       console.error('❌ Erro no refresh completo:', error);
-      this.error = 'Erro ao atualizar dados';
+      this.error = 'Erro ao rebuildar dados dos jogadores';
     } finally {
       this.isLoading = false;
     }
