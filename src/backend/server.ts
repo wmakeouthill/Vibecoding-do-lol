@@ -211,6 +211,10 @@ const draftService = new DraftService(dbManager, wss, discordService);
 wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
   console.log('Cliente conectado via WebSocket');
 
+  // ✅ NOVO: Adicionar propriedades para identificar o jogador associado
+  (ws as any).playerInfo = null;
+  (ws as any).isIdentified = false;
+
   ws.on('message', async (message: Buffer) => {
     try {
       const data = JSON.parse(message.toString());
@@ -223,6 +227,10 @@ wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
 
   ws.on('close', () => {
     console.log('Cliente desconectado do WebSocket');
+    // ✅ CORREÇÃO: Log da identificação do jogador se disponível
+    if ((ws as any).playerInfo) {
+      console.log('🔍 [WebSocket] Desconectado:', (ws as any).playerInfo.displayName || (ws as any).playerInfo.summonerName);
+    }
     // ✅ CORREÇÃO: NÃO remover jogador automaticamente da fila quando WebSocket fechar
     // O jogador só deve ser removido quando explicitamente clicar em "Sair da Fila"
     // ou quando recusar uma partida
@@ -236,6 +244,34 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
   console.log(`📥 [WebSocket] Dados completos:`, JSON.stringify(data, null, 2));
 
   switch (data.type) {
+    case 'identify_player':
+      // ✅ NOVO: Identificar o jogador associado a esta conexão WebSocket
+      console.log('🆔 [WebSocket] Identificando jogador:', data.playerData);
+      if (data.playerData) {
+        (ws as any).playerInfo = data.playerData;
+        (ws as any).isIdentified = true;
+        console.log('✅ [WebSocket] Jogador identificado:', {
+          displayName: data.playerData.displayName,
+          summonerName: data.playerData.summonerName,
+          gameName: data.playerData.gameName,
+          tagLine: data.playerData.tagLine
+        });
+        
+        // Confirmar identificação
+        ws.send(JSON.stringify({
+          type: 'player_identified',
+          success: true,
+          playerData: data.playerData
+        }));
+      } else {
+        console.log('❌ [WebSocket] Dados do jogador não fornecidos para identificação');
+        ws.send(JSON.stringify({
+          type: 'player_identified',
+          success: false,
+          error: 'Dados do jogador não fornecidos'
+        }));
+      }
+      break;
     case 'join_queue':
       await matchmakingService.addPlayerToQueue(ws, data.data);
       break;

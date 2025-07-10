@@ -531,6 +531,10 @@ export class MatchFoundService {
       clientsConnected: this.wss.clients?.size || 0
     });
 
+    // ✅ NOVO: Obter lista de jogadores da partida
+    const allPlayersInMatch = [...(matchData.team1Players || []), ...(matchData.team2Players || [])];
+    console.log('🎯 [MatchFound] Jogadores da partida:', allPlayersInMatch);
+
     const message = {
       type: 'match_found',
       data: {
@@ -546,8 +550,122 @@ export class MatchFoundService {
     };
 
     console.log(`📤 [MatchFound] Enviando mensagem match_found:`, JSON.stringify(message, null, 2));
-    this.broadcastMessage(message);
-    console.log(`📢 [MatchFound] Notificação de partida encontrada enviada para ${this.wss.clients?.size || 0} clientes (${matchId})`);
+    
+    // ✅ NOVO: Enviar apenas para jogadores que estão na partida
+    let sentCount = 0;
+    let identifiedClients = 0;
+    let matchedClients = 0;
+
+    this.wss.clients.forEach((client: WebSocket) => {
+      if (client.readyState === WebSocket.OPEN) {
+        const clientInfo = (client as any).playerInfo;
+        const isIdentified = (client as any).isIdentified;
+        
+        if (isIdentified) {
+          identifiedClients++;
+        }
+
+        // ✅ VERIFICAR: Se o cliente está identificado e está na partida
+        if (isIdentified && clientInfo) {
+          const isInMatch = this.isPlayerInMatch(clientInfo, allPlayersInMatch);
+          
+          if (isInMatch) {
+            try {
+              client.send(JSON.stringify(message));
+              sentCount++;
+              matchedClients++;
+              console.log(`✅ [MatchFound] Notificação enviada para: ${clientInfo.displayName || clientInfo.summonerName}`);
+            } catch (error) {
+              console.error('❌ [MatchFound] Erro ao enviar notificação:', error);
+            }
+          } else {
+            console.log(`➖ [MatchFound] Cliente identificado mas não está na partida: ${clientInfo.displayName || clientInfo.summonerName}`);
+          }
+        } else {
+          // ✅ FALLBACK: Para clientes não identificados, enviar para todos (compatibilidade)
+          try {
+            client.send(JSON.stringify(message));
+            sentCount++;
+            console.log(`📡 [MatchFound] Notificação enviada para cliente não identificado (fallback)`);
+          } catch (error) {
+            console.error('❌ [MatchFound] Erro ao enviar notificação:', error);
+          }
+        }
+      }
+    });
+
+    console.log(`📢 [MatchFound] Resumo do envio:`, {
+      totalClients: this.wss.clients?.size || 0,
+      identifiedClients,
+      matchedClients,
+      sentCount,
+      matchId
+    });
+  }
+
+  // ✅ NOVO: Verificar se um jogador está na partida
+  private isPlayerInMatch(playerInfo: any, playersInMatch: string[]): boolean {
+    if (!playerInfo || !playersInMatch.length) return false;
+
+    // Obter identificadores possíveis do jogador
+    const identifiers = [];
+    
+    if (playerInfo.displayName) {
+      identifiers.push(playerInfo.displayName);
+    }
+    if (playerInfo.summonerName) {
+      identifiers.push(playerInfo.summonerName);
+    }
+    if (playerInfo.gameName) {
+      identifiers.push(playerInfo.gameName);
+      if (playerInfo.tagLine) {
+        identifiers.push(`${playerInfo.gameName}#${playerInfo.tagLine}`);
+      }
+    }
+
+    // Verificar se algum identificador coincide com os jogadores da partida
+    for (const identifier of identifiers) {
+      for (const matchPlayer of playersInMatch) {
+        // Comparação exata
+        if (identifier === matchPlayer) {
+          console.log(`✅ [MatchFound] Match exato: ${identifier} === ${matchPlayer}`);
+          return true;
+        }
+        
+        // Comparação por gameName (ignorando tag)
+        if (identifier.includes('#') && matchPlayer.includes('#')) {
+          const identifierGameName = identifier.split('#')[0];
+          const matchPlayerGameName = matchPlayer.split('#')[0];
+          if (identifierGameName === matchPlayerGameName) {
+            console.log(`✅ [MatchFound] Match por gameName: ${identifierGameName} === ${matchPlayerGameName}`);
+            return true;
+          }
+        }
+        
+        // Comparação de gameName com nome completo
+        if (identifier.includes('#')) {
+          const identifierGameName = identifier.split('#')[0];
+          if (identifierGameName === matchPlayer) {
+            console.log(`✅ [MatchFound] Match gameName com nome completo: ${identifierGameName} === ${matchPlayer}`);
+            return true;
+          }
+        }
+        
+        if (matchPlayer.includes('#')) {
+          const matchPlayerGameName = matchPlayer.split('#')[0];
+          if (identifier === matchPlayerGameName) {
+            console.log(`✅ [MatchFound] Match nome com gameName: ${identifier} === ${matchPlayerGameName}`);
+            return true;
+          }
+        }
+      }
+    }
+
+    console.log(`❌ [MatchFound] Nenhum match encontrado para:`, {
+      playerIdentifiers: identifiers,
+      matchPlayers: playersInMatch
+    });
+    return false;
   }
 
   private notifyAcceptanceProgress(matchId: number, matchStatus: AcceptanceStatus): void {

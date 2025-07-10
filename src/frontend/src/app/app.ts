@@ -133,52 +133,92 @@ export class App implements OnInit, OnDestroy {
 
   // ✅ NOVO: Configurar comunicação centralizada com backend
   private setupBackendCommunication(): void {
-    console.log('🔌 [App] Configurando comunicação com backend via WebSocket...');
-
-    // ✅ CORREÇÃO: ApiService é responsável por toda comunicação de matchmaking
-    // DiscordService é usado APENAS para identificação de jogadores Discord
-
-    // Escutar estado da fila via MySQL apenas para mudanças de estado críticas
-    this.queueStateService.getQueueState().pipe(
-      takeUntil(this.destroy$)
-    ).subscribe(queueState => {
-      console.log('📊 [App] Estado crítico da fila atualizado via backend:', queueState);
-
-      // ✅ CORRIGIDO: Não sobrescrever o estado isInQueue se já foi determinado pelo backend
-      // O backend (via refreshQueueStatus) tem prioridade sobre o QueueStateService
-      const wasInQueue = this.isInQueue;
-
-      // Só atualizar se não tivermos uma determinação recente do backend
-      if (!this.hasRecentBackendQueueStatus) {
-        this.isInQueue = queueState.isInQueue;
-        console.log(`🔄 [App] Estado da fila atualizado via QueueStateService: ${this.isInQueue ? 'na fila' : 'fora da fila'}`);
-      } else {
-        console.log(`🎯 [App] Mantendo estado determinado pelo backend: ${this.isInQueue ? 'na fila' : 'fora da fila'}`);
-      }
-
-      // Se mudou o estado de estar na fila, buscar dados atualizados UMA VEZ
-      if (wasInQueue !== this.isInQueue) {
-        console.log(`🔄 [App] Estado da fila mudou: ${wasInQueue} → ${this.isInQueue}`);
-        this.refreshQueueStatus();
-      }
-    });
-
-    // Escutar mensagens WebSocket do backend
+    console.log('🔗 [App] Configurando comunicação com backend...');
+    
+    // ✅ CORRIGIDO: Usar o método WebSocket existente do ApiService
     this.apiService.onWebSocketMessage().pipe(
       takeUntil(this.destroy$)
     ).subscribe({
-      next: (message) => {
-        console.log('📡 [App] Mensagem do backend recebida:', message.type, message);
-        console.log('📡 [App] Dados completos da mensagem:', JSON.stringify(message, null, 2));
+      next: (message: any) => {
+        console.log('📨 [App] Mensagem do backend:', message);
         this.handleBackendMessage(message);
       },
-      error: (error) => {
-        console.error('❌ [App] Erro na comunicação com backend:', error);
+      error: (error: any) => {
+        console.error('❌ [App] Erro na comunicação:', error);
+        this.isConnected = false;
+      },
+      complete: () => {
+        console.log('🔌 [App] Conexão WebSocket fechada');
+        this.isConnected = false;
       }
     });
 
-    // Configurar listener para mensagens do componente queue
-    this.setupQueueComponentListener();
+    // ✅ NOVO: Tentar identificar o jogador atual quando conectar
+    setTimeout(() => {
+      this.identifyCurrentPlayerOnConnect();
+    }, 1000); // Aguardar 1 segundo para garantir que a conexão foi estabelecida
+  }
+
+  // ✅ NOVO: Identificar o jogador atual quando conectar via WebSocket
+  private identifyCurrentPlayerOnConnect(): void {
+    if (this.currentPlayer) {
+      console.log('🆔 [App] Identificando jogador atual no WebSocket:', {
+        displayName: this.currentPlayer.displayName,
+        summonerName: this.currentPlayer.summonerName,
+        gameName: this.currentPlayer.gameName,
+        tagLine: this.currentPlayer.tagLine
+      });
+
+      this.apiService.identifyPlayer(this.currentPlayer).subscribe({
+        next: (response: any) => {
+          if (response.success) {
+            console.log('✅ [App] Jogador identificado com sucesso no backend');
+            this.isConnected = true;
+          } else {
+            console.log('❌ [App] Erro ao identificar jogador:', response.error);
+          }
+        },
+        error: (error: any) => {
+          console.error('❌ [App] Erro ao identificar jogador:', error);
+        }
+      });
+    } else {
+      console.log('⚠️ [App] Nenhum jogador atual disponível para identificação');
+      // ✅ Mesmo sem jogador, marcar como conectado para funcionalidade básica
+      this.isConnected = true;
+    }
+  }
+
+  // ✅ NOVO: Salvar dados do jogador
+  private savePlayerData(player: Player): void {
+    // ✅ CORREÇÃO: Usar displayName diretamente do backend se disponível
+    if (player.displayName) {
+      // O backend já construiu o displayName corretamente
+      player.summonerName = player.displayName;
+      console.log('✅ [App] Usando displayName do backend:', player.displayName);
+    } else if (player.gameName && player.tagLine) {
+      // Fallback: construir se não veio do backend
+      player.displayName = `${player.gameName}#${player.tagLine}`;
+      player.summonerName = player.displayName;
+      console.log('✅ [App] DisplayName construído como fallback:', player.displayName);
+    } else {
+      console.warn('⚠️ [App] Dados incompletos do jogador:', {
+        gameName: player.gameName,
+        tagLine: player.tagLine,
+        summonerName: player.summonerName,
+        displayName: player.displayName
+      });
+    }
+
+    // Adicionar propriedade customLp se não existir
+    if (!player.customLp) {
+      player.customLp = player.currentMMR || 1200;
+    }
+
+    // Salvar no localStorage para backup
+    localStorage.setItem('currentPlayer', JSON.stringify(player));
+    
+    console.log('✅ [App] Jogador salvo:', player.summonerName, 'displayName:', player.displayName);
   }
 
   // ✅ NOVO: Processar mensagens do backend
@@ -309,14 +349,17 @@ export class App implements OnInit, OnDestroy {
       return;
     }
 
+    // ✅ SIMPLIFICADO: Como o backend agora envia apenas para jogadores da partida,
+    // não precisamos verificar se o jogador atual está na partida
+    console.log('🎮 [App] ✅ PROCESSANDO PARTIDA RECEBIDA DO BACKEND:', data.matchId);
+
     // ✅ NOVO: Marcar esta partida como processada
     this.lastMatchId = data.matchId;
-    console.log('🎮 [App] ✅ PROCESSANDO NOVA PARTIDA:', data.matchId);
 
-    // ✅ CORREÇÃO: Converter dados do backend para formato do frontend
+    // ✅ CORREÇÃO: Processar dados da partida vindos do backend
     const matchFoundData: MatchFoundData = {
       matchId: data.matchId,
-      playerSide: 'blue', // Determinar lado do jogador
+      playerSide: 'blue', // Será determinado pelos dados
       teammates: [],
       enemies: [],
       averageMMR: { yourTeam: 1200, enemyTeam: 1200 },
@@ -329,38 +372,24 @@ export class App implements OnInit, OnDestroy {
       balancingInfo: data.balancingInfo
     };
 
-    // ✅ CORREÇÃO: Usar dados diretos do backend (teammates e enemies)
-    console.log('🎮 [App] Processando dados diretos do backend:');
-    console.log('🎮 [App] Teammates recebidos:', data.teammates);
-    console.log('🎮 [App] Enemies recebidos:', data.enemies);
-
+    // ✅ CORREÇÃO: Usar dados do MatchmakingService se disponível
     if (data.teammates && data.enemies) {
-      const teammates = data.teammates || [];
-      const enemies = data.enemies || [];
+      console.log('🎮 [App] Usando dados estruturados do MatchmakingService');
+      
+      // ✅ IDENTIFICAR: Em qual time o jogador atual está
+      const currentPlayerIdentifiers = this.getCurrentPlayerIdentifiers();
+      const isInTeammates = this.isPlayerInTeam(currentPlayerIdentifiers, data.teammates);
+      const isInEnemies = this.isPlayerInTeam(currentPlayerIdentifiers, data.enemies);
 
-      console.log('🎮 [App] Teammates count:', teammates.length);
-      console.log('🎮 [App] Enemies count:', enemies.length);
+      console.log('🎮 [App] Identificação do time:', {
+        currentPlayerIdentifiers,
+        isInTeammates,
+        isInEnemies
+      });
 
-      // Determinar em qual time o jogador atual está
-      const currentPlayerName = this.currentPlayer?.displayName || this.currentPlayer?.summonerName;
-      console.log('🎮 [App] Current player name:', currentPlayerName);
-      console.log('🎮 [App] Teammates players:', teammates.map((p: any) => p.summonerName));
-      console.log('🎮 [App] Enemies players:', enemies.map((p: any) => p.summonerName));
-
-      // ✅ CORREÇÃO: Verificar se o jogador está nos teammates (time azul por padrão)
-      const isInTeammates = teammates.some((p: any) => p.summonerName === currentPlayerName);
-      const isInEnemies = enemies.some((p: any) => p.summonerName === currentPlayerName);
-
-      console.log('🎮 [App] Is in teammates:', isInTeammates);
-      console.log('🎮 [App] Is in enemies:', isInEnemies);
-
-      // ✅ CORREÇÃO: Usar teammates e enemies diretos do backend
       matchFoundData.playerSide = isInTeammates ? 'blue' : 'red';
-      matchFoundData.teammates = this.convertPlayersToPlayerInfo(teammates);
-      matchFoundData.enemies = this.convertPlayersToPlayerInfo(enemies);
-
-      console.log('🎮 [App] Final teammates:', matchFoundData.teammates);
-      console.log('🎮 [App] Final enemies:', matchFoundData.enemies);
+      matchFoundData.teammates = this.convertPlayersToPlayerInfo(data.teammates);
+      matchFoundData.enemies = this.convertPlayersToPlayerInfo(data.enemies);
 
       // ✅ CORREÇÃO: Usar teamStats do backend se disponível
       if (data.teamStats) {
@@ -368,39 +397,41 @@ export class App implements OnInit, OnDestroy {
           yourTeam: isInTeammates ? data.teamStats.team1.averageMMR : data.teamStats.team2.averageMMR,
           enemyTeam: isInTeammates ? data.teamStats.team2.averageMMR : data.teamStats.team1.averageMMR
         };
-      } else {
-        console.warn('🎮 [App] teamStats não encontrado nos dados');
       }
+    } else if (data.team1 && data.team2) {
+      console.log('🎮 [App] Usando dados básicos do MatchFoundService');
+      
+      // ✅ FALLBACK: Usar dados básicos team1/team2
+      const allPlayers = [...data.team1, ...data.team2];
+      const currentPlayerIdentifiers = this.getCurrentPlayerIdentifiers();
+      const isInTeam1 = data.team1.some((name: string) => 
+        currentPlayerIdentifiers.some(id => this.namesMatch(id, name))
+      );
+
+      matchFoundData.playerSide = isInTeam1 ? 'blue' : 'red';
+      matchFoundData.teammates = this.convertBasicPlayersToPlayerInfo(isInTeam1 ? data.team1 : data.team2);
+      matchFoundData.enemies = this.convertBasicPlayersToPlayerInfo(isInTeam1 ? data.team2 : data.team1);
     } else {
-      console.error('🎮 [App] ❌ ERRO: teammates ou enemies não encontrados nos dados');
+      console.error('🎮 [App] ❌ ERRO: Formato de dados não reconhecido');
       console.log('🎮 [App] Dados recebidos:', data);
+      return;
     }
 
     this.matchFoundData = matchFoundData;
     this.isInQueue = false;
 
     console.log('🎯 [App] === EXIBINDO MATCH FOUND ===');
-    console.log('🎯 [App] Current player completo:', {
-      hasCurrentPlayer: !!this.currentPlayer,
-      currentPlayer: this.currentPlayer,
-      displayName: this.currentPlayer?.displayName,
-      summonerName: this.currentPlayer?.summonerName,
-      gameName: this.currentPlayer?.gameName,
-      tagLine: this.currentPlayer?.tagLine
-    });
 
     // ✅ CORREÇÃO: Modal só deve ser exibido para jogadores humanos
     // Bots são auto-aceitos pelo backend e não precisam do modal
     if (this.isCurrentPlayerBot()) {
       console.log('🎯 [App] Jogador atual é bot - não exibindo modal');
-      console.log('� [App] Auto-aceitação de bots é processada pelo backend');
+      console.log('🎯 [App] Auto-aceitação de bots é processada pelo backend');
       return;
     }
 
     console.log('🎮 [App] Mostrando tela de match-found para jogador humano');
     this.showMatchFound = true;
-    console.log('🎮 [App] showMatchFound definido como:', this.showMatchFound);
-    console.log('🎮 [App] matchFoundData definido como:', !!this.matchFoundData);
     this.addNotification('success', 'Partida Encontrada!', 'Você tem 30 segundos para aceitar.');
 
     console.log('🎯 [App] Estado final:', {
@@ -414,6 +445,107 @@ export class App implements OnInit, OnDestroy {
       const audio = new Audio('assets/sounds/match-found.mp3');
       audio.play().catch(() => {});
     } catch (error) {}
+  }
+
+  // ✅ NOVO: Comparar se dois nomes coincidem (com diferentes formatos)
+  private namesMatch(name1: string, name2: string): boolean {
+    if (name1 === name2) return true;
+    
+    // Comparação por gameName (ignorando tag)
+    if (name1.includes('#') && name2.includes('#')) {
+      const gameName1 = name1.split('#')[0];
+      const gameName2 = name2.split('#')[0];
+      return gameName1 === gameName2;
+    }
+    
+    if (name1.includes('#')) {
+      const gameName1 = name1.split('#')[0];
+      return gameName1 === name2;
+    }
+    
+    if (name2.includes('#')) {
+      const gameName2 = name2.split('#')[0];
+      return name1 === gameName2;
+    }
+    
+    return false;
+  }
+
+  // ✅ NOVO: Converter jogadores básicos (apenas nomes) para PlayerInfo
+  private convertBasicPlayersToPlayerInfo(playerNames: string[]): any[] {
+    return playerNames.map((name: string, index: number) => ({
+      id: index,
+      summonerName: name,
+      mmr: 1200, // MMR padrão
+      primaryLane: 'fill',
+      secondaryLane: 'fill',
+      assignedLane: 'FILL',
+      teamIndex: index,
+      isAutofill: false,
+      riotIdGameName: name.includes('#') ? name.split('#')[0] : name,
+      riotIdTagline: name.includes('#') ? name.split('#')[1] : undefined,
+      profileIconId: 1
+    }));
+  }
+
+  // ✅ NOVO: Obter identificadores do jogador atual
+  private getCurrentPlayerIdentifiers(): string[] {
+    if (!this.currentPlayer) return [];
+
+    const identifiers = [];
+    
+    // Adicionar todas as possíveis variações do nome
+    if (this.currentPlayer.displayName) {
+      identifiers.push(this.currentPlayer.displayName);
+    }
+    if (this.currentPlayer.summonerName) {
+      identifiers.push(this.currentPlayer.summonerName);
+    }
+    if (this.currentPlayer.gameName) {
+      identifiers.push(this.currentPlayer.gameName);
+      // Adicionar com tag se tiver
+      if (this.currentPlayer.tagLine) {
+        identifiers.push(`${this.currentPlayer.gameName}#${this.currentPlayer.tagLine}`);
+      }
+    }
+
+    // Remover duplicatas
+    return [...new Set(identifiers)];
+  }
+
+  // ✅ NOVO: Verificar se um jogador está em um time
+  private isPlayerInTeam(playerIdentifiers: string[], team: any[]): boolean {
+    if (!playerIdentifiers.length || !team.length) return false;
+
+    return team.some(player => {
+      const playerName = player.summonerName || player.name || '';
+      
+      // Verificar se algum identificador do jogador atual coincide
+      return playerIdentifiers.some((identifier: string) => {
+        // Comparação exata
+        if (identifier === playerName) return true;
+        
+        // Comparação sem tag (gameName vs gameName#tagLine)
+        if (identifier.includes('#') && playerName.includes('#')) {
+          const identifierGameName = identifier.split('#')[0];
+          const playerGameName = playerName.split('#')[0];
+          return identifierGameName === playerGameName;
+        }
+        
+        // Comparação de gameName com nome completo
+        if (identifier.includes('#')) {
+          const identifierGameName = identifier.split('#')[0];
+          return identifierGameName === playerName;
+        }
+        
+        if (playerName.includes('#')) {
+          const playerGameName = playerName.split('#')[0];
+          return identifier === playerGameName;
+        }
+        
+        return false;
+      });
+    });
   }
 
   // ✅ NOVO: Converter dados do backend para PlayerInfo
@@ -439,16 +571,7 @@ export class App implements OnInit, OnDestroy {
         name: playerInfo.summonerName,
         lane: playerInfo.assignedLane,
         teamIndex: playerInfo.teamIndex,
-        autofill: playerInfo.isAutofill,
-        // ✅ ADICIONADO: Log detalhado das lanes
-        primaryLane: playerInfo.primaryLane,
-        secondaryLane: playerInfo.secondaryLane,
-        assignedLaneType: typeof playerInfo.assignedLane,
-        assignedLaneValue: playerInfo.assignedLane,
-        // ✅ NOVO: Log dos dados originais do backend
-        originalAssignedLane: player.assignedLane,
-        originalPrimaryLane: player.primaryLane,
-        originalSecondaryLane: player.secondaryLane
+        autofill: playerInfo.isAutofill
       });
 
       return playerInfo;
@@ -949,61 +1072,27 @@ export class App implements OnInit, OnDestroy {
 
   // ✅ CORRIGIDO: Métodos necessários para carregamento de dados
   private loadPlayerData(): void {
-    console.log('🔄 [App] Carregando dados do jogador via LCU...');
+    console.log('👤 [App] Carregando dados do jogador...');
 
+    // Strategy 1: Try to get player from LCU (best option if LoL is running)
     this.apiService.getPlayerFromLCU().subscribe({
-      next: (player) => {
-        console.log('✅ [App] Dados do jogador carregados via LCU:', player);
-
-        // ✅ CORRIGIDO: Usar displayName diretamente do backend se disponível
-        if (player.displayName) {
-          // O backend já construiu o displayName corretamente
-          player.summonerName = player.displayName;
-          console.log('✅ [App] Usando displayName do backend:', player.displayName);
-        } else if (player.gameName && player.tagLine) {
-          // Fallback: construir se não veio do backend
-          player.displayName = `${player.gameName}#${player.tagLine}`;
-          player.summonerName = player.displayName;
-          console.log('✅ [App] DisplayName construído como fallback:', player.displayName);
-        } else {
-          console.warn('⚠️ [App] Dados incompletos do jogador:', {
-            gameName: player.gameName,
-            tagLine: player.tagLine,
-            summonerName: player.summonerName,
-            displayName: player.displayName
-          });
-          // Se não conseguir formar o nome completo, mostrar erro
-          if (!player.summonerName || !player.summonerName.includes('#')) {
-            this.addNotification('warning', 'Dados Incompletos', 'Não foi possível obter gameName#tagLine do LCU');
-            return;
-          }
-        }
-
+      next: (player: Player) => {
+        console.log('✅ [App] Dados do jogador carregados do LCU:', player);
         this.currentPlayer = player;
-
-        // Adicionar propriedade customLp se não existir
-        if (this.currentPlayer && !this.currentPlayer.customLp) {
-          this.currentPlayer.customLp = this.currentPlayer.currentMMR || 1200;
-        }
-
-        // Salvar no localStorage para backup
-        localStorage.setItem('currentPlayer', JSON.stringify(this.currentPlayer));
-
-        // ✅ ADICIONADO: Atualizar formulário de configurações com dados do jogador
+        this.savePlayerData(player);
         this.updateSettingsForm();
+        
+        // ✅ NOVO: Identificar jogador no WebSocket após carregar dados
+        this.identifyCurrentPlayerOnConnect();
 
-        console.log('✅ [App] Jogador carregado:', this.currentPlayer.summonerName, 'displayName:', this.currentPlayer.displayName);
-        this.addNotification('success', 'Jogador Detectado', `Logado como: ${this.currentPlayer.summonerName}`);
+        this.addNotification('success', 'Dados Carregados', 'Dados do jogador carregados do League of Legends');
       },
       error: (error) => {
-        console.warn('⚠️ [App] Falha ao carregar dados do jogador via LCU:', error);
-        this.addNotification('error', 'Erro LCU', 'Não foi possível conectar ao cliente do LoL. Verifique se o jogo está aberto.');
+        console.warn('⚠️ [App] Erro ao carregar do LCU:', error);
+        console.log('🔄 [App] Tentando carregar do localStorage como fallback...');
+        
+        // Fallback to localStorage if LCU fails
         this.tryLoadFromLocalStorage();
-
-        // Se ainda não há dados, tentar getCurrentPlayerDetails como fallback
-        if (!this.currentPlayer) {
-          this.tryGetCurrentPlayerDetails();
-        }
       }
     });
   }

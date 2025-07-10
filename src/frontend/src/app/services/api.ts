@@ -1164,4 +1164,56 @@ export class ApiService {
       console.error('❌ [ApiService] WebSocket não conectado');
     }
   }
+
+  // ✅ NOVO: Conectar via WebSocket e retornar Observable das mensagens
+  connect(): Observable<any> {
+    if (this.webSocket && this.webSocket.readyState === WebSocket.OPEN) {
+      // Se já conectado, retornar observable existente
+      return this.webSocketMessageSubject.asObservable();
+    }
+
+    // Criar nova conexão WebSocket
+    this.connectWebSocket();
+    return this.webSocketMessageSubject.asObservable();
+  }
+
+  // ✅ NOVO: Identificar jogador no backend via WebSocket
+  identifyPlayer(playerData: any): Observable<any> {
+    return new Observable(observer => {
+      if (!this.webSocket || this.webSocket.readyState !== WebSocket.OPEN) {
+        observer.error('WebSocket não conectado');
+        return;
+      }
+
+      // Enviar mensagem de identificação
+      const message = {
+        type: 'identify_player',
+        playerData: {
+          displayName: playerData.displayName,
+          summonerName: playerData.summonerName,
+          gameName: playerData.gameName,
+          tagLine: playerData.tagLine,
+          id: playerData.id,
+          puuid: playerData.puuid
+        }
+      };
+
+      this.webSocket.send(JSON.stringify(message));
+
+      // Aguardar resposta de confirmação
+      const subscription = this.webSocketMessageSubject.subscribe(response => {
+        if (response.type === 'player_identified') {
+          observer.next(response);
+          observer.complete();
+          subscription.unsubscribe();
+        }
+      });
+
+      // Timeout após 5 segundos
+      setTimeout(() => {
+        observer.error('Timeout na identificação do jogador');
+        subscription.unsubscribe();
+      }, 5000);
+    });
+  }
 }
