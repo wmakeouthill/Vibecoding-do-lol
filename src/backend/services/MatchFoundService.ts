@@ -718,8 +718,91 @@ export class MatchFoundService {
       timestamp: Date.now()
     };
 
-    this.broadcastMessage(message);
-    console.log(`📢 [MatchFound] Notificação de cancelamento enviada (${matchId})`);
+    // ✅ NOVO: Envio direcionado igual ao match_found
+    console.log(`🚫 [MatchFound] Preparando notificação de cancelamento para partida ${matchId}`);
+    
+    // Buscar dados da partida para obter lista de jogadores
+    this.dbManager.getCustomMatchById(matchId).then(match => {
+      if (!match) {
+        console.warn(`⚠️ [MatchFound] Partida ${matchId} não encontrada para notificação de cancelamento`);
+        this.broadcastMessage(message); // Fallback para todos
+        return;
+      }
+
+      let allPlayersInMatch: string[] = [];
+      try {
+        const team1 = typeof match.team1_players === 'string' 
+          ? JSON.parse(match.team1_players) 
+          : (match.team1_players || []);
+        const team2 = typeof match.team2_players === 'string' 
+          ? JSON.parse(match.team2_players) 
+          : (match.team2_players || []);
+        
+        allPlayersInMatch = [...team1, ...team2];
+      } catch (error) {
+        console.error(`❌ [MatchFound] Erro ao parsear jogadores da partida ${matchId}:`, error);
+        this.broadcastMessage(message); // Fallback para todos
+        return;
+      }
+
+      console.log('🎯 [MatchFound] Jogadores afetados pelo cancelamento:', allPlayersInMatch);
+
+      // ✅ NOVO: Enviar apenas para jogadores que estavam na partida
+      let sentCount = 0;
+      let identifiedClients = 0;
+      let matchedClients = 0;
+
+      this.wss.clients.forEach((client: WebSocket) => {
+        if (client.readyState === WebSocket.OPEN) {
+          const clientInfo = (client as any).playerInfo;
+          const isIdentified = (client as any).isIdentified;
+          
+          if (isIdentified) {
+            identifiedClients++;
+          }
+
+          // ✅ VERIFICAR: Se o cliente estava na partida cancelada
+          if (isIdentified && clientInfo) {
+            const isInMatch = this.isPlayerInMatch(clientInfo, allPlayersInMatch);
+            
+            if (isInMatch) {
+              try {
+                client.send(JSON.stringify(message));
+                sentCount++;
+                matchedClients++;
+                console.log(`✅ [MatchFound] Cancelamento notificado para: ${clientInfo.displayName || clientInfo.summonerName}`);
+              } catch (error) {
+                console.error('❌ [MatchFound] Erro ao enviar notificação de cancelamento:', error);
+              }
+            } else {
+              console.log(`➖ [MatchFound] Cliente não estava na partida cancelada: ${clientInfo.displayName || clientInfo.summonerName}`);
+            }
+          } else {
+            // ✅ FALLBACK: Para clientes não identificados, enviar para todos (compatibilidade)
+            try {
+              client.send(JSON.stringify(message));
+              sentCount++;
+              console.log(`📡 [MatchFound] Cancelamento enviado para cliente não identificado (fallback)`);
+            } catch (error) {
+              console.error('❌ [MatchFound] Erro ao enviar notificação de cancelamento:', error);
+            }
+          }
+        }
+      });
+
+      console.log(`📢 [MatchFound] Resumo do cancelamento:`, {
+        totalClients: this.wss.clients?.size || 0,
+        identifiedClients,
+        matchedClients,
+        sentCount,
+        matchId
+      });
+    }).catch(error => {
+      console.error(`❌ [MatchFound] Erro ao buscar dados da partida para cancelamento:`, error);
+      this.broadcastMessage(message); // Fallback para todos
+    });
+
+    console.log(`📢 [MatchFound] Notificação de cancelamento processada (${matchId})`);
   }
 
   // ✅ NOVO: Notificar atualização do timer

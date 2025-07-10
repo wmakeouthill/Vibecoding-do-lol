@@ -495,8 +495,156 @@ export class GameInProgressService {
       timestamp: Date.now()
     };
 
-    this.broadcastMessage(message);
-    console.log(`📢 [GameInProgress] Notificação de jogo cancelado enviada (${matchId})`);
+    // ✅ NOVO: Envio direcionado igual ao match_found
+    console.log(`🚫 [GameInProgress] Preparando notificação de cancelamento de jogo para partida ${matchId}`);
+    
+    // Buscar dados da partida para obter lista de jogadores
+    this.dbManager.getCustomMatchById(matchId).then(match => {
+      if (!match) {
+        console.warn(`⚠️ [GameInProgress] Partida ${matchId} não encontrada para notificação de cancelamento`);
+        this.broadcastMessage(message); // Fallback para todos
+        return;
+      }
+
+      let allPlayersInMatch: string[] = [];
+      try {
+        const team1 = typeof match.team1_players === 'string' 
+          ? JSON.parse(match.team1_players) 
+          : (match.team1_players || []);
+        const team2 = typeof match.team2_players === 'string' 
+          ? JSON.parse(match.team2_players) 
+          : (match.team2_players || []);
+        
+        allPlayersInMatch = [...team1, ...team2];
+      } catch (error) {
+        console.error(`❌ [GameInProgress] Erro ao parsear jogadores da partida ${matchId}:`, error);
+        this.broadcastMessage(message); // Fallback para todos
+        return;
+      }
+
+      console.log('🎯 [GameInProgress] Jogadores afetados pelo cancelamento:', allPlayersInMatch);
+
+      // ✅ NOVO: Enviar apenas para jogadores que estavam na partida
+      let sentCount = 0;
+      let identifiedClients = 0;
+      let matchedClients = 0;
+
+      this.wss.clients.forEach((client: WebSocket) => {
+        if (client.readyState === WebSocket.OPEN) {
+          const clientInfo = (client as any).playerInfo;
+          const isIdentified = (client as any).isIdentified;
+          
+          if (isIdentified) {
+            identifiedClients++;
+          }
+
+          // ✅ VERIFICAR: Se o cliente estava na partida cancelada
+          if (isIdentified && clientInfo) {
+            const isInMatch = this.isPlayerInMatch(clientInfo, allPlayersInMatch);
+            
+            if (isInMatch) {
+              try {
+                client.send(JSON.stringify(message));
+                sentCount++;
+                matchedClients++;
+                console.log(`✅ [GameInProgress] Cancelamento notificado para: ${clientInfo.displayName || clientInfo.summonerName}`);
+              } catch (error) {
+                console.error('❌ [GameInProgress] Erro ao enviar notificação de cancelamento:', error);
+              }
+            } else {
+              console.log(`➖ [GameInProgress] Cliente não estava na partida cancelada: ${clientInfo.displayName || clientInfo.summonerName}`);
+            }
+          } else {
+            // ✅ FALLBACK: Para clientes não identificados, enviar para todos (compatibilidade)
+            try {
+              client.send(JSON.stringify(message));
+              sentCount++;
+              console.log(`📡 [GameInProgress] Cancelamento enviado para cliente não identificado (fallback)`);
+            } catch (error) {
+              console.error('❌ [GameInProgress] Erro ao enviar notificação de cancelamento:', error);
+            }
+          }
+        }
+      });
+
+      console.log(`📢 [GameInProgress] Resumo do cancelamento:`, {
+        totalClients: this.wss.clients?.size || 0,
+        identifiedClients,
+        matchedClients,
+        sentCount,
+        matchId
+      });
+    }).catch(error => {
+      console.error(`❌ [GameInProgress] Erro ao buscar dados da partida para cancelamento:`, error);
+      this.broadcastMessage(message); // Fallback para todos
+    });
+
+    console.log(`📢 [GameInProgress] Notificação de jogo cancelado processada (${matchId})`);
+  }
+
+  // ✅ NOVO: Função auxiliar para verificar se jogador está na partida (mesma lógica do MatchFoundService)
+  private isPlayerInMatch(playerInfo: any, playersInMatch: string[]): boolean {
+    if (!playerInfo || !playersInMatch.length) return false;
+
+    // Obter identificadores possíveis do jogador
+    const identifiers = [];
+    
+    if (playerInfo.displayName) {
+      identifiers.push(playerInfo.displayName);
+    }
+    if (playerInfo.summonerName) {
+      identifiers.push(playerInfo.summonerName);
+    }
+    if (playerInfo.gameName) {
+      identifiers.push(playerInfo.gameName);
+      if (playerInfo.tagLine) {
+        identifiers.push(`${playerInfo.gameName}#${playerInfo.tagLine}`);
+      }
+    }
+
+    // Verificar se algum identificador coincide com os jogadores da partida
+    for (const identifier of identifiers) {
+      for (const matchPlayer of playersInMatch) {
+        // Comparação exata
+        if (identifier === matchPlayer) {
+          console.log(`✅ [GameInProgress] Match exato: ${identifier} === ${matchPlayer}`);
+          return true;
+        }
+        
+        // Comparação por gameName (ignorando tag)
+        if (identifier.includes('#') && matchPlayer.includes('#')) {
+          const identifierGameName = identifier.split('#')[0];
+          const matchPlayerGameName = matchPlayer.split('#')[0];
+          if (identifierGameName === matchPlayerGameName) {
+            console.log(`✅ [GameInProgress] Match por gameName: ${identifierGameName} === ${matchPlayerGameName}`);
+            return true;
+          }
+        }
+        
+        // Comparação de gameName com nome completo
+        if (identifier.includes('#')) {
+          const identifierGameName = identifier.split('#')[0];
+          if (identifierGameName === matchPlayer) {
+            console.log(`✅ [GameInProgress] Match gameName com nome completo: ${identifierGameName} === ${matchPlayer}`);
+            return true;
+          }
+        }
+        
+        if (matchPlayer.includes('#')) {
+          const matchPlayerGameName = matchPlayer.split('#')[0];
+          if (identifier === matchPlayerGameName) {
+            console.log(`✅ [GameInProgress] Match nome com gameName: ${identifier} === ${matchPlayerGameName}`);
+            return true;
+          }
+        }
+      }
+    }
+
+    console.log(`❌ [GameInProgress] Nenhum match encontrado para:`, {
+      playerIdentifiers: identifiers,
+      matchPlayers: playersInMatch
+    });
+    return false;
   }
 
   private broadcastMessage(message: any): void {
