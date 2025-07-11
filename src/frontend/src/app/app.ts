@@ -134,7 +134,7 @@ export class App implements OnInit, OnDestroy {
   // ✅ NOVO: Configurar comunicação centralizada com backend
   private setupBackendCommunication(): void {
     console.log('🔗 [App] Configurando comunicação com backend...');
-    
+
     // ✅ CORRIGIDO: Usar o método WebSocket existente do ApiService
     this.apiService.onWebSocketMessage().pipe(
       takeUntil(this.destroy$)
@@ -217,7 +217,7 @@ export class App implements OnInit, OnDestroy {
 
     // Salvar no localStorage para backup
     localStorage.setItem('currentPlayer', JSON.stringify(player));
-    
+
     console.log('✅ [App] Jogador salvo:', player.summonerName, 'displayName:', player.displayName);
   }
 
@@ -281,6 +281,11 @@ export class App implements OnInit, OnDestroy {
       case 'draft_action':
         console.log('🎯 [App] Ação de draft');
         this.handleDraftAction(message.data);
+        break;
+
+      case 'draft_data_sync':
+        console.log('🔄 [App] Sincronização de dados do draft');
+        this.handleDraftDataSync(message.data);
         break;
 
       case 'game_starting':
@@ -375,7 +380,7 @@ export class App implements OnInit, OnDestroy {
     // ✅ CORREÇÃO: Usar dados do MatchmakingService se disponível
     if (data.teammates && data.enemies) {
       console.log('🎮 [App] Usando dados estruturados do MatchmakingService');
-      
+
       // ✅ IDENTIFICAR: Em qual time o jogador atual está
       const currentPlayerIdentifiers = this.getCurrentPlayerIdentifiers();
       const isInTeammates = this.isPlayerInTeam(currentPlayerIdentifiers, data.teammates);
@@ -400,11 +405,11 @@ export class App implements OnInit, OnDestroy {
       }
     } else if (data.team1 && data.team2) {
       console.log('🎮 [App] Usando dados básicos do MatchFoundService');
-      
+
       // ✅ FALLBACK: Usar dados básicos team1/team2
       const allPlayers = [...data.team1, ...data.team2];
       const currentPlayerIdentifiers = this.getCurrentPlayerIdentifiers();
-      const isInTeam1 = data.team1.some((name: string) => 
+      const isInTeam1 = data.team1.some((name: string) =>
         currentPlayerIdentifiers.some(id => this.namesMatch(id, name))
       );
 
@@ -443,31 +448,31 @@ export class App implements OnInit, OnDestroy {
     // Som de notificação
     try {
       const audio = new Audio('assets/sounds/match-found.mp3');
-      audio.play().catch(() => {});
-    } catch (error) {}
+      audio.play().catch(() => { });
+    } catch (error) { }
   }
 
   // ✅ NOVO: Comparar se dois nomes coincidem (com diferentes formatos)
   private namesMatch(name1: string, name2: string): boolean {
     if (name1 === name2) return true;
-    
+
     // Comparação por gameName (ignorando tag)
     if (name1.includes('#') && name2.includes('#')) {
       const gameName1 = name1.split('#')[0];
       const gameName2 = name2.split('#')[0];
       return gameName1 === gameName2;
     }
-    
+
     if (name1.includes('#')) {
       const gameName1 = name1.split('#')[0];
       return gameName1 === name2;
     }
-    
+
     if (name2.includes('#')) {
       const gameName2 = name2.split('#')[0];
       return name1 === gameName2;
     }
-    
+
     return false;
   }
 
@@ -493,7 +498,7 @@ export class App implements OnInit, OnDestroy {
     if (!this.currentPlayer) return [];
 
     const identifiers = [];
-    
+
     // Adicionar todas as possíveis variações do nome
     if (this.currentPlayer.displayName) {
       identifiers.push(this.currentPlayer.displayName);
@@ -519,30 +524,30 @@ export class App implements OnInit, OnDestroy {
 
     return team.some(player => {
       const playerName = player.summonerName || player.name || '';
-      
+
       // Verificar se algum identificador do jogador atual coincide
       return playerIdentifiers.some((identifier: string) => {
         // Comparação exata
         if (identifier === playerName) return true;
-        
+
         // Comparação sem tag (gameName vs gameName#tagLine)
         if (identifier.includes('#') && playerName.includes('#')) {
           const identifierGameName = identifier.split('#')[0];
           const playerGameName = playerName.split('#')[0];
           return identifierGameName === playerGameName;
         }
-        
+
         // Comparação de gameName com nome completo
         if (identifier.includes('#')) {
           const identifierGameName = identifier.split('#')[0];
           return identifierGameName === playerName;
         }
-        
+
         if (playerName.includes('#')) {
           const playerGameName = playerName.split('#')[0];
           return identifier === playerGameName;
         }
-        
+
         return false;
       });
     });
@@ -619,6 +624,51 @@ export class App implements OnInit, OnDestroy {
     // Atualizar estado do draft
     if (this.draftData) {
       this.draftData = { ...this.draftData, ...data };
+    }
+  }
+
+  // ✅ NOVO: Handler para sincronização de dados do draft
+  private handleDraftDataSync(data: any): void {
+    console.log('🔄 [App] Sincronizando dados do draft:', data);
+
+    // Verificar se estamos na fase de draft e se é a partida correta
+    if (!this.inDraftPhase || !this.draftData || this.draftData.matchId !== data.matchId) {
+      console.log('⚠️ [App] Sincronização ignorada - não estamos no draft desta partida');
+      return;
+    }
+
+    // Atualizar dados do draft com informações sincronizadas
+    if (data.pickBanData) {
+      console.log('🔄 [App] Atualizando pickBanData:', {
+        totalActions: data.totalActions,
+        totalPicks: data.totalPicks,
+        totalBans: data.totalBans,
+        lastAction: data.lastAction?.action || 'none'
+      });
+
+      // Mergear dados de pick/ban mantendo estrutura existente
+      this.draftData = {
+        ...this.draftData,
+        pickBanData: data.pickBanData,
+        totalActions: data.totalActions,
+        totalPicks: data.totalPicks,
+        totalBans: data.totalBans,
+        team1Stats: data.team1Stats,
+        team2Stats: data.team2Stats,
+        lastAction: data.lastAction,
+        lastSyncTime: Date.now()
+      };
+
+      // ✅ NOVO: Notificar componente de draft sobre a sincronização
+      const draftComponent = document.querySelector('app-draft-pick-ban') as any;
+      if (draftComponent && draftComponent.handleDraftDataSync) {
+        console.log('🔄 [App] Notificando componente de draft sobre sincronização');
+        draftComponent.handleDraftDataSync(data);
+      } else {
+        console.log('⚠️ [App] Componente de draft não encontrado ou não suporta sincronização');
+      }
+
+      console.log('✅ [App] Dados do draft sincronizados com sucesso');
     }
   }
 
@@ -1081,7 +1131,7 @@ export class App implements OnInit, OnDestroy {
         this.currentPlayer = player;
         this.savePlayerData(player);
         this.updateSettingsForm();
-        
+
         // ✅ NOVO: Identificar jogador no WebSocket após carregar dados
         this.identifyCurrentPlayerOnConnect();
 
@@ -1090,7 +1140,7 @@ export class App implements OnInit, OnDestroy {
       error: (error) => {
         console.warn('⚠️ [App] Erro ao carregar do LCU:', error);
         console.log('🔄 [App] Tentando carregar do localStorage como fallback...');
-        
+
         // Fallback to localStorage if LCU fails
         this.tryLoadFromLocalStorage();
       }

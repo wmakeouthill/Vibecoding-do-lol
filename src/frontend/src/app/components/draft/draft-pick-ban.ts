@@ -1539,4 +1539,65 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         console.log(`🔍 [getPlayerBans] Total de bans para ${playerName}: ${playerBans.length}`);
         return playerBans;
     }
+
+    // ✅ NOVO: Handler para sincronização de dados do draft
+    handleDraftDataSync(data: any): void {
+        console.log('🔄 [DraftPickBan] Recebendo sincronização de dados:', data);
+
+        if (!this.session || !data.pickBanData) {
+            console.log('⚠️ [DraftPickBan] Sincronização ignorada - sessão não inicializada ou dados inválidos');
+            return;
+        }
+
+        console.log('🔄 [DraftPickBan] Aplicando sincronização:', {
+            currentTotalActions: this.session.phases?.filter(p => p.locked).length || 0,
+            newTotalActions: data.totalActions,
+            lastAction: data.lastAction
+        });
+
+        // ✅ ATUALIZAR: Aplicar picks e bans sincronizados nas fases
+        if (data.pickBanData.actions && Array.isArray(data.pickBanData.actions)) {
+            this.applySyncedActions(data.pickBanData.actions);
+        }
+
+        // ✅ ATUALIZAR: Forçar recálculo do turno atual e interface
+        this.updateCurrentTurn();
+        this.forceInterfaceUpdate();
+
+        console.log('✅ [DraftPickBan] Sincronização aplicada com sucesso');
+    }
+
+    // ✅ NOVO: Aplicar ações sincronizadas do MySQL nas fases locais
+    private applySyncedActions(actions: any[]): void {
+        console.log('🔄 [DraftPickBan] Aplicando ações sincronizadas:', actions);
+
+        if (!this.session?.phases) {
+            console.error('❌ [DraftPickBan] Fases não inicializadas');
+            return;
+        }
+
+        // ✅ ESTRATÉGIA: Aplicar ações uma por uma na ordem sequencial
+        for (let i = 0; i < actions.length && i < this.session.phases.length; i++) {
+            const action = actions[i];
+            const phase = this.session.phases[i];
+
+            if (action && action.championId && !phase.locked) {
+                console.log(`🎯 [DraftPickBan] Aplicando ação ${i}: ${action.action} campeão ${action.championId} por ${action.playerName}`);
+
+                // Buscar campeão pelo ID
+                const champion = this.champions.find(c => c.id === action.championId);
+                if (champion) {
+                    // Aplicar ação na fase
+                    phase.champion = champion;
+                    phase.locked = true;
+
+                    console.log(`✅ [DraftPickBan] Ação aplicada na fase ${i}: ${champion.name}`);
+                } else {
+                    console.warn(`⚠️ [DraftPickBan] Campeão ${action.championId} não encontrado`);
+                }
+            }
+        }
+
+        console.log('✅ [DraftPickBan] Todas as ações sincronizadas foram aplicadas');
+    }
 }
