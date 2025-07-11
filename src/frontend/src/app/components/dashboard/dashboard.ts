@@ -48,7 +48,7 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
   customMatchesCount: number = 0;
   isLoadingCustomCount: boolean = false;
 
-  constructor(private apiService: ApiService, private cdr: ChangeDetectorRef, private http: HttpClient) {}
+  constructor(private apiService: ApiService, private cdr: ChangeDetectorRef) { }
   // Detectar mudanças no player - APENAS quando o player muda pela primeira vez
   ngOnChanges(): void {
     // ✅ CORREÇÃO CRÍTICA: Evitar processamento se já está processando
@@ -444,8 +444,8 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
 
         // Buscar o nome do jogador
         const playerName = currentPlayerIdentity?.player?.gameName ||
-                          this.player?.summonerName ||
-                          'Unknown';
+          this.player?.summonerName ||
+          'Unknown';
 
         const processedMatch = {
           id: index + 1,
@@ -520,78 +520,42 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   loadLeaderboardPosition(): void {
-    if (!this.player?.summonerName) {
-      this.leaderboardPosition = 0;
-      return;
-    }
+    if (!this.player) return;
 
-    // Buscar posição real do leaderboard usando o mesmo endpoint do leaderboard
-    const leaderboardSub = this.http.get<any>('http://localhost:3000/api/stats/participants-leaderboard?limit=50').subscribe({
-      next: (response: any) => {
-        if (response && response.success && response.data) {
-          // Procurar o jogador atual no leaderboard
-          const playerIndex = response.data.findIndex((p: any) =>
-            p.summoner_name?.toLowerCase() === this.player?.summonerName?.toLowerCase() ||
-            p.riot_id_game_name?.toLowerCase() === this.player?.gameName?.toLowerCase()
-          );
-
-          if (playerIndex !== -1) {
-            this.leaderboardPosition = playerIndex + 1;
-            console.log(`🏆 Posição encontrada no leaderboard: #${this.leaderboardPosition}`);
-          } else {
-            // Se não encontrar no top 50, buscar na lista completa
+    const leaderboardSub = this.apiService.getLeaderboard(50).subscribe({
+      next: (response) => {
+        if (response.success) {
+          const rank = response.data.findIndex((p: any) => this.getPlayerIdentifier(p) === this.getPlayerIdentifier(this.player!)) + 1;
+          this.leaderboardPosition = rank > 0 ? rank : 0;
+          if (rank === 0) {
             this.searchFullLeaderboard();
           }
-        } else {
-          this.leaderboardPosition = 0;
         }
-        this.cdr.detectChanges();
+        this.cdr.markForCheck();
       },
-      error: (error: any) => {
-        console.warn('⚠️ Erro ao buscar posição no leaderboard:', error);
-        this.leaderboardPosition = 0;
-        this.cdr.detectChanges();
-      }
+      error: (error) => console.error('Error loading leaderboard', error)
     });
-
     this.subscriptions.push(leaderboardSub);
   }
 
   private searchFullLeaderboard(): void {
-    // Buscar com limite maior para encontrar jogadores fora do top 50
-    const fullLeaderboardSub = this.http.get<any>('http://localhost:3000/api/stats/participants-leaderboard?limit=200').subscribe({
-      next: (response: any) => {
-        if (response && response.success && response.data) {
-          const playerIndex = response.data.findIndex((p: any) =>
-            p.summoner_name?.toLowerCase() === this.player?.summonerName?.toLowerCase() ||
-            p.riot_id_game_name?.toLowerCase() === this.player?.gameName?.toLowerCase()
-          );
-
-          if (playerIndex !== -1) {
-            this.leaderboardPosition = playerIndex + 1;
-            console.log(`🏆 Posição encontrada no leaderboard completo: #${this.leaderboardPosition}`);
-          } else {
-            this.leaderboardPosition = 0; // Não ranqueado
-            console.log('📊 Jogador não encontrado no leaderboard');
-          }
-        } else {
-          this.leaderboardPosition = 0;
+    if (!this.player) return;
+    const fullLeaderboardSub = this.apiService.getLeaderboard(200).subscribe({
+      next: (response) => {
+        if (response.success) {
+          const rank = response.data.findIndex((p: any) => this.getPlayerIdentifier(p) === this.getPlayerIdentifier(this.player!)) + 1;
+          this.leaderboardPosition = rank > 0 ? rank : 0;
         }
-        this.cdr.detectChanges();
+        this.cdr.markForCheck();
       },
-      error: (error: any) => {
-        console.warn('⚠️ Erro ao buscar leaderboard completo:', error);
-        this.leaderboardPosition = 0;
-        this.cdr.detectChanges();
-      }
+      error: (error) => console.error('Error loading full leaderboard', error)
     });
-
     this.subscriptions.push(fullLeaderboardSub);
   }
 
   getCurrentTip() {
-    const today = new Date().getDate();
-    return this.tips[today % this.tips.length];
+    const index = new Date().getDate() % this.tips.length;
+    return this.tips[index];
   }
 
   getRankColor(): string {
@@ -1065,10 +1029,10 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
           const participantSummonerName = (participant.summonerName || '').toLowerCase();
 
           const isMatch = participantRiotId === currentGameName ||
-                         participantGameName === currentGameName ||
-                         participantSummonerName === currentPlayerName ||
-                         participantRiotId === currentDisplayName ||
-                         participantGameName === currentDisplayName;
+            participantGameName === currentGameName ||
+            participantSummonerName === currentPlayerName ||
+            participantRiotId === currentDisplayName ||
+            participantGameName === currentDisplayName;
 
           if (isMatch) {
             console.log(`✅ [Dashboard] Found player match:`, {
@@ -1113,7 +1077,7 @@ export class DashboardComponent implements OnInit, OnDestroy, OnChanges {
       if (playerChampion === 'Unknown' && match.pick_ban_data) {
         try {
           const pickBanData = typeof match.pick_ban_data === 'string' ?
-                              JSON.parse(match.pick_ban_data) : match.pick_ban_data;
+            JSON.parse(match.pick_ban_data) : match.pick_ban_data;
 
           if (pickBanData && pickBanData.team1Picks) {
             const playerTeam = match.player_team || (match.player_won && match.winner_team === 1 ? 1 : 2);

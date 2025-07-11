@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, of } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
+import { ApiService } from './api';
 
 export interface Champion {
   id: string;
@@ -32,7 +33,7 @@ export interface ChampionsByRole {
 })
 export class ChampionService {
   private baseImageUrl = 'https://ddragon.leagueoflegends.com/cdn/15.13.1/img/champion/';
-  private baseUrl = this.getBaseUrl();
+  private baseUrl: string;
 
   private roleMapping = {
     top: ['Fighter', 'Tank'],
@@ -55,46 +56,8 @@ export class ChampionService {
   private cachedChampions: Champion[] | null = null;
   private cachedChampionsByRole: ChampionsByRole | null = null;
 
-  constructor(private http: HttpClient) {}
-
-  private getBaseUrl(): string {
-    // Detectar se está no Electron (tanto dev quanto produção)
-    if (this.isElectron()) {
-      // No Windows, o Electron muitas vezes resolve localhost para 127.0.0.1
-      if (this.isWindows()) {
-        return 'http://127.0.0.1:3000/api';
-      } else {
-        return 'http://localhost:3000/api';
-      }
-    }
-
-    // Em desenvolvimento web (Angular dev server)
-    const host = window.location.hostname;
-    if (host === 'localhost' || host === '127.0.0.1') {
-      return 'http://localhost:3000/api';
-    }
-
-    // Em produção web (não Electron), usar URL relativa
-    return `/api`;
-  }
-
-  public isElectron(): boolean {
-    // Verificar se está no Electron através de múltiplas formas
-    const hasElectronAPI = !!(window as any).electronAPI;
-    const hasRequire = !!(window as any).require;
-    const hasProcess = !!(window as any).process?.type;
-    const userAgentElectron = navigator.userAgent.toLowerCase().includes('electron');
-
-    return hasElectronAPI || hasRequire || hasProcess || userAgentElectron;
-  }
-
-  private isWindows(): boolean {
-    const platform = (window as any).process?.platform || navigator.platform;
-    const userAgent = navigator.userAgent;
-    
-    return platform === 'win32' || 
-           platform.toLowerCase().includes('win') ||
-           userAgent.includes('Windows');
+  constructor(private http: HttpClient, private apiService: ApiService) {
+    this.baseUrl = this.apiService.getBaseUrl();
   }
 
   /**
@@ -108,7 +71,7 @@ export class ChampionService {
    */
   static getChampionNameById(championId: number | undefined): string {
     if (!championId) return 'Minion';
-    
+
     // Fallback simples - retorna 'Minion' para qualquer ID desconhecido
     // O backend já processa os dados automaticamente, então este método
     // é usado apenas em casos extremos onde o backend não está disponível
@@ -121,7 +84,7 @@ export class ChampionService {
   getAllChampions(): Observable<Champion[]> {
     console.log('🏆 [ChampionService] getAllChampions() chamado');
     console.log('🏆 [ChampionService] Cache atual:', this.cachedChampions ? `${this.cachedChampions.length} campeões` : 'null');
-    
+
     // Se já temos cache, retornar imediatamente
     if (this.cachedChampions) {
       console.log('🏆 [ChampionService] Retornando cache:', this.cachedChampions.length, 'campeões');
@@ -130,11 +93,11 @@ export class ChampionService {
 
     console.log('🏆 [ChampionService] Cache vazio, carregando do backend...');
     console.log('🏆 [ChampionService] URL do backend:', `${this.baseUrl}/champions`);
-    
+
     return this.http.get<any>(`${this.baseUrl}/champions`).pipe(
       map(response => {
         console.log('🏆 [ChampionService] Resposta do backend recebida:', response);
-        
+
         if (response.success && response.champions) {
           console.log(`✅ [ChampionService] ${response.champions.length} campeões carregados do backend`);
           console.log('🏆 [ChampionService] Primeiros 5 campeões:', response.champions.slice(0, 5).map((c: Champion) => c.name));
@@ -163,7 +126,7 @@ export class ChampionService {
     }
 
     console.log('🏆 [ChampionService] Carregando campeões por role do backend...');
-    
+
     return this.http.get<any>(`${this.baseUrl}/champions`).pipe(
       map(response => {
         if (response.success && response.championsByRole) {

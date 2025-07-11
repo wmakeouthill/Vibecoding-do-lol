@@ -7,6 +7,7 @@ import { BotService, PickBanPhase, CustomPickBanSession } from '../../services/b
 import { DraftChampionModalComponent } from './draft-champion-modal';
 import { DraftConfirmationModalComponent } from './draft-confirmation-modal';
 import { interval, Subscription } from 'rxjs';
+import { ApiService } from '../../services/api';
 
 @Component({
     selector: 'app-draft-pick-ban',
@@ -48,13 +49,17 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
     public botPickTimer: number | null = null;
 
     @ViewChild('confirmationModal') confirmationModal!: DraftConfirmationModalComponent;
+    private baseUrl: string;
 
     constructor(
         public championService: ChampionService,
         public botService: BotService,
         public cdr: ChangeDetectorRef,
-        private http: HttpClient
-    ) { }
+        private http: HttpClient,
+        private apiService: ApiService
+    ) {
+        this.baseUrl = this.apiService.getBaseUrl();
+    }
 
     ngOnInit() {
         console.log('🚀 [DraftPickBan] ngOnInit iniciado');
@@ -469,12 +474,10 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
 
         console.log(`🎯 [updateCurrentTurn] === FIM DA AÇÃO ${this.session.currentAction + 1} ===`);
 
-        // ✅ CORREÇÃO: Forçar detecção de mudanças após atualizar playerName e isMyTurn
+        // ✅ CORRIGIDO: Apenas marcar para detecção, sem forçar detectChanges imediatamente
         this.cdr.markForCheck();
-        this.cdr.detectChanges();
 
         // ✅ NOVO: Se é minha vez, abrir o modal automaticamente após um pequeno delay
-        // ✅ CORREÇÃO: Não abrir automaticamente se estamos em modo de edição
         if (this.isMyTurn && !this.isEditingMode) {
             console.log('🎯 [updateCurrentTurn] É minha vez - agendando abertura do modal...');
             setTimeout(() => {
@@ -555,7 +558,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
                         this.updateCurrentTurn();
                     }
 
-                    // ✅ CORREÇÃO: Forçar atualização final da interface
+                    // ✅ CORRIGIDO: Uma única atualização da interface no final
                     this.forceInterfaceUpdate();
 
                     console.log('✅ [checkForBotAutoAction] Interface atualizada após ação do bot');
@@ -695,9 +698,6 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
             });
         }
 
-        // ✅ CORREÇÃO: AGORA invalidar cache e forçar detecção de mudanças
-        this.forceInterfaceUpdate();
-
         if (this.session.currentAction >= this.session.phases.length) {
             this.session.phase = 'completed';
             this.stopTimer();
@@ -705,7 +705,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
             this.updateCurrentTurn();
         }
 
-        // ✅ CORREÇÃO: Forçar atualização final da interface
+        // ✅ CORRIGIDO: Uma única atualização da interface no final
         this.forceInterfaceUpdate();
 
         console.log('✅ [handleTimeOut] Interface atualizada após timeout');
@@ -963,9 +963,8 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         this.showChampionModal = true;
         console.log('🎯 [openChampionModal] showChampionModal definido como true');
 
-        // ✅ NOVO: Forçar detecção de mudanças
+        // ✅ CORRIGIDO: Apenas marcar para detecção, sem detectChanges direto
         this.cdr.markForCheck();
-        this.cdr.detectChanges();
 
         console.log('🎯 [openChampionModal] === FIM DA ABERTURA DO MODAL ===');
     }
@@ -1305,15 +1304,12 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
 
     // ✅ NOVO: Método para forçar atualização completa da interface
     private forceInterfaceUpdate(): void {
-        // Forçar detecção de mudanças múltiplas vezes para garantir
+        // Marcar para detecção de mudanças uma única vez
         this.cdr.markForCheck();
-        this.cdr.detectChanges();
 
-        // Usar setTimeout para forçar uma segunda atualização
-        setTimeout(() => {
-            this.cdr.markForCheck();
-            this.cdr.detectChanges();
-        }, 10);
+        // ✅ REMOVIDO: setTimeout recursivo que causava stack overflow
+        // Apenas uma marcação de mudança é suficiente com OnPush
+        console.log('🔄 [forceInterfaceUpdate] Interface marcada para atualização');
     }
 
     // ✅ Métodos para substituir os pipes removidos
@@ -1351,36 +1347,6 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         if (totalPhases === 0) return 0;
 
         return Math.round((currentPhase / totalPhases) * 100);
-    }
-
-    // ✅ NOVO: Método para obter URL base do servidor (baseado no ChampionService)
-    private getBaseUrl(): string {
-        // Detectar se está no Electron (tanto dev quanto produção)
-        if (this.isElectron()) {
-            // No Windows, o Electron muitas vezes resolve localhost para 127.0.0.1
-            if (this.isWindows()) {
-                return 'http://127.0.0.1:3000/api';
-            } else {
-                return 'http://localhost:3000/api';
-            }
-        }
-
-        // Em desenvolvimento web (Angular dev server)
-        const host = window.location.hostname;
-        if (host === 'localhost' || host === '127.0.0.1') {
-            return 'http://localhost:3000/api';
-        }
-
-        // Em produção web (não Electron), usar URL relativa
-        return `/api`;
-    }
-
-    private isElectron(): boolean {
-        return !!(window && (window as any).require);
-    }
-
-    private isWindows(): boolean {
-        return navigator.platform.indexOf('Win') > -1;
     }
 
     // ✅ NOVO: Método para enviar ação de draft para o backend
@@ -1436,8 +1402,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         });
 
         try {
-            const baseUrl = this.getBaseUrl();
-            const url = `${baseUrl}/match/draft-action`;
+            const url = `${this.baseUrl}/match/draft-action`;
 
             console.log('🌐 [sendDraftActionToBackend] Fazendo POST para:', url);
             console.log('🌐 [sendDraftActionToBackend] Headers da requisição:', {

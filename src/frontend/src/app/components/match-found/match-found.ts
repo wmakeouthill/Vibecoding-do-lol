@@ -1,6 +1,7 @@
 import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ProfileIconService } from '../../services/profile-icon.service';
+import { Observable } from 'rxjs';
 
 export interface MatchFoundData {
   matchId: number;
@@ -47,8 +48,12 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
   @Output() declineMatch = new EventEmitter<number>();
 
   acceptTimeLeft = 30;
+  sortedBlueTeam: PlayerInfo[] = [];
+  sortedRedTeam: PlayerInfo[] = [];
   private countdownTimer?: number;
   isTimerUrgent = false;
+
+  private playerIconMap = new Map<string, number>();
 
   constructor(private profileIconService: ProfileIconService) { }
 
@@ -56,7 +61,7 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
     if (this.matchData && this.matchData.phase === 'accept') {
       this.startAcceptCountdown();
     }
-
+    this.updateSortedTeams();
     // ✅ NOVO: Escutar atualizações de timer do backend
     this.setupTimerListener();
   }
@@ -78,7 +83,7 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
 
       // ✅ CORREÇÃO: Verificações mais rigorosas para evitar reprocessamento
       const isExactSameData = previousMatchData && currentMatchData &&
-                              JSON.stringify(previousMatchData) === JSON.stringify(currentMatchData);
+        JSON.stringify(previousMatchData) === JSON.stringify(currentMatchData);
 
       if (isExactSameData) {
         console.log('🎮 [MatchFound] Dados idênticos - ignorando ngOnChanges');
@@ -125,8 +130,7 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
           }, 2000);
         }
 
-        // Carregar ícones de perfil para todos os jogadores
-        this.loadProfileIconsForPlayers();
+        this.updateSortedTeams();
       } else {
         console.log('🎮 [MatchFound] ❌ MESMA PARTIDA - ignorando ngOnChanges');
         console.log('🎮 [MatchFound] Motivo: previousMatchId =', previousMatchId, ', currentMatchId =', currentMatchId);
@@ -147,6 +151,16 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
     document.removeEventListener('matchTimerUpdate', this.onTimerUpdate);
 
     console.log('✅ [MatchFound] Recursos limpos com sucesso');
+  }
+
+  private updateSortedTeams(): void {
+    if (!this.matchData) {
+      this.sortedBlueTeam = [];
+      this.sortedRedTeam = [];
+      return;
+    }
+    this.sortedBlueTeam = this.getSortedPlayersByLane(this.getBlueTeamPlayers());
+    this.sortedRedTeam = this.getSortedPlayersByLane(this.getRedTeamPlayers());
   }
 
   // ✅ NOVO: Configurar listener para atualizações de timer do backend
@@ -191,41 +205,13 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   /**
-   * Carrega os ícones de perfil para todos os jogadores da partida
-   */
-  private async loadProfileIconsForPlayers(): Promise<void> {
-    if (!this.matchData) return;
-
-    const allPlayers = [...this.matchData.teammates, ...this.matchData.enemies];
-
-    // Carregar ícones em paralelo para melhor performance
-    const iconPromises = allPlayers.map(async (player) => {
-      try {
-        const profileIconId = await this.profileIconService.getOrFetchProfileIcon(
-          player.summonerName,
-          player.riotIdGameName,
-          player.riotIdTagline
-        );
-        if (profileIconId) {
-          player.profileIconId = profileIconId;
-        }
-      } catch (error) {
-        console.warn(`Erro ao carregar ícone para ${player.summonerName}:`, error);
-      }
-    });
-
-    await Promise.all(iconPromises);
-  }
-
-  /**
    * Obtém a URL do ícone de perfil para um jogador
    */
-  getPlayerProfileIconUrl(player: PlayerInfo): string {
-    return this.profileIconService.getProfileIconUrl(
-      player.summonerName,
-      player.riotIdGameName,
-      player.riotIdTagline
-    );
+  getPlayerProfileIconUrl(player: PlayerInfo): Observable<string> {
+    const identifier = (player.riotIdGameName && player.riotIdTagline)
+      ? `${player.riotIdGameName}#${player.riotIdTagline}`
+      : player.summonerName;
+    return this.profileIconService.getProfileIconUrl(identifier);
   }
 
   /**

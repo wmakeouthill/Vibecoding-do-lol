@@ -3,50 +3,16 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, throwError } from 'rxjs';
 import { catchError, retry, map } from 'rxjs/operators';
 import { Player, RefreshPlayerResponse } from '../interfaces';
+import { ApiService } from './api';
 
 @Injectable({
   providedIn: 'root'
 })
 export class PlayerSearchService {
-  private baseUrl = this.getBaseUrl();
+  private baseUrl: string;
 
-  constructor(private http: HttpClient) {}
-
-  private getBaseUrl(): string {
-    // Detectar se está no Electron (tanto dev quanto produção)
-    if (this.isElectron()) {
-      // No Windows, o Electron muitas vezes resolve localhost para 127.0.0.1
-      if (this.isWindows()) {
-        return 'http://127.0.0.1:3000/api';
-      } else {
-        return 'http://localhost:3000/api';
-      }
-    }
-
-    // Em desenvolvimento web (Angular dev server)
-    const host = window.location.hostname;
-    if (host === 'localhost' || host === '127.0.0.1') {
-      return 'http://localhost:3000/api';
-    }
-
-    // Em produção web (não Electron), usar URL relativa
-    return `/api`;
-  }
-
-  private isElectron(): boolean {
-    return !!(window as any).electronAPI || 
-           !!(window as any).require || 
-           navigator.userAgent.toLowerCase().includes('electron') ||
-           !!(window as any).process?.type;
-  }
-
-  private isWindows(): boolean {
-    const platform = (window as any).process?.platform || navigator.platform;
-    const userAgent = navigator.userAgent;
-    
-    return platform === 'win32' || 
-           platform.toLowerCase().includes('win') ||
-           userAgent.includes('Windows');
+  constructor(private http: HttpClient, private apiService: ApiService) {
+    this.baseUrl = this.apiService.getBaseUrl();
   }
 
   private handleError(error: HttpErrorResponse) {
@@ -67,7 +33,7 @@ export class PlayerSearchService {
     if (!riotId.includes('#')) {
       return throwError(() => new Error('Formato inválido. Use: NomeDoJogo#TAG (ex: Player#BR1)'));
     }
-    
+
     return this.http.get<Player>(`${this.baseUrl}/player/details/${encodeURIComponent(riotId)}?region=${region}`)
       .pipe(
         retry(1),
@@ -94,7 +60,7 @@ export class PlayerSearchService {
   // 3. BUSCA INTELIGENTE: Detecta automaticamente o tipo de identificador
   smartSearch(identifier: string, region: string = 'br1'): Observable<Player> {
     const cleanId = identifier.trim();
-    
+
     if (cleanId.includes('#')) {
       // É um Riot ID (GameName#TagLine)
       return this.searchByRiotId(cleanId, region);
@@ -154,11 +120,11 @@ export class PlayerSearchService {
     // Lidar com diferentes formatos de resposta da API
     const lcuData = data.lcu || data.lcuData || {};
     const riotData = data.riotApi || data.riotData || data.riotAccount || data;
-    
+
     // Priorizar dados da API da Riot quando disponíveis
     const gameName = riotData.gameName || lcuData.displayName || riotData.name || 'Unknown';
     const tagLine = riotData.tagLine || null;
-    
+
     return {
       id: riotData.id || lcuData.summonerId || 0,
       summonerName: gameName,
@@ -183,28 +149,28 @@ export class PlayerSearchService {
   private calculateMMRFromData(data: any): number {
     const soloQueue = data.soloQueue || data.rankedData?.soloQueue;
     if (!soloQueue || !soloQueue.tier) return 1200;
-    
+
     const tierValues: { [key: string]: number } = {
       'IRON': 800, 'BRONZE': 1000, 'SILVER': 1200, 'GOLD': 1400,
       'PLATINUM': 1700, 'EMERALD': 2000, 'DIAMOND': 2300,
       'MASTER': 2600, 'GRANDMASTER': 2800, 'CHALLENGER': 3000
     };
-    
+
     const rankValues: { [key: string]: number } = {
       'IV': 0, 'III': 50, 'II': 100, 'I': 150
     };
-    
+
     const baseMMR = tierValues[soloQueue.tier] || 1200;
     const rankBonus = rankValues[soloQueue.rank] || 0;
     const lpBonus = (soloQueue.leaguePoints || 0) * 0.8;
-    
+
     return Math.round(baseMMR + rankBonus + lpBonus);
   }
 
   private extractRankData(data: any): any {
     const soloQueue = data.soloQueue || data.rankedData?.soloQueue;
     if (!soloQueue || !soloQueue.tier) return undefined;
-    
+
     return {
       tier: soloQueue.tier,
       rank: soloQueue.rank,
@@ -219,8 +185,8 @@ export class PlayerSearchService {
 
   // Validar formato de Riot ID
   isValidRiotId(riotId: string): boolean {
-    return riotId.includes('#') && riotId.split('#').length === 2 && 
-           riotId.split('#')[0].length > 0 && riotId.split('#')[1].length > 0;
+    return riotId.includes('#') && riotId.split('#').length === 2 &&
+      riotId.split('#')[0].length > 0 && riotId.split('#')[1].length > 0;
   }
 
   // Validar formato de PUUID
@@ -231,7 +197,7 @@ export class PlayerSearchService {
   // Sugerir formato correto baseado na entrada
   suggestFormat(input: string): string {
     if (!input) return 'Digite: NomeJogador#TAG ou conecte-se ao LoL';
-    
+
     if (input.includes('#')) {
       const parts = input.split('#');
       if (parts.length !== 2) return 'Formato: NomeJogador#TAG (apenas um #)';
@@ -239,9 +205,9 @@ export class PlayerSearchService {
       if (parts[1].length === 0) return 'TAG não pode estar vazia';
       return 'Formato correto!';
     }
-    
+
     if (this.isValidPuuid(input)) return 'PUUID detectado - será usado automaticamente';
-    
+
     return `Para "${input}", use: ${input}#TAG (ex: ${input}#BR1)`;
   }
 }

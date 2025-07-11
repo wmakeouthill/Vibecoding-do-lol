@@ -3,6 +3,7 @@ import * as path from 'path';
 import { spawn, exec } from 'child_process';
 import * as fs from 'fs';
 import * as http from 'http';
+import { networkInterfaces } from 'os';
 
 let mainWindow: BrowserWindow;
 let backendProcess: any;
@@ -56,9 +57,22 @@ function getProductionPaths() {
   };
 }
 
+function getLocalIpAddress(): string {
+  const nets = networkInterfaces();
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name]!) {
+      // Skip over non-IPv4 and internal (i.e. 127.0.0.1) addresses
+      if (net.family === 'IPv4' && !net.internal) {
+        return net.address;
+      }
+    }
+  }
+  return '127.0.0.1'; // Fallback
+}
+
 async function createWindow(): Promise<void> {
   console.log('🎮 Criando janela principal do Electron...');
-  
+
   try {
     // Criar a janela principal do aplicativo
     console.log('🔧 Configurando BrowserWindow...');
@@ -104,14 +118,14 @@ async function createWindow(): Promise<void> {
         console.error('❌ Não foi possível conectar ao backend nem ao Angular dev server', angularError);
       }
     }
-    
+
     // Abrir DevTools em desenvolvimento
     mainWindow.webContents.openDevTools();
   } else {
     // Em produção, mostrar tela de carregamento imediatamente
     console.log('� Modo produção: carregando tela de loading...');
     await loadLoadingPage();
-    
+
     // Abrir DevTools para debug inicial
     console.log('� Abrindo DevTools para diagnóstico...');
     mainWindow.webContents.openDevTools();
@@ -178,7 +192,7 @@ async function createWindow(): Promise<void> {
     console.log('📺 Tentando mostrar a janela...');
     mainWindow.show();
     console.log('📺 Comando show() executado');
-    
+
     // Verificar se a janela está realmente visível
     setTimeout(() => {
       console.log('🔍 Verificação pós-show:');
@@ -393,10 +407,10 @@ async function loadLoadingPage(): Promise<void> {
 async function waitForBackend(timeoutMs: number): Promise<boolean> {
   const startTime = Date.now();
   const checkInterval = 2000; // Verificar a cada 2 segundos
-  
-  console.log(`⏳ Aguardando backend por até ${timeoutMs/1000} segundos...`);
+
+  console.log(`⏳ Aguardando backend por até ${timeoutMs / 1000} segundos...`);
   console.log(`🔍 Backend deve estar disponível em: http://127.0.0.1:3000/api/health`);
-  
+
   while (Date.now() - startTime < timeoutMs) {
     try {
       const isReady = await testBackendConnectivity(1, 0); // 1 tentativa, sem delay
@@ -407,18 +421,18 @@ async function waitForBackend(timeoutMs: number): Promise<boolean> {
     } catch (error) {
       // Continuar tentando
     }
-    
+
     // Aguardar antes da próxima verificação
     await new Promise(resolve => setTimeout(resolve, checkInterval));
-    
+
     // Log de progresso a cada 10 segundos
     const elapsed = Date.now() - startTime;
     if (elapsed % 10000 < checkInterval) {
       const progressPercent = Math.round((elapsed / timeoutMs) * 100);
-      console.log(`⏳ Aguardando backend... ${Math.round(elapsed/1000)}s/${Math.round(timeoutMs/1000)}s (${progressPercent}%)`);
+      console.log(`⏳ Aguardando backend... ${Math.round(elapsed / 1000)}s/${Math.round(timeoutMs / 1000)}s (${progressPercent}%)`);
     }
   }
-  
+
   console.log('❌ Timeout aguardando backend');
   return false;
 }
@@ -640,37 +654,37 @@ function createMenu(): void {
 async function startBackendServer(): Promise<void> {
   if (!isDev) {
     console.log('🚀 Iniciando servidor backend em produção...');
-    
+
     try {
       // Obter caminhos de produção
       const prodPaths = getProductionPaths();
       console.log('📂 Caminhos de produção:', prodPaths);
-      
+
       // Verificar se Node.js está disponível
       const nodeAvailable = await new Promise<boolean>((resolve) => {
         exec('node --version', (error) => {
           resolve(!error);
         });
       });
-      
+
       if (!nodeAvailable) {
         console.error('❌ Node.js não disponível!');
         console.error('💡 Solução: Instale Node.js de https://nodejs.org/');
         throw new Error('Node.js não encontrado');
       }
-      
+
       // Verificar se arquivos existem
       if (!fs.existsSync(prodPaths.backend)) {
         console.error('❌ Arquivo backend não encontrado:', prodPaths.backend);
         throw new Error('Backend não encontrado: ' + prodPaths.backend);
       }
-      
+
       if (!fs.existsSync(prodPaths.nodeModules)) {
         console.error('❌ Dependências do backend não encontradas:', prodPaths.nodeModules);
         console.error('💡 Execute: npm run build:complete');
         throw new Error('Dependências não encontradas: ' + prodPaths.nodeModules);
       }
-      
+
       // Finalizar processos Node.js antigos na porta 3000 (mais rápido)
       console.log('🔧 Limpando processos antigos...');
       try {
@@ -685,12 +699,12 @@ async function startBackendServer(): Promise<void> {
       } catch (error) {
         console.log('⚠️ Não foi possível finalizar processos antigos');
       }
-      
+
       // Iniciar backend
       console.log('🔄 Iniciando processo do backend...');
       console.log('📍 Backend path:', prodPaths.backend);
       console.log('📍 Working dir:', path.dirname(prodPaths.backend));
-      
+
       backendProcess = spawn('node', [prodPaths.backend], {
         cwd: path.dirname(prodPaths.backend),
         env: {
@@ -701,29 +715,29 @@ async function startBackendServer(): Promise<void> {
         },
         stdio: ['ignore', 'pipe', 'pipe']
       });
-      
+
       // Logs do backend
       backendProcess.stdout?.on('data', (data: Buffer) => {
         console.log(`[BACKEND] ${data.toString()}`);
       });
-      
+
       backendProcess.stderr?.on('data', (data: Buffer) => {
         console.error(`[BACKEND ERROR] ${data.toString()}`);
       });
-      
+
       backendProcess.on('error', (error: Error) => {
         console.error('❌ Erro ao iniciar backend:', error);
       });
-      
+
       backendProcess.on('exit', (code: number | null) => {
         console.log(`🔄 Backend finalizado com código: ${code}`);
       });
-      
+
       console.log('✅ Processo do backend iniciado com PID:', backendProcess.pid);
-      
+
       // Aguardar apenas 1 segundo para o backend começar a inicializar
       await new Promise(resolve => setTimeout(resolve, 1000));
-      
+
     } catch (error: any) {
       console.error('❌ Erro crítico ao iniciar backend:', error.message);
       throw error;
@@ -736,7 +750,7 @@ async function startBackendServer(): Promise<void> {
 // Função para testar se o backend está respondendo
 async function testBackendConnectivity(maxRetries = 30, retryDelay = 1000): Promise<boolean> {
   console.log(`🔍 Testando conectividade do backend (máximo ${maxRetries} tentativas)...`);
-  
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const result = await new Promise<boolean>((resolve) => {
@@ -789,13 +803,13 @@ app.whenReady().then(async () => {
 
     // ESTRATÉGIA OTIMIZADA: Iniciar backend em paralelo com criação da janela
     console.log('🚀 INÍCIO: Iniciando backend e janela em paralelo...');
-    
+
     // Iniciar backend imediatamente em background (sem aguardar)
     const backendPromise = startBackendServer().catch(error => {
       console.error('❌ Erro na inicialização do backend:', error);
       return false;
     });
-    
+
     // Criar janela com tela de carregamento (paralelo ao backend)
     console.log('🎮 Criando janela Electron...');
     await createWindow();
@@ -806,31 +820,34 @@ app.whenReady().then(async () => {
     let backendReady = false;
     let attempts = 0;
     const maxAttempts = 60; // 60 tentativas = 2 minutos
-    
+
     while (!backendReady && attempts < maxAttempts) {
       // Tentar conectar
       backendReady = await testBackendConnectivity(1, 0); // 1 tentativa rápida
-      
+
       if (backendReady) {
         console.log('🎉 Backend conectado!');
         break;
       }
-      
+
       attempts++;
-      
+
       // Log de progresso a cada 10 tentativas (20 segundos)
       if (attempts % 10 === 0) {
         console.log(`⏳ Tentativa ${attempts}/${maxAttempts} - Backend ainda inicializando...`);
       }
-      
+
       // Aguardar 2 segundos antes da próxima tentativa
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
-    
+
     if (backendReady) {
       console.log('✅ Backend pronto! Carregando frontend...');
+      const localIp = getLocalIpAddress();
+      const frontendUrl = `http://${localIp}:3000`;
+      console.log(`🔌 Carregando frontend de: ${frontendUrl}`);
       try {
-        await mainWindow.loadURL('http://127.0.0.1:3000');
+        await mainWindow.loadURL(frontendUrl);
         console.log('✅ Frontend carregado com sucesso');
       } catch (loadError) {
         console.error('❌ Erro ao carregar frontend:', loadError);
@@ -840,7 +857,7 @@ app.whenReady().then(async () => {
       console.error('❌ Backend não ficou disponível no tempo limite');
       await loadDiagnosticPage();
     }
-    
+
     // Aguardar o backend promise terminar (para logs)
     await backendPromise;
 

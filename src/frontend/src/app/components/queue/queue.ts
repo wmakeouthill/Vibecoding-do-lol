@@ -1,7 +1,7 @@
 import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, OnChanges, ChangeDetectorRef, NgZone, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Subject } from 'rxjs';
+import { Subject, Observable } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { Player, QueueStatus, QueuePreferences } from '../../interfaces';
 import { DiscordIntegrationService } from '../../services/discord-integration.service';
@@ -31,7 +31,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   @Input() currentPlayer: Player | null = null;
   @Output() joinQueue = new EventEmitter<QueuePreferences>();
   @Output() leaveQueue = new EventEmitter<void>();
-  @Output() joinDiscordQueueWithFullData = new EventEmitter<{player: Player | null, preferences: QueuePreferences}>();
+  @Output() joinDiscordQueueWithFullData = new EventEmitter<{ player: Player | null, preferences: QueuePreferences }>();
   @Output() refreshData = new EventEmitter<void>();
   @Output() autoRefreshToggle = new EventEmitter<boolean>();
 
@@ -76,37 +76,37 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     private profileIconService: ProfileIconService,
     private cdr: ChangeDetectorRef,
     private ngZone: NgZone
-  ) {}
+  ) { }
 
   // =============================================================================
   // LIFECYCLE METHODS
   // =============================================================================
   ngOnInit(): void {
     console.log('🎯 [Queue] Componente inicializado');
-    
+
     this.setupDiscordListeners();
     this.setupQueueStateListener();
     this.autoRefreshToggle.emit(this.autoRefreshEnabled);
-    
+
     // ✅ NOVO: Fazer refresh inicial SEMPRE que entrar no componente
     console.log('🔄 [Queue] Fazendo refresh inicial do estado da fila...');
     this.refreshData.emit();
-    
+
     if (this.isInQueue) {
       this.startQueueTimer();
     }
-    
+
     // ✅ NOVO: Iniciar timer para atualizar tempos dos jogadores na fila
     this.startPlayersTimeUpdate();
   }
 
   ngOnDestroy(): void {
     console.log('🛑 [Queue] Componente destruído');
-    
+
     this.destroy$.next();
     this.destroy$.complete();
     this.cleanup();
-    
+
     console.log('✅ [Queue] Cleanup completo');
   }
 
@@ -117,17 +117,17 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
 
     if (changes.queueStatus?.currentValue) {
       console.log('🔄 [Queue] QueueStatus atualizado:', changes.queueStatus.currentValue);
-      
+
       // ✅ NOVO: Verificar se o jogador atual está na lista da fila
       if (this.currentPlayer?.displayName && changes.queueStatus.currentValue?.playersInQueueList) {
-        const playerInQueue = changes.queueStatus.currentValue.playersInQueueList.find((p: any) => 
-          p.summonerName === this.currentPlayer?.displayName || 
+        const playerInQueue = changes.queueStatus.currentValue.playersInQueueList.find((p: any) =>
+          p.summonerName === this.currentPlayer?.displayName ||
           p.summonerName === this.currentPlayer?.summonerName ||
           p.isCurrentPlayer === true || // ✅ NOVO: Usar campo isCurrentPlayer do backend
-          (p.summonerName && this.currentPlayer?.displayName && 
-           p.summonerName.replace(/\s+/g, '').toLowerCase() === this.currentPlayer.displayName.replace(/\s+/g, '').toLowerCase())
+          (p.summonerName && this.currentPlayer?.displayName &&
+            p.summonerName.replace(/\s+/g, '').toLowerCase() === this.currentPlayer.displayName.replace(/\s+/g, '').toLowerCase())
         );
-        
+
         if (playerInQueue && !this.isInQueue) {
           console.log('🎯 [Queue] Jogador encontrado na fila, atualizando estado:', playerInQueue);
           this.isInQueue = true;
@@ -144,10 +144,10 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
           this.syncTimerWithPlayerData(playerInQueue, false); // false = não resetar timer
         }
       }
-      
+
       this.cdr.detectChanges();
     }
-    
+
     // ✅ NOVO: Debug do estado isInQueue
     if (changes.isInQueue) {
       console.log(`🎯 [Queue] Estado isInQueue mudou: ${changes.isInQueue.previousValue} → ${changes.isInQueue.currentValue}`);
@@ -156,7 +156,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
         currentPlayerDisplayName: this.currentPlayer?.displayName,
         queuePlayersCount: this.queueStatus?.playersInQueue || 0
       });
-      
+
       // ✅ CORRIGIDO: Iniciar/parar timer baseado no estado sem resetar se já está rodando
       if (this.isInQueue && !this.timerInterval) {
         this.startQueueTimer();
@@ -164,7 +164,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
         this.stopQueueTimer();
         this.queueTimer = 0;
       }
-      
+
       this.cdr.detectChanges();
     }
   }
@@ -172,11 +172,11 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   private handleCurrentPlayerChange(newPlayer: Player): void {
     console.log('🔄 [Queue] CurrentPlayer atualizado');
     this.queueStateService.updateCurrentPlayer(newPlayer);
-    
+
     if (this.autoRefreshEnabled) {
       this.queueStateService.startPolling();
     }
-    
+
     // Enviar dados LCU para Discord (backend gerencia a vinculação)
     if (newPlayer?.displayName) {
       console.log('🎮 [Queue] Enviando dados do LCU para identificação Discord...');
@@ -185,7 +185,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
         displayName: newPlayer.displayName
       });
     }
-    
+
     this.cdr.detectChanges();
   }
 
@@ -204,23 +204,23 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       takeUntil(this.destroy$)
     ).subscribe(state => {
       console.log('🔄 [Queue] Estado da fila atualizado via backend:', state);
-      
+
       this.isInQueue = state.isInQueue;
-      
+
       if (state.isInQueue && !this.timerInterval) {
         this.startQueueTimer();
       } else if (!state.isInQueue) {
         this.stopQueueTimer();
         this.queueTimer = 0;
       }
-      
+
       this.cdr.detectChanges();
     });
   }
 
   private setupDiscordListeners(): void {
     console.log('🔗 [Queue] Configurando listeners Discord...');
-    
+
     this.discordService.onConnectionChange().pipe(
       takeUntil(this.destroy$)
     ).subscribe(connected => {
@@ -249,9 +249,9 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   // =============================================================================
   onAutoRefreshChange(): void {
     console.log(`🔄 [Queue] Auto-refresh ${this.autoRefreshEnabled ? 'habilitado' : 'desabilitado'}`);
-    
+
     this.autoRefreshToggle.emit(this.autoRefreshEnabled);
-    
+
     if (this.autoRefreshEnabled) {
       if (this.currentPlayer && this.currentPlayer.displayName) {
         this.queueStateService.updateCurrentPlayer(this.currentPlayer);
@@ -287,11 +287,11 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
 
   refreshQueueData(): void {
     if (this.isRefreshing) return;
-    
+
     this.isRefreshing = true;
     console.log('🔄 [Queue] Refresh manual solicitado');
     this.refreshData.emit();
-    
+
     setTimeout(() => {
       this.isRefreshing = false;
       this.cdr.detectChanges();
@@ -306,23 +306,23 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       currentPlayer: this.currentPlayer?.displayName,
       playersInQueue: this.queueStatus?.playersInQueue
     });
-    
+
     this.isRefreshing = true;
-    
+
     // ✅ NOVO: Emitir evento para o componente pai atualizar o estado da fila
     console.log('🔄 [Queue] Solicitando atualização completa do estado da fila ao componente pai...');
     this.refreshData.emit();
-    
+
     // ✅ NOVO: Forçar atualização do QueueStateService
     if (this.currentPlayer?.displayName) {
       console.log('🔄 [Queue] Atualizando QueueStateService com jogador atual...');
       this.queueStateService.updateCurrentPlayer(this.currentPlayer);
       this.queueStateService.forceSync();
     }
-    
+
     // ✅ NOVO: Forçar detecção de mudanças imediatamente
     this.cdr.detectChanges();
-    
+
     // Parar refresh após 2 segundos
     setTimeout(() => {
       this.isRefreshing = false;
@@ -336,7 +336,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   // =============================================================================
   private startQueueTimer(): void {
     this.stopQueueTimer();
-    
+
     console.log('⏱️ [Queue] Iniciando timer da fila');
     this.timerInterval = this.ngZone.runOutsideAngular(() => {
       return window.setInterval(() => {
@@ -364,7 +364,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     }
 
     // Encontrar o jogador atual na lista da fila
-    const currentPlayerInQueue = this.queueStatus.playersInQueueList.find(player => 
+    const currentPlayerInQueue = this.queueStatus.playersInQueueList.find(player =>
       player.isCurrentPlayer === true ||
       player.summonerName === this.currentPlayer?.displayName ||
       (player.tagLine ? `${player.summonerName}#${player.tagLine}` : player.summonerName) === this.currentPlayer?.displayName
@@ -410,12 +410,12 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       currentPlayer: this.currentPlayer?.displayName,
       isDiscordConnected: this.isDiscordConnected
     });
-    
+
     if (!this.currentPlayer?.displayName) {
       console.error('❌ [Queue] Dados do jogador não disponíveis para sair da fila');
       return;
     }
-    
+
     console.log('✅ [Queue] Delegando saída da fila para o componente pai');
     this.onLeaveQueue();
   }
@@ -432,10 +432,10 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       currentPlayer: this.currentPlayer?.displayName,
       preferences: preferences
     });
-    
+
     this.queuePreferences = preferences;
     this.showLaneSelector = false;
-    
+
     // Validações básicas (backend fará validações completas)
     if (!this.currentPlayer?.displayName) {
       alert('Erro: Dados do Riot ID não disponíveis. Certifique-se de que o League of Legends está aberto.');
@@ -453,11 +453,11 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       player: this.currentPlayer,
       preferences: preferences
     });
-    
+
     // ✅ REMOVIDO: Timer será sincronizado automaticamente quando o backend atualizar a fila
     // this.queueTimer = 0;
     // this.startQueueTimer();
-    
+
     console.log('✅ [Queue] Emissão de entrada na fila concluída');
   }
 
@@ -494,7 +494,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   getLaneName(laneId: string): string {
     const lanes: { [key: string]: string } = {
       'top': 'Topo',
-      'jungle': 'Selva', 
+      'jungle': 'Selva',
       'mid': 'Meio',
       'bot': 'Atirador',
       'adc': 'Atirador',
@@ -508,7 +508,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     const icons: { [key: string]: string } = {
       'top': '⚔️',
       'jungle': '🌲',
-      'mid': '⭐', 
+      'mid': '⭐',
       'bot': '🏹',
       'adc': '🏹',
       'support': '🛡️',
@@ -522,72 +522,37 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   getPlayerTag(): string {
-    return this.currentPlayer?.tagLine ? `#${this.currentPlayer.tagLine}` : '';
+    return this.currentPlayer?.tagLine || '';
   }
 
-  getProfileIconUrl(): string {
-    console.log('🖼️ [Queue] getProfileIconUrl chamado:', {
-      hasCurrentPlayer: !!this.currentPlayer,
-      displayName: this.currentPlayer?.displayName,
-      gameName: this.currentPlayer?.gameName,
-      tagLine: this.currentPlayer?.tagLine,
-      profileIconId: this.currentPlayer?.profileIconId
-    });
-    
-    // ✅ PRIORIDADE 1: Se tem profileIconId direto, usar
-    if (this.currentPlayer?.profileIconId && Number(this.currentPlayer.profileIconId) > 0) {
-      const iconId = Number(this.currentPlayer.profileIconId);
-      console.log('🖼️ [Queue] Usando profileIconId direto:', iconId);
-      return `https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/${iconId}.jpg`;
-    }
-    
-    // ✅ PRIORIDADE 2: Se tem displayName, tentar buscar do cache
+  getProfileIconUrl(player?: any): Observable<string> {
+    const identifier = player?.summonerName || this.currentPlayer?.displayName || '';
+    // O serviço já lida com o caso de identificador vazio, retornando o ícone padrão.
+    return this.profileIconService.getProfileIconUrl(identifier);
+  }
+
+  private fetchProfileIconForCurrentPlayer(): void {
     if (this.currentPlayer?.displayName) {
-      const cachedIconId = this.profileIconService.getProfileIconId(
-        this.currentPlayer.displayName,
-        this.currentPlayer.gameName,
-        this.currentPlayer.tagLine
-      );
-      
-      console.log('🖼️ [Queue] Cache check:', {
-        displayName: this.currentPlayer.displayName,
-        cachedIconId: cachedIconId
+      const identifier = this.currentPlayer.displayName;
+      this.profileIconService.getOrFetchProfileIcon(identifier).subscribe({
+        next: (iconId) => {
+          if (iconId) {
+            console.log(`[Queue] Ícone ${iconId} para ${identifier} carregado/buscado.`);
+            this.cdr.detectChanges(); // Forçar atualização
+          }
+        },
+        error: (err) => console.error(`[Queue] Erro ao buscar ícone para ${identifier}`, err)
       });
-      
-      if (cachedIconId && cachedIconId > 0) {
-        console.log('🖼️ [Queue] Usando ícone do cache:', cachedIconId);
-        return `https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/${cachedIconId}.jpg`;
-      } else {
-        // ✅ BUSCAR AUTOMATICAMENTE se não está no cache
-        console.log('🖼️ [Queue] Ícone não encontrado no cache, buscando do servidor...');
-        this.profileIconService.fetchProfileIcon(
-          this.currentPlayer.displayName,
-          this.currentPlayer.gameName,
-          this.currentPlayer.tagLine
-        ).then((iconId: number | null) => {
-          console.log('🖼️ [Queue] Ícone obtido do servidor:', iconId);
-          this.cdr.detectChanges(); // Forçar atualização da UI
-        }).catch((error: any) => {
-          console.warn('⚠️ [Queue] Erro ao buscar ícone do servidor:', error);
-        });
-        
-        // ✅ RETORNAR ÍCONE PADRÃO enquanto busca
-        return `https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/29.jpg`;
-      }
     }
-    
-    // ✅ FALLBACK: Ícone padrão
-    console.log('🖼️ [Queue] Usando ícone padrão (fallback)');
-    return `https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/profile-icons/29.jpg`;
   }
 
   onProfileIconError(event: Event): void {
     const target = event.target as HTMLImageElement;
-    if (!target) return;
-
-    // ✅ CORRIGIDO: Usar o método do ProfileIconService para fallbacks
-    const profileIconId = this.currentPlayer?.profileIconId ? Number(this.currentPlayer.profileIconId) : undefined;
-    this.profileIconService.onProfileIconError(event, profileIconId);
+    if (target) {
+      // ✅ CORRIGIDO: Usar o método do ProfileIconService para fallbacks
+      const profileIconId = this.currentPlayer?.profileIconId ? Number(this.currentPlayer.profileIconId) : undefined;
+      this.profileIconService.onProfileIconError(event, profileIconId);
+    }
   }
 
   onProfileIconLoad(event: Event): void {
@@ -615,19 +580,19 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     if (player?.isCurrentPlayer === true) {
       return true;
     }
-    
+
     // ✅ FALLBACK: Comparação manual como backup
     if (!this.currentPlayer?.displayName) {
       return false;
     }
-    
+
     const currentDisplayName = this.currentPlayer.displayName;
     const playerFullName = player.tagLine ? `${player.summonerName}#${player.tagLine}` : player.summonerName;
-    
-    return playerFullName === currentDisplayName || 
-           player.summonerName === currentDisplayName ||
-           playerFullName.toLowerCase() === currentDisplayName.toLowerCase() ||
-           player.summonerName.toLowerCase() === currentDisplayName.toLowerCase();
+
+    return playerFullName === currentDisplayName ||
+      player.summonerName === currentDisplayName ||
+      playerFullName.toLowerCase() === currentDisplayName.toLowerCase() ||
+      player.summonerName.toLowerCase() === currentDisplayName.toLowerCase();
   }
 
   // ✅ NOVO: Método auxiliar para calcular tempo na fila (usado tanto pelo timer quanto pela tabela)
@@ -636,17 +601,17 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       const joinTimeDate = typeof joinTime === 'string' ? new Date(joinTime) : joinTime;
       const now = new Date();
       const diffMs = now.getTime() - joinTimeDate.getTime();
-      
+
       if (diffMs < 0) {
         return { seconds: 0, display: '0s' };
       }
-      
+
       const diffSeconds = Math.floor(diffMs / 1000);
       const minutes = Math.floor(diffSeconds / 60);
       const seconds = diffSeconds % 60;
-      
+
       const display = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
-      
+
       return { seconds: diffSeconds, display };
     } catch (error) {
       console.warn('⚠️ [Queue] Erro ao calcular tempo na fila:', error);
@@ -658,7 +623,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     if (!player?.joinTime) {
       return '0s';
     }
-    
+
     // ✅ CORRIGIDO: Usar método auxiliar para garantir consistência
     return this.calculateTimeInQueue(player.joinTime).display;
   }
@@ -668,40 +633,40 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     if (!this.queueStatus?.playersInQueueList || !this.hasLinkedNickname(user)) {
       return false;
     }
-    
+
     const linkedNickname = this.getLinkedNickname(user);
     if (!linkedNickname) {
       return false;
     }
-    
+
     // ✅ PRIORIDADE 1: Se o usuário atual é o mesmo que está sendo checado e tem isCurrentPlayer=true
-    if (this.currentPlayer?.displayName && 
-        (linkedNickname === this.currentPlayer.displayName || 
-         linkedNickname.toLowerCase() === this.currentPlayer.displayName.toLowerCase())) {
-      const currentPlayerInQueue = this.queueStatus.playersInQueueList.find((player: any) => 
+    if (this.currentPlayer?.displayName &&
+      (linkedNickname === this.currentPlayer.displayName ||
+        linkedNickname.toLowerCase() === this.currentPlayer.displayName.toLowerCase())) {
+      const currentPlayerInQueue = this.queueStatus.playersInQueueList.find((player: any) =>
         player.isCurrentPlayer === true
       );
       if (currentPlayerInQueue) {
         return true;
       }
     }
-    
+
     // ✅ PRIORIDADE 2: Buscar o usuário na lista da fila usando o linkedNickname
     const playerInQueue = this.queueStatus.playersInQueueList.find((player: any) => {
       const playerFullName = player.tagLine ? `${player.summonerName}#${player.tagLine}` : player.summonerName;
-      
+
       // Comparar diferentes formatos
       return playerFullName === linkedNickname ||
-             player.summonerName === linkedNickname ||
-             playerFullName.toLowerCase() === linkedNickname.toLowerCase() ||
-             player.summonerName.toLowerCase() === linkedNickname.toLowerCase() ||
-             (playerFullName.includes('#') && linkedNickname.includes('#') && playerFullName === linkedNickname) ||
-             (playerFullName.includes('#') && !linkedNickname.includes('#') && playerFullName.startsWith(linkedNickname + '#')) ||
-             (!playerFullName.includes('#') && linkedNickname.includes('#') && linkedNickname.startsWith(playerFullName + '#'));
+        player.summonerName === linkedNickname ||
+        playerFullName.toLowerCase() === linkedNickname.toLowerCase() ||
+        player.summonerName.toLowerCase() === linkedNickname.toLowerCase() ||
+        (playerFullName.includes('#') && linkedNickname.includes('#') && playerFullName === linkedNickname) ||
+        (playerFullName.includes('#') && !linkedNickname.includes('#') && playerFullName.startsWith(linkedNickname + '#')) ||
+        (!playerFullName.includes('#') && linkedNickname.includes('#') && linkedNickname.startsWith(playerFullName + '#'));
     });
-    
+
     const inQueue = !!playerInQueue;
-    
+
     // ✅ DEBUG: Log apenas quando muda de estado
     if (user.lastQueueStatus !== inQueue) {
       console.log(`🔍 [Queue] Discord user ${user.username} queue status:`, {
@@ -712,7 +677,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       });
       user.lastQueueStatus = inQueue;
     }
-    
+
     return inQueue;
   }
 
@@ -725,18 +690,18 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       if (typeof user.linkedNickname === 'string') {
         return true;
       }
-      if (typeof user.linkedNickname === 'object' && 
-          user.linkedNickname.gameName && 
-          user.linkedNickname.tagLine) {
+      if (typeof user.linkedNickname === 'object' &&
+        user.linkedNickname.gameName &&
+        user.linkedNickname.tagLine) {
         return true;
       }
     }
-    
+
     // Verificar novo formato linkedDisplayName
     if (user?.linkedDisplayName && typeof user.linkedDisplayName === 'string') {
       return true;
     }
-    
+
     return false;
   }
 
@@ -751,9 +716,9 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     }
 
     // Se for objeto com {gameName, tagLine}, montar displayName
-    if (typeof user.linkedNickname === 'object' && 
-        user.linkedNickname.gameName && 
-        user.linkedNickname.tagLine) {
+    if (typeof user.linkedNickname === 'object' &&
+      user.linkedNickname.gameName &&
+      user.linkedNickname.tagLine) {
       return `${user.linkedNickname.gameName}#${user.linkedNickname.tagLine}`;
     }
 
@@ -783,7 +748,7 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
       // Forçar detecção de mudanças para atualizar os tempos exibidos
       this.cdr.detectChanges();
     }, 1000);
-    
+
     console.log('🔄 [Queue] Timer de atualização de tempos dos jogadores iniciado');
   }
 
@@ -801,10 +766,10 @@ export class QueueComponent implements OnInit, OnDestroy, OnChanges {
     if (!playerData?.joinTime) {
       return;
     }
-    
+
     // ✅ CORRIGIDO: Usar método auxiliar para garantir consistência
     const timeData = this.calculateTimeInQueue(playerData.joinTime);
-    
+
     if (resetTimer) {
       // ✅ SIMPLIFICADO: Apenas inicializar timer na primeira vez
       this.queueTimer = timeData.seconds;

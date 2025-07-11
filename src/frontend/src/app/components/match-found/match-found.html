@@ -17,10 +17,10 @@
         </div>
 
         <div class="players-list">
-          <div class="player-card" *ngFor="let player of getSortedPlayersByLane(getBlueTeamPlayers())"
+          <div class="player-card" *ngFor="let player of sortedBlueTeam"
             [class.current-player]="isCurrentPlayer(player)">
             <div class="player-avatar">
-              <img [src]="getPlayerProfileIconUrl(player)" alt="Avatar" class="avatar-image"
+              <img [src]="getPlayerProfileIconUrl(player) | async" alt="Avatar" class="avatar-image"
                 (error)="onProfileIconError($event, player)">
             </div>
             <div class="player-info">
@@ -57,10 +57,10 @@
         </div>
 
         <div class="players-list">
-          <div class="player-card" *ngFor="let player of getSortedPlayersByLane(getRedTeamPlayers())"
+          <div class="player-card" *ngFor="let player of sortedRedTeam"
             [class.current-player]="isCurrentPlayer(player)">
             <div class="player-avatar">
-              <img [src]="getPlayerProfileIconUrl(player)" alt="Avatar" class="avatar-image"
+              <img [src]="getPlayerProfileIconUrl(player) | async" alt="Avatar" class="avatar-image"
                 (error)="onProfileIconError($event, player)">
             </div>
             <div class="player-info">

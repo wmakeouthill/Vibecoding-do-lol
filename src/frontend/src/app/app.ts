@@ -1,8 +1,9 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Subject, takeUntil } from 'rxjs';
+import { Subject, takeUntil, filter, delay, take } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
+import { Router } from '@angular/router';
 
 import { DashboardComponent } from './components/dashboard/dashboard';
 import { QueueComponent } from './components/queue/queue';
@@ -93,49 +94,106 @@ export class App implements OnInit, OnDestroy {
   // ✅ NOVO: Controle para priorizar backend sobre QueueStateService
   private hasRecentBackendQueueStatus = false;
 
+  private lcuCheckInterval: any;
+  private readonly LCU_CHECK_INTERVAL = 5000; // Intervalo de verificação do status do LCU
+
   constructor(
     private apiService: ApiService,
     private queueStateService: QueueStateService,
     private discordService: DiscordIntegrationService,
-    private botService: BotService
+    private botService: BotService,
+    private router: Router,
+    private cdr: ChangeDetectorRef
   ) {
+    console.log(`[App] Constructor`);
+
+    // Inicialização da verificação de status do LCU
+    this.lcuCheckInterval = setInterval(() => this.startLCUStatusCheck(), this.LCU_CHECK_INTERVAL);
+
     this.isElectron = !!(window as any).electronAPI;
   }
 
   ngOnInit(): void {
     console.log('🚀 [App] Inicializando frontend como interface para backend...');
 
-    // ✅ MANTIDO: Configurações básicas
-    this.loadPlayerData();
-    this.setupDiscordStatusListener();
-    this.startLCUStatusCheck();
-    // ✅ REMOVIDO: startQueueStatusCheck() - usar apenas WebSocket em tempo real
-    this.checkBackendConnection();
-    this.loadConfigFromDatabase();
-
-    // ✅ NOVO: Registrar ApiService no DiscordService para repasse de mensagens
-    this.discordService.setApiService(this.apiService);
-
-    // ✅ NOVO: Configurar comunicação com backend
-    this.setupBackendCommunication();
-
-    // ✅ NOVO: Buscar status inicial da fila UMA VEZ apenas
-    this.refreshQueueStatus();
-
-    // ✅ NOVO: Forçar atualização do status da fila a cada 10 segundos para garantir sincronização
-    setInterval(() => {
-      if (this.currentPlayer?.displayName) {
-        console.log('🔄 [App] Atualização periódica do status da fila');
-        this.refreshQueueStatus();
-      }
-    }, 10000);
+    // ✅ NOVO: Sequência de inicialização corrigida
+    this.initializeAppSequence();
   }
 
-  // ✅ NOVO: Configurar comunicação centralizada com backend
-  private setupBackendCommunication(): void {
+  // ✅ NOVO: Sequência de inicialização estruturada para evitar race conditions
+  private async initializeAppSequence(): Promise<void> {
+    try {
+      console.log('🔄 [App] === INÍCIO DA SEQUÊNCIA DE INICIALIZAÇÃO ===');
+
+      // 1. Configurações básicas (não dependem de conexões)
+      console.log('🔄 [App] Passo 1: Configurações básicas...');
+      this.setupDiscordStatusListener();
+      this.startLCUStatusCheck();
+
+      // 2. Verificar se backend está acessível
+      console.log('🔄 [App] Passo 2: Verificando backend...');
+      await this.ensureBackendIsReady();
+
+      // 3. Configurar comunicação WebSocket
+      console.log('🔄 [App] Passo 3: Configurando WebSocket...');
+      await this.setupBackendCommunication();
+
+      // 4. Carregar dados do jogador
+      console.log('🔄 [App] Passo 4: Carregando dados do jogador...');
+      await this.loadPlayerDataWithRetry();
+
+      // 5. Identificar jogador no WebSocket (agora que temos os dados)
+      console.log('🔄 [App] Passo 5: Identificando jogador...');
+      await this.identifyPlayerSafely();
+
+      // 6. Buscar status inicial da fila
+      console.log('🔄 [App] Passo 6: Buscando status da fila...');
+      this.refreshQueueStatus();
+
+      // 7. Carregar configurações do banco
+      console.log('🔄 [App] Passo 7: Carregando configurações...');
+      this.loadConfigFromDatabase();
+
+      // 8. Iniciar atualizações periódicas
+      console.log('🔄 [App] Passo 8: Iniciando atualizações periódicas...');
+      this.startPeriodicUpdates();
+
+      console.log('✅ [App] === INICIALIZAÇÃO COMPLETA ===');
+      this.isConnected = true;
+
+    } catch (error) {
+      console.error('❌ [App] Erro na sequência de inicialização:', error);
+      this.handleInitializationError(error);
+    }
+  }
+
+  // ✅ NOVO: Garantir que backend está pronto antes de prosseguir
+  private async ensureBackendIsReady(): Promise<void> {
+    const maxAttempts = 10;
+    const delayBetweenAttempts = 2000; // 2 segundos
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await this.apiService.checkHealth().toPromise();
+        console.log(`✅ [App] Backend está pronto (tentativa ${attempt}/${maxAttempts})`);
+        return;
+      } catch (error) {
+        console.log(`⏳ [App] Backend não está pronto (tentativa ${attempt}/${maxAttempts})`);
+
+        if (attempt === maxAttempts) {
+          throw new Error('Backend não ficou pronto após múltiplas tentativas');
+        }
+
+        await new Promise(resolve => setTimeout(resolve, delayBetweenAttempts));
+      }
+    }
+  }
+
+  // ✅ CORRIGIDO: Configurar comunicação com backend de forma assíncrona
+  private async setupBackendCommunication(): Promise<void> {
     console.log('🔗 [App] Configurando comunicação com backend...');
 
-    // ✅ CORRIGIDO: Usar o método WebSocket existente do ApiService
+    // Configurar listener de mensagens WebSocket
     this.apiService.onWebSocketMessage().pipe(
       takeUntil(this.destroy$)
     ).subscribe({
@@ -153,40 +211,154 @@ export class App implements OnInit, OnDestroy {
       }
     });
 
-    // ✅ NOVO: Tentar identificar o jogador atual quando conectar
-    setTimeout(() => {
-      this.identifyCurrentPlayerOnConnect();
-    }, 1000); // Aguardar 1 segundo para garantir que a conexão foi estabelecida
-  }
+    // ✅ NOVO: Aguardar explicitamente que WebSocket esteja pronto
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Timeout aguardando WebSocket conectar'));
+      }, 15000); // 15 segundos de timeout
 
-  // ✅ NOVO: Identificar o jogador atual quando conectar via WebSocket
-  private identifyCurrentPlayerOnConnect(): void {
-    if (this.currentPlayer) {
-      console.log('🆔 [App] Identificando jogador atual no WebSocket:', {
-        displayName: this.currentPlayer.displayName,
-        summonerName: this.currentPlayer.summonerName,
-        gameName: this.currentPlayer.gameName,
-        tagLine: this.currentPlayer.tagLine
-      });
-
-      this.apiService.identifyPlayer(this.currentPlayer).subscribe({
-        next: (response: any) => {
-          if (response.success) {
-            console.log('✅ [App] Jogador identificado com sucesso no backend');
-            this.isConnected = true;
-          } else {
-            console.log('❌ [App] Erro ao identificar jogador:', response.error);
-          }
+      this.apiService.onWebSocketReady().pipe(
+        filter(isReady => isReady),
+        take(1)
+      ).subscribe({
+        next: () => {
+          clearTimeout(timeout);
+          console.log('✅ [App] WebSocket está pronto para comunicação');
+          resolve();
         },
-        error: (error: any) => {
-          console.error('❌ [App] Erro ao identificar jogador:', error);
+        error: (error) => {
+          clearTimeout(timeout);
+          reject(error);
         }
       });
-    } else {
-      console.log('⚠️ [App] Nenhum jogador atual disponível para identificação');
-      // ✅ Mesmo sem jogador, marcar como conectado para funcionalidade básica
-      this.isConnected = true;
+    });
+  }
+
+  // ✅ NOVO: Carregar dados do jogador com retry
+  private async loadPlayerDataWithRetry(): Promise<void> {
+    const maxAttempts = 3;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        console.log(`🔄 [App] Tentativa ${attempt}/${maxAttempts} de carregar dados do jogador...`);
+
+        await new Promise<void>((resolve, reject) => {
+          this.apiService.getPlayerFromLCU().subscribe({
+            next: (player: Player) => {
+              console.log('✅ [App] Dados do jogador carregados do LCU:', player);
+              this.currentPlayer = player;
+              this.savePlayerData(player);
+              this.updateSettingsForm();
+              resolve();
+            },
+            error: (error) => {
+              console.warn(`⚠️ [App] Tentativa ${attempt} falhou:`, error);
+              if (attempt === maxAttempts) {
+                // Última tentativa - tentar localStorage
+                this.tryLoadFromLocalStorage();
+                if (this.currentPlayer) {
+                  resolve();
+                } else {
+                  reject(new Error('Não foi possível carregar dados do jogador'));
+                }
+              } else {
+                reject(error);
+              }
+            }
+          });
+        });
+
+        // Se chegou até aqui, dados foram carregados com sucesso
+        console.log('✅ [App] Dados do jogador carregados com sucesso');
+        return;
+
+      } catch (error) {
+        console.warn(`⚠️ [App] Tentativa ${attempt} de carregar dados falhou:`, error);
+
+        if (attempt < maxAttempts) {
+          // Aguardar antes da próxima tentativa
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
     }
+
+    // Se todas as tentativas falharam
+    console.warn('⚠️ [App] Todas as tentativas de carregar dados falharam, usando dados padrão se disponíveis');
+  }
+
+  // ✅ NOVO: Identificar jogador de forma segura
+  private async identifyPlayerSafely(): Promise<void> {
+    if (!this.currentPlayer) {
+      console.warn('⚠️ [App] Nenhum jogador disponível para identificação');
+      return;
+    }
+
+    const maxAttempts = 3;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        console.log(`🆔 [App] Tentativa ${attempt}/${maxAttempts} de identificação...`);
+
+        await new Promise<void>((resolve, reject) => {
+          this.apiService.identifyPlayer(this.currentPlayer).subscribe({
+            next: (response: any) => {
+              if (response.success) {
+                console.log('✅ [App] Jogador identificado com sucesso no backend');
+                resolve();
+              } else {
+                reject(new Error(response.error || 'Erro desconhecido na identificação'));
+              }
+            },
+            error: (error: any) => {
+              reject(error);
+            }
+          });
+        });
+
+        // Se chegou até aqui, identificação foi bem-sucedida
+        console.log('✅ [App] Identificação do jogador completa');
+        return;
+
+      } catch (error) {
+        console.error(`❌ [App] Tentativa ${attempt} de identificação falhou:`, error);
+
+        if (attempt < maxAttempts) {
+          // Aguardar antes da próxima tentativa
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+    }
+
+    console.warn('⚠️ [App] Todas as tentativas de identificação falharam, mas continuando...');
+  }
+
+  // ✅ NOVO: Iniciar atualizações periódicas
+  private startPeriodicUpdates(): void {
+    // Atualização periódica da fila a cada 10 segundos
+    setInterval(() => {
+      if (this.currentPlayer?.displayName) {
+        console.log('🔄 [App] Atualização periódica do status da fila');
+        this.refreshQueueStatus();
+      }
+    }, 10000);
+  }
+
+  // ✅ NOVO: Lidar com erros de inicialização
+  private handleInitializationError(error: any): void {
+    console.error('❌ [App] Erro crítico na inicialização:', error);
+
+    // Marcar como conectado mesmo com erros para permitir funcionalidade básica
+    this.isConnected = true;
+
+    // Notificar usuário sobre problemas
+    this.addNotification('warning', 'Inicialização Parcial',
+      'Algumas funcionalidades podem não estar disponíveis. Verifique a conexão com o backend.');
+
+    // Tentar reconectar após um tempo
+    setTimeout(() => {
+      console.log('🔄 [App] Tentando reinicializar após erro...');
+      this.initializeAppSequence();
+    }, 30000); // Tentar novamente em 30 segundos
   }
 
   // ✅ NOVO: Salvar dados do jogador
@@ -240,12 +412,21 @@ export class App implements OnInit, OnDestroy {
     }
 
     switch (message.type) {
+      case 'backend_connection_success':
+        console.log('🔗 [App] Backend conectado com sucesso');
+        // ✅ NOVO: Re-identificar jogador quando WebSocket reconecta
+        if (this.currentPlayer) {
+          console.log('🆔 [App] Re-identificando jogador após reconexão do WebSocket');
+          this.identifyPlayerSafely();
+        }
+        break;
+
       case 'match_found':
         console.log('🎮 [App] === MATCH_FOUND RECEBIDO ===');
         console.log('🎮 [App] Partida encontrada pelo backend');
         console.log('🎮 [App] MatchId recebido:', message.data?.matchId);
         console.log('🎮 [App] Última partida processada:', this.lastMatchId);
-        console.log('🎮 [App] Estado antes do processamento:', {
+        console.log('�� [App] Estado antes do processamento:', {
           showMatchFound: this.showMatchFound,
           currentPlayer: this.currentPlayer?.displayName || 'N/A',
           isInQueue: this.isInQueue
@@ -319,11 +500,17 @@ export class App implements OnInit, OnDestroy {
     }
   }
 
+  // ✅ MANTIDO: Compatibilidade para métodos legacy
+  private identifyCurrentPlayerOnConnect(): void {
+    console.log('🔄 [App] Método legacy - redirecionando para identifyPlayerSafely()');
+    this.identifyPlayerSafely();
+  }
+
   // ✅ NOVO: Configurar listener do componente queue
   private setupQueueComponentListener(): void {
     document.addEventListener('matchFound', (event: any) => {
       console.log('🎮 [App] Match found do componente queue:', event.detail);
-      this.handleMatchFound(event.detail.data);
+      // this.handleMatchFound(event.detail.data);
     });
   }
 
@@ -608,7 +795,7 @@ export class App implements OnInit, OnDestroy {
   }
 
   private handleDraftCancelled(data: any): void {
-    console.log('🚫 [App] Draft cancelado:', data);
+    console.log('🚫 [App] Draft cancelado pelo backend');
 
     // Limpar estado do draft
     this.inDraftPhase = false;
@@ -705,7 +892,7 @@ export class App implements OnInit, OnDestroy {
   }
 
   private handleMatchCancelled(data: any): void {
-    console.log('❌ [App] Partida cancelada:', data);
+    console.log('❌ [App] Partida cancelada pelo backend');
 
     // ✅ NOVO: Limpar controle de partida
     this.lastMatchId = null;
@@ -770,6 +957,12 @@ export class App implements OnInit, OnDestroy {
   }
 
   private handleQueueUpdate(data: any): void {
+    // ✅ NOVO: Guarda de proteção para dados inválidos
+    if (!data) {
+      console.warn('⚠️ [App] handleQueueUpdate recebeu dados nulos, ignorando.');
+      return;
+    }
+
     // ✅ VERIFICAR SE AUTO-REFRESH ESTÁ HABILITADO ANTES DE PROCESSAR
     if (!this.autoRefreshEnabled) {
       // Só processar atualizações críticas mesmo com auto-refresh desabilitado
@@ -777,7 +970,7 @@ export class App implements OnInit, OnDestroy {
       const newPlayerCount = data?.playersInQueue || 0;
       const isCriticalUpdate = newPlayerCount >= 10 && currentPlayerCount < 10; // Matchmaking threshold
 
-      if (!isCriticalUpdate && !data.critical) {
+      if (!isCriticalUpdate && !data?.critical) {
         // ✅ IGNORAR: Auto-refresh desabilitado e não é atualização crítica
         const timeSinceLastIgnoreLog = Date.now() - (this.lastIgnoreLogTime || 0);
         if (timeSinceLastIgnoreLog > 30000) { // Log apenas a cada 30 segundos
@@ -825,6 +1018,7 @@ export class App implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.destroy$.next();
     this.destroy$.complete();
+    clearInterval(this.lcuCheckInterval);
   }
 
   // ✅ MANTIDO: Métodos de interface
@@ -1339,13 +1533,6 @@ export class App implements OnInit, OnDestroy {
       });
     }, 5000);
   }
-
-  // ✅ REMOVIDO: Polling automático - usar apenas WebSocket em tempo real
-  // private startQueueStatusCheck(): void {
-  //   setInterval(() => {
-  //     this.refreshQueueStatus();
-  //   }, 3000);
-  // }
 
   private checkBackendConnection(): void {
     this.apiService.checkHealth().subscribe({

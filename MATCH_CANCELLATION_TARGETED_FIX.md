@@ -18,6 +18,7 @@ private notifyMatchCancelled(matchId: number, declinedPlayers: string[]): void {
 ```
 
 **Consequências:**
+
 - ❌ Jogadores **não relacionados** recebiam notificações de cancelamento
 - ❌ **Spam de notificações** desnecessárias
 - ❌ **Inconsistência** com o sistema direcionado do match-found
@@ -145,12 +146,14 @@ console.log(`📢 [Service] Resumo do cancelamento:`, {
 ## 🎯 **Resultados da Correção**
 
 ### **Antes da Correção:**
+
 - ❌ **Todos** os clientes recebiam cancelamentos
 - ❌ **Spam** de notificações desnecessárias
 - ❌ **Inconsistência** entre match-found e cancelamentos
 - ❌ **Tráfego WebSocket** desnecessário
 
 ### **Após a Correção:**
+
 - ✅ **Apenas jogadores da partida** recebem cancelamentos
 - ✅ **Sem spam** - notificações direcionadas
 - ✅ **Consistência total** entre todas as notificações
@@ -160,12 +163,15 @@ console.log(`📢 [Service] Resumo do cancelamento:`, {
 ## 📋 **Tipos de Cancelamento Cobertos**
 
 ### **1. Match-Found Cancelado:**
+
 - Jogador recusa durante aceitação → Apenas jogadores da partida são notificados
 
 ### **2. Draft Cancelado:**
+
 - Jogador sai durante draft → Apenas jogadores da partida são notificados
 
 ### **3. Jogo Cancelado:**
+
 - Jogador cancela durante partida → Apenas jogadores da partida são notificados
 
 ## 🔍 **Verificação da Implementação**
@@ -174,7 +180,7 @@ console.log(`📢 [Service] Resumo do cancelamento:`, {
 
 1. **Cenário**: 3 jogadores conectados - A, B, C
 2. **Ação**: Partida criada com jogadores A e B
-3. **Resultado Esperado**: 
+3. **Resultado Esperado**:
    - **Match-Found**: Apenas A e B recebem notificação ✅
    - **Cancelamento**: Apenas A e B recebem notificação ✅
    - **Jogador C**: Não recebe nenhuma notificação ✅
@@ -200,4 +206,4 @@ A correção implementa **consistência total** no sistema de notificações:
 - ✅ **Draft Cancellation** → Direcionado
 - ✅ **Game Cancellation** → Direcionado
 
-**Todos os tipos de notificação** agora seguem o mesmo padrão direcionado, eliminando spam e otimizando performance! 🚀 
+**Todos os tipos de notificação** agora seguem o mesmo padrão direcionado, eliminando spam e otimizando performance!

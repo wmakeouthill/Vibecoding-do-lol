@@ -1,4 +1,5 @@
-<div class="leaderboard-container">  <div class="leaderboard-header">
+<div class="leaderboard-container">
+  <div class="leaderboard-header">
     <h2>🏆 Leaderboard - Partidas Customizadas</h2>
     <div class="header-actions">
       <!-- Indicador de progresso -->
@@ -19,14 +20,15 @@
       <button class="refresh-btn" (click)="refreshAndRebuildPlayers()" [disabled]="isAnyLoading()">
         Refresh
         <i class="icon-refresh"></i>
-        
+
       </button>
     </div>
   </div>
 
   <div class="leaderboard-content" *ngIf="!isLoading && !error">
     <div class="leaderboard-table">
-      <div class="table-header">        <div class="rank-col">Rank</div>
+      <div class="table-header">
+        <div class="rank-col">Rank</div>
         <div class="player-col">Jogador</div>
         <div class="champion-col">Campeão Favorito</div>
         <div class="mmr-col">MMR</div>
@@ -40,14 +42,15 @@
       <div class="table-body">
         <div class="player-row" *ngFor="let player of leaderboardData; trackBy: trackByPlayerId">
           <!-- Posição -->
-          <div class="rank-col">            <div class="rank-indicator" [ngStyle]="{'color': getRankColor(player.rank)}">
+          <div class="rank-col">
+            <div class="rank-indicator" [ngStyle]="{'color': getRankColor(player.rank)}">
               <span class="rank-icon">{{ getRankIcon(player.rank) }}</span>
             </div>
-          </div>          <!-- Jogador -->
-          <div class="player-col">            <div class="player-info">              <img [src]="getPlayerProfileIconUrl(player)"
-                   alt="Profile Icon"
-                   class="profile-icon"
-                   (error)="onProfileIconError($event, player.profileIconId)">              <div class="player-details">
+          </div> <!-- Jogador -->
+          <div class="player-col">
+            <div class="player-info"> <img [src]="getPlayerProfileIconUrl(player) | async" alt="Profile Icon"
+                class="profile-icon" (error)="onProfileIconError($event, player.profileIconId)">
+              <div class="player-details">
                 <span class="summoner-name">{{ player.summoner_name }}</span>
                 <span class="player-games">{{ player.games_played }} partidas</span>
               </div>
@@ -55,26 +58,25 @@
           </div><!-- Campeão Favorito -->
           <div class="champion-col">
             <div class="champion-info" *ngIf="player.favorite_champion; else noChampion">
-              <img [src]="getChampionIconUrl(player.favorite_champion.name)"
-                   [alt]="player.favorite_champion.name"
-                   class="champion-icon"
-                   (error)="onImageError($event, 'assets/images/champion-placeholder.svg')">              <div class="champion-details">
+              <img [src]="getChampionIconUrl(player.favorite_champion.name)" [alt]="player.favorite_champion.name"
+                class="champion-icon" (error)="onImageError($event, 'assets/images/champion-placeholder.svg')">
+              <div class="champion-details">
                 <span class="champion-name">{{ getChampionDisplayName(player.favorite_champion.name) }}</span>
                 <span class="champion-games">{{ player.favorite_champion.games }} partidas</span>
               </div>
             </div>
             <ng-template #noChampion>
               <div class="no-champion">
-                <img src="assets/images/champion-placeholder.svg"
-                     alt="No champion"
-                     class="champion-icon">
+                <img src="assets/images/champion-placeholder.svg" alt="No champion" class="champion-icon">
                 <span>Nenhum</span>
               </div>
             </ng-template>
           </div>
 
           <!-- MMR -->
-          <div class="mmr-col" [ngStyle]="{'color': player.calculated_mmr > 0 ? '#3fc380' : (player.calculated_mmr < 0 ? '#e74c3c' : '#cdbe91'), 'font-weight': 'bold'}">{{ player.calculated_mmr }} MMR</div>
+          <div class="mmr-col"
+            [ngStyle]="{'color': player.calculated_mmr > 0 ? '#3fc380' : (player.calculated_mmr < 0 ? '#e74c3c' : '#cdbe91'), 'font-weight': 'bold'}">
+            {{ player.calculated_mmr }} MMR</div>
 
           <!-- Partidas -->
           <div class="games-col">
@@ -102,7 +104,7 @@
                 {{ player.kda_ratio }} KDA
               </div>
             </div>
-          </div>          <!-- Gold Médio -->
+          </div> <!-- Gold Médio -->
           <div class="gold-col">
             <div class="gold-value">{{ formatGold(player.avg_gold) }}</div>
           </div>

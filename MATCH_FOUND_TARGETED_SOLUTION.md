@@ -13,6 +13,7 @@ O problema não estava na filtragem do frontend, mas sim na **falta de associaç
 ### **1. Backend - Identificação de Jogadores via WebSocket**
 
 #### **a) Rastreamento de Conexões WebSocket:**
+
 ```typescript
 // server.ts - Adicionar propriedades ao WebSocket
 wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
@@ -23,6 +24,7 @@ wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
 ```
 
 #### **b) Novo Tipo de Mensagem - Identificar Jogador:**
+
 ```typescript
 case 'identify_player':
   console.log('🆔 [WebSocket] Identificando jogador:', data.playerData);
@@ -40,6 +42,7 @@ case 'identify_player':
 ```
 
 #### **c) Notificações Direcionadas no MatchFoundService:**
+
 ```typescript
 // ✅ NOVO: Enviar apenas para jogadores que estão na partida
 private notifyMatchFound(matchId: number, matchData: any): void {
@@ -67,6 +70,7 @@ private notifyMatchFound(matchId: number, matchData: any): void {
 ```
 
 #### **d) Verificação Robusta de Participação:**
+
 ```typescript
 private isPlayerInMatch(playerInfo: any, playersInMatch: string[]): boolean {
   const identifiers = [];
@@ -95,6 +99,7 @@ private isPlayerInMatch(playerInfo: any, playersInMatch: string[]): boolean {
 ### **2. Frontend - Identificação Automática**
 
 #### **a) Novos Métodos no ApiService:**
+
 ```typescript
 // ✅ NOVO: Identificar jogador no backend via WebSocket
 identifyPlayer(playerData: any): Observable<any> {
@@ -116,6 +121,7 @@ identifyPlayer(playerData: any): Observable<any> {
 ```
 
 #### **b) Identificação Automática no App.ts:**
+
 ```typescript
 // ✅ NOVO: Identificar jogador quando conectar e quando dados mudarem
 private identifyCurrentPlayerOnConnect(): void {
@@ -144,6 +150,7 @@ private loadPlayerData(): void {
 ```
 
 #### **c) Simplificação do HandleMatchFound:**
+
 ```typescript
 private handleMatchFound(data: any): void {
   // ✅ SIMPLIFICADO: Como o backend agora envia apenas para jogadores da partida,
@@ -159,12 +166,14 @@ private handleMatchFound(data: any): void {
 ## 🎯 FLUXO DA SOLUÇÃO
 
 ### **1. Conexão e Identificação:**
+
 1. **Frontend conecta** via WebSocket ao backend
 2. **Frontend carrega dados** do jogador via LCU
 3. **Frontend identifica** o jogador no backend enviando `identify_player`
 4. **Backend confirma** a identificação e associa WebSocket ↔ Jogador
 
 ### **2. Matchmaking e Notificação:**
+
 1. **10 jogadores** entram na fila (via interface ou bots)
 2. **Backend processa** matchmaking e cria partida
 3. **Backend identifica** quais WebSockets correspondem aos jogadores da partida
@@ -172,6 +181,7 @@ private handleMatchFound(data: any): void {
 5. **Frontend** processa sem precisar filtrar
 
 ### **3. Compatibilidade:**
+
 - **Clientes não identificados** ainda recebem broadcast (fallback)
 - **Clientes identificados** recebem notificações direcionadas
 - **Bots** são processados automaticamente pelo backend
@@ -186,6 +196,7 @@ O script `test-match-found-targeted-fix.js` simula:
 4. **Verificação** de quantos jogadores humanos receberam `match_found`
 
 ### **Resultado Esperado:**
+
 - ✅ **TODOS os 5 jogadores humanos** devem receber `match_found`
 - ✅ **Bots não precisam** receber (são auto-aceitos)
 - ✅ **Apenas 1 notificação** por jogador (sem duplicatas)
@@ -203,14 +214,12 @@ O script `test-match-found-targeted-fix.js` simula:
 
 O sistema agora produz logs detalhados:
 
-```
 🆔 [WebSocket] Identificando jogador: TestPlayer1#BR1
 ✅ [WebSocket] Jogador identificado: { displayName: "TestPlayer1#BR1" }
 🎯 [MatchFound] Jogadores da partida: ["TestPlayer1#BR1", "TestPlayer2#BR1", ...]
 ✅ [MatchFound] Match exato: TestPlayer1#BR1 === TestPlayer1#BR1
 ✅ [MatchFound] Notificação enviada para: TestPlayer1#BR1
 📢 [MatchFound] Resumo: 2 clientes identificados, 5 jogadores notificados
-```
 
 ## 🚀 STATUS
 
@@ -220,4 +229,4 @@ O sistema agora produz logs detalhados:
 ✅ **IMPLEMENTADO**: Script de teste para verificação  
 ✅ **PRONTO**: Para teste em ambiente real
 
-A solução resolve definitivamente o problema de **apenas 1 jogador receber match_found**, garantindo que **todos os jogadores humanos logados e conectados** recebam a notificação corretamente. 
+A solução resolve definitivamente o problema de **apenas 1 jogador receber match_found**, garantindo que **todos os jogadores humanos logados e conectados** recebam a notificação corretamente.

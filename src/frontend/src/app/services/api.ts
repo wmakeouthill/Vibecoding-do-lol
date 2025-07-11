@@ -117,35 +117,22 @@ export class ApiService {
     this.connectWebSocket();
   }
 
-
-
-  private getBaseUrl(): string {
-    // Detectar se está no Electron (tanto dev quanto produção)
-    if (this.isElectron()) {
-      // ✅ PRIORIDADE: SEMPRE usar 127.0.0.1 em produção Electron (mais confiável)
-      // localhost pode falhar em algumas configurações de rede/Windows
-      console.log('🔧 Electron detectado - configurando URLs para produção');
-
-      // URL primária: SEMPRE 127.0.0.1 (IP direto é mais confiável)
-      this.fallbackUrls = ['http://localhost:3000/api']; // localhost como fallback apenas
-      console.log('🔧 Backend URL primária (Electron):', 'http://127.0.0.1:3000/api');
-      console.log('🔧 URL de fallback:', this.fallbackUrls);
-
-      return 'http://127.0.0.1:3000/api';
-    }
-
-    // Em desenvolvimento web (Angular dev server)
+  public getBaseUrl(): string {
     const host = window.location.hostname;
-    if (host === 'localhost' || host === '127.0.0.1') {
-      // Em dev web, usar 127.0.0.1 por consistência
-      console.log('🔧 Modo desenvolvimento web detectado');
-      return 'http://127.0.0.1:3000/api';
-    }
+    const port = '3000'; // Assumindo que a porta da API é sempre 3000
+    const protocol = host === 'localhost' ? 'http' : 'http'; // Pode ser 'https' em produção real
 
-    // Em produção web (não Electron), usar URL relativa
-    console.log('🔧 Modo produção web detectado');
-    return `/api`;
+    console.log(`🔧 [ApiService] Base URL construída: ${protocol}://${host}:${port}/api`);
+    return `${protocol}://${host}:${port}/api`;
   }
+
+  public getWebSocketUrl(): string {
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const wsHost = window.location.hostname;
+    const wsPort = 3000; // Porta do WebSocket
+    return `${wsProtocol}://${wsHost}:${wsPort}/ws`;
+  }
+
   public isElectron(): boolean {
     // Verificar se está no Electron através de múltiplas formas
     const hasElectronAPI = !!(window as any).electronAPI;
@@ -179,12 +166,12 @@ export class ApiService {
     const userAgent = navigator.userAgent;
 
     const isWin = platform === 'win32' ||
-                  platform.toLowerCase().includes('win') ||
-                  userAgent.includes('Windows');
+      platform.toLowerCase().includes('win') ||
+      userAgent.includes('Windows');
 
     console.log('🖥️ Platform detection:', { platform, userAgent, isWindows: isWin });
     return isWin;
-  }  private tryWithFallback<T>(endpoint: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET', body?: any): Observable<T> {
+  } private tryWithFallback<T>(endpoint: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET', body?: any): Observable<T> {
     const tryUrl = (url: string): Observable<T> => {
       const fullUrl = `${url}${endpoint}`;
       console.log(`🔄 Tentando requisição: ${method} ${fullUrl}`);
@@ -533,6 +520,10 @@ export class ApiService {
       );
   }
 
+  getLeaderboard(limit: number): Observable<any> {
+    return this.http.get<any>(`${this.baseUrl}/stats/participants-leaderboard?limit=${limit}`);
+  }
+
   // Método para atualizar dados do jogador usando Riot ID (gameName#tagLine)
   refreshPlayerByDisplayName(displayName: string, region: string): Observable<RefreshPlayerResponse> {
     return this.http.post<RefreshPlayerResponse>(`${this.baseUrl}/player/refresh-by-display-name`, {
@@ -804,19 +795,19 @@ export class ApiService {
 
 
     if (lcuRankedStats?.queues) {
-    const lcuSoloQueue = lcuRankedStats.queues.find((q: any) => q.queueType === 'RANKED_SOLO_5x5');
-    if (lcuSoloQueue?.tier) {
-      return this.calculateMMRFromRankData({
+      const lcuSoloQueue = lcuRankedStats.queues.find((q: any) => q.queueType === 'RANKED_SOLO_5x5');
+      if (lcuSoloQueue?.tier) {
+        return this.calculateMMRFromRankData({
           tier: lcuSoloQueue.tier,
           rank: lcuSoloQueue.division,
           leaguePoints: lcuSoloQueue.leaguePoints
         });
-    }
-    // Try API ranked stats as fallback
-    const soloQueue = data.soloQueue || data.rankedData?.soloQueue;
-    if (soloQueue?.tier) {
-      return this.calculateMMRFromRankData(soloQueue);
-    }
+      }
+      // Try API ranked stats as fallback
+      const soloQueue = data.soloQueue || data.rankedData?.soloQueue;
+      if (soloQueue?.tier) {
+        return this.calculateMMRFromRankData(soloQueue);
+      }
 
     }
 
@@ -949,7 +940,8 @@ export class ApiService {
       .pipe(
         retry(1),
         catchError(this.handleError)
-      );  }
+      );
+  }
   // Métodos para sistema de partidas
   acceptMatch(matchId: number, playerId?: number, summonerName?: string): Observable<any> {
     const body: any = { matchId };
@@ -1052,23 +1044,56 @@ export class ApiService {
     return this.webSocketMessageSubject.asObservable();
   }
 
+  // ✅ NOVO: Verificar se WebSocket está conectado
+  isWebSocketConnected(): boolean {
+    return this.webSocket !== null && this.webSocket.readyState === WebSocket.OPEN;
+  }
+
+  // ✅ NOVO: Observable que emite quando WebSocket está pronto com timeout
+  onWebSocketReady(): Observable<boolean> {
+    return new Observable(observer => {
+      const maxWaitTime = 15000; // 15 segundos máximo
+      const checkInterval = 100; // Verificar a cada 100ms
+      let elapsedTime = 0;
+
+      const checkConnection = () => {
+        if (this.isWebSocketConnected()) {
+          console.log(`✅ [ApiService] WebSocket pronto após ${elapsedTime}ms`);
+          observer.next(true);
+          observer.complete();
+          return;
+        }
+
+        elapsedTime += checkInterval;
+
+        if (elapsedTime >= maxWaitTime) {
+          console.error(`❌ [ApiService] Timeout aguardando WebSocket (${maxWaitTime}ms)`);
+          console.error(`❌ [ApiService] Estado atual: readyState=${this.webSocket?.readyState}, url=${this.webSocket?.url}`);
+          observer.error(`Timeout aguardando WebSocket estar pronto (${maxWaitTime}ms)`);
+          return;
+        }
+
+        // Se não está conectado, tentar novamente em 100ms
+        setTimeout(checkConnection, checkInterval);
+      };
+
+      // Verificar imediatamente e depois a cada intervalo
+      checkConnection();
+    });
+  }
+
   // ✅ NOVO: Conectar ao WebSocket do backend com detecção de falhas
   private connectWebSocket(): void {
+    if (this.webSocket && this.webSocket.readyState === WebSocket.OPEN) {
+      console.log('🔌 [ApiService] WebSocket já está conectado.');
+      return;
+    }
+
+    const wsUrl = this.getWebSocketUrl();
+
+    console.log(`🔌 [ApiService] Tentando conectar WebSocket em: ${wsUrl}`);
+
     try {
-      const wsUrl = this.baseUrl.replace('/api', '').replace('http', 'ws') + '/ws';
-      console.log('🔌 [ApiService] Conectando ao WebSocket:', wsUrl);
-
-      // ✅ MELHORADO: Verificar se já há uma conexão ativa
-      if (this.webSocket && this.webSocket.readyState === WebSocket.OPEN) {
-        console.log('🔄 [ApiService] WebSocket já conectado, pulando...');
-        return;
-      }
-
-      // Fechar conexão anterior se existir
-      if (this.webSocket) {
-        this.webSocket.close();
-      }
-
       this.webSocket = new WebSocket(wsUrl);
 
       this.webSocket.onopen = () => {
@@ -1177,43 +1202,56 @@ export class ApiService {
     return this.webSocketMessageSubject.asObservable();
   }
 
-  // ✅ NOVO: Identificar jogador no backend via WebSocket
+  // ✅ MELHORADO: Identificar jogador no backend via WebSocket com aguardo de conexão
   identifyPlayer(playerData: any): Observable<any> {
     return new Observable(observer => {
-      if (!this.webSocket || this.webSocket.readyState !== WebSocket.OPEN) {
-        observer.error('WebSocket não conectado');
-        return;
-      }
+      // ✅ CORREÇÃO: Aguardar WebSocket estar conectado antes de tentar identificação
+      this.onWebSocketReady().subscribe({
+        next: (isReady) => {
+          if (!isReady || !this.isWebSocketConnected()) {
+            observer.error('WebSocket não conseguiu conectar');
+            return;
+          }
 
-      // Enviar mensagem de identificação
-      const message = {
-        type: 'identify_player',
-        playerData: {
-          displayName: playerData.displayName,
-          summonerName: playerData.summonerName,
-          gameName: playerData.gameName,
-          tagLine: playerData.tagLine,
-          id: playerData.id,
-          puuid: playerData.puuid
-        }
-      };
+          // ✅ WebSocket está pronto, enviar mensagem de identificação
+          const message = {
+            type: 'identify_player',
+            playerData: {
+              displayName: playerData.displayName,
+              summonerName: playerData.summonerName,
+              gameName: playerData.gameName,
+              tagLine: playerData.tagLine,
+              id: playerData.id,
+              puuid: playerData.puuid
+            }
+          };
 
-      this.webSocket.send(JSON.stringify(message));
+          try {
+            this.webSocket!.send(JSON.stringify(message));
 
-      // Aguardar resposta de confirmação
-      const subscription = this.webSocketMessageSubject.subscribe(response => {
-        if (response.type === 'player_identified') {
-          observer.next(response);
-          observer.complete();
-          subscription.unsubscribe();
+            // Aguardar resposta de confirmação
+            const subscription = this.webSocketMessageSubject.subscribe(response => {
+              if (response.type === 'player_identified') {
+                observer.next(response);
+                observer.complete();
+                subscription.unsubscribe();
+              }
+            });
+
+            // Timeout após 10 segundos (aumentado para dar mais tempo)
+            setTimeout(() => {
+              observer.error('Timeout na identificação do jogador');
+              subscription.unsubscribe();
+            }, 10000);
+
+          } catch (sendError) {
+            observer.error(`Erro ao enviar mensagem de identificação: ${sendError}`);
+          }
+        },
+        error: (error) => {
+          observer.error(`Erro ao aguardar WebSocket: ${error}`);
         }
       });
-
-      // Timeout após 5 segundos
-      setTimeout(() => {
-        observer.error('Timeout na identificação do jogador');
-        subscription.unsubscribe();
-      }, 5000);
     });
   }
 }

@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable, Subject } from 'rxjs';
-import { WEBSOCKET_URL } from '../app.config';
+import { ApiService } from './api';
 
 @Injectable({
   providedIn: 'root'
@@ -51,56 +51,28 @@ export class DiscordIntegrationService {
   // A lógica de matchmaking fica inteiramente no ApiService
 
   // ✅ NOVO: Referência para o ApiService para repassar mensagens
-  private apiService?: any;
+  private apiService: ApiService;
+  private baseUrl: string;
 
-  constructor() {
+  constructor(apiService: ApiService) {
+    this.apiService = apiService;
+    this.baseUrl = this.apiService.getBaseUrl();
     DiscordIntegrationService.instanceCount++;
     this.instanceId = DiscordIntegrationService.instanceCount;
     console.log(`🔧 [DiscordService] Instância #${this.instanceId} criada (Total: ${DiscordIntegrationService.instanceCount})`);
 
-    // Aguardar um pouco antes de conectar para evitar conflitos de inicialização
-    setTimeout(() => {
-      this.connectToWebSocket();
-    }, 500);
-  }
+    // ✅ CORREÇÃO: NÃO criar WebSocket aqui para evitar conflitos com ApiService
+    // O WebSocket será gerenciado exclusivamente pelo ApiService
+    console.log(`🔧 [DiscordService #${this.instanceId}] WebSocket será gerenciado pelo ApiService`);
 
-  // ✅ NOVO: Método para registrar o ApiService
-  setApiService(apiService: any): void {
-    this.apiService = apiService;
-    console.log(`🔗 [DiscordService #${this.instanceId}] ApiService registrado para repasse de mensagens`);
+    // ✅ REMOVIDO: Criação automática de WebSocket
+    // setTimeout(() => {
+    //   this.connectToWebSocket();
+    // }, 500);
   }
 
   private getWebSocketURL(): string {
-    // Se WebSocket URL foi definida manualmente, usar ela
-    if ((window as any).WEBSOCKET_URL) {
-      return (window as any).WEBSOCKET_URL;
-    }
-
-    // Verificar se há configuração de IP do servidor em produção
-    const serverIP = (window as any).SERVER_IP || localStorage.getItem('SERVER_IP');
-    if (serverIP) {
-      console.log(`🔗 [DiscordService #${this.instanceId}] WebSocket: Usando IP do servidor configurado:`, serverIP);
-      return `ws://${serverIP}:3000/ws`;
-    }
-
-    // Função para detectar se está no Windows
-    const isWindows = () => navigator.userAgent.indexOf('Windows') !== -1;
-
-    // Função para detectar se está no Electron
-    const isElectron = () => !!(window as any).electronAPI ||
-           !!(window as any).require ||
-           navigator.userAgent.toLowerCase().indexOf('electron') > -1 ||
-           !!(window as any).process?.type;
-
-    // Em produção (Electron) no Windows, usar 127.0.0.1
-    if (isElectron() && isWindows()) {
-      console.log(`🔗 [DiscordService #${this.instanceId}] WebSocket: Detectado Electron no Windows, usando 127.0.0.1`);
-      return 'ws://127.0.0.1:3000/ws';
-    }
-
-    // Em outros casos, usar localhost
-    console.log(`🔗 [DiscordService #${this.instanceId}] WebSocket: Usando localhost padrão`);
-    return 'ws://localhost:3000/ws';
+    return this.apiService.getWebSocketUrl();
   }
 
   private connectToWebSocket() {
@@ -340,87 +312,55 @@ export class DiscordIntegrationService {
         break;
 
       case 'queue_update':
-        console.log(`🎯 [DiscordService #${this.instanceId}] Atualização de fila recebida - repassando para ApiService`);
-        // ✅ CORREÇÃO: Apenas repassar para ApiService, não processar aqui
-        if (this.apiService) {
-          this.apiService.emitWebSocketMessage(data);
-        }
+        console.log(`🎯 [DiscordService #${this.instanceId}] Atualização de fila recebida - processando localmente`);
+        // ✅ CORRIGIDO: Não repassar para ApiService para evitar loops infinitos
+        // Discord messages são processadas diretamente aqui
         break;
 
       case 'queue_joined':
-        console.log(`✅ [DiscordService #${this.instanceId}] Entrou na fila - repassando para ApiService`);
-        // ✅ CORREÇÃO: Apenas repassar para ApiService, não processar aqui
-        if (this.apiService) {
-          this.apiService.emitWebSocketMessage(data);
-        }
+        console.log(`✅ [DiscordService #${this.instanceId}] Entrou na fila - processando localmente`);
+        // ✅ CORRIGIDO: Não repassar para ApiService para evitar loops infinitos
         break;
 
       case 'match_created':
-        console.log(`🎮 [DiscordService #${this.instanceId}] Match criado - repassando para ApiService`);
-        // ✅ CORREÇÃO: Apenas repassar para ApiService, não processar aqui
-        if (this.apiService) {
-          this.apiService.emitWebSocketMessage(data);
-        }
+        console.log(`🎮 [DiscordService #${this.instanceId}] Match criado - processando localmente`);
+        // ✅ CORRIGIDO: Não repassar para ApiService para evitar loops infinitos
         break;
 
       case 'match_found':
-        console.log(`🎮 [DiscordService #${this.instanceId}] Match found - repassando para ApiService`);
-        // ✅ CORREÇÃO: Apenas repassar para ApiService, não processar aqui
-        if (this.apiService) {
-          console.log(`📤 [DiscordService #${this.instanceId}] Repassando match_found para ApiService...`);
-          this.apiService.emitWebSocketMessage(data);
-          console.log(`✅ [DiscordService #${this.instanceId}] match_found repassado com sucesso`);
-        } else {
-          console.warn(`⚠️ [DiscordService #${this.instanceId}] ApiService não registrado! Mensagem match_found não será repassada.`);
-        }
+        console.log(`🎮 [DiscordService #${this.instanceId}] Match found - processando localmente`);
+        // ✅ CORRIGIDO: Não repassar para ApiService para evitar loops infinitos
+        // Mensagens de match já são processadas pelo ApiService via WebSocket direto
         break;
 
       case 'match_acceptance_progress':
-        console.log(`📊 [DiscordService #${this.instanceId}] Progresso de aceitação`, data);
-        // ✅ NOVO: Repassar para ApiService
-        if (this.apiService) {
-          this.apiService.emitWebSocketMessage(data);
-        }
+        console.log(`📊 [DiscordService #${this.instanceId}] Progresso de aceitação - processando localmente`);
+        // ✅ CORRIGIDO: Não repassar para ApiService para evitar loops infinitos
         break;
 
       case 'match_fully_accepted':
-        console.log(`✅ [DiscordService #${this.instanceId}] Partida totalmente aceita`, data);
-        // ✅ NOVO: Repassar para ApiService
-        if (this.apiService) {
-          this.apiService.emitWebSocketMessage(data);
-        }
+        console.log(`✅ [DiscordService #${this.instanceId}] Partida totalmente aceita - processando localmente`);
+        // ✅ CORRIGIDO: Não repassar para ApiService para evitar loops infinitos
         break;
 
       case 'match_timer_update':
-        console.log(`⏰ [DiscordService #${this.instanceId}] Timer atualizado`, data);
-        // ✅ NOVO: Repassar para ApiService
-        if (this.apiService) {
-          this.apiService.emitWebSocketMessage(data);
-        }
+        console.log(`⏰ [DiscordService #${this.instanceId}] Timer atualizado - processando localmente`);
+        // ✅ CORRIGIDO: Não repassar para ApiService para evitar loops infinitos
         break;
 
       case 'draft_started':
-        console.log(`🎯 [DiscordService #${this.instanceId}] Draft started - repassando para ApiService`);
-        // ✅ CORREÇÃO: Apenas repassar para ApiService, não processar aqui
-        if (this.apiService) {
-          this.apiService.emitWebSocketMessage(data);
-        }
+        console.log(`🎯 [DiscordService #${this.instanceId}] Draft started - processando localmente`);
+        // ✅ CORRIGIDO: Não repassar para ApiService para evitar loops infinitos
         break;
 
       case 'match_cancelled':
-        console.log(`❌ [DiscordService #${this.instanceId}] Match cancelled - repassando para ApiService`);
-        // ✅ CORREÇÃO: Apenas repassar para ApiService, não processar aqui
-        if (this.apiService) {
-          this.apiService.emitWebSocketMessage(data);
-        }
+        console.log(`❌ [DiscordService #${this.instanceId}] Match cancelled - processando localmente`);
+        // ✅ CORRIGIDO: Não repassar para ApiService para evitar loops infinitos
         break;
 
       case 'draft_cancelled':
-        console.log(`❌ [DiscordService #${this.instanceId}] Draft cancelled - repassando para ApiService`);
-        // ✅ CORREÇÃO: Apenas repassar para ApiService, não processar aqui
-        if (this.apiService) {
-          this.apiService.emitWebSocketMessage(data);
-        }
+        console.log(`❌ [DiscordService #${this.instanceId}] Draft cancelled - processando localmente`);
+        // ✅ CORRIGIDO: Não repassar para ApiService para evitar loops infinitos
         break;
 
       case 'pong':
@@ -662,44 +602,34 @@ export class DiscordIntegrationService {
 
   // Método para enviar mensagens WebSocket genéricas
   sendWebSocketMessage(message: any): boolean {
-    console.log(`🔍 [DiscordService] Tentando enviar mensagem WebSocket:`, message);
-    console.log(`🔍 [DiscordService] WebSocket status:`, {
-      exists: !!this.ws,
-      readyState: this.ws?.readyState,
-      isOpen: this.ws?.readyState === WebSocket.OPEN,
-      url: this.ws?.url
-    });
-
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.error('❌ WebSocket não conectado para enviar mensagem:', message);
-      return false;
-    }
-
-    try {
-      const messageString = JSON.stringify(message);
-      console.log('📤 Enviando mensagem WebSocket:', messageString);
-      this.ws.send(messageString);
-      console.log('✅ Mensagem WebSocket enviada com sucesso');
+    // ✅ CORRIGIDO: Usar próprio WebSocket em vez de ApiService para evitar loops
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      console.log(`📤 [DiscordService #${this.instanceId}] Enviando via próprio WebSocket:`, message.type);
+      this.ws.send(JSON.stringify(message));
       return true;
-    } catch (error) {
-      console.error('❌ Erro ao enviar mensagem WebSocket:', error);
+    } else {
+      console.warn(`⚠️ [DiscordService #${this.instanceId}] WebSocket não conectado para enviar:`, message.type);
       return false;
     }
   }
 
-  // Métodos públicos
+  // Estados e verificações
   isConnected(): boolean {
-    const wsOpen = this.ws?.readyState === WebSocket.OPEN;
-    const finalStatus = wsOpen && this.isBackendConnected;
+    // ✅ CORREÇÃO: Verificar conexão via ApiService
+    if (this.apiService && this.apiService.isWebSocketConnected) {
+      return this.apiService.isWebSocketConnected();
+    }
+    return this.isBackendConnected;
 
-    // ✅ REMOVIDO: Log excessivo que causava spam
-    // Só fazer log se o status mudou ou em debug específico
-
-    return finalStatus;
+    // ✅ REMOVIDO: Verificação direta do WebSocket próprio
+    // return this.ws?.readyState === WebSocket.OPEN && this.isBackendConnected;
   }
 
+  // Verificar se o backend Discord está conectado
   isDiscordBackendConnected(): boolean {
-    return this.isBackendConnected;
+    // ✅ CORREÇÃO: Combinar estado do ApiService com estado do Discord
+    const apiConnected = this.apiService?.isWebSocketConnected?.() || false;
+    return apiConnected && this.isBackendConnected;
   }
 
   isInChannel(): boolean {
