@@ -565,7 +565,7 @@ async function loadDiagnosticPage(): Promise<void> {
             logDiv.innerHTML = 'Testando conectividade...\\n';
             
             // Testar URLs
-            const urls = ['http://127.0.0.1:3000/api/health', 'http://localhost:3000/api/health'];
+            const urls = ['http://127.0.0.1:3000/api/health'];
             
             urls.forEach(url => {
               fetch(url)
