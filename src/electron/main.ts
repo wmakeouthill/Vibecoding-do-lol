@@ -214,6 +214,7 @@ async function loadLoadingPage(): Promise<void> {
     <html>
       <head>
         <title>LoL Matchmaking - Iniciando...</title>
+        <div id="loading-error" style="color: red; margin-top: 20px;"></div>
         <style>
           body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -859,7 +860,6 @@ async function loadFrontendSafely() {
     console.error('❌ Frontend loading failed:', error);
 
     // Carregar página de erro com detalhes
-    await mainWindow.loadFile(path.join(__dirname, 'error.html'));
     let errorMessage = '';
     if (error instanceof Error) {
       errorMessage = error.message;
