@@ -790,6 +790,90 @@ async function testBackendConnectivity(maxRetries = 30, retryDelay = 1000): Prom
   return false;
 }
 
+async function getAvailableBackendUrl(): Promise<string> {
+  const possibleUrls = [
+    `http://${getLocalIpAddress()}:3000`,  // 1. IP local dinâmico
+    'http://127.0.0.1:3000',               // 2. Localhost padrão
+    'http://localhost:3000'                // 3. Fallback final
+  ];
+
+  console.log('🔍 Testing backend URLs:', possibleUrls);
+
+  for (const url of possibleUrls) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 segundos de timeout
+
+      const healthCheck = await fetch(`${url}/api/health`, {
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (healthCheck.ok) {
+        const data: any = await healthCheck.json();
+        if (data && typeof data === 'object' && 'status' in data && data.status === 'ok') {
+          console.log(`✅ Backend health check passed at ${url}`);
+          return url;
+        }
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        console.log(`⚠️ Backend not reachable at ${url}:`, error.message);
+      } else {
+        console.log(`⚠️ Backend not reachable at ${url}:`, String(error));
+      }
+    }
+  }
+
+  throw new Error(`No backend URLs responded. Tried: ${possibleUrls.join(', ')}`);
+}
+
+async function loadFrontendSafely() {
+  try {
+    // 1. Obter URL do backend que está respondendo
+    const backendUrl = await getAvailableBackendUrl();
+
+    // 2. Configurar variável global para o frontend
+    await mainWindow.webContents.executeJavaScript(`
+      window.backendConfig = {
+        url: '${backendUrl}',
+        lastUpdated: ${Date.now()}
+      };
+      console.log('Backend configured:', window.backendConfig);
+    `);
+
+    // 3. Carregar o frontend
+    console.log(`🌐 Loading frontend from ${backendUrl}`);
+    await mainWindow.loadURL(backendUrl);
+
+    // 4. Verificar se o frontend carregou corretamente
+    await mainWindow.webContents.executeJavaScript(`
+      if (!window.angular) {
+        throw new Error('Angular not loaded');
+      }
+    `);
+
+    console.log('🎉 Frontend loaded successfully');
+  } catch (error) {
+    console.error('❌ Frontend loading failed:', error);
+
+    // Carregar página de erro com detalhes
+    await mainWindow.loadFile(path.join(__dirname, 'error.html'));
+    let errorMessage = '';
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    } else if (typeof error === 'string') {
+      errorMessage = error;
+    } else {
+      errorMessage = JSON.stringify(error);
+    }
+    await mainWindow.webContents.executeJavaScript(`
+      document.getElementById('error-details').textContent = \`${errorMessage.replace(/`/g, '\\`')}\`;
+    `);
+  }
+}
+
 // Event Listeners do Electron
 app.whenReady().then(async () => {
   console.log('🚀 Electron app ready, iniciando aplicação...');
@@ -843,16 +927,7 @@ app.whenReady().then(async () => {
 
     if (backendReady) {
       console.log('✅ Backend pronto! Carregando frontend...');
-      const localIp = getLocalIpAddress();
-      const frontendUrl = `http://${localIp}:3000`;
-      console.log(`🔌 Carregando frontend de: ${frontendUrl}`);
-      try {
-        await mainWindow.loadURL(frontendUrl);
-        console.log('✅ Frontend carregado com sucesso');
-      } catch (loadError) {
-        console.error('❌ Erro ao carregar frontend:', loadError);
-        await loadDiagnosticPage();
-      }
+      await loadFrontendSafely();
     } else {
       console.error('❌ Backend não ficou disponível no tempo limite');
       await loadDiagnosticPage();

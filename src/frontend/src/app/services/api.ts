@@ -118,19 +118,54 @@ export class ApiService {
   }
 
   public getBaseUrl(): string {
-    const host = window.location.hostname;
-    const port = '3000'; // Assumindo que a porta da API é sempre 3000
-    const protocol = host === 'localhost' ? 'http' : 'http'; // Pode ser 'https' em produção real
+    // Tenta detectar a URL base correta para o ambiente atual
+    try {
+      // Ambiente Electron ou empacotado
+      if (this.isElectron()) {
+        const electronUrl = this.getElectronBaseUrl();
+        console.log('🔌 Electron base URL:', electronUrl);
+        return electronUrl;
+      }
 
-    console.log(`🔧 [ApiService] Base URL construída: ${protocol}://${host}:${port}/api`);
+      // Ambiente de navegador normal
+      const browserUrl = this.getBrowserBaseUrl();
+      console.log('🌐 Browser base URL:', browserUrl);
+      return browserUrl;
+    } catch (error) {
+      console.error('❌ Error detecting base URL, using fallback:', error);
+      return 'http://127.0.0.1:3000/api'; // Fallback seguro
+    }
+  }
+
+  private getElectronBaseUrl(): string {
+    // Se estiver no protocolo file:// (app empacotado)
+    if (window.location.protocol === 'file:') {
+      return 'http://127.0.0.1:3000/api';
+    }
+
+    // Tenta usar o hostname atual (pode ser IP local)
+    if (window.location.hostname && window.location.hostname !== 'null') {
+      return `http://${window.location.hostname}:3000/api`;
+    }
+
+    // Fallback para localhost
+    return 'http://127.0.0.1:3000/api';
+  }
+
+  private getBrowserBaseUrl(): string {
+    const host = window.location.hostname;
+    const port = '3000';
+    const protocol = window.location.protocol === 'https:' ? 'https' : 'http';
     return `${protocol}://${host}:${port}/api`;
   }
 
   public getWebSocketUrl(): string {
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const wsHost = window.location.hostname;
-    const wsPort = 3000; // Porta do WebSocket
-    return `${wsProtocol}://${wsHost}:${wsPort}/ws`;
+    const baseUrl = this.getBaseUrl()
+      .replace(/^http/, 'ws')
+      .replace(/^https/, 'wss')
+      .replace('/api', '/ws');
+    console.log('🔄 WebSocket URL:', baseUrl);
+    return baseUrl;
   }
 
   public isElectron(): boolean {

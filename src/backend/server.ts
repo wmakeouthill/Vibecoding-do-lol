@@ -34,16 +34,16 @@ console.log('🔧 process.resourcesPath:', resourcesPath);
 const envSearchPaths: string[] = [
   // 2. Pasta dist (produção não empacotada)
   path.join(__dirname, '..', '.env'), // backend está em dist/backend, .env em dist/
-  
+
   // 3. Diretório atual
   path.resolve(process.cwd(), '.env'),
-  
+
   // 4. Relativo ao arquivo backend
   path.join(__dirname, '.env'),
-  
+
   // 5. Pasta raiz do projeto
   path.join(__dirname, '..', '..', '.env'),
-  
+
   // 6. Pasta pai do diretório atual
   path.join(process.cwd(), '..', '.env')
 ];
@@ -129,37 +129,41 @@ let frontendPath: string = '';
 app.use(cors({
   origin: function (origin: any, callback: any) {
     console.log('🌐 CORS request from origin:', origin);
-    
-    // Em desenvolvimento, permitir localhost:4200
+
+    // Lista de origens permitidas em desenvolvimento
+    const devOrigins = [
+      'http://localhost:4200',
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      'http://127.0.0.1:4200'
+    ];
+
+    // Em desenvolvimento, permitir apenas origens conhecidas
     if (isDev) {
-      const allowedOrigins = ['http://localhost:4200', 'http://localhost:3000'];
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (!origin || devOrigins.includes(origin)) {
         console.log('✅ CORS allowed for development origin');
-        callback(null, true);
-      } else {
-        console.log('❌ CORS denied for development origin');
-        callback(new Error('Not allowed by CORS'));
+        return callback(null, true);
       }
-    } else {
-      // Em produção (Electron), permitir qualquer origem local ou file://
-      const allowedProdOrigins = [
-        'file://',
-        'http://localhost',
-        'http://127.0.0.1',
-        'https://localhost',
-        'https://127.0.0.1'
-      ];
-      
-      if (!origin || allowedProdOrigins.some(allowed => origin.startsWith(allowed))) {
-        console.log('✅ CORS allowed for production origin');
-        callback(null, true);
-      } else {
-        console.log('❌ CORS denied for production origin');
-        callback(new Error('Not allowed by CORS'));
-      }
+      console.log('❌ CORS denied for development origin');
+      return callback(new Error('Not allowed by CORS in development'));
     }
+
+    // Em produção, regras mais flexíveis mas seguras
+    const isAllowed = !origin ||
+      origin === 'null' ||
+      origin.startsWith('file://') ||
+      /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(origin);
+
+    if (isAllowed) {
+      console.log('✅ CORS allowed for production origin');
+      return callback(null, true);
+    }
+
+    console.log('❌ CORS denied for production origin');
+    callback(new Error('Not allowed by CORS in production'));
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
 }));
 
 // Rate limiting
@@ -256,7 +260,7 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
           gameName: data.playerData.gameName,
           tagLine: data.playerData.tagLine
         });
-        
+
         // Confirmar identificação
         ws.send(JSON.stringify({
           type: 'player_identified',
@@ -721,7 +725,7 @@ app.get('/api/player/current-details', async (req: Request, res: Response) => {
     // ✅ CORREÇÃO: Extrair gameName e tagLine do displayName
     let gameName: string;
     let tagLine: string;
-    
+
     if (lcuSummoner.displayName.includes('#')) {
       [gameName, tagLine] = lcuSummoner.displayName.split('#');
     } else {
@@ -1192,17 +1196,17 @@ app.get('/api/player/match-history-riot/:puuid', (async (req: Request, res: Resp
   const puuid = req.params.puuid;
   const region = (req.query.region as string) || 'br1'; // Default to br1 if no region is provided
   const count = parseInt(req.query.count as string) || 20; // Default to 20 matches
-  
+
   if (!puuid) {
     return res.status(400).json({ error: 'PUUID é obrigatório' });
   }
 
   try {
     console.log(`🔍 Buscando histórico de partidas via Riot API para PUUID: ${puuid}, região: ${region}, count: ${count}`);
-    
+
     // Get match history using Riot API
     const matchIds = await globalRiotAPI.getMatchHistory(puuid, region, count);
-    
+
     if (!matchIds || matchIds.length === 0) {
       return res.json({ matches: [], message: 'Nenhuma partida encontrada' });
     }
@@ -1220,15 +1224,15 @@ app.get('/api/player/match-history-riot/:puuid', (async (req: Request, res: Resp
     }
 
     console.log(`✅ Histórico de partidas carregado com sucesso: ${matchDetails.length} partidas`);
-    res.json({ 
+    res.json({
       matches: matchDetails,
       totalMatches: matchIds.length,
-      loadedMatches: matchDetails.length 
+      loadedMatches: matchDetails.length
     });
 
   } catch (error: any) {
     console.error(`❌ Erro ao buscar histórico de partidas via Riot API para PUUID (${puuid}):`, error.message);
-    
+
     if (error.message.includes('não encontrado') || error.message.includes('não encontrada')) {
       res.status(404).json({ error: error.message });
     } else if (error.message.includes('Chave da Riot API')) {
@@ -1273,19 +1277,19 @@ app.post('/api/capture-match/:playerId', (req: Request, res: Response) => {
 app.get('/api/queue/status', async (req: Request, res: Response) => {
   try {
     console.log('🔍 [API] Buscando status da fila...');
-    
+
     // Verificar se tem dados do usuário atual para detecção na fila
     const { currentPlayerDisplayName } = req.query;
-    
+
     if (currentPlayerDisplayName && typeof currentPlayerDisplayName === 'string') {
       console.log(`🔍 [API] Buscando status da fila para jogador: ${currentPlayerDisplayName}`);
-      
+
       // ✅ NOVO: Usar método que marca o jogador atual na lista
       const queueStatusWithCurrentPlayer = await matchmakingService.getQueueStatusWithCurrentPlayer(currentPlayerDisplayName);
-      
+
       // Verificar se o usuário atual está na fila consultando a tabela queue_players
       const isCurrentPlayerInQueue = await matchmakingService.isPlayerInQueue(currentPlayerDisplayName);
-      
+
       res.json({
         ...queueStatusWithCurrentPlayer,
         isCurrentPlayerInQueue
@@ -1304,15 +1308,15 @@ app.get('/api/queue/status', async (req: Request, res: Response) => {
 app.post('/api/queue/force-sync', async (req: Request, res: Response) => {
   try {
     console.log('🔄 [API] Sincronização MySQL manual solicitada...');
-    
+
     // Chamar sincronização manual do MatchmakingService
     await matchmakingService.forceMySQLSync();
-    
+
     // Retornar status atualizado da fila
     const queueStatus = await matchmakingService.getQueueStatus();
-    
+
     console.log('✅ [API] Sincronização MySQL manual concluída');
-    
+
     res.json({
       success: true,
       message: 'Sincronização MySQL concluída com sucesso',
@@ -1385,7 +1389,7 @@ app.post('/api/queue/leave', (async (req: Request, res: Response) => {
     } else {
       console.log('⚠️ [API] Usando playerId como fallback:', playerId);
     }
-    
+
     console.log('🔍 [API] Tentando remover jogador:', { playerId, summonerName });
     console.log('🔍 [API] Fila atual:', matchmakingService.getQueue().map(p => ({ id: p.id, name: p.summonerName })));
 
@@ -1429,10 +1433,10 @@ app.post('/api/queue/add-bot', async (req: Request, res: Response) => {
   try {
     console.log('🤖 [API] Adicionando bot à fila...');
     await matchmakingService.addBotToQueue();
-    
+
     // Buscar status atualizado da fila
     const queueStatus = await matchmakingService.getQueueStatus();
-    
+
     res.json({
       success: true,
       message: 'Bot adicionado à fila com sucesso',
@@ -1515,7 +1519,7 @@ app.post('/api/match/draft-action', (async (req: Request, res: Response) => {
 
     // ✅ CORREÇÃO: Verificar se os parâmetros existem (playerId pode ser 0)
     if (matchId === undefined || playerId === undefined || championId === undefined || action === undefined) {
-      console.log('❌ [Draft API] Parâmetros inválidos:', { 
+      console.log('❌ [Draft API] Parâmetros inválidos:', {
         matchId: matchId === undefined ? 'UNDEFINED' : matchId,
         playerId: playerId === undefined ? 'UNDEFINED' : playerId,
         championId: championId === undefined ? 'UNDEFINED' : championId,
@@ -1529,7 +1533,7 @@ app.post('/api/match/draft-action', (async (req: Request, res: Response) => {
 
     console.log('✅ [Draft API] Parâmetros válidos, processando ação...');
     await draftService.processDraftAction(matchId, playerId, championId, action);
-    
+
     console.log('✅ [Draft API] Ação processada com sucesso');
     res.json({
       success: true,
@@ -1568,7 +1572,7 @@ app.post('/api/match/finish', (async (req: Request, res: Response) => {
 
     // Usar o GameInProgressService através do MatchmakingService
     await matchmakingService.finishGame(gameResult.matchId, gameResult);
-    
+
     console.log('✅ [Match API] Partida finalizada com sucesso');
     res.json({
       success: true,
@@ -1600,7 +1604,7 @@ app.post('/api/match/cancel', (async (req: Request, res: Response) => {
 
     // Usar o GameInProgressService através do MatchmakingService
     await matchmakingService.cancelGameInProgress(parseInt(matchId), reason || 'Partida cancelada pelo usuário');
-    
+
     console.log('✅ [Match API] Partida cancelada com sucesso');
     res.json({
       success: true,
@@ -1634,7 +1638,7 @@ app.post('/api/match/create-from-frontend', (async (req: Request, res: Response)
     });
 
     const matchId = await matchmakingService.createMatchFromFrontend(matchData);
-    
+
     res.json({
       success: true,
       matchId: matchId,
@@ -1653,10 +1657,10 @@ app.post('/api/match/create-from-frontend', (async (req: Request, res: Response)
 app.post('/api/matchmaking/process-complete', (async (req: Request, res: Response) => {
   try {
     console.log('🎯 [API] O matchmaking agora é automático - processado quando há 10 jogadores');
-    
+
     // O matchmaking agora é automático, então apenas retornamos o status
     const queueStatus = await matchmakingService.getQueueStatus();
-    
+
     res.json({
       success: true,
       message: 'O matchmaking é processado automaticamente quando há 10 jogadores na fila',
@@ -1675,23 +1679,23 @@ app.post('/api/matchmaking/process-complete', (async (req: Request, res: Respons
 app.get('/api/matchmaking/check-acceptance', (async (req: Request, res: Response) => {
   try {
     console.log('🔍 [API] Verificando status de aceitação...');
-    
+
     // Buscar partidas pendentes de aceitação
     const pendingMatches = await dbManager.getCustomMatchesByStatus('pending');
-    
+
     if (pendingMatches.length > 0) {
       const latestMatch = pendingMatches[0];
-      
+
       // Parsear jogadores dos times
       let allPlayers: string[] = [];
       try {
-        const team1 = typeof latestMatch.team1_players === 'string' 
-          ? JSON.parse(latestMatch.team1_players) 
+        const team1 = typeof latestMatch.team1_players === 'string'
+          ? JSON.parse(latestMatch.team1_players)
           : (latestMatch.team1_players || []);
-        const team2 = typeof latestMatch.team2_players === 'string' 
-          ? JSON.parse(latestMatch.team2_players) 
+        const team2 = typeof latestMatch.team2_players === 'string'
+          ? JSON.parse(latestMatch.team2_players)
           : (latestMatch.team2_players || []);
-        
+
         allPlayers = [...team1, ...team2];
       } catch (parseError) {
         console.error(`❌ [API] Erro ao parsear jogadores da partida ${latestMatch.id}`);
@@ -1701,13 +1705,13 @@ app.get('/api/matchmaking/check-acceptance', (async (req: Request, res: Response
       // Buscar status de aceitação dos jogadores
       const queuePlayers = await dbManager.getActiveQueuePlayers();
       const matchPlayers = queuePlayers.filter(p => allPlayers.includes(p.summoner_name));
-      
+
       const acceptedPlayers = matchPlayers.filter(p => p.acceptance_status === 1);
       const declinedPlayers = matchPlayers.filter(p => p.acceptance_status === 2);
       const pendingPlayers = matchPlayers.filter(p => p.acceptance_status === 0);
-      
-      res.json({ 
-        success: true, 
+
+      res.json({
+        success: true,
         matchId: latestMatch.id,
         acceptedCount: acceptedPlayers.length,
         declinedCount: declinedPlayers.length,
@@ -1718,8 +1722,8 @@ app.get('/api/matchmaking/check-acceptance', (async (req: Request, res: Response
         pendingPlayers: pendingPlayers.map(p => p.summoner_name)
       });
     } else {
-      res.json({ 
-        success: true, 
+      res.json({
+        success: true,
         message: 'Nenhuma partida pendente de aceitação',
         acceptedCount: 0,
         totalPlayers: 0
@@ -1727,8 +1731,8 @@ app.get('/api/matchmaking/check-acceptance', (async (req: Request, res: Response
     }
   } catch (error: any) {
     console.error('❌ [API] Erro ao verificar status de aceitação:', error);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       error: error.message
     });
   }
@@ -2369,11 +2373,11 @@ app.delete('/api/matches/:matchId', (req: Request, res: Response) => {
   (async () => {
     try {
       const matchId = parseInt(req.params.matchId, 10);
-      
+
       if (isNaN(matchId)) {
-        return res.status(400).json({ 
-          success: false, 
-          message: 'ID da partida inválido' 
+        return res.status(400).json({
+          success: false,
+          message: 'ID da partida inválido'
         });
       }
 
@@ -2383,16 +2387,16 @@ app.delete('/api/matches/:matchId', (req: Request, res: Response) => {
       await dbManager.deleteCustomMatch(matchId);
 
       console.log(`✅ [DELETE /api/matches] Partida ${matchId} cancelada com sucesso`);
-      
-      res.json({ 
-        success: true, 
+
+      res.json({
+        success: true,
         message: `Partida ${matchId} cancelada e removida do banco de dados`
       });
     } catch (error: any) {
       console.error('💥 [DELETE /api/matches] Erro ao cancelar partida:', error);
-      res.status(500).json({ 
-        success: false, 
-        error: error.message 
+      res.status(500).json({
+        success: false,
+        error: error.message
       });
     }
   })();
@@ -2737,7 +2741,7 @@ async function startServer() {
 
         console.log(`🎯 [Draft] Atualizando partida ${matchId} após draft completado`);
 
-        await dbManager.updateCustomMatch(matchId, { 
+        await dbManager.updateCustomMatch(matchId, {
           pick_ban_data: JSON.stringify(draftData),
           status: 'draft_completed'
         });
@@ -2834,7 +2838,7 @@ async function startServer() {
           return res.sendFile(indexPath);
         }
       }
-      
+
       // 404 para outros casos
       res.status(404).json({ error: 'Rota não encontrada' });
     });
@@ -2842,13 +2846,13 @@ async function startServer() {
     // Iniciar servidor
     server.listen(PORT as number, '0.0.0.0', () => {
       console.log(`🚀 Servidor rodando na porta ${PORT}`);
-      
+
       // ✅ CORRIGIDO: Usar 127.0.0.1 em produção para melhor compatibilidade
       const baseUrl = isDev ? 'localhost' : '127.0.0.1';
       console.log(`🌐 WebSocket disponível em ws://${baseUrl}:${PORT}`);
       console.log(`🔧 API disponível em: http://${baseUrl}:${PORT}/api`);
       console.log(`🔧 Health check: http://${baseUrl}:${PORT}/api/health`);
-      
+
       if (isDev) {
         console.log(`📱 Frontend Angular: http://localhost:4200`);
       } else {
@@ -2864,7 +2868,7 @@ async function startServer() {
           .catch(err => console.error('❌ Teste de conectividade falhou:', err.message));
       }, 1000);
     });
-    
+
     server.on('error', (error: any) => {
       console.error('❌ Erro no servidor:', error);
       if (error.code === 'EADDRINUSE') {
@@ -2882,7 +2886,7 @@ async function startServer() {
 async function initializeServices() {
   try {
     console.log('🚀 Iniciando inicialização dos serviços...');
-    
+
     // Banco de dados
     console.log('📊 Inicializando banco de dados...');
     await dbManager.initialize();
@@ -2983,7 +2987,7 @@ async function initializeServices() {
         console.log('⚠️ [Server] Token do Discord Bot não configurado no banco ou .env. Discord será desabilitado.');
       }
     }
-    
+
     // SEMPRE conectar ao WebSocket, independente do status do bot
     discordService.setWebSocketServer(wss);
     console.log('🔗 [Server] DiscordService conectado ao WebSocket (modo ativo)');
