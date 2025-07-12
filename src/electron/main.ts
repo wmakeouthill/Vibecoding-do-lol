@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, session } from 'electron';
 import * as path from 'path';
 import { spawn, exec } from 'child_process';
 import * as fs from 'fs';
@@ -74,6 +74,15 @@ async function createWindow(): Promise<void> {
   console.log('🎮 Criando janela principal do Electron...');
 
   try {
+    // Configuração para desabilitar o cache
+    const partition = 'no-cache'; // Sessão sem cache
+    const ses = session.fromPartition(partition);
+
+    // Opcional: Limpa o cache existente (útil para desenvolvimento)
+    ses.clearCache().then(() => {
+      console.log('Cache limpo!');
+    });
+
     // Criar a janela principal do aplicativo
     console.log('🔧 Configurando BrowserWindow...');
     mainWindow = new BrowserWindow({
@@ -88,6 +97,7 @@ async function createWindow(): Promise<void> {
         // Configurações básicas de segurança
         webSecurity: true,
         sandbox: false,
+        partition: partition, // Usa a sessão sem cache
       },
       icon: path.join(__dirname, '../../assets/icon.ico'), // Adicionar ícone depois
       titleBarStyle: 'default',
@@ -214,7 +224,6 @@ async function loadLoadingPage(): Promise<void> {
     <html>
       <head>
         <title>LoL Matchmaking - Iniciando...</title>
-        <div id="loading-error" style="color: red; margin-top: 20px;"></div>
         <style>
           body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -832,44 +841,28 @@ async function getAvailableBackendUrl(): Promise<string> {
 
 async function loadFrontendSafely() {
   try {
-    // 1. Obter URL do backend que está respondendo
     const backendUrl = await getAvailableBackendUrl();
 
-    // 2. Configurar variável global para o frontend
+    // Configuração global do backend (opcional, se ainda for útil)
     await mainWindow.webContents.executeJavaScript(`
       window.backendConfig = {
         url: '${backendUrl}',
         lastUpdated: ${Date.now()}
       };
-      console.log('Backend configured:', window.backendConfig);
+      console.log('Backend config loaded');
     `);
 
-    // 3. Carregar o frontend
+    // Carrega o frontend e confia no Angular
     console.log(`🌐 Loading frontend from ${backendUrl}`);
     await mainWindow.loadURL(backendUrl);
 
-    // 4. Verificar se o frontend carregou corretamente
-    await mainWindow.webContents.executeJavaScript(`
-      if (!window.angular) {
-        throw new Error('Angular not loaded');
-      }
-    `);
-
-    console.log('🎉 Frontend loaded successfully');
+    // Não verifica mais "window.angular" (remoção total)
+    console.log('✅ Frontend loaded (Angular bootstrap handled internally)');
   } catch (error) {
     console.error('❌ Frontend loading failed:', error);
-
-    // Carregar página de erro com detalhes
-    let errorMessage = '';
-    if (error instanceof Error) {
-      errorMessage = error.message;
-    } else if (typeof error === 'string') {
-      errorMessage = error;
-    } else {
-      errorMessage = JSON.stringify(error);
-    }
+    // Log simplificado (sem manipulação de DOM)
     await mainWindow.webContents.executeJavaScript(`
-      document.getElementById('error-details').textContent = \`${errorMessage.replace(/`/g, '\\`')}\`;
+      console.error('Frontend error:', \`${error instanceof Error ? error.message : String(error)}\`);
     `);
   }
 }
