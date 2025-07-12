@@ -60,19 +60,43 @@ O principal objetivo do Electron neste projeto é proporcionar uma experiência 
   - **Exposição Mínima:** A regra de ouro é expor apenas o mínimo necessário do Electron/Node.js para o frontend. Cada função exposta deve ser cuidadosamente revisada para potenciais vulnerabilidades.
   - **Validação de Entrada:** Qualquer dado passado do frontend para o processo *main* via IPC deve ser validado no processo *main* para evitar injeção de comandos ou dados maliciosos.
 
-### 📄 Arquivo: `backend-starter.js` (Assumido)
+### 📄 Arquivo: `backend-starter.js`
 
-- **Localização:** `src/electron/backend-starter.js` (mencionado no snapshot do projeto)
-- **Propósito:** Este arquivo, embora não totalmente detalhado aqui, provavelmente é um script auxiliar que abstrai a lógica de iniciar o servidor Node.js do backend como um processo filho a partir do Electron.
-- **Lógica e Funcionamento (Assumido):** Ele conteria a lógica para `spawn` o processo `node` com o `server.ts` compilado (ou `server.js` em produção), possivelmente configurando variáveis de ambiente e redirecionando logs. Em `main.ts`, a função `startBackendServer` já incorpora essa lógica, então `backend-starter.js` pode ser uma versão mais antiga ou um ponto de abstração que não está sendo usado diretamente no fluxo atual de `main.ts`.
-- **Considerações:** Se `startBackendServer` em `main.ts` já lida com a inicialização, a necessidade de `backend-starter.js` deve ser reavaliada para evitar duplicação de lógica.
+- **Localização:** `src/electron/backend-starter.js`
+- **Propósito:** Este script é responsável por iniciar e gerenciar o servidor Node.js do backend como um processo filho a partir do Electron. Ele lida com a detecção do executável Node.js, caminhos de arquivo em ambientes empacotados (ASAR) e desenvolvimento, e garante que o backend esteja operacional e acessível.
+- **Lógica e Funcionamento:**
+  - **Descoberta de Node.js:** Procura executáveis Node.js em locais comuns e testa sua funcionalidade.
+  - **Resolução de Caminhos e Extração ASAR:** Adapta os caminhos dos arquivos do backend e `node_modules` dependendo se a aplicação está empacotada em um arquivo `.asar`. Se necessário, extrai esses arquivos para um diretório temporário, pois o Node.js não pode executar diretamente de dentro de `.asar`.
+  - **Inicialização do Processo:** Inicia o backend (`server.js`) usando `child_process.spawn`, configurando variáveis de ambiente (como `NODE_PATH` para os módulos extraídos) e redirecionando a saída do backend para o console do Electron.
+  - **Teste de Conectividade:** Inclui lógicas de retentativas para pingar o endpoint de saúde do backend e garantir que ele esteja respondendo antes de sinalizar sucesso.
+- **Considerações:**
+  - **Dependência do `main.ts`:** Este script é chamado pelo `main.ts` para iniciar o backend, atuando como uma camada de abstração para a lógica complexa de inicialização de processos.
+  - **Segurança:** A extração para diretórios temporários e a configuração do `NODE_PATH` precisam ser gerenciadas com cuidado para evitar vulnerabilidades.
 
 ### 📄 Arquivo: `error.html`
 
 - **Localização:** `src/electron/error.html`
-- **Propósito:** Fornece uma página de erro genérica e estática para ser exibida ao usuário quando ocorrem problemas críticos que impedem a aplicação de carregar o frontend ou o backend.
-- **Lógica e Funcionamento:** É uma página HTML simples, focada em UX para informar o usuário sobre o problema e, possivelmente, fornecer instruções básicas de depuração ou contato de suporte. A `loadDiagnosticPage()` em `main.ts` é uma versão mais sofisticada e dinâmica dessa ideia.
-- **Considerações:** Pode ser removido se a `loadDiagnosticPage()` atender a todos os cenários de erro ou mantido como um fallback de segurança.
+- **Propósito:** Fornece uma página HTML estática e simples para ser exibida ao usuário em caso de falhas críticas na inicialização da aplicação (ex: backend não inicia, frontend não carrega).
+- **Lógica e Funcionamento:** É uma página HTML básica com CSS embutido. Ela exibe uma mensagem de erro genérica e possui um placeholder (`#error-details`) que pode ser preenchido dinamicamente pelo processo `main` com detalhes técnicos do erro para depuração. Garante uma experiência de fallback amigável ao usuário, evitando uma tela em branco.
+- **Considerações:**
+  - **Minimalismo:** A página é intencionalmente minimalista para carregar rapidamente mesmo em condições de erro.
+  - **Injeção de Detalhes:** A eficácia desta página depende da correta injeção de detalhes do erro pelo `main.ts`.
+
+### 📄 Arquivo: `tsconfig.json`
+
+- **Localização:** `src/electron/tsconfig.json`
+- **Propósito:** Este arquivo configura o compilador TypeScript (`tsc`) para o processo `main` do Electron e para os scripts de `preload`. Ele define como os arquivos `.ts` são compilados para JavaScript, garantindo a compatibilidade com o ambiente Electron (Node.js e Chromium).
+- **Configurações Chave (`compilerOptions`):**
+  - `"target": "ES2020"`: Define o padrão ECMAScript de saída.
+  - `"module": "commonjs"`: Especifica o sistema de módulos para Node.js.
+  - `"outDir": "../../dist/electron"`: Diretório de saída dos arquivos compilados.
+  - `"strict": true`: Habilita todas as opções de verificação de tipo estritas.
+  - `"esModuleInterop": true`: Facilita a interoperabilidade entre módulos CommonJS e ES.
+  - `"skipLibCheck": true`: Ignora a verificação de tipo de arquivos de declaração (`.d.ts`) para compilação mais rápida.
+  - `"sourceMap": true`: Gera mapas de origem para depuração.
+  - `"typeRoots": ["../../node_modules/@types"]`: Onde encontrar definições de tipo globais.
+- **`include` e `exclude`:** Definem quais arquivos (`**/*.ts`) incluir e quais excluir (`node_modules`, testes).
+- **Considerações:** Garante que o código TypeScript seja transpilado corretamente para o ambiente Electron, otimizando o desempenho de compilação com opções como `incremental`.
 
 ## 🔗 Integração Geral do Electron com o Resto do Projeto
 

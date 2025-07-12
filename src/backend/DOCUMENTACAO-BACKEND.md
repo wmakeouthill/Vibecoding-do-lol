@@ -33,15 +33,38 @@ O backend emprega uma arquitetura baseada em camadas:
 ### 📄 Arquivo: `server.ts` (Servidor Principal)
 
 - **Localização:** `src/backend/server.ts`
-- **Propósito:** Este é o ponto de inicialização do servidor Express.js. Ele configura o aplicativo Express, middlewares, e registra todas as rotas da API.
+- **Propósito:** Este é o ponto de entrada principal do backend, responsável por inicializar o servidor Express.js, configurar middlewares, estabelecer conexões de banco de dados e WebSockets, e orquestrar o ciclo de vida dos serviços essenciais da aplicação. Atua como o hub central para todas as operações de rede e coordenação de serviços.
 - **Lógica e Funcionamento:**
-  - **Inicialização do Express:** Cria uma instância do aplicativo Express.
-  - **Middlewares:** Configura middlewares para parsear JSON (`express.json()`), CORS (Cross-Origin Resource Sharing) para permitir requisições do frontend, e outros middlewares para logging ou tratamento de erros.
-  - **Registro de Rotas:** Importa e utiliza os módulos de rota definidos em `src/backend/routes/` para mapear os endpoints da API.
-  - **Servidor HTTP:** Inicia o servidor HTTP em uma porta específica (provavelmente 3000, conforme `main.ts` do Electron).
-  - **WebSocket:** Pode inicializar um servidor WebSocket (ou integrar com `signaling-server.ts`) para comunicação em tempo real.
-- **Tecnologias e Implementação:** Express.js para roteamento e gerenciamento de requisições HTTP, TypeScript para tipagem. Pode usar `cors` para políticas de segurança de domínio.
-- **Considerações e Melhorias:** Implementar um robusto tratamento de erros global (error handling middleware). Modularizar a configuração de middlewares e rotas para grandes aplicações. Adicionar validação de esquema para payloads de requisição (ex: com `Joi` ou `Yup`).
+  - **Carregamento de Variáveis de Ambiente (`dotenv`):** Procura e carrega variáveis de ambiente de um arquivo `.env` localizado em múltiplos caminhos potenciais (incluindo o diretório de recursos do Electron para builds empacotados), garantindo a configuração correta em diferentes ambientes (desenvolvimento, produção, Electron).
+  - **Servidor HTTP/WebSocket (`express`, `http`, `ws`, `socket.io`):**
+    - Inicializa um servidor HTTP com Express.js para lidar com requisições RESTful.
+    - Configura um `WebSocketServer` (`ws`) para comunicação de baixo nível (P2P ou eventos específicos).
+    - Inicializa um `Socket.IO` server para comunicação em tempo real mais estruturada, com configurações otimizadas para performance (pingTimeout, pingInterval, transports).
+    - Aplica `keepAliveTimeout` e `headersTimeout` para aprimorar a estabilidade da conexão.
+  - **Middlewares Essenciais:**
+    - **CORS (`cors`):** Configura políticas de Cross-Origin Resource Sharing. Em desenvolvimento, permite origens locais (`localhost`, `127.0.0.1`); em produção, é mais flexível para origens de arquivos (`file://`) e IPs internos, permitindo a comunicação dentro do ambiente Electron e de redes locais.
+    - **Rate Limiting (`express-rate-limit`):** Limita o número de requisições por IP para prevenir ataques de negação de serviço. Requisições de IPs locais (frontend local, LCU) são excluídas do limite.
+    - **Body Parsers (`express.json`, `express.urlencoded`):** Habilita o parsing de corpos de requisição JSON e URL-encoded.
+    - **Logging Middleware:** Registra informações de cada requisição (método, URL, origem, host, user-agent) para fins de depuração e monitoramento.
+  - **Inicialização de Serviços (`DatabaseManager`, `MatchmakingService`, etc.):**
+    - Instancia o `DatabaseManager` para gerenciar a conexão e operações com o MySQL.
+    - Inicializa uma série de serviços que encapsulam a lógica de negócio: `DiscordService`, `MatchmakingService` (com integração WebSocket), `PlayerService`, `RiotAPIService` (instância global), `LCUService`, `MatchHistoryService`, `DataDragonService`, e `DraftService`.
+  - **Configuração de Rotas:** Utiliza a função `setupChampionRoutes` para registrar os endpoints de campeões.
+  - **Manipulação de Mensagens WebSocket:** Define um ouvinte para mensagens WebSocket (`wss.on('connection')`) que, por sua vez, delega o processamento das mensagens recebidas (`handleWebSocketMessage`) a uma função `switch-case` baseada no `data.type`.
+  - **Ciclo de Vida do Servidor:** Contém funções assíncronas `startServer()` e `initializeServices()` para gerenciar o processo de inicialização do servidor e seus serviços dependentes, incluindo carregamento assíncrono do Data Dragon e conexão com o banco de dados.
+- **Tecnologias e Implementação:**
+  - **Node.js & TypeScript:** Plataforma e linguagem de desenvolvimento.
+  - **Express.js:** Framework web robusto.
+  - **WebSockets (`ws`, `socket.io`):** Para comunicação em tempo real e bidirecional.
+  - **`dotenv`:** Gerenciamento de variáveis de ambiente.
+  - **`cors`, `express-rate-limit`:** Middlewares de segurança e controle.
+  - **`mysql2/promise`:** Para interação com o banco de dados MySQL (via `DatabaseManager`).
+  - **Serviços Modulares:** Design pattern para organização da lógica de negócio.
+- **Considerações e Melhorias:**
+  - **Observabilidade:** Melhorar o logging e adicionar métricas para monitoramento de performance e saúde do servidor.
+  - **Tratamento de Erros:** Implementar um middleware de tratamento de erros global mais sofisticado para capturar e responder a exceções de forma consistente.
+  - **Configuração Externa:** Para implantações mais complexas, considerar ferramentas de configuração centralizadas em vez de apenas `.env` files.
+  - **Escalabilidade:** Para alta carga, considerar balanceamento de carga e arquiteturas distribuídas para os WebSockets e serviços.
 
 ### 📁 Serviços Essenciais (Exemplos)
 

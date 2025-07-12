@@ -1,76 +1,148 @@
-# Documentação: `DatabaseManager.ts`
+# Database Manager
 
-O arquivo `DatabaseManager.ts`, localizado em `src/backend/database/`, é o componente central da camada de persistência de dados do backend. Ele é responsável por gerenciar todas as interações com o banco de dados MySQL, garantindo a integridade e a consistência dos dados da aplicação.
+The `DatabaseManager` class (`src/backend/database/DatabaseManager.ts`) is the central component responsible for all interactions with the MySQL database in the backend. It provides a comprehensive set of methods for managing player data, matchmaking results (both standard and custom matches), queue management, Discord-LoL account linking, application settings, and various data integrity operations.
 
-## 🎯 Propósito e Funcionalidades Principais
+## Architecture and Technologies
 
-A classe `DatabaseManager` provê uma interface robusta para operações de banco de dados, encapsulando a lógica de conexão, criação de tabelas e manipulação de dados para diversas entidades da aplicação. Suas principais responsabilidades incluem:
+- **MySQL2/Promise:** Utilizes the `mysql2/promise` library for asynchronous interaction with the MySQL database, ensuring efficient and non-blocking database operations.
+- **Connection Pooling:** Employs a connection pool to manage database connections, optimizing performance by reusing existing connections and limiting the number of open connections.
+- **TypeScript:** Developed in TypeScript, providing strong typing for database models (e.g., `Player`, `Match`) and ensuring type safety across database operations.
+- **Environment Variables:** Relies on environment variables (`DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_PORT`) for database configuration, promoting flexibility and security.
+- **DataDragonService Integration:** Integrates with `DataDragonService` to load champion data, which is essential for processing match-related information (e.g., in `processParticipantsWithDataDragon`).
 
-1. **Gerenciamento de Conexões MySQL:** Estabelece e gerencia um pool de conexões MySQL, otimizando o uso de recursos e a performance das requisições ao banco de dados.
-2. **Criação e Manutenção de Tabelas:** Garante que todas as tabelas necessárias para o funcionamento da aplicação existam e estejam com a estrutura correta. As tabelas principais gerenciadas são:
-    * `players`: Armazena informações de jogadores, incluindo MMR (Matchmaking Rating) e estatísticas de partidas customizadas.
-    * `matches`: Registra informações sobre partidas oficiais de League of Legends vinculadas ao sistema.
-    * `custom_matches`: Gerencia dados de partidas customizadas criadas e jogadas dentro da aplicação.
-    * `discord_lol_links`: Armazena os vínculos entre IDs de usuários do Discord e contas de League of Legends.
-    * `settings`: Persiste configurações globais da aplicação, como fatores de MMR, tempos limite de fila, etc.
-    * `queue_players`: Mantém o estado dos jogadores atualmente na fila de matchmaking.
-3. **Operações CRUD:** Oferece métodos para Criar (Create), Ler (Read), Atualizar (Update) e Deletar (Delete) registros nas tabelas gerenciadas, abstraindo a complexidade das queries SQL.
-4. **Gerenciamento de LP Customizado:** Contém lógica para recalcular e atualizar o LP (League Points) customizado dos jogadores com base nos resultados das partidas customizadas.
-5. **Estatísticas e Monitoramento:** Provê métodos para obter contagens de jogadores e estatísticas gerais das tabelas, auxiliando no monitoramento do estado do banco de dados.
-6. **Integração com `DataDragonService`:** Durante a inicialização, invoca o `DataDragonService` para carregar dados de campeões, que podem ser usados por outras partes do backend.
+## Key Responsibilities
 
-## ⚙️ Lógica e Funcionamento
+- **Database Initialization:** Establishes and tests the database connection, creates necessary tables (`players`, `matches`, `custom_matches`, `discord_lol_links`, `settings`, `queue_players`, `queue_actions`) if they don't exist, and ensures correct character set configurations.
+- **Player Management:** Handles creating, retrieving, updating (including MMR and custom LP), and querying player data by summoner name or PUUID.
+- **Match Management (Standard & Custom):** Provides functionalities for creating, updating, retrieving, and completing both standard and custom match records. This includes advanced logic for calculating MMR changes, handling pick/ban data, and linking actual game results.
+- **Queue Management:** Manages players in the matchmaking queue, including adding, removing, updating status, and cleaning up stale entries. Implements mechanisms to ensure queue integrity.
+- **Discord-LoL Linking:** Facilitates the linking and unlinking of Discord accounts with League of Legends accounts, including verification and retrieval of linked data.
+- **Application Settings:** Allows for storing and retrieving key-value application settings in the database.
+- **Data Integrity and Maintenance:** Includes methods for various maintenance tasks such as fixing match statuses, recalculating custom LP, cleaning up test matches, and refreshing player data from custom matches.
+- **Leaderboard Generation:** Generates aggregated player statistics and custom match leaderboards.
 
-### Inicialização (`initialize()`)
+## Core Interfaces
 
-O método `initialize()` é o ponto de entrada para a configuração do banco de dados. Ele realiza as seguintes etapas:
+- `Player`:
+  - Represents a player's profile with fields like `id`, `summoner_name`, `summoner_id`, `puuid`, `region`, `current_mmr`, `peak_mmr`, `games_played`, `wins`, `losses`, `win_streak`.
+  - Includes specific fields for custom match statistics: `custom_mmr`, `custom_peak_mmr`, `custom_games_played`, `custom_wins`, `custom_losses`, `custom_win_streak`, `custom_lp`.
+- `Match`:
+  - Represents a match record with fields such as `id`, `match_id`, `team1_players`, `team2_players`, `winner_team`, `status`, `created_at`, `completed_at`, `riot_game_id`, `pick_ban_data`, `mmr_changes`, and more.
 
-* **Verificação de Variáveis de Ambiente:** Assegura que as credenciais e configurações do MySQL (DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT) estejam definidas.
-* **Criação do Pool de Conexões:** Utiliza `mysql2/promise` para criar um pool de conexões, configurado com parâmetros como `connectionLimit`, `charset`, e `timezone`.
-* **Teste de Conexão:** Realiza um `ping` no banco de dados para verificar a conectividade.
-* **Configuração de Charset:** Define o charset da conexão para `utf8mb4` para garantir o correto tratamento de caracteres especiais.
-* **Criação de Tabelas:** Chama `createTables()` para criar todas as tabelas necessárias se elas ainda não existirem.
-* **Inclusão de Configurações Padrão:** Insere configurações iniciais na tabela `settings` através de `insertDefaultSettings()`.
-* **Inicialização do `DataDragonService`:** Garante que os dados dos campeões sejam carregados para uso em toda a aplicação.
+## Key Methods and Functionalities
 
-### Criação de Tabelas (`createTables()`)
+### Initialization & Setup
 
-Este método contém as declarações SQL para criar cada uma das tabelas. Ele utiliza `CREATE TABLE IF NOT EXISTS` para evitar erros caso as tabelas já existam. Além disso, gerencia a adição de `constraints` e a correção de estruturas de tabela, como a adição da coluna `match_leader` e a verificação do `charset` da tabela `settings`.
+- `initialize(): Promise<void>`: Connects to MySQL, creates tables, inserts default settings, and initializes `DataDragonService`.
+- `private createTables(): Promise<void>`: Defines and creates all necessary database tables.
+- `private ensureCustomMatchesTable(): Promise<void>`: Ensures the `custom_matches` table is properly structured.
+- `private insertDefaultSettings(): Promise<void>`: Populates the `settings` table with initial values.
 
-### Métodos de Manipulação de Dados
+### Player Operations
 
-A classe expõe uma série de métodos assíncronos para interagir com cada tabela:
+- `getPlayer(playerId: number): Promise<Player | null>`
+- `getPlayerBySummonerName(summonerName: string): Promise<Player | null>`
+- `getPlayerByPuuid(puuid: string): Promise<Player | null>`
+- `createPlayer(playerData: Omit<Player, 'id'>): Promise<number>`
+- `updatePlayerMMR(playerId: number, mmrChange: number): Promise<void>`
+- `updatePlayer(playerId: number, updates: any): Promise<void>`
+- `updatePlayerNickname(oldName: string, newName: string): Promise<void>`
+- `getPlayersCount(): Promise<number>`
 
-* **Jogadores (`players`):**
-  * `getPlayer`, `createPlayer`, `updatePlayer`, `deletePlayer`, `getAllPlayers`, `getPlayerBySummonerName`, `updatePlayerMMR`.
-* **Partidas (`matches`):**
-  * `createMatch`, `updateMatchStatus`, `getMatchById`, `updateMatchLeader`.
-* **Partidas Customizadas (`custom_matches`):**
-  * `createCustomMatch`, `updateCustomMatch`, `getCustomMatchById`, `getActiveCustomMatches`, `getCustomMatchesBySummonerName`, `deleteCustomMatch`, `clearCustomMatchesTable`, `updateCustomMatchParticipants`, `updateCustomMatchPickBan`.
-* **Vinculações Discord-LoL (`discord_lol_links`):**
-  * `linkDiscordAccount`, `getDiscordLolLink`, `verifyDiscordLink`, `updateDiscordLinkLastUsed`.
-* **Configurações (`settings`):**
-  * `getSetting`, `setSetting`, `insertDefaultSettings`.
-* **Fila de Jogadores (`queue_players`):**
-  * `addPlayerToQueue`, `getPlayersInQueue`, `removePlayerFromQueue`, `updatePlayerQueuePosition`, `clearQueue`, `getQueuePlayerBySummonerName`.
+### Match Operations (Standard & Custom)
 
-### Manutenção e Utilitários
+- `createMatch(team1Players: any[], team2Players: any[], avgMMR1: number, avgMMR2: number, extraData: any = {}): Promise<number>`
+- `getPlayerMatches(playerId: number, limit: number = 30, offset: number = 0): Promise<Match[]>`
+- `getRecentMatches(limit: number = 20): Promise<Match[]>`
+- `updateMatchStatus(matchId: number, status: string): Promise<void>`
+- `completeMatch(matchId: number, winner: string, mmrChanges: any): Promise<void>`
+- `createCustomMatch(matchData: {}): Promise<number>`
+- `getCustomMatches(limit: number = 20, offset: number = 0): Promise<any[]>`
+- `getCustomMatchById(matchId: number): Promise<any | null>`
+- `updateCustomMatch(matchId: number, updateData: any, requestingUser?: string): Promise<void>`
+- `updateCustomMatchWithRealData(matchId: number, realMatchData: any): Promise<void>`
+- `completeCustomMatch(matchId: number, winnerTeam: number, extraData: any = {}): Promise<void>`
+- `deleteCustomMatch(matchId: number): Promise<void>`
+- `clearAllCustomMatches(): Promise<number>`
+- `getCustomMatchesCount(): Promise<number>`
+- `getCustomMatchesByStatus(status: string, limit: number = 20): Promise<any[]>`
+- `getActiveCustomMatches(): Promise<any[]>`
 
-* **`recalculateCustomLP()`:** Processa partidas customizadas completadas para atualizar o LP (`custom_lp`) e o MMR de pico (`custom_peak_mmr`) dos jogadores.
-* **`getPlayersCount()` e `getTablesStats()`:** Fornecem métricas sobre o número de jogadores e estatísticas de contagem de registros por tabela.
-* **`close()`:** Encerra o pool de conexões MySQL de forma graciosa.
+### Queue Operations
 
-## 🛠️ Tecnologias e Implementação
+- `addPlayerToQueue(playerId: number, summonerName: string, region: string, customLp: number, preferences: any): Promise<void>`
+- `removePlayerFromQueue(playerId: number): Promise<void>`
+- `removePlayerFromQueueBySummonerName(summonerName: string): Promise<boolean>`
+- `removeDeclinedPlayers(): Promise<number>`
+- `getActiveQueuePlayers(): Promise<any[]>`
+- `clearQueue(): Promise<void>`
+- `clearAllPlayers(): Promise<void>`
+- `recordQueueAction(action: string, playerId?: number, data?: any): Promise<void>`
 
-* **`mysql2/promise`:** Driver MySQL para Node.js com suporte a `Promises`, facilitando o trabalho com operações assíncronas.
-* **TypeScript:** Garante tipagem forte, melhorando a manutenibilidade e reduzindo erros em tempo de desenvolvimento.
-* **Pool de Conexões:** Implementação de um pool para reutilizar conexões e gerenciar eficientemente as requisições ao banco.
-* **SQL:** Utilização de `template literals` para construir queries SQL, embora seja importante garantir a segurança contra SQL Injection (o que `mysql2/promise` ajuda a mitigar com `prepared statements`).
+### Discord Linking
 
-## ⚠️ Considerações e Boas Práticas
+- `createDiscordLink(discordId: string, discordUsername: string, gameName: string, tagLine: string): Promise<number>`
+- `getDiscordLink(discordId: string): Promise<any | null>`
+- `getDiscordLinkByGameName(gameName: string, tagLine: string): Promise<any | null>`
+- `updateDiscordLinkLastUsed(discordId: string): Promise<void>`
+- `deleteDiscordLink(discordId: string): Promise<void>`
+- `getAllDiscordLinks(): Promise<any[]>`
+- `verifyDiscordLink(discordId: string, gameName: string, tagLine: string): Promise<boolean>`
+- `getDiscordLinksCount(): Promise<number>`
 
-* **Segurança:** A utilização de `prepared statements` com `mysql2/promise` é fundamental para prevenir SQL Injection. Credenciais do banco de dados devem ser gerenciadas via variáveis de ambiente e não hardcoded.
-* **Tratamento de Erros:** Todos os métodos assíncronos incluem blocos `try-catch` para lidar com erros de banco de dados, mas é crucial que a camada superior (serviços) também implemente tratamento de erros adequado.
-* **Performance:** Para tabelas com grande volume de dados, a otimização de queries com índices e a revisão de design de schema são essenciais.
-* **Migrações:** Para um ambiente de produção, um sistema de migração de banco de dados (ex: `knex`, `TypeORM Migrations`) seria recomendado para gerenciar mudanças no schema de forma controlada.
-* **Normalização:** As tabelas parecem bem normalizadas para os dados que armazenam, mas é sempre bom revisar o design do schema para otimização futura.
+### Settings
+
+- `getSetting(key: string): Promise<string | null>`
+- `setSetting(key: string, value: string): Promise<void>`
+
+### Data Integrity & Reporting
+
+- `cleanupTestMatches(): Promise<{ deletedCount: number, remainingMatches: number, deletedMatches: any[] }>`
+- `fixMatchStatus(): Promise<{ affectedMatches: number; playerCount: number }>`
+- `recalculateCustomLP(): Promise<{ affectedMatches: number; affectedPlayers: number; details: any[] }>`
+- `getParticipantsLeaderboard(limit: number | string = 100): Promise<any[]>`
+- `refreshPlayersFromCustomMatches(): Promise<void>`
+- `getCustomMatchStats(): Promise<any>`
+- `getTablesStats(): Promise<any>`
+
+## Usage
+
+The `DatabaseManager` is typically instantiated once in the application's bootstrap phase (e.g., in `server.ts`) and its methods are then called by various services and routes to interact with the database. It encapsulates all direct database queries, ensuring that the application logic remains decoupled from the underlying database implementation details.
+
+```typescript
+// Example in server.ts or another service
+import { DatabaseManager } from './database/DatabaseManager';
+
+const dbManager = new DatabaseManager();
+
+async function startApplication() {
+  try {
+    await dbManager.initialize();
+    console.log('Database ready.');
+    // Proceed with starting server, etc.
+  } catch (error) {
+    console.error('Failed to initialize database:', error);
+    process.exit(1);
+  }
+}
+
+startApplication();
+
+// Example of using a method
+// async function getPlayerInfo(summonerName: string) {
+//   const player = await dbManager.getPlayerBySummonerName(summonerName);
+//   if (player) {
+//     console.log(`Player ${player.summoner_name} found with MMR: ${player.current_mmr}`);
+//   } else {
+//     console.log(`Player ${summonerName} not found.`);
+//   }
+// }
+```
+
+## Considerations
+
+- **Error Handling:** Each method includes `try-catch` blocks to handle database errors, logging them and rethrowing for higher-level error management.
+- **Schema Migrations:** While `createTables` handles initial table creation, for production environments, a dedicated schema migration tool would be beneficial for managing database schema changes over time.
+- **Performance:** Connection pooling and asynchronous operations contribute to good performance. For extremely high-load scenarios, further optimizations like indexing and query tuning might be required.
+- **Security:** Relies on environment variables for credentials. Ensure these are securely managed in production deployments.
+- **LP Calculation Logic:** The `calculateLPChange` method implements a specific algorithm for LP changes in custom matches. This logic should be well-understood and potentially configurable.

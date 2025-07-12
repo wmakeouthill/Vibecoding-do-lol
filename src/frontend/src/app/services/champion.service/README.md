@@ -1,60 +1,62 @@
-# Documentação: `ChampionService.ts`
+# Champion Service
 
-O `ChampionService.ts`, localizado em `src/frontend/src/app/services/`, é o serviço Angular responsável por gerenciar o carregamento, o cache e o fornecimento de dados de campeões do League of Legends para toda a aplicação frontend. Ele atua como uma camada de abstração para a obtenção de dados do Data Dragon (via backend), garantindo que os componentes da UI tenham acesso fácil e eficiente às informações dos campeões.
+The `ChampionService` in the frontend application is responsible for managing and providing access to League of Legends champion data. It interacts with the backend to fetch champion information, handles caching, and provides utility methods for filtering and searching champions.
 
-## 🎯 Propósito e Funcionalidades Principais
+## Responsibilities
 
-O `ChampionService` abrange as seguintes responsabilidades:
+- **Champion Data Retrieval:** Fetches a comprehensive list of champions from the backend API.
+- **Data Caching:** Implements a caching mechanism to store retrieved champion data (`cachedChampions` and `cachedChampionsByRole`) to minimize redundant API calls and improve performance.
+- **Fallback Mechanism:** Provides a `fallbackChampions` list to ensure basic functionality even if the backend champion data cannot be loaded.
+- **Champion Organization by Role:** Organizes champions into predefined roles (top, jungle, mid, adc, support) based on their tags, facilitating role-specific selections.
+- **Champion Search and Filtering:** Offers methods to search for champions by name, title, or tags, and to filter them by role.
+- **Random Champion Selection:** Provides a utility to select a random champion, with an option to exclude specific champion IDs.
+- **Ban/Pick Status Check:** Includes methods to check if a champion is currently banned or picked in a draft.
+- **Cache Management:** Allows for clearing the cached champion data.
 
-1. **Carregamento de Campeões:** Obtém a lista completa de campeões e seus detalhes (imagens, tags, estatísticas) do backend.
-2. **Cache Inteligente:** Armazena em cache os campeões carregados e os campeões organizados por função (`ChampionsByRole`) para evitar requisições repetitivas e melhorar a performance.
-3. **Organização por Função (Role):** Organiza os campeões em categorias por função (Top, Jungle, Mid, ADC, Support) com base em suas tags, facilitando a filtragem na UI.
-4. **Busca e Filtragem:** Permite buscar campeões por nome, título ou tags, e filtrar a lista por função, atendendo às necessidades de seleção em diferentes partes da aplicação (ex: pick/ban).
-5. **Fornecimento de Fallback:** Em caso de falha na comunicação com o backend para obter dados de campeões, o serviço oferece uma lista mínima de campeões de fallback, garantindo que a aplicação possa operar com funcionalidade básica.
-6. **Seleção Aleatória:** Oferece um método para obter um campeão aleatório da lista, excluindo IDs específicos se necessário.
+## Key Interfaces
 
-## ⚙️ Lógica e Funcionamento
+- `Champion`: Defines the structure for a single champion, including `id`, `key`, `name`, `title`, `image`, `tags`, and `info` (attack, defense, magic, difficulty).
+- `ChampionsByRole`: Defines an object that groups champions by their respective roles (top, jungle, mid, adc, support), and also includes an `all` category.
 
-### Interfaces (`Champion`, `ChampionsByRole`)
+## Key Methods
 
-* **`Champion`:** Define a estrutura de dados para um único campeão, incluindo `id`, `key`, `name`, `title`, `image` (URL), `tags` (array de strings como 'Fighter', 'Mage'), e `info` (estatísticas de ataque, defesa, magia, dificuldade).
-* **`ChampionsByRole`:** Agrupa coleções de campeões por suas funções principais (top, jungle, mid, adc, support), além de uma lista de todos os campeões.
+- `static getChampionNameById(championId: number | undefined): string`:
+  - **Purpose:** Retrieves a champion's name by their ID. Primarily serves as a fallback, as champion data is expected to be processed by the backend.
+  - **Note:** Returns 'Minion' if the ID is unknown or undefined, or if the backend is unavailable.
 
-### Inicialização (`constructor`)
+- `getAllChampions(): Observable<Champion[]>`:
+  - **Purpose:** Fetches all champions, utilizing a cache. If the cache is empty, it makes an API call to the backend. Includes fallback to `fallbackChampions` on error.
 
-* O construtor recebe instâncias de `HttpClient` (para requisições HTTP) e `ApiService` (para obter a URL base do backend). Ele define a `baseImageUrl` para os retratos dos campeões e um `roleMapping` para categorizar campeões por função.
+- `getChampionsByRole(): Observable<ChampionsByRole>`:
+  - **Purpose:** Retrieves champions organized by their roles, also using a cache. Falls back to `createFallbackChampionsByRole()` on error.
 
-### Carregamento e Cache de Campeões (`getAllChampions`, `getChampionsByRole`, `clearCache`)
+- `private createFallbackChampionsByRole(): ChampionsByRole`:
+  - **Purpose:** Internally used to create a role-organized list of champions from the `fallbackChampions` based on a predefined `roleMapping`.
 
-* **`getAllChampions()`:**
-  * Primeiro, verifica se os campeões já estão no `cachedChampions`. Se sim, retorna o cache imediatamente via `of(this.cachedChampions)` (RxJS `of` para um Observable síncrono).
-  * Se o cache estiver vazio, faz uma requisição GET para o endpoint `/champions` do backend via `http.get()`. Espera uma resposta com `response.success` e `response.champions`.
-  * Em caso de sucesso, armazena os campeões em `cachedChampions`. Em caso de erro na requisição, retorna a `fallbackChampions` (uma lista predefinida de campeões).
-* **`getChampionsByRole()`:**
-  * Similar a `getAllChampions()`, verifica e retorna `cachedChampionsByRole` se disponível.
-  * Caso contrário, faz uma requisição para o backend (`/champions`) para obter a lista já organizada por role. Se o backend falhar, usa `createFallbackChampionsByRole()`.
-* **`createFallbackChampionsByRole()`:** Um método privado que organiza os `fallbackChampions` em categorias por função com base no `roleMapping`.
-* **`clearCache()`:** Limpa o cache de campeões, forçando um novo carregamento do backend na próxima vez que for solicitado.
+- `searchChampions(query: string, role?: string): Observable<Champion[]>`:
+  - **Purpose:** Filters the list of champions based on a search query (name, title, tags) and an optional role.
 
-### Utilitários de Campeões (`getChampionNameById`, `searchChampions`, `getRandomChampion`, `isChampionBanned`, `isChampionPicked`)
+- `getRandomChampion(excludeIds: string[] = []): Observable<Champion>`:
+  - **Purpose:** Returns a randomly selected champion from the available list, excluding those specified by `excludeIds`.
 
-* **`static getChampionNameById(championId)`:** Um método estático que tenta retornar o nome de um campeão pelo seu ID. Atualmente, ele é um fallback simples que retorna `'Minion'` se o ID for desconhecido, pois o backend já deve fornecer nomes completos.
-* **`searchChampions(query, role?)`:** Filtra a lista de todos os campeões (obtida de `getAllChampions()`) com base em uma `query` de texto (nome, título, tags) e opcionalmente por uma `role` (Top, Jungle, Mid, ADC, Support).
-* **`getRandomChampion(excludeIds)`:** Retorna um `Observable` de um campeão selecionado aleatoriamente da lista de todos os campeões, excluindo aqueles cujos IDs estão na lista `excludeIds`.
-* **`isChampionBanned(championId, bannedChampions)` / `isChampionPicked(championId, pickedChampions)`:** Métodos booleanos que verificam se um campeão já foi banido ou escolhido em uma lista fornecida, útil para a lógica de UI durante o draft.
+- `isChampionBanned(championId: string, bannedChampions: Champion[]): boolean`:
+  - **Purpose:** Checks if a given champion ID exists in a list of banned champions.
 
-## 🛠️ Tecnologias e Implementação
+- `isChampionPicked(championId: string, pickedChampions: Champion[]): boolean`:
+  - **Purpose:** Checks if a given champion ID exists in a list of picked champions.
 
-* **Angular `Injectable`:** Permite que o serviço seja injetado em outros componentes e serviços, promovendo a modularidade.
-* **Angular `HttpClient`:** Utilizado para realizar requisições HTTP para o backend.
-* **RxJS (`Observable`, `of`, `catchError`, `map`):** Amplamente usado para lidar com operações assíncronas (chamadas HTTP), cache de dados e transformação de streams de dados de forma reativa.
-* **TypeScript:** Garante a tipagem forte de todas as interfaces e parâmetros, resultando em um código mais robusto e fácil de manter.
-* **Padrão de Cache:** Implementa um padrão de cache simples para otimizar o desempenho e reduzir a carga no backend.
+- `clearCache(): void`:
+  - **Purpose:** Resets the cached champion data, forcing a fresh load on the next request.
 
-## ⚠️ Considerações e Boas Práticas
+## Dependencies
 
-* **Consistência do Fallback:** A lista de `fallbackChampions` é manual e pode ficar desatualizada. Idealmente, ela seria gerada ou mantida automaticamente, ou a dependência total no backend seria reforçada.
-* **Atualização do Data Dragon:** A `baseImageUrl` está hardcoded com uma versão (`15.13.1`). Isso pode precisar ser atualizado manualmente em cada patch do jogo ou ser obtido dinamicamente da Riot API (através do `DataDragonService` do backend).
-* **Otimização de Pesquisa/Filtragem:** Para um número muito grande de campeões, a lógica de filtragem `searchChampions` pode ser otimizada para melhor desempenho (ex: usando web workers ou algoritmos de busca mais eficientes se a lista for extremamente grande).
-* **Tratamento de Erros:** O serviço lida com erros do backend retornando dados de fallback. Uma estratégia mais sofisticada pode incluir notificar o usuário sobre a falha no carregamento dos dados mais recentes.
-* **Testes:** Testes unitários para a lógica de cache, filtragem, e `getRandomChampion` são importantes para garantir a corretude do serviço.
+- `HttpClient` (from `@angular/common/http`): Used for making HTTP requests to the backend API.
+- `Observable`, `of` (from `rxjs`): For asynchronous operations and returning observable streams.
+- `catchError`, `map` (from `rxjs/operators`): For error handling and data transformation in observable pipelines.
+- `ApiService` (from `./api`): Utilized to get the base URL for API calls.
+
+## Technologies
+
+- **Angular:** The service is an `@Injectable()` Angular service.
+- **TypeScript:** Written in TypeScript for strong typing and improved code maintainability.
+- **RxJS:** Extensively uses RxJS for reactive programming, managing asynchronous data flows and error handling.

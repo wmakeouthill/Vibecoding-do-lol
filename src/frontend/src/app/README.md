@@ -25,12 +25,21 @@ O `App` é o componente raiz da aplicação. Ele é responsável por:
 
 - **Gerenciamento de Visão:** Controla a visualização ativa (`currentView`) entre `dashboard`, `queue`, `history`, `leaderboard` e `settings` usando a diretiva `*ngIf` no template, em vez do roteador Angular padrão.
 - **Estado Global:** Mantém o estado global da aplicação, incluindo `currentPlayer` (dados do jogador logado), `queueStatus` (status da fila de matchmaking), `lcuStatus` (status de conexão com o cliente League of Legends), `discordStatus` (status de conexão com o bot Discord), e o estado das fases do jogo (match encontrado, draft, em jogo).
-- **Inicialização:** Implementa uma sequência de inicialização assíncrona (`initializeAppSequence`) que garante que o backend esteja pronto (`ensureBackendIsReady`), a comunicação WebSocket esteja configurada (`setupBackendCommunication`), os dados do jogador sejam carregados (`loadPlayerDataWithRetry`), e o jogador seja identificado no WebSocket. Isso evita *race conditions* e garante que a aplicação esteja em um estado consistente.
-- **Comunicação:** Interage extensivamente com a `ApiService` para comunicação RESTful e WebSocket com o backend, recebendo atualizações em tempo real.
-- **Gerenciamento de Notificações:** Adiciona e dispensa notificações para feedback ao usuário (`addNotification`, `dismissNotification`).
-- **Integração com Electron:** Detecta se está sendo executado no Electron (`isElectron`) e expõe métodos para controlar a janela (minimizar, maximizar, fechar) via `electronAPI`.
-- **Lógica de Negócio:** Contém métodos para interagir com a fila (`joinQueue`, `leaveQueue`), aceitar/recusar partidas (`acceptMatch`, `declineMatch`), e atualizar configurações (`savePlayerSettings`, `updateRiotApiKey`, `updateDiscordBotToken`, `updateDiscordChannel`).
-- **Monitoramento:** Realiza verificações periódicas do status do LCU (`startLCUStatusCheck`).
+- **Inicialização (`initializeAppSequence`):** Implementa uma sequência de inicialização assíncrona e robusta para garantir que a aplicação esteja em um estado consistente desde o início. Esta sequência inclui:
+  1. **Configurações Básicas:** Configura listeners de status do Discord e inicia a verificação do status do LCU.
+  2. **Verificação do Backend:** Garante que o backend esteja acessível antes de prosseguir, com múltiplas tentativas e atrasos.
+  3. **Configuração de Comunicação (`setupBackendCommunication`):** Estabelece a comunicação WebSocket com o backend, configurando listeners para mensagens e aguardando a prontidão do WebSocket.
+  4. **Carregamento de Dados do Jogador (`loadPlayerDataWithRetry`):** Tenta carregar os dados do jogador do LCU com retentativas, persistindo-os no localStorage.
+  5. **Identificação do Jogador:** Identifica o jogador atual no WebSocket para comunicação personalizada.
+  6. **Busca de Status da Fila:** Obtém o status inicial da fila de matchmaking.
+  7. **Carregamento de Configurações:** Carrega as configurações do usuário armazenadas no banco de dados (via backend).
+  8. **Atualizações Periódicas:** Inicia verificações periódicas para manter os estados do LCU e da fila atualizados.
+- **Comunicação:** Interage extensivamente com a `ApiService` para comunicação RESTful e WebSocket com o backend, recebendo atualizações em tempo real e enviando ações.
+- **Gerenciamento de Notificações:** Adiciona, exibe e dispensa notificações (`addNotification`, `dismissNotification`) para feedback ao usuário.
+- **Integração com Electron:** Detecta se está sendo executado no Electron (`isElectron`) e expõe métodos para controlar a janela (minimizar, maximizar, fechar) via `electronAPI` (exposto pelo `preload.ts`).
+- **Lógica de Negócio Principal:** Contém métodos para interagir com a fila (`joinQueue`, `leaveQueue`), aceitar/recusar partidas (`acceptMatch`, `declineMatch`), e atualizar configurações relacionadas ao usuário e integrações (Riot API Key, Discord Bot Token, Discord Channel).
+- **Monitoramento:** Realiza verificações periódicas do status do LCU (`startLCUStatusCheck`) e do backend.
+- **Manipulação de Eventos de Jogo:** Lida com mensagens WebSocket do backend para processar eventos como partidas encontradas (`handleMatchFound`), fases de draft (`handleDraftStarted`, `handleDraftAction`), início de jogo (`handleGameStarting`), cancelamento de partida (`handleMatchCancelled`), e atualizações de timer de partida.
 
 ### 📄 `app.config.ts`
 
@@ -47,42 +56,39 @@ Este arquivo define a configuração de rotas da aplicação. No entanto, notave
 
 ### 📄 `app.html` e `app-simple.html`
 
-- **`app.html`**: É um template HTML básico, que aparentemente foi substituído ou é uma alternativa mais simples.
-- **`app-simple.html`**: Este é o template HTML **ativo** para o componente `App` (`app.ts`), conforme especificado em `@Component({ templateUrl: './app-simple.html' })`. Ele define a estrutura de layout principal da aplicação, incluindo o cabeçalho, navegação (botões que controlam `currentView`), a área de conteúdo que renderiza dinamicamente os sub-componentes (`<app-dashboard>`, `<app-queue>`, etc. usando `*ngIf` e `*ngSwitchCase`), um rodapé de status e uma área para notificações e modais (como o `app-match-found`). Ele também inclui estilos inline para as seções de configurações, o que é uma escolha de design específica.
+- **`app.html`**: Este arquivo HTML parece ser um template antigo ou alternativo e **não está em uso ativo** pela aplicação principal. O componente `App` (`app.ts`) utiliza `app-simple.html` como seu template.
+- **`app-simple.html`**: Este é o template HTML **ativo e principal** para o componente `App` (`app.ts`), conforme especificado em `@Component({ templateUrl: './app-simple.html' })`. Ele define a estrutura de layout fundamental da aplicação, que inclui:
+  - **Cabeçalho (`.app-header`):** Contém o título da aplicação, a versão, informações do jogador logado (`currentPlayer` com ícone, nome, MMR e rank), e controles de janela para o ambiente Electron (minimizar, maximizar, fechar).
+  - **Navegação (`.app-nav`):** Uma barra de navegação com botões para alternar entre as diferentes visualizações da aplicação (Dashboard, Fila, Histórico, Leaderboard, Configurações). A navegação é controlada imperativamente pela propriedade `currentView` no `App` componente, em vez do roteador Angular padrão. Inclui um `queue-badge` para exibir o número de jogadores na fila.
+  - **Área de Conteúdo Principal (`.app-main`):** Um contêiner que renderiza dinamicamente o componente da visualização ativa (ex: `<app-dashboard>`, `<app-queue>`) usando diretivas `*ngIf` e `*ngSwitchCase`.
+    - Cada sub-componente recebe dados relevantes via `@Input` (ex: `currentPlayer`, `queueStatus`) e emite eventos (`@Output`) de volta para o `App` componente para interações (ex: `joinQueue`, `leaveQueue`).
+    - A seção de Configurações (`settings-view`) está diretamente embutida neste template e permite a atualização de dados do jogador e configurações de API/bot.
+  - **Barra de Status (`.app-footer`):** Exibe o status de conexão geral (`isConnected`), o número de jogadores na fila, e a fase atual do jogo detectada pelo LCU (`lcuStatus.gameflowPhase`).
+  - **Notificações (`.notifications`):** Uma área para exibir notificações pop-up (sucesso, informação, aviso, erro) ao usuário, com animações de entrada e saída.
+  - **Modal de Partida Encontrada (`app-match-found`):** Um componente de modal para lidar com o processo de aceitação/recusa de partidas encontradas, que é exibido condicionalmente (`showMatchFound`).
 
 ### 📄 `app.scss`
 
-Contém os estilos SCSS globais e específicos do layout principal da aplicação. Abrange:
+Contém os estilos SCSS globais e específicos do layout principal da aplicação, definindo a identidade visual e a responsividade. Ele utiliza variáveis CSS para manter a consistência e facilita a manutenção do tema.
 
-- **Estrutura da Aplicação:** Estilos para o contêiner principal (`.app-container`), cabeçalho (`.app-header`), navegação (`.app-nav`, `.nav-buttons`), e área de conteúdo (`.app-main`).
-- **Elementos Comuns:** Estilos para botões, indicadores de status (conectado/desconectado), modais e notificações.
-- **Componentes Embedados:** Contém estilos para as visualizações de Dashboard, Fila, Histórico, Leaderboard e Configurações, mesmo que alguns sejam de componentes separados (sugerindo que alguns estilos são globais ou importados).
-- **Animações:** Define animações CSS como `fadeIn`, `scaleIn`, `slideInRight` e `fadeOut` para uma experiência de usuário mais fluida, especialmente para notificações e modais.
-- **Variáveis CSS:** Utiliza variáveis CSS (`var(--...)`) para gerenciar cores, espaçamentos, bordas e sombras de forma consistente.
+- **Estrutura da Aplicação (`.app-container`):** Define o layout principal como um flex container de coluna, com background gradiente e pseudo-elementos para efeitos visuais sutis. Garante que todo o conteúdo da aplicação se adapte à altura da tela.
+- **Cabeçalho (`.app-header`):** Estiliza a barra superior, incluindo o título da aplicação (com gradiente de texto), informações do jogador, e controles de janela (minimizar, maximizar, fechar) para a aplicação Electron. Utiliza `backdrop-filter: blur()` para um efeito de transparência.
+- **Navegação (`.app-nav`):** Estiliza os botões de navegação lateral. Define cores, padding, bordas, e transições para os estados normal, hover e ativo. Inclui um `queue-badge` estilizado para exibir a contagem de jogadores na fila.
+- **Área de Conteúdo Principal (`.app-main`):** Define o layout da área onde os diferentes componentes (Dashboard, Fila, Histórico, etc.) são renderizados. Inclui regras para overflow e altura máxima para garantir que o conteúdo seja scrollável.
+- **Barra de Status (`.app-footer`):** Estiliza a barra inferior de status, que exibe o status de conexão geral e do LCU, além do número de jogadores na fila, usando indicadores visuais.
+- **Notificações (`.notifications`, `.notification`):** Define a aparência e as animações para as notificações pop-up, com diferentes estilos para `success`, `info`, `warning` e `error`.
+- **Elementos Comuns:** Inclui estilos genéricos para botões (`.btn`, `.btn-primary`, `.btn-secondary`), campos de formulário (`.form-group`), e indicadores de status (`.status-indicator`, `.connected`, `.disconnected`).
+- **Variáveis CSS:** Utiliza um sistema robusto de variáveis CSS (ex: `--bg-primary`, `--text-primary`, `--primary-gold`, `--shadow-md`, `--spacing-sm`, `--radius-md`, `--transition-fast`) para cores, espaçamentos, sombras, bordas e transições. Isso permite uma gestão de tema centralizada e fácil modificação do design.
+- **Animações CSS:** Define keyframes para animações como `fadeIn`, `scaleIn`, `slideInRight` e `fadeOut`, aplicadas a elementos como notificações e modais para uma experiência de usuário mais fluida e dinâmica.
+- **Ícones:** Utiliza classes como `icon-dashboard`, `icon-queue` para exibir ícones de forma consistente.
 
 ### 📄 `app.spec.ts`
 
-Este arquivo contém os testes unitários para o componente `App`. Utiliza o framework de teste do Angular (`TestBed`, `describe`, `it`, `expect`) para:
+Este arquivo contém os testes unitários para o componente `App`. Utiliza o framework de teste do Angular (`TestBed`, `describe`, `it`, `expect`) para garantir a integridade básica do componente raiz da aplicação.
 
-- Verificar se o componente `App` pode ser criado com sucesso (`should create the app`).
-- Testar se o título da aplicação é renderizado corretamente (`should render title`).
-
-### 📄 `interfaces.ts`
-
-Este arquivo centraliza todas as definições de interfaces TypeScript para os modelos de dados usados em todo o frontend. Isso é crucial para manter a consistência dos dados e garantir a segurança de tipagem. Algumas interfaces chave incluem:
-
-- `Player`: Detalhes do perfil do jogador (nome, MMR, rank, ID, PUUID).
-- `QueueStatus`: Estado da fila de matchmaking (jogadores na fila, tempo de espera, atividades).
-- `QueuedPlayerInfo`: Informações detalhadas de um jogador na fila.
-- `QueueActivity`: Tipos de atividades que ocorrem na fila.
-- `Lane`: Informações sobre as lanes (rota no jogo).
-- `QueuePreferences`: Preferências de lane e auto-aceitação.
-- `LCUStatus`: Status de conexão com o cliente League of Legends.
-- `MatchFound`: Detalhes de uma partida encontrada.
-- `Notification`: Estrutura para notificações pop-up.
-- `CurrentGame`: Status do jogo atual.
-- `Match`: Dados detalhados de uma partida do histórico.
-- `RefreshPlayerResponse`: Resposta para atualização de dados do jogador.
+- **Setup (`beforeEach`):** Antes de cada teste, o `TestBed` é configurado para importar o componente `App`, garantindo que todas as suas dependências sejam resolvidas para o ambiente de teste.
+- **Teste de Criação (`should create the app`):** Verifica se o componente `App` pode ser instanciado com sucesso. Isso é um teste fundamental para assegurar que não há erros básicos de compilação ou dependência que impeçam o componente de ser criado.
+- **Teste de Renderização de Título (`should render title`):** Verifica se o título da aplicação é renderizado corretamente no template. Note que o teste espera o texto "Hello, lol-matchmaking", o que pode ser um resquício de um projeto Angular padrão e pode precisar ser atualizado se o título na UI for diferente (conforme `app-simple.html` que usa "LoL Matchmaking").
 
 ## 🔗 Integração do Módulo Principal com o Resto da Aplicação
 
@@ -249,120 +255,103 @@ Representa os dados de uma partida que foi encontrada pelo sistema de matchmakin
 
 ```typescript
 export interface MatchFound {
-  matchId: number;
-  team1: any[];       // Jogadores do time 1
-  team2: any[];       // Jogadores do time 2
-  yourTeam: number;   // Indica qual time o jogador atual pertence
-  averageMMR1: number; // MMR médio do time 1
-  averageMMR2: number; // MMR médio do time 2
+  matchId: string;
+  countdown: number;
+  acceptedPlayers: string[];
+  declinedPlayers: string[];
+  requiredPlayers: number;
+  status: 'pending' | 'accepted' | 'declined' | 'expired';
+  players: Player[]; // Lista de todos os jogadores na partida encontrada
 }
 ```
 
 ### `Notification`
 
-Define a estrutura para mensagens de notificação exibidas ao usuário.
+Define a estrutura de uma notificação genérica exibida na UI.
 
 ```typescript
 export interface Notification {
   id: string;
-  type: 'success' | 'error' | 'warning' | 'info';
+  type: 'success' | 'info' | 'warning' | 'error';
   title: string;
   message: string;
-  timestamp: Date;
-  isRead?: boolean;
+  duration?: number; // Duração em milissegundos, opcional
 }
 ```
 
 ### `CurrentGame`
 
-Representa o estado atual de um jogo em andamento.
+Representa o estado do jogo atual do League of Legends (obtido via LCU).
 
 ```typescript
 export interface CurrentGame {
-  session: any;    // Detalhes da sessão de jogo (do backend)
-  phase: string;   // Fase atual do jogo (draft, in_progress, etc.)
-  isInGame: boolean; // Indica se o jogo está ativo
+  gameId: number;
+  gameMode: string;
+  gameType: string;
+  mapId: number;
+  gameStartTime: number;
+  participants: any[]; // Detalhes dos participantes do jogo
+  phase: string; // Ex: Lobby, ChampSelect, InProgress, EndOfGame
 }
 ```
 
 ### `Match`
 
-Define a estrutura de uma partida do histórico, tanto para partidas oficiais da Riot quanto para partidas customizadas.
+Define uma estrutura mais detalhada para uma partida do histórico (geralmente vinda da Riot API ou do backend).
 
 ```typescript
 export interface Match {
-  id: string | number;
-  createdAt?: Date;
-  timestamp?: number;
-  duration: number;
-  team1?: any[];
-  team2?: any[];
-  winner?: number; // 1 ou 2
-  averageMMR1?: number;
-  averageMMR2?: number;
-  isVictory?: boolean;
-  mmrChange?: number;
-  gameMode?: string;
-
-  // Propriedades adicionais para exibição no dashboard
-  champion?: string;
-  playerName?: string;
+  gameId: number;
+  platformId: string;
+  gameCreation: number;
+  gameDuration: number;
+  queueId: number;
+  mapId: number;
+  seasonId: number;
+  gameVersion: string;
+  gameMode: string;
+  gameType: string;
+  teams: any[];
+  participants: any[];
+  participantIdentities: any[];
+  // Adicionar campos relevantes para exibição no histórico
+  win?: boolean;
+  championName?: string;
   kda?: string;
-
-  // Dados expandidos da Riot API
-  participants?: any[]; // Todos os 10 jogadores
-  teams?: any[];        // Dados dos times
-  gameVersion?: string;
-  mapId?: number;
-
-  // Campos específicos para partidas customizadas
-  player_lp_change?: number; // LP ganho/perdido pelo jogador
-  player_mmr_change?: number; // MMR ganho/perdido pelo jogador
-  player_team?: number;     // Em qual time o jogador estava (1 ou 2)
-  player_won?: boolean;     // Se o jogador ganhou a partida
-  lp_changes?: any;         // Objeto com LP changes de todos os jogadores
-  participants_data?: any[]; // Dados reais dos participantes (KDA, itens, etc.)
-
-  playerStats?: {          // Estatísticas detalhadas do jogador na partida
-    champion: string;
-    kills: number;
-    deaths: number;
-    assists: number;
-    mmrChange: number;
-    isWin: boolean;
-    championLevel?: number;
-    lane?: string;
-    firstBloodKill?: boolean;
-    doubleKills?: number;
-    tripleKills?: number;
-    quadraKills?: number;
-    pentaKills?: number;
-    items?: number[];
-    lpChange?: number;
-    goldEarned?: number;
-    totalDamageDealt?: number;
-    totalDamageDealtToChampions?: number;
-    totalDamageTaken?: number;
-    totalMinionsKilled?: number;
-    neutralMinionsKilled?: number;
-    wardsPlaced?: number;
-    wardsKilled?: number;
-    visionScore?: number;
-    summoner1Id?: number;
-    summoner2Id?: number;
-    perks?: any; // Runas
-  };
+  lane?: string;
+  role?: string;
+  cs?: number;
+  gold?: number;
 }
 ```
 
 ### `RefreshPlayerResponse`
 
-Define a estrutura da resposta ao tentar atualizar os dados de um jogador.
+Estrutura da resposta ao solicitar uma atualização dos dados de um jogador.
 
 ```typescript
 export interface RefreshPlayerResponse {
   success: boolean;
-  player: Player | null;
-  error?: string;
+  player?: Player;
+  message?: string;
 }
 ```
+
+## 🔗 Integração do Módulo Principal com o Resto do
+
+O módulo `app/` é o orquestrador principal, conectando:
+
+- **Componentes de UI:** Ele hospeda e gerencia a exibição dos sub-componentes (Dashboard, Fila, Histórico, etc.), passando dados (`@Input`) e ouvindo eventos (`@Output`).
+- **Serviços de Lógica de Negócio:** Injeta e utiliza diversos serviços (ex: `ApiService`, `QueueStateService`, `DiscordIntegrationService`, `BotService`) para realizar operações assíncronas, gerenciar estado e interagir com o backend.
+- **Backend:** A comunicação é feita principalmente via `ApiService` (HTTP e WebSockets), garantindo que o frontend receba atualizações em tempo real e possa enviar ações.
+- **Electron:** A integração com o processo `main` do Electron permite funcionalidades nativas, como controle da janela e acesso a informações do sistema, via `electronAPI` exposto pelo `preload.ts`.
+
+## 💡 Considerações e Potenciais Melhoriass
+
+- **Roteamento:** A abordagem de roteamento imperativo (`currentView` com `*ngIf`) pode se tornar complexa em aplicações maiores. Considerar a migração para o roteador declarativo do Angular (`RouterModule.forRoot`) para melhor escalabilidade e manutenção.
+- **Gerenciamento de Estado:** Para aplicações mais complexas, a gestão de estado global diretamente no componente `App` pode levar a um 'componente gorducho'. Avaliar a adoção de uma biblioteca de gerenciamento de estado (ex: NgRx, Akita, ou uma solução baseada em RxJS mais robusta) para dados compartilhados.
+- **Refatoração de Template:** O `app-simple.html` contém muitos estilos inline. Mover esses estilos para `app.scss` ou para os arquivos SCSS dos componentes aninhados melhoraria a manutenibilidade.
+- **Separação de Preocupações:** O `App` componente atualmente lida com uma ampla gama de responsabilidades (inicialização, gerenciamento de UI, comunicação de dados). Refatorar algumas dessas responsabilidades para serviços mais especializados pode melhorar a modularidade.
+- **Testes:** Expandir a cobertura de testes unitários e adicionar testes de integração para as interações entre o `App` componente e seus serviços dependentes.
+
+Este módulo é a fundação sobre a qual toda a experiência do usuário do aplicativo é construída.
