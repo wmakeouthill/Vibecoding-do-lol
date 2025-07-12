@@ -168,8 +168,8 @@ app.use(cors({
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: isDev ? 1000 : 2000, // Mais permissivo em produção também para o frontend local
+  windowMs: 5 * 60 * 1000, // 5 minutos
+  max: 10000, // Mais permissivo em produção também para o frontend local
   message: 'Muitas requisições de este IP, tente novamente em 15 minutos.',
   skip: (req) => {
     // Pular rate limiting para requests locais (frontend e LCU)
