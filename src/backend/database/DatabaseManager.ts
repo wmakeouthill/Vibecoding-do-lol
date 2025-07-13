@@ -209,7 +209,8 @@ export class DatabaseManager {
         actual_winner INT,
         actual_duration INT,
         riot_id VARCHAR(255),
-        mmr_changes TEXT
+        mmr_changes TEXT,
+        match_leader VARCHAR(255) DEFAULT NULL COMMENT "Riot ID do líder da partida"
       )
     `);
 
@@ -279,10 +280,10 @@ export class DatabaseManager {
     }
 
     console.log('✅ Tabelas MySQL criadas/verificadas com sucesso');
-    
+
     // ✅ CORREÇÃO: Alterar estrutura da tabela queue_players se necessário
     await this.ensureQueuePlayersStructure();
-    
+
     // ✅ NOVO: Adicionar coluna de status de aceitação durante inicialização
     await this.addAcceptanceStatusColumn();
   }
@@ -293,14 +294,14 @@ export class DatabaseManager {
     try {
       // ✅ PRIMEIRO: Remover FOREIGN KEY constraint se existir
       await this.removeQueuePlayersForeignKey();
-      
+
       // ✅ SEGUNDO: Verificar se a tabela queue_players existe e alterar player_id para BIGINT se necessário
       const [columns] = await this.pool.execute(`
         SELECT COLUMN_NAME, DATA_TYPE 
         FROM INFORMATION_SCHEMA.COLUMNS 
         WHERE TABLE_NAME = 'queue_players' AND COLUMN_NAME = 'player_id'
       `);
-      
+
       const columnInfo = columns as any[];
       if (columnInfo.length > 0 && columnInfo[0].DATA_TYPE === 'int') {
         console.log('🔄 [Database] Alterando player_id para BIGINT na tabela queue_players...');
@@ -329,24 +330,24 @@ export class DatabaseManager {
         AND REFERENCED_TABLE_NAME = 'players'
         AND CONSTRAINT_SCHEMA = DATABASE()
       `);
-      
+
       const constraintList = constraints as any[];
       if (constraintList.length > 0) {
         const constraintName = constraintList[0].CONSTRAINT_NAME;
         console.log(`🔄 [Database] Removendo FOREIGN KEY constraint: ${constraintName}`);
-        
+
         await this.pool.execute(`
           ALTER TABLE queue_players 
           DROP FOREIGN KEY ${constraintName}
         `);
-        
+
         console.log('✅ [Database] FOREIGN KEY constraint removida com sucesso');
       } else {
         console.log('ℹ️ [Database] Nenhuma FOREIGN KEY constraint encontrada');
       }
     } catch (error: any) {
       console.warn('⚠️ [Database] Erro ao remover FOREIGN KEY constraint:', error.message);
-      
+
       // ✅ FALLBACK: Se não conseguir remover a constraint, recriar a tabela
       console.log('🔄 [Database] Tentando recriar tabela queue_players...');
       await this.recreateQueuePlayersTable();
@@ -358,14 +359,14 @@ export class DatabaseManager {
 
     try {
       console.log('🔄 [Database] Recriando tabela queue_players...');
-      
+
       // Fazer backup dos dados existentes
       const [existingData] = await this.pool.execute('SELECT * FROM queue_players');
       const data = existingData as any[];
-      
+
       // Dropar tabela antiga
       await this.pool.execute('DROP TABLE IF EXISTS queue_players');
-      
+
       // Recriar tabela sem FOREIGN KEY
       await this.pool.execute(`
         CREATE TABLE queue_players (
@@ -381,9 +382,9 @@ export class DatabaseManager {
           is_active TINYINT DEFAULT 1
         )
       `);
-      
+
       console.log('✅ [Database] Tabela queue_players recriada com sucesso');
-      
+
       // Restaurar dados se existiam
       if (data.length > 0) {
         console.log(`🔄 [Database] Restaurando ${data.length} registros...`);
@@ -682,14 +683,14 @@ export class DatabaseManager {
       // VERIFICAÇÃO DE PERMISSÃO: Verificar se o usuário é o líder da partida
       if (requestingUser) {
         const currentLeader = await this.getCustomMatchLeader(matchId);
-        
+
         if (!currentLeader) {
           // Se não há líder definido, definir o criador como líder
           const match = await this.getCustomMatchById(matchId);
           if (match && match.created_by) {
             await this.setCustomMatchLeader(matchId, match.created_by);
             console.log(`🔧 [updateCustomMatch] Líder automático definido: ${match.created_by} para partida ${matchId}`);
-            
+
             // Verificar se o usuário solicitante é o criador/líder
             if (requestingUser !== match.created_by) {
               throw new Error(`❌ Permissão negada: Apenas o líder da partida (${match.created_by}) pode atualizá-la`);
@@ -701,7 +702,7 @@ export class DatabaseManager {
             throw new Error(`❌ Permissão negada: Apenas o líder da partida (${currentLeader}) pode atualizá-la`);
           }
         }
-        
+
         console.log(`✅ [updateCustomMatch] Permissão concedida para ${requestingUser} atualizar partida ${matchId}`);
       }
 
@@ -857,18 +858,18 @@ export class DatabaseManager {
         'SELECT * FROM queue_players WHERE player_id = ?',
         [playerId]
       );
-      
+
       if ((existingRows as any[]).length === 0) {
         console.log(`⚠️ [Database] Jogador ${playerId} não encontrado na tabela queue_players`);
-        
+
         // ✅ DEBUG: Mostrar todos os jogadores na tabela para debug
         const [allPlayers] = await this.pool.execute('SELECT player_id, summoner_name FROM queue_players');
         console.log(`🔍 [Database] Jogadores atualmente na tabela queue_players:`, allPlayers);
         return;
       }
-      
+
       console.log(`✅ [Database] Jogador ${playerId} encontrado na tabela:`, existingRows);
-      
+
       // ✅ CORREÇÃO: Deletar linha ao invés de marcar is_active = 0
       console.log(`🔍 [Database] Executando DELETE para jogador ${playerId}...`);
       const [result] = await this.pool.execute(
@@ -894,7 +895,7 @@ export class DatabaseManager {
 
     try {
       console.log(`🔍 [Database] Tentando remover jogador da fila por summoner_name: ${summonerName}`);
-      
+
       // ✅ CORREÇÃO: Primeiro tentar busca exata
       let [result] = await this.pool.execute(
         'DELETE FROM queue_players WHERE summoner_name = ?',
@@ -902,7 +903,7 @@ export class DatabaseManager {
       );
 
       let affectedRows = (result as any).affectedRows;
-      
+
       if (affectedRows > 0) {
         console.log(`✅ [Database] Jogador (${summonerName}) removido da fila - busca exata`);
         return true;
@@ -910,52 +911,52 @@ export class DatabaseManager {
 
       // ✅ NOVO: Se não encontrou com busca exata, tentar formatos alternativos
       console.log(`🔍 [Database] Busca exata falhou, tentando formatos alternativos...`);
-      
+
       // Caso 1: Se o nome recebido não tem #, tentar adicionar #BR1
       if (!summonerName.includes('#')) {
         const nameWithTag = `${summonerName}#BR1`;
         console.log(`🔍 [Database] Tentando com #BR1: ${nameWithTag}`);
-        
+
         [result] = await this.pool.execute(
           'DELETE FROM queue_players WHERE summoner_name = ?',
           [nameWithTag]
         );
-        
+
         affectedRows = (result as any).affectedRows;
         if (affectedRows > 0) {
           console.log(`✅ [Database] Jogador removido com formato ${nameWithTag}`);
           return true;
         }
       }
-      
+
       // Caso 2: Se o nome tem #, tentar buscar só a parte antes do #
       if (summonerName.includes('#')) {
         const nameOnly = summonerName.split('#')[0];
         console.log(`🔍 [Database] Tentando só o gameName: ${nameOnly}`);
-        
+
         [result] = await this.pool.execute(
           'DELETE FROM queue_players WHERE summoner_name LIKE ?',
           [`${nameOnly}#%`]
         );
-        
+
         affectedRows = (result as any).affectedRows;
         if (affectedRows > 0) {
           console.log(`✅ [Database] Jogador removido com busca parcial ${nameOnly}#%`);
           return true;
         }
       }
-      
+
       // ✅ DEBUG: Mostrar jogadores atualmente na fila para debug
       console.log(`⚠️ [Database] Nenhuma linha encontrada para remover (${summonerName})`);
-      
+
       const [players] = await this.pool.execute(
         'SELECT summoner_name FROM queue_players ORDER BY join_time ASC'
       );
-      
-      console.log(`🔍 [Database] Jogadores atualmente na fila:`, 
+
+      console.log(`🔍 [Database] Jogadores atualmente na fila:`,
         (players as any[]).map(p => p.summoner_name)
       );
-      
+
       return false;
     } catch (error) {
       console.error('❌ [Database] Erro ao remover jogador da fila por summoner_name:', error);
@@ -969,7 +970,7 @@ export class DatabaseManager {
 
     try {
       console.log('🗑️ [Database] Removendo jogadores que recusaram a partida...');
-      
+
       const [result] = await this.pool.execute(
         'DELETE FROM queue_players WHERE acceptance_status = 2'
       );
@@ -1004,7 +1005,7 @@ export class DatabaseManager {
     try {
       // ✅ CORREÇÃO: Deletar todas as entradas ao invés de marcar is_active = 0
       const [result] = await this.pool.execute('DELETE FROM queue_players');
-      
+
       const affectedRows = (result as any).affectedRows;
       console.log(`✅ [Database] Fila limpa - ${affectedRows} jogadores removidos`);
     } catch (error) {
@@ -1425,7 +1426,7 @@ export class DatabaseManager {
    */
   private async isJsonContainsAvailable(): Promise<boolean> {
     if (!this.pool) return false;
-    
+
     try {
       await this.pool.execute('SELECT JSON_CONTAINS(\'["test"]\', \'"test"\') as test');
       return true;
@@ -1840,7 +1841,7 @@ export class DatabaseManager {
     return participants.map(participant => {
       const championId = participant.championId;
       const championName = this.dataDragonService.getChampionNameById(championId);
-      
+
       return {
         ...participant,
         // Usar nome do campeão resolvido pelo DataDragonService
@@ -1945,7 +1946,7 @@ export class DatabaseManager {
                 if (participant) {
                   // Processar o participante usando DataDragonService
                   const processedParticipant = this.processParticipantsWithDataDragon([participant])[0];
-                  
+
                   gamesCounted++;
                   totalKills += processedParticipant.kills || 0;
                   totalDeaths += processedParticipant.deaths || 0;
@@ -2206,7 +2207,7 @@ export class DatabaseManager {
       const [rows] = await this.pool.execute('SELECT COUNT(*) as count FROM players');
       const results = rows as any[];
       const count = results[0]?.count || 0;
-      
+
       console.log(`🔍 [Database] Total de jogadores registrados: ${count}`);
       return count;
     } catch (error) {
@@ -2255,7 +2256,7 @@ export class DatabaseManager {
         WHERE status = 'pending' 
         AND created_at < DATE_SUB(NOW(), INTERVAL 1 HOUR)
       `;
-      
+
       const [result] = await this.pool.execute(fixQuery);
       const affectedMatches = (result as any).affectedRows || 0;
 
@@ -2265,7 +2266,7 @@ export class DatabaseManager {
       const playerCount = (countResult as any)[0]?.count || 0;
 
       console.log(`✅ Status corrigido para ${affectedMatches} partidas`);
-      
+
       return { affectedMatches, playerCount };
     } catch (error) {
       console.error('❌ Erro ao corrigir status das partidas:', error);
@@ -2284,7 +2285,7 @@ export class DatabaseManager {
         WHERE status = 'completed' 
         AND lp_changes IS NOT NULL
       `;
-      
+
       const [matches] = await this.pool.execute(matchesQuery);
       const matchList = Array.isArray(matches) ? matches : [];
 
@@ -2296,20 +2297,20 @@ export class DatabaseManager {
       for (const match of matchList) {
         const lpChanges = JSON.parse((match as any).lp_changes || '{}');
         const playerNames = Object.keys(lpChanges);
-        
+
         for (const playerName of playerNames) {
           const lpChange = lpChanges[playerName];
-          
+
           // Atualizar LP do jogador
           const updateQuery = `
             UPDATE players 
             SET custom_lp = custom_lp + ? 
             WHERE summoner_name = ?
           `;
-          
+
           await this.pool.execute(updateQuery, [lpChange, playerName]);
           affectedPlayers++;
-          
+
           details.push({
             matchId: (match as any).id,
             playerName,
@@ -2328,10 +2329,10 @@ export class DatabaseManager {
 
       console.log(`✅ Recálculo completo - ${matchList.length} partidas afetadas, ${affectedPlayers} jogadores atualizados`);
 
-      return { 
-        affectedMatches: matchList.length, 
-        affectedPlayers, 
-        details 
+      return {
+        affectedMatches: matchList.length,
+        affectedPlayers,
+        details
       };
     } catch (error) {
       console.error('❌ Erro ao recalcular LP customizado:', error);
@@ -2344,14 +2345,14 @@ export class DatabaseManager {
 
     try {
       let updateData: any = { status };
-      
+
       if (additionalFields) {
         updateData = { ...updateData, ...additionalFields };
       }
 
       // Usar o método updateCustomMatch sem requestingUser para compatibilidade
       await this.updateCustomMatch(matchId, updateData);
-      
+
       console.log(`✅ Status da partida ${matchId} atualizado para: ${status}`);
     } catch (error) {
       console.error('❌ Erro ao atualizar status da partida:', error);
@@ -2368,7 +2369,7 @@ export class DatabaseManager {
         WHERE status IN ('pending', 'accepted', 'in_progress')
         ORDER BY created_at DESC
       `;
-      
+
       const [rows] = await this.pool.execute(query);
       return Array.isArray(rows) ? rows : [];
     } catch (error) {
@@ -2500,7 +2501,7 @@ export class DatabaseManager {
 
     try {
       const currentLeader = await this.getCustomMatchLeader(matchId);
-      
+
       if (!currentLeader) {
         // Se não há líder definido, definir o criador como líder
         const match = await this.getCustomMatchById(matchId);
@@ -2511,7 +2512,7 @@ export class DatabaseManager {
         }
         return false;
       }
-      
+
       return requestingUser === currentLeader;
     } catch (error) {
       console.error(`❌ [verifyMatchLeaderPermission] Erro ao verificar permissão para partida ${matchId}:`, error);
@@ -2525,7 +2526,7 @@ export class DatabaseManager {
 
     try {
       const currentLeader = await this.getCustomMatchLeader(matchId);
-      
+
       if (!currentLeader) {
         // Se não há líder definido, definir o criador como líder
         const match = await this.getCustomMatchById(matchId);
@@ -2549,14 +2550,14 @@ export class DatabaseManager {
     try {
       // Verificar se o usuário atual é realmente o líder
       const verified = await this.verifyMatchLeaderPermission(matchId, currentLeader);
-      
+
       if (!verified) {
         throw new Error(`❌ Permissão negada: ${currentLeader} não é o líder da partida ${matchId}`);
       }
 
       // Transferir liderança
       await this.setCustomMatchLeader(matchId, newLeader);
-      
+
       console.log(`✅ [transferMatchLeadership] Liderança da partida ${matchId} transferida de ${currentLeader} para ${newLeader}`);
     } catch (error) {
       console.error(`❌ [transferMatchLeadership] Erro ao transferir liderança da partida ${matchId}:`, error);
@@ -2577,7 +2578,7 @@ export class DatabaseManager {
 
       const matchesWithoutLeader = rows as any[];
       console.log(`🔍 [getMatchesWithoutLeader] Encontradas ${matchesWithoutLeader.length} partidas sem líder definido`);
-      
+
       return matchesWithoutLeader;
     } catch (error) {
       console.error('❌ [getMatchesWithoutLeader] Erro ao buscar partidas sem líder:', error);
@@ -2591,7 +2592,7 @@ export class DatabaseManager {
 
     try {
       const matchesWithoutLeader = await this.getMatchesWithoutLeader();
-      
+
       let fixedMatches = 0;
       let failedMatches = 0;
 
@@ -2612,7 +2613,7 @@ export class DatabaseManager {
       }
 
       console.log(`📊 [fixMatchesWithoutLeader] Resultado: ${fixedMatches} partidas corrigidas, ${failedMatches} falhas`);
-      
+
       return { fixedMatches, failedMatches };
     } catch (error) {
       console.error('❌ [fixMatchesWithoutLeader] Erro ao corrigir partidas sem líder:', error);
@@ -2632,7 +2633,7 @@ export class DatabaseManager {
 
       if ((tables as any[]).length === 0) {
         console.log('🔄 [Database] Criando tabela custom_matches...');
-        
+
         await this.pool.execute(`
           CREATE TABLE IF NOT EXISTS custom_matches (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -2665,7 +2666,7 @@ export class DatabaseManager {
             match_leader VARCHAR(255) DEFAULT NULL COMMENT "Riot ID do líder da partida"
           )
         `);
-        
+
         console.log('✅ [Database] Tabela custom_matches criada com sucesso');
       } else {
         console.log('✅ [Database] Tabela custom_matches já existe');
@@ -2681,12 +2682,12 @@ export class DatabaseManager {
 
   private async ensureMatchLeaderColumn(): Promise<void> {
     if (!this.pool) return;
-    
+
     try {
       const [columns] = await this.pool.execute(
         "SHOW COLUMNS FROM custom_matches LIKE 'match_leader'"
       );
-      
+
       if ((columns as any[]).length === 0) {
         await this.pool.execute(
           'ALTER TABLE custom_matches ADD COLUMN match_leader VARCHAR(255) DEFAULT NULL COMMENT "Riot ID do líder da partida"'
@@ -2715,15 +2716,15 @@ export class DatabaseManager {
       const results = rows as any[];
       if (results.length > 0) {
         const currentCollation = results[0].TABLE_COLLATION;
-        
+
         if (!currentCollation.includes('utf8mb4')) {
           console.log('🔄 [Database] Alterando charset da tabela settings para utf8mb4...');
-          
+
           await this.pool.execute(`
             ALTER TABLE settings 
             CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
           `);
-          
+
           console.log('✅ [Database] Charset da tabela settings alterado para utf8mb4');
         } else {
           console.log('✅ [Database] Tabela settings já usa charset utf8mb4');
@@ -2738,7 +2739,7 @@ export class DatabaseManager {
     const K_FACTOR = 32; // Fator K para cálculo de MMR
     const expectedScore = 1 / (1 + Math.pow(10, (opponentMMR - playerMMR) / 400));
     const actualScore = isWin ? 1 : 0;
-    
+
     return Math.round(K_FACTOR * (actualScore - expectedScore));
   }
 
@@ -2755,7 +2756,7 @@ export class DatabaseManager {
       if (results.length > 0) {
         return results[0].custom_mmr || 1000;
       }
-      
+
       // Se o jogador não existe, retornar MMR padrão
       return 1000;
     } catch (error) {
@@ -2788,10 +2789,10 @@ export class DatabaseManager {
     try {
       const fields = Object.keys(updates);
       const values = Object.values(updates);
-      
+
       const setClause = fields.map(field => `${field} = ?`).join(', ');
       const query = `UPDATE players SET ${setClause} WHERE id = ?`;
-      
+
       await this.pool.execute(query, [...values, playerId]);
       console.log(`✅ Jogador ${playerId} atualizado`);
     } catch (error) {
@@ -2805,13 +2806,13 @@ export class DatabaseManager {
 
     try {
       await this.addAcceptanceStatusColumn();
-      
+
       const query = `
         UPDATE queue_players 
         SET acceptance_status = ? 
         WHERE summoner_name = ?
       `;
-      
+
       await this.pool.execute(query, [status, playerName]);
       console.log(`✅ Status de aceitação atualizado para ${playerName}: ${status}`);
     } catch (error) {
@@ -2832,7 +2833,7 @@ export class DatabaseManager {
             completed_at = NOW()
         WHERE id = ?
       `;
-      
+
       await this.pool.execute(query, [winner, JSON.stringify(mmrChanges), matchId]);
       console.log(`✅ Partida ${matchId} completada com vencedor: ${winner}`);
     } catch (error) {
@@ -2850,7 +2851,7 @@ export class DatabaseManager {
         SET queue_position = ? 
         WHERE player_id = ?
       `;
-      
+
       await this.pool.execute(query, [position, playerId]);
       console.log(`✅ Posição na fila atualizada para jogador ${playerId}: ${position}`);
     } catch (error) {
@@ -2868,7 +2869,7 @@ export class DatabaseManager {
       const [columns] = await this.pool.execute(
         "SHOW COLUMNS FROM queue_players LIKE 'acceptance_status'"
       );
-      
+
       if ((columns as any[]).length === 0) {
         // Adicionar coluna se não existir
         await this.pool.execute(

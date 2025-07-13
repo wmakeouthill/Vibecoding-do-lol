@@ -18,12 +18,20 @@ export class MatchFoundService {
   private monitoringInterval: NodeJS.Timeout | null = null;
   private readonly ACCEPTANCE_TIMEOUT_MS = 30000; // 30 segundos para aceitar
   private discordService?: DiscordService; // ✅ NOVO: Referência ao DiscordService
+  private matchCreationLocks = new Map<number, boolean>();
 
   constructor(dbManager: DatabaseManager, wss?: any, discordService?: DiscordService) {
     this.dbManager = dbManager;
     this.wss = wss;
-    this.discordService = discordService; // ✅ NOVO: Armazenar referência
-    
+
+    // Verificar se o DiscordService está pronto
+    if (discordService && discordService.isReady()) {
+      this.discordService = discordService;
+      console.log('🔗 [MatchFound] DiscordService configurado e pronto');
+    } else {
+      console.warn('⚠️ [MatchFound] DiscordService não está pronto ou não foi fornecido');
+    }
+
     // ✅ DEBUG: Verificar se DiscordService foi injetado
     console.log('🔧 [MatchFound] Construtor chamado');
     console.log('🔧 [MatchFound] DiscordService recebido:', !!discordService);
@@ -43,10 +51,10 @@ export class MatchFoundService {
     console.log('🎯 [MatchFound] Inicializando MatchFoundService...');
     console.log('🔍 [MatchFound] WebSocket Server disponível:', !!this.wss);
     console.log('🔍 [MatchFound] WebSocket clients:', this.wss?.clients?.size || 0);
-    
+
     // Iniciar monitoramento contínuo de acceptance_status
     this.startAcceptanceMonitoring();
-    
+
     console.log('✅ [MatchFound] MatchFoundService inicializado com sucesso');
   }
 
@@ -59,32 +67,32 @@ export class MatchFoundService {
     matchId?: number; // ✅ NOVO: ID da partida já criada
   }): Promise<number> {
     console.log('🎮 [MatchFound] Iniciando processo de aceitação para partida...');
-    
+
     try {
       // ✅ CORREÇÃO: Usar matchId fornecido ou buscar partida existente
       let matchId = matchData.matchId;
-      
+
       if (!matchId) {
         console.log('🔍 [MatchFound] Buscando partida existente no banco...');
-        
+
         // Buscar partida mais recente que corresponda aos times
         const recentMatches = await this.dbManager.getCustomMatches(10, 0); // Buscar 10 partidas mais recentes
         const matchingMatch = recentMatches.find((match: any) => {
           try {
-            const team1 = typeof match.team1_players === 'string' 
-              ? JSON.parse(match.team1_players) 
+            const team1 = typeof match.team1_players === 'string'
+              ? JSON.parse(match.team1_players)
               : (match.team1_players || []);
-            const team2 = typeof match.team2_players === 'string' 
-              ? JSON.parse(match.team2_players) 
+            const team2 = typeof match.team2_players === 'string'
+              ? JSON.parse(match.team2_players)
               : (match.team2_players || []);
-            
+
             return JSON.stringify(team1.sort()) === JSON.stringify(matchData.team1Players.sort()) &&
-                   JSON.stringify(team2.sort()) === JSON.stringify(matchData.team2Players.sort());
+              JSON.stringify(team2.sort()) === JSON.stringify(matchData.team2Players.sort());
           } catch (error) {
             return false;
           }
         });
-        
+
         if (matchingMatch) {
           matchId = matchingMatch.id;
           console.log(`✅ [MatchFound] Partida existente encontrada: ${matchId}`);
@@ -151,19 +159,19 @@ export class MatchFoundService {
     console.log(`✅ [MatchFound] ========== JOGADOR ACEITOU MATCH ==========`);
     console.log(`✅ [MatchFound] Jogador ${summonerName} aceitou partida ${matchId}`);
     console.log(`✅ [MatchFound] Timestamp: ${new Date().toISOString()}`);
-    
+
     try {
       // 1. Atualizar no banco de dados
       await this.dbManager.updatePlayerAcceptanceStatus(summonerName, 1);
       console.log(`✅ [MatchFound] Status de aceitação atualizado no banco para ${summonerName}`);
-      
+
       // 2. Atualizar tracking local
       const matchStatus = this.pendingMatches.get(matchId);
       if (matchStatus) {
         matchStatus.acceptedPlayers.add(summonerName);
         console.log(`✅ [MatchFound] Match ${matchId} - Jogadores que aceitaram: ${matchStatus.acceptedPlayers.size}/${matchStatus.players.length}`);
         console.log(`✅ [MatchFound] Jogadores que aceitaram:`, Array.from(matchStatus.acceptedPlayers));
-        
+
         // Verificar se todos aceitaram
         if (matchStatus.acceptedPlayers.size === matchStatus.players.length) {
           console.log(`🎉 [MatchFound] TODOS OS JOGADORES ACEITARAM! Iniciando handleAllPlayersAccepted...`);
@@ -186,11 +194,11 @@ export class MatchFoundService {
   // ✅ Processar recusa de jogador
   async declineMatch(matchId: number, summonerName: string): Promise<void> {
     console.log(`❌ [MatchFound] Jogador ${summonerName} recusou partida ${matchId}`);
-    
+
     try {
       // 1. Atualizar no banco de dados
       await this.dbManager.updatePlayerAcceptanceStatus(summonerName, 2);
-      
+
       // 2. Processar recusa imediatamente
       await this.handleMatchDeclined(matchId, [summonerName]);
 
@@ -203,7 +211,7 @@ export class MatchFoundService {
   // ✅ Monitoramento contínuo de acceptance_status via MySQL
   private startAcceptanceMonitoring(): void {
     console.log('🔍 [MatchFound] Iniciando monitoramento contínuo...');
-    
+
     this.monitoringInterval = setInterval(async () => {
       await this.monitorAcceptanceStatus();
     }, 1000); // Verificar a cada 1 segundo
@@ -213,7 +221,7 @@ export class MatchFoundService {
     try {
       // Buscar partidas ativas no banco
       const activeMatches = await this.dbManager.getActiveCustomMatches();
-      
+
       for (const match of activeMatches) {
         await this.processMatchAcceptanceFromDB(match);
       }
@@ -224,17 +232,17 @@ export class MatchFoundService {
 
   private async processMatchAcceptanceFromDB(match: any): Promise<void> {
     const matchId = match.id;
-    
+
     // Parsear jogadores dos times
     let allPlayers: string[] = [];
     try {
-      const team1 = typeof match.team1_players === 'string' 
-        ? JSON.parse(match.team1_players) 
+      const team1 = typeof match.team1_players === 'string'
+        ? JSON.parse(match.team1_players)
         : (match.team1_players || []);
-      const team2 = typeof match.team2_players === 'string' 
-        ? JSON.parse(match.team2_players) 
+      const team2 = typeof match.team2_players === 'string'
+        ? JSON.parse(match.team2_players)
         : (match.team2_players || []);
-      
+
       allPlayers = [...team1, ...team2];
     } catch (parseError) {
       console.error(`❌ [MatchFound] Erro ao parsear jogadores da partida ${matchId}`);
@@ -273,18 +281,16 @@ export class MatchFoundService {
 
   // ✅ Lidar com todos os jogadores tendo aceitado
   private async handleAllPlayersAccepted(matchId: number): Promise<void> {
-    // ✅ PROTEÇÃO: Verificar se já está sendo processado
-    if (this.processingMatches.has(matchId)) {
+    // Verificar se já está sendo processado
+    if (this.processingMatches.has(matchId) || this.matchCreationLocks.get(matchId)) {
       console.log(`⏳ [MatchFound] Partida ${matchId} já está sendo processada, ignorando chamada duplicada`);
       return;
     }
-    
-    this.processingMatches.add(matchId);
-    console.log(`🎉 [MatchFound] ========== TODOS JOGADORES ACEITARAM ==========`);
-    console.log(`🎉 [MatchFound] Todos os jogadores aceitaram partida ${matchId}!`);
-    console.log(`🎉 [MatchFound] Timestamp: ${new Date().toISOString()}`);
-    
+
     try {
+      this.matchCreationLocks.set(matchId, true);
+      this.processingMatches.add(matchId);
+
       // 1. Limpar timeout se existir
       const matchStatus = this.pendingMatches.get(matchId);
       if (matchStatus?.timeout) {
@@ -322,29 +328,18 @@ export class MatchFoundService {
       // 6. Notificar que todos aceitaram (será processado pelo DraftService)
       this.notifyAllPlayersAccepted(matchId, match);
 
-      // 7. ✅ NOVO: Criar match no Discord se o serviço estiver disponível
-      console.log(`🤖 [MatchFound] ========== VERIFICANDO DISCORD SERVICE ==========`);
-      console.log(`🤖 [MatchFound] DiscordService existe:`, !!this.discordService);
-      console.log(`🤖 [MatchFound] DiscordService referência:`, this.discordService ? 'VÁLIDA' : 'NULL/UNDEFINED');
-      if (this.discordService) {
-        console.log(`🤖 [MatchFound] DiscordService tipo:`, typeof this.discordService);
-        console.log(`🤖 [MatchFound] DiscordService constructor:`, this.discordService.constructor.name);
-        console.log(`🤖 [MatchFound] DiscordService disponível! Verificando conexão...`);
-        console.log(`🤖 [MatchFound] Discord conectado:`, this.discordService.isDiscordConnected());
-        console.log(`🤖 [MatchFound] ========== CHAMANDO createDiscordMatch ==========`);
-        
-        // ✅ PROTEÇÃO ADICIONAL: Verificar se já existe um match Discord para esta partida
+      // 7. Criar match no Discord
+      if (this.discordService?.isReady()) {
         try {
-          console.log(`🤖 [MatchFound] Verificando se já existe match Discord para partida ${matchId}...`);
+          console.log(`🤖 [MatchFound] Criando match Discord para partida ${matchId}...`);
           await this.discordService.createDiscordMatch(matchId, match);
-          console.log(`🤖 [MatchFound] ========== createDiscordMatch EXECUTADO ==========`);
+          console.log(`🤖 [MatchFound] Match Discord criado com sucesso`);
         } catch (discordError) {
           console.error(`❌ [MatchFound] Erro ao criar match Discord:`, discordError);
-          // Não falhar o processo todo se o Discord falhar
+          // Não falhar o processo, apenas registrar o erro
         }
       } else {
-        console.warn(`⚠️ [MatchFound] PROBLEMA: DiscordService não disponível!`);
-        console.warn(`⚠️ [MatchFound] this.discordService =`, this.discordService);
+        console.warn(`⚠️ [MatchFound] DiscordService não está disponível ou não está pronto`);
       }
 
       console.log(`✅ [MatchFound] Partida ${matchId} totalmente aceita - encaminhando para Draft`);
@@ -353,6 +348,7 @@ export class MatchFoundService {
       console.error(`❌ [MatchFound] Erro ao processar aceitação completa:`, error);
     } finally {
       // ✅ IMPORTANTE: Remover da proteção após processamento
+      this.matchCreationLocks.delete(matchId);
       this.processingMatches.delete(matchId);
       console.log(`🔒 [MatchFound] Proteção removida para partida ${matchId}`);
     }
@@ -361,7 +357,7 @@ export class MatchFoundService {
   // ✅ Lidar com partida recusada
   private async handleMatchDeclined(matchId: number, declinedPlayerNames: string[]): Promise<void> {
     console.log(`🚫 [MatchFound] Partida ${matchId} recusada por:`, declinedPlayerNames);
-    
+
     try {
       // 1. Limpar timeout se existir
       const matchStatus = this.pendingMatches.get(matchId);
@@ -379,14 +375,24 @@ export class MatchFoundService {
       // 3. Deletar a partida
       await this.dbManager.deleteCustomMatch(matchId);
 
-      // 4. ✅ NOVO: Limpar match no Discord se existir
+      // 4. Limpar match no Discord com verificação de tentativas
       if (this.discordService) {
-        try {
-          console.log(`🤖 [MatchFound] Limpando match ${matchId} no Discord...`);
-          await this.discordService.cleanupMatchByCustomId(matchId);
-          console.log(`🤖 [MatchFound] Match ${matchId} limpo no Discord`);
-        } catch (discordError) {
-          console.error(`❌ [MatchFound] Erro ao limpar match ${matchId} no Discord:`, discordError);
+        let retryCount = 0;
+        const maxRetries = 3;
+
+        while (retryCount < maxRetries) {
+          try {
+            console.log(`🤖 [MatchFound] Tentativa ${retryCount + 1} de limpar match ${matchId} no Discord...`);
+            await this.discordService.cleanupMatchByCustomId(matchId);
+            console.log(`🤖 [MatchFound] Match ${matchId} limpo no Discord`);
+            break;
+          } catch (discordError) {
+            retryCount++;
+            console.error(`❌ [MatchFound] Erro ao limpar match ${matchId} no Discord (tentativa ${retryCount}):`, discordError);
+            if (retryCount < maxRetries) {
+              await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+            }
+          }
         }
       }
 
@@ -413,7 +419,7 @@ export class MatchFoundService {
   // ✅ Timeout de aceitação
   private async handleAcceptanceTimeout(matchId: number): Promise<void> {
     console.log(`⏰ [MatchFound] Timeout de aceitação para partida ${matchId}`);
-    
+
     try {
       // Buscar jogadores que não aceitaram
       const queuePlayers = await this.dbManager.getActiveQueuePlayers();
@@ -435,21 +441,21 @@ export class MatchFoundService {
     if (!matchStatus) return;
 
     let timeLeft = Math.floor(this.ACCEPTANCE_TIMEOUT_MS / 1000); // 30 segundos
-    
+
     // Enviar primeiro update imediatamente
     this.notifyTimerUpdate(matchId, timeLeft);
-    
+
     const timerInterval = setInterval(() => {
       timeLeft--;
-      
+
       // Enviar atualização do timer via WebSocket
       this.notifyTimerUpdate(matchId, timeLeft);
-      
+
       // Log menos frequente para não poluir o console
       if (timeLeft % 5 === 0 || timeLeft <= 10) {
         console.log(`⏰ [MatchFound] Timer partida ${matchId}: ${timeLeft}s restantes`);
       }
-      
+
       // Parar quando chegar a 0 ou partida não existir mais
       if (timeLeft <= 0 || !this.pendingMatches.has(matchId)) {
         clearInterval(timerInterval);
@@ -463,23 +469,23 @@ export class MatchFoundService {
     try {
       console.log(`🤖 [MatchFound] Verificando bots para partida ${matchId}...`);
       console.log(`🤖 [MatchFound] Jogadores:`, players);
-      
+
       let botCount = 0;
       let humanCount = 0;
-      
+
       // Buscar o status da partida no tracking local
       const matchStatus = this.pendingMatches.get(matchId);
-      
+
       for (const playerName of players) {
         if (this.isBot(playerName)) {
           // Atualizar no banco de dados
           await this.dbManager.updatePlayerAcceptanceStatus(playerName, 1);
-          
+
           // ✅ CORREÇÃO: Atualizar também o tracking local
           if (matchStatus) {
             matchStatus.acceptedPlayers.add(playerName);
           }
-          
+
           console.log(`🤖 [MatchFound] Bot ${playerName} aceitou automaticamente`);
           botCount++;
         } else {
@@ -487,9 +493,9 @@ export class MatchFoundService {
           humanCount++;
         }
       }
-      
+
       console.log(`🤖 [MatchFound] Resumo: ${botCount} bots aceitaram, ${humanCount} humanos precisam aceitar`);
-      
+
       // ✅ CORREÇÃO: Verificar se todos aceitaram após aceitar os bots
       if (matchStatus && matchStatus.acceptedPlayers.size === matchStatus.players.length) {
         console.log(`🎉 [MatchFound] Todos os jogadores (incluindo bots) aceitaram partida ${matchId}!`);
@@ -498,17 +504,17 @@ export class MatchFoundService {
         // Notificar progresso da aceitação
         this.notifyAcceptanceProgress(matchId, matchStatus);
       }
-      
+
     } catch (error) {
       console.error('❌ [MatchFound] Erro na aceitação automática de bots:', error);
     }
   }
 
   private isBot(playerName: string): boolean {
-    return playerName.toLowerCase().includes('bot') || 
-           playerName.toLowerCase().includes('ai') ||
-           playerName.toLowerCase().includes('computer') ||
-           playerName.toLowerCase().includes('cpu');
+    return playerName.toLowerCase().includes('bot') ||
+      playerName.toLowerCase().includes('ai') ||
+      playerName.toLowerCase().includes('computer') ||
+      playerName.toLowerCase().includes('cpu');
   }
 
   // ✅ Notificações WebSocket
@@ -516,7 +522,7 @@ export class MatchFoundService {
     console.log('🔍 [MatchFound] notifyMatchFound chamado');
     console.log('🔍 [MatchFound] WebSocket Server:', !!this.wss);
     console.log('🔍 [MatchFound] WebSocket clients:', this.wss?.clients?.size || 0);
-    
+
     if (!this.wss) {
       console.error('❌ [MatchFound] WebSocket Server não disponível!');
       return;
@@ -550,7 +556,7 @@ export class MatchFoundService {
     };
 
     console.log(`📤 [MatchFound] Enviando mensagem match_found:`, JSON.stringify(message, null, 2));
-    
+
     // ✅ NOVO: Enviar apenas para jogadores que estão na partida
     let sentCount = 0;
     let identifiedClients = 0;
@@ -560,7 +566,7 @@ export class MatchFoundService {
       if (client.readyState === WebSocket.OPEN) {
         const clientInfo = (client as any).playerInfo;
         const isIdentified = (client as any).isIdentified;
-        
+
         if (isIdentified) {
           identifiedClients++;
         }
@@ -568,7 +574,7 @@ export class MatchFoundService {
         // ✅ VERIFICAR: Se o cliente está identificado e está na partida
         if (isIdentified && clientInfo) {
           const isInMatch = this.isPlayerInMatch(clientInfo, allPlayersInMatch);
-          
+
           if (isInMatch) {
             try {
               client.send(JSON.stringify(message));
@@ -609,7 +615,7 @@ export class MatchFoundService {
 
     // Obter identificadores possíveis do jogador
     const identifiers = [];
-    
+
     if (playerInfo.displayName) {
       identifiers.push(playerInfo.displayName);
     }
@@ -631,7 +637,7 @@ export class MatchFoundService {
           console.log(`✅ [MatchFound] Match exato: ${identifier} === ${matchPlayer}`);
           return true;
         }
-        
+
         // Comparação por gameName (ignorando tag)
         if (identifier.includes('#') && matchPlayer.includes('#')) {
           const identifierGameName = identifier.split('#')[0];
@@ -641,7 +647,7 @@ export class MatchFoundService {
             return true;
           }
         }
-        
+
         // Comparação de gameName com nome completo
         if (identifier.includes('#')) {
           const identifierGameName = identifier.split('#')[0];
@@ -650,7 +656,7 @@ export class MatchFoundService {
             return true;
           }
         }
-        
+
         if (matchPlayer.includes('#')) {
           const matchPlayerGameName = matchPlayer.split('#')[0];
           if (identifier === matchPlayerGameName) {
@@ -678,7 +684,7 @@ export class MatchFoundService {
         acceptedCount: matchStatus.acceptedPlayers.size,
         totalPlayers: matchStatus.players.length,
         acceptedPlayers: Array.from(matchStatus.acceptedPlayers),
-        pendingPlayers: matchStatus.players.filter(p => 
+        pendingPlayers: matchStatus.players.filter(p =>
           !matchStatus.acceptedPlayers.has(p) && !matchStatus.declinedPlayers.has(p)
         )
       },
@@ -720,7 +726,7 @@ export class MatchFoundService {
 
     // ✅ NOVO: Envio direcionado igual ao match_found
     console.log(`🚫 [MatchFound] Preparando notificação de cancelamento para partida ${matchId}`);
-    
+
     // Buscar dados da partida para obter lista de jogadores
     this.dbManager.getCustomMatchById(matchId).then(match => {
       if (!match) {
@@ -731,13 +737,13 @@ export class MatchFoundService {
 
       let allPlayersInMatch: string[] = [];
       try {
-        const team1 = typeof match.team1_players === 'string' 
-          ? JSON.parse(match.team1_players) 
+        const team1 = typeof match.team1_players === 'string'
+          ? JSON.parse(match.team1_players)
           : (match.team1_players || []);
-        const team2 = typeof match.team2_players === 'string' 
-          ? JSON.parse(match.team2_players) 
+        const team2 = typeof match.team2_players === 'string'
+          ? JSON.parse(match.team2_players)
           : (match.team2_players || []);
-        
+
         allPlayersInMatch = [...team1, ...team2];
       } catch (error) {
         console.error(`❌ [MatchFound] Erro ao parsear jogadores da partida ${matchId}:`, error);
@@ -756,7 +762,7 @@ export class MatchFoundService {
         if (client.readyState === WebSocket.OPEN) {
           const clientInfo = (client as any).playerInfo;
           const isIdentified = (client as any).isIdentified;
-          
+
           if (isIdentified) {
             identifiedClients++;
           }
@@ -764,7 +770,7 @@ export class MatchFoundService {
           // ✅ VERIFICAR: Se o cliente estava na partida cancelada
           if (isIdentified && clientInfo) {
             const isInMatch = this.isPlayerInMatch(clientInfo, allPlayersInMatch);
-            
+
             if (isInMatch) {
               try {
                 client.send(JSON.stringify(message));
@@ -825,7 +831,7 @@ export class MatchFoundService {
   private broadcastMessage(message: any): void {
     console.log('🔍 [MatchFound] broadcastMessage chamado');
     console.log('🔍 [MatchFound] WebSocket clients:', this.wss?.clients?.size || 0);
-    
+
     if (!this.wss?.clients) {
       console.error('❌ [MatchFound] WebSocket clients não disponível!');
       return;
@@ -846,7 +852,7 @@ export class MatchFoundService {
         console.log('⚠️ [MatchFound] Cliente não está aberto, estado:', client.readyState);
       }
     });
-    
+
     console.log(`📤 [MatchFound] Mensagem enviada para ${sentCount} clientes`);
   }
 
