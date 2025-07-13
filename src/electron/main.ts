@@ -130,7 +130,7 @@ async function createWindow(): Promise<void> {
     }
 
     // Abrir DevTools em desenvolvimento
-    mainWindow.webContents.openDevTools();
+
   } else {
     // Em produção, mostrar tela de carregamento imediatamente
     console.log('� Modo produção: carregando tela de loading...');
@@ -138,7 +138,6 @@ async function createWindow(): Promise<void> {
 
     // Abrir DevTools para debug inicial
     console.log('� Abrindo DevTools para diagnóstico...');
-    mainWindow.webContents.openDevTools();
   }
 
   // Desabilitar CSP completamente para permitir P2P WebSocket

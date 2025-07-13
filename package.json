@@ -56,7 +56,15 @@
     "test:connectivity": "node scripts/diagnose-connection-issues.js",
     "diagnose": "node scripts/diagnose-connection-issues.js",
     "verify:connectivity": "node scripts/verify-production-connectivity.js",
-    "test:backend-paths": "node scripts/test-backend-paths.js"
+    "test:backend-paths": "node scripts/test-backend-paths.js",
+    "build:standalone": "node scripts/build-standalone.js",
+    "build:portable": "npm run build:quick && electron-builder --win --publish=never --target=portable",
+    "build:installer": "npm run build:quick && electron-builder --win --publish=never --target=nsis",
+    "build:complete-standalone": "npm run build:standalone && npm run build:portable && npm run build:installer",
+    "optimize:build": "node scripts/optimize-build.js",
+    "test:standalone": "node scripts/test-standalone.js",
+    "test:node-embedded": "node scripts/test-node-embedded.js",
+    "release": "node scripts/release.js"
   },
   "keywords": [
     "league of legends",
@@ -126,6 +134,12 @@
           "arch": [
             "x64"
           ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "build/icon.ico",
@@ -150,7 +164,11 @@
       "displayLanguageSelector": false,
       "language": "1046",
       "artifactName": "${productName} Setup ${version}.${ext}",
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": false,
+      "include": "build/installer.nsh"
+    },
+    "portable": {
+      "artifactName": "${productName} Portable ${version}.${ext}"
     }
   },
   "devDependencies": {
