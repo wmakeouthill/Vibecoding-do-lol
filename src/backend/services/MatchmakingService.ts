@@ -87,11 +87,19 @@ export class MatchmakingService {
     console.log('🔍 [Matchmaking] WebSocket Server recebido:', !!wss);
     console.log('🔍 [Matchmaking] WebSocket clients:', wss?.clients?.size || 0);
     console.log('🔍 [Matchmaking] DiscordService recebido:', !!discordService);
+    console.log('🔍 [Matchmaking] DiscordService isReady:', discordService?.isReady());
+    console.log('🔍 [Matchmaking] DiscordService isConnected:', discordService?.isDiscordConnected());
 
     // ✅ NOVO: Inicializar serviços separados com DiscordService
     this.matchFoundService = new MatchFoundService(dbManager, wss, discordService);
     this.draftService = new DraftService(dbManager, wss, discordService);
     this.gameInProgressService = new GameInProgressService(dbManager, wss, discordService);
+
+    // ✅ NOVO: Verificar se o DiscordService foi passado corretamente
+    console.log('🔍 [Matchmaking] Verificação pós-criação dos serviços:');
+    console.log('🔍 [Matchmaking] MatchFoundService tem DiscordService:', !!this.matchFoundService['discordService']);
+    console.log('🔍 [Matchmaking] DraftService tem DiscordService:', !!this.draftService['discordService']);
+    console.log('🔍 [Matchmaking] GameInProgressService tem DiscordService:', !!this.gameInProgressService['discordService']);
 
     // ✅ NOVO: Configurar sincronização automática do cache com MySQL
     this.startCacheSyncInterval();
@@ -1834,5 +1842,42 @@ export class MatchmakingService {
       playerName.includes('#BOT'); // Padrão específico dos bots
 
     return isBot;
+  }
+
+  // ✅ NOVO: Métodos de debug para verificar status do MatchFoundService
+  getMatchFoundDebugStatus(): any {
+    return {
+      hasDiscordService: !!this.matchFoundService['discordService'],
+      discordServiceReady: this.matchFoundService['discordService']?.isReady(),
+      discordServiceConnected: this.matchFoundService['discordService']?.isDiscordConnected(),
+      discordServiceBotUsername: this.matchFoundService['discordService']?.getBotUsername(),
+      discordServiceActiveMatches: this.matchFoundService['discordService']?.getAllActiveMatches().size,
+      pendingMatchesCount: this.matchFoundService['pendingMatches'].size,
+      processingMatchesCount: this.matchFoundService['processingMatches'].size,
+      matchCreationLocksCount: this.matchFoundService['matchCreationLocks'].size
+    };
+  }
+
+  // ✅ NOVO: Método para testar criação de match Discord via MatchFoundService
+  async testDiscordMatchCreation(matchId: number, matchData: any): Promise<boolean> {
+    try {
+      if (this.matchFoundService['discordService']?.isReady()) {
+        await this.matchFoundService['discordService'].createDiscordMatch(matchId, matchData);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('❌ [MatchmakingService] Erro no teste de criação de match Discord:', error);
+      return false;
+    }
+  }
+
+  // ✅ NOVO: Método para configurar DiscordService em todos os serviços
+  setDiscordService(discordService: any): void {
+    console.log('🔗 [Matchmaking] Configurando DiscordService em todos os serviços...');
+    this.matchFoundService.setDiscordService(discordService);
+    this.draftService.setDiscordService(discordService);
+    this.gameInProgressService.setDiscordService(discordService);
+    console.log('✅ [Matchmaking] DiscordService configurado em todos os serviços');
   }
 }

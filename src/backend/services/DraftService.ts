@@ -68,20 +68,50 @@ export class DraftService {
     console.log(`🎯 [Draft] Iniciando draft para partida ${matchId}...`);
 
     try {
-      // 1. Buscar partida no banco
+      // ✅ PROTEÇÃO: Verificar se já está sendo processado
+      if (this.processingMatches.has(matchId)) {
+        console.log(`⏳ [Draft] Partida ${matchId} já está sendo processada, aguardando...`);
+        return;
+      }
+
+      // ✅ PROTEÇÃO: Verificar se já existe draft ativo
+      if (this.activeDrafts.has(matchId)) {
+        console.log(`⚠️ [Draft] Draft ${matchId} já está ativo`);
+        return;
+      }
+
+      // ✅ PROTEÇÃO: Marcar como sendo processado
+      this.processingMatches.add(matchId);
+
+      // 1. Buscar dados da partida no banco
       const match = await this.dbManager.getCustomMatchById(matchId);
       if (!match) {
         throw new Error(`Partida ${matchId} não encontrada`);
       }
 
-      // 2. ✅ CORREÇÃO: Usar EXATAMENTE os dados já balanceados do match-found
+      console.log(`🔍 [Draft] Dados encontrados no banco:`, {
+        id: match.id,
+        status: match.status,
+        team1_players: match.team1_players,
+        team2_players: match.team2_players,
+        hasPickBanData: !!match.pick_ban_data
+      });
+
+      // ✅ PROTEÇÃO: Verificar se a partida já está em draft
+      if (match.status === 'draft') {
+        console.log(`⚠️ [Draft] Partida ${matchId} já está em draft, ignorando`);
+        this.processingMatches.delete(matchId);
+        return;
+      }
+
+      // 2. ✅ CORREÇÃO: Priorizar dados do match-found se disponíveis
       let draftData: DraftData | null = null;
 
-      if (match.draft_data) {
+      if (match.pick_ban_data) {
         try {
-          const savedDraftData = typeof match.draft_data === 'string'
-            ? JSON.parse(match.draft_data)
-            : match.draft_data;
+          const savedDraftData = typeof match.pick_ban_data === 'string'
+            ? JSON.parse(match.pick_ban_data)
+            : match.pick_ban_data;
 
           console.log(`🔍 [Draft] Dados encontrados no banco:`, {
             hasTeammates: !!savedDraftData.teammates,
@@ -147,52 +177,23 @@ export class DraftService {
               createdAt: new Date().toISOString()
             };
 
-            console.log(`✅ [Draft] Times com índices EXATOS do match-found:`, {
-              team1: draftData.team1.map(p => `${p.teamIndex}: ${p.summonerName} (${p.assignedLane})`),
-              team2: draftData.team2.map(p => `${p.teamIndex}: ${p.summonerName} (${p.assignedLane})`)
+            console.log(`✅ [Draft] Dados do match-found processados:`, {
+              team1Size: draftData.team1.length,
+              team2Size: draftData.team2.length,
+              team1Indices: draftData.team1.map(p => p.teamIndex),
+              team2Indices: draftData.team2.map(p => p.teamIndex),
+              team1Lanes: draftData.team1.map(p => p.assignedLane),
+              team2Lanes: draftData.team2.map(p => p.assignedLane)
             });
-          }
-          // ✅ FALLBACK: Usar dados antigos (lanes.team1/team2) se teammates/enemies não existirem
-          else if (savedDraftData.lanes?.team1 && savedDraftData.lanes?.team2) {
-            console.log(`⚠️ [Draft] Usando dados antigos (lanes.team1/team2) como fallback`);
-
-            draftData = {
-              matchId,
-              team1: savedDraftData.lanes.team1.map((p: any, index: number) => ({
-                summonerName: p.player,
-                assignedLane: p.lane,
-                teamIndex: index,
-                mmr: p.mmr,
-                primaryLane: p.primaryLane || 'fill',
-                secondaryLane: p.secondaryLane || 'fill',
-                isAutofill: p.isAutofill || false
-              })),
-              team2: savedDraftData.lanes.team2.map((p: any, index: number) => ({
-                summonerName: p.player,
-                assignedLane: p.lane,
-                teamIndex: index + 5,
-                mmr: p.mmr,
-                primaryLane: p.primaryLane || 'fill',
-                secondaryLane: p.secondaryLane || 'fill',
-                isAutofill: p.isAutofill || false
-              })),
-              averageMMR: {
-                team1: savedDraftData.averageMMR || 1200,
-                team2: savedDraftData.averageMMR || 1200
-              },
-              balanceQuality: 0,
-              autofillCount: 0,
-              createdAt: new Date().toISOString()
-            };
           }
         } catch (error) {
           console.warn(`⚠️ [Draft] Erro ao parsear draft_data, usando fallback:`, error);
         }
       }
 
-      // 3. ✅ FALLBACK: Se não temos dados balanceados, usar método antigo
+      // 3. ✅ FALLBACK: Se não temos dados balanceados, usar dados do banco (team1_players/team2_players)
       if (!draftData) {
-        console.log(`🔍 [Draft] Dados balanceados não encontrados, usando método de fallback...`);
+        console.log(`🔍 [Draft] Dados balanceados não encontrados, usando dados do banco...`);
 
         // Parsear jogadores dos times
         let team1Players: string[] = [];
@@ -209,6 +210,13 @@ export class DraftService {
           throw new Error('Erro ao parsear dados dos times');
         }
 
+        console.log(`🔍 [Draft] Dados do banco:`, {
+          team1Players,
+          team2Players,
+          team1Count: team1Players.length,
+          team2Count: team2Players.length
+        });
+
         // Buscar dados dos jogadores na fila para balanceamento
         const queuePlayers = await this.dbManager.getActiveQueuePlayers();
         const allPlayers = [...team1Players, ...team2Players];
@@ -223,60 +231,59 @@ export class DraftService {
           throw new Error('Nem todos os jogadores estão disponíveis para o draft');
         }
 
-        // Preparar dados completos do draft usando método antigo
-        draftData = await this.prepareDraftData(matchId, team1Players, team2Players, matchPlayers);
+        // ✅ CORREÇÃO: Preparar dados completos do draft usando dados do banco
+        draftData = await this.prepareDraftDataFromDatabase(matchId, team1Players, team2Players, matchPlayers);
       }
 
       if (!draftData) {
-        throw new Error('Erro ao preparar dados do draft');
+        throw new Error('Não foi possível preparar dados do draft');
       }
 
-      // 4. ✅ CORREÇÃO: Atualizar partida no banco com dados do draft
+      // 4. Salvar dados do draft no banco
       await this.dbManager.updateCustomMatch(matchId, {
-        draft_data: JSON.stringify(draftData),
-        status: 'draft'
+        pick_ban_data: JSON.stringify({
+          team1: draftData.team1,
+          team2: draftData.team2,
+          currentAction: 0,
+          phase: 'bans',
+          phases: []
+        })
       });
 
-      // 5. ✅ CORREÇÃO: Remover jogadores da fila usando os nomes dos jogadores
-      const allPlayerNames = [...draftData.team1.map(p => p.summonerName), ...draftData.team2.map(p => p.summonerName)];
-      for (const playerName of allPlayerNames) {
-        await this.dbManager.removePlayerFromQueueBySummonerName(playerName);
-      }
-      console.log('🗑️ [Draft] Todos os jogadores removidos da fila (draft iniciado)');
-
-      // 6. Adicionar ao tracking local
+      // 5. Adicionar ao tracking local
       this.activeDrafts.set(matchId, draftData);
 
-      // 7. ✅ CORREÇÃO: Notificar frontend sobre início do draft com dados completos
+      // 6. Atualizar status da partida
+      await this.dbManager.updateCustomMatchStatus(matchId, 'draft');
+
+      // 7. Notificar frontend
       this.notifyDraftStarted(matchId, draftData);
 
-      // 8. ✅ NOVO: Criar match no Discord se o serviço estiver disponível
-      console.log(`🤖 [Draft] ========== VERIFICANDO DISCORD SERVICE ==========`);
-      console.log(`🤖 [Draft] DiscordService existe:`, !!this.discordService);
-      console.log(`🤖 [Draft] DiscordService referência:`, this.discordService ? 'VÁLIDA' : 'NULL/UNDEFINED');
-      if (this.discordService) {
-        try {
-          console.log(`🤖 [Draft] DiscordService tipo:`, typeof this.discordService);
-          console.log(`🤖 [Draft] DiscordService constructor:`, this.discordService.constructor.name);
-          console.log(`🎮 [Draft] Criando match no Discord para partida ${matchId}...`);
-          const match = await this.dbManager.getCustomMatchById(matchId);
-          if (match) {
-            await this.discordService.createDiscordMatch(matchId, match);
-            console.log(`✅ [Draft] Match criado no Discord para partida ${matchId}`);
+      // ✅ NOVO: Remover jogadores da fila após iniciar o draft
+      const allPlayers = [
+        ...draftData.team1.map(p => p.summonerName),
+        ...draftData.team2.map(p => p.summonerName)
+      ];
+      if (allPlayers.length === 10 && this.dbManager) {
+        for (const summonerName of allPlayers) {
+          try {
+            await this.dbManager.removePlayerFromQueueBySummonerName(summonerName);
+            console.log(`✅ [Draft] Jogador removido da fila após início do draft: ${summonerName}`);
+          } catch (err) {
+            console.error(`❌ [Draft] Erro ao remover jogador da fila: ${summonerName}`, err);
           }
-        } catch (discordError) {
-          console.error(`❌ [Draft] Erro ao criar match no Discord:`, discordError);
         }
-      } else {
-        console.warn(`⚠️ [Draft] DiscordService não disponível, não foi possível criar match no Discord`);
-        console.warn(`⚠️ [Draft] this.discordService =`, this.discordService);
       }
 
-      console.log(`✅ [Draft] Draft iniciado com sucesso para partida ${matchId} com dados completos`);
+      console.log(`✅ [Draft] Draft ${matchId} iniciado com sucesso`);
 
     } catch (error) {
       console.error(`❌ [Draft] Erro ao iniciar draft para partida ${matchId}:`, error);
       throw error;
+    } finally {
+      // ✅ IMPORTANTE: Remover da proteção após processamento
+      this.processingMatches.delete(matchId);
+      console.log(`🔒 [Draft] Proteção removida para partida ${matchId}`);
     }
   }
 
@@ -690,6 +697,29 @@ export class DraftService {
       // 2. Remover do tracking local
       this.activeDrafts.delete(matchId);
 
+      // ✅ NOVO: Verificar se o match continua no DiscordService
+      if (this.discordService) {
+        try {
+          console.log(`🤖 [Draft] Verificando se match ${matchId} continua no DiscordService após finalização...`);
+          const activeMatches = this.discordService.getAllActiveMatches();
+          const matchExists = activeMatches.has(matchId.toString());
+          console.log(`🤖 [Draft] Match ${matchId} existe no DiscordService após finalização:`, matchExists);
+
+          if (!matchExists) {
+            console.warn(`⚠️ [Draft] Match ${matchId} não encontrado no DiscordService após finalização, recriando...`);
+            const match = await this.dbManager.getCustomMatchById(matchId);
+            if (match) {
+              await this.discordService.createDiscordMatch(matchId, match);
+              console.log(`✅ [Draft] Match ${matchId} recriado no DiscordService após finalização`);
+            }
+          } else {
+            console.log(`✅ [Draft] Match ${matchId} mantido no DiscordService após finalização`);
+          }
+        } catch (discordError) {
+          console.error(`❌ [Draft] Erro ao verificar/recriar match no DiscordService:`, discordError);
+        }
+      }
+
       // 3. Notificar frontend que jogo está iniciando
       await this.notifyGameStarting(matchId, draftResults);
 
@@ -791,19 +821,34 @@ export class DraftService {
 
   private async monitorAcceptedMatches(): Promise<void> {
     try {
+      // ✅ CORREÇÃO: Reativar monitoramento com proteções
+      console.log('🔍 [Draft] Monitorando partidas aceitas...');
+
       // Buscar partidas com status 'accepted' que precisam iniciar draft
       const acceptedMatches = await this.dbManager.getCustomMatchesByStatus('accepted');
 
       for (const match of acceptedMatches) {
+        // ✅ PROTEÇÃO: Verificar se já existe draft ativo
         if (!this.activeDrafts.has(match.id)) {
-          console.log(`🎯 [Draft] Partida ${match.id} aceita detectada, iniciando draft...`);
-          await this.startDraft(match.id);
+          // ✅ PROTEÇÃO: Verificar se a partida não está sendo processada
+          const isBeingProcessed = this.processingMatches?.has(match.id);
+          if (!isBeingProcessed) {
+            console.log(`🎯 [Draft] Partida ${match.id} aceita detectada, iniciando draft...`);
+            await this.startDraft(match.id);
+          } else {
+            console.log(`⏳ [Draft] Partida ${match.id} já está sendo processada, aguardando...`);
+          }
+        } else {
+          console.log(`✅ [Draft] Partida ${match.id} já tem draft ativo`);
         }
       }
     } catch (error) {
       console.error('❌ [Draft] Erro no monitoramento:', error);
     }
   }
+
+  // ✅ NOVO: Set para controlar partidas sendo processadas
+  private processingMatches = new Set<number>();
 
   // ✅ NOVO: Monitorar mudanças em pick_ban_data para sincronização
   private async monitorDraftDataChanges(): Promise<void> {
@@ -932,7 +977,9 @@ export class DraftService {
       team1MMR: Math.round(draftData.averageMMR.team1),
       team2MMR: Math.round(draftData.averageMMR.team2),
       team1Lanes: teammates.map(p => `${p.summonerName}:${p.assignedLane}`),
-      team2Lanes: enemies.map(p => `${p.summonerName}:${p.assignedLane}`)
+      team2Lanes: enemies.map(p => `${p.summonerName}:${p.assignedLane}`),
+      team1Indices: teammates.map(p => p.teamIndex),
+      team2Indices: enemies.map(p => p.teamIndex)
     });
   }
 
@@ -1385,6 +1432,125 @@ export class DraftService {
       { phase: 'picks', team: 1, action: 'pick', playerIndex: 4 }, // Blue Pick 5 (Support)
       { phase: 'picks', team: 2, action: 'pick', playerIndex: 4 }  // Red Pick 5 (Support) - LAST PICK
     ];
+  }
+
+  // ✅ NOVO: Preparar dados do draft usando dados do banco (team1_players/team2_players)
+  private async prepareDraftDataFromDatabase(matchId: number, team1Players: string[], team2Players: string[], queuePlayers: any[]): Promise<DraftData | null> {
+    console.log(`🎯 [Draft] Preparando dados do draft a partir do banco para partida ${matchId}...`);
+
+    try {
+      // Criar mapa de dados dos jogadores
+      const playerDataMap = new Map<string, any>();
+
+      for (const queuePlayer of queuePlayers) {
+        const playerData = {
+          summonerName: queuePlayer.summoner_name,
+          mmr: queuePlayer.custom_lp || 1000,
+          primaryLane: queuePlayer.primary_lane || 'fill',
+          secondaryLane: queuePlayer.secondary_lane || 'fill'
+        };
+        playerDataMap.set(queuePlayer.summoner_name, playerData);
+      }
+
+      // ✅ CORREÇÃO: Preparar dados dos times mantendo a ordem EXATA do banco
+      const team1Data = team1Players.map((playerName, index) => {
+        const data = playerDataMap.get(playerName);
+        if (!data) {
+          console.warn(`⚠️ [Draft] Dados não encontrados para jogador: ${playerName}`);
+          return {
+            summonerName: playerName,
+            assignedLane: this.getLaneForIndex(index), // Usar índice para determinar lane
+            teamIndex: index, // ✅ CORREÇÃO: Team1 sempre 0-4
+            mmr: 1000,
+            primaryLane: 'fill',
+            secondaryLane: 'fill',
+            isAutofill: false
+          };
+        }
+        return {
+          summonerName: data.summonerName,
+          assignedLane: this.getLaneForIndex(index), // Usar índice para determinar lane
+          teamIndex: index, // ✅ CORREÇÃO: Team1 sempre 0-4
+          mmr: data.mmr,
+          primaryLane: data.primaryLane,
+          secondaryLane: data.secondaryLane,
+          isAutofill: false
+        };
+      });
+
+      const team2Data = team2Players.map((playerName, index) => {
+        const data = playerDataMap.get(playerName);
+        if (!data) {
+          console.warn(`⚠️ [Draft] Dados não encontrados para jogador: ${playerName}`);
+          return {
+            summonerName: playerName,
+            assignedLane: this.getLaneForIndex(index), // Usar índice para determinar lane
+            teamIndex: index + 5, // ✅ CORREÇÃO: Team2 sempre 5-9
+            mmr: 1000,
+            primaryLane: 'fill',
+            secondaryLane: 'fill',
+            isAutofill: false
+          };
+        }
+        return {
+          summonerName: data.summonerName,
+          assignedLane: this.getLaneForIndex(index), // Usar índice para determinar lane
+          teamIndex: index + 5, // ✅ CORREÇÃO: Team2 sempre 5-9
+          mmr: data.mmr,
+          primaryLane: data.primaryLane,
+          secondaryLane: data.secondaryLane,
+          isAutofill: false
+        };
+      });
+
+      // Calcular MMR médio dos times
+      const team1MMR = team1Data.reduce((sum, p) => sum + p.mmr, 0) / team1Data.length;
+      const team2MMR = team2Data.reduce((sum, p) => sum + p.mmr, 0) / team2Data.length;
+
+      // Preparar dados completos do draft
+      const draftData: DraftData = {
+        matchId,
+        team1: team1Data,
+        team2: team2Data,
+        averageMMR: {
+          team1: team1MMR,
+          team2: team2MMR
+        },
+        balanceQuality: Math.abs(team1MMR - team2MMR),
+        autofillCount: 0, // Não há autofill quando usando dados do banco
+        createdAt: new Date().toISOString()
+      };
+
+      console.log(`✅ [Draft] Dados do draft preparados a partir do banco:`, {
+        matchId,
+        team1MMR: Math.round(team1MMR),
+        team2MMR: Math.round(team2MMR),
+        balanceQuality: Math.round(draftData.balanceQuality),
+        team1Indices: draftData.team1.map(p => p.teamIndex),
+        team2Indices: draftData.team2.map(p => p.teamIndex),
+        team1Lanes: draftData.team1.map(p => p.assignedLane),
+        team2Lanes: draftData.team2.map(p => p.assignedLane)
+      });
+
+      return draftData;
+
+    } catch (error) {
+      console.error(`❌ [Draft] Erro ao preparar dados do draft a partir do banco:`, error);
+      return null;
+    }
+  }
+
+  // ✅ NOVO: Função auxiliar para determinar lane baseada no índice
+  private getLaneForIndex(index: number): string {
+    const lanes = ['top', 'jungle', 'mid', 'adc', 'support'];
+    return lanes[index] || 'unknown';
+  }
+
+  // ✅ NOVO: Método para configurar DiscordService após inicialização
+  setDiscordService(discordService: DiscordService): void {
+    this.discordService = discordService;
+    console.log('🔗 [DraftService] DiscordService configurado via setDiscordService');
+    console.log('🔧 [DraftService] DiscordService isReady:', discordService.isReady());
   }
 
   // ✅ Shutdown

@@ -626,6 +626,58 @@ export class LCUService {
   isClientConnected(): boolean {
     return this.isConnected && this.client !== null;
   }
+
+  // ✅ NOVO: Métodos públicos para acessar o cliente LCU de forma segura
+  async makeLCURequest(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', endpoint: string, data?: any): Promise<any> {
+    if (!this.isConnected || !this.client) {
+      throw new Error('LCU não conectado');
+    }
+
+    try {
+      switch (method) {
+        case 'GET':
+          return await this.client.get(endpoint);
+        case 'POST':
+          return await this.client.post(endpoint, data);
+        case 'PUT':
+          return await this.client.put(endpoint, data);
+        case 'PATCH':
+          return await this.client.patch(endpoint, data);
+        case 'DELETE':
+          return await this.client.delete(endpoint);
+        default:
+          throw new Error(`Método HTTP não suportado: ${method}`);
+      }
+    } catch (error) {
+      console.error(`❌ [LCU] Erro na requisição ${method} ${endpoint}:`, error);
+      throw error;
+    }
+  }
+
+  // ✅ NOVO: Método específico para buscar dados do lobby
+  async getLobbyData(): Promise<any> {
+    return this.makeLCURequest('GET', '/lol-lobby/v2/lobby');
+  }
+
+  // ✅ NOVO: Método específico para criar lobby
+  async createLobby(lobbyData: any): Promise<any> {
+    return this.makeLCURequest('POST', '/lol-lobby/v2/lobby', lobbyData);
+  }
+
+  // ✅ NOVO: Método específico para atualizar lobby
+  async updateLobby(lobbyData: any): Promise<any> {
+    return this.makeLCURequest('PUT', '/lol-lobby/v2/lobby', lobbyData);
+  }
+
+  // ✅ NOVO: Método específico para buscar dados da seleção de campeões
+  async getChampSelectData(): Promise<any> {
+    return this.makeLCURequest('GET', '/lol-champ-select/v1/session');
+  }
+
+  // ✅ NOVO: Método específico para executar ação de pick/ban
+  async executeChampSelectAction(actionId: string, actionData: any): Promise<any> {
+    return this.makeLCURequest('PATCH', `/lol-champ-select/v1/session/actions/${actionId}`, actionData);
+  }
   // Método para buscar dados completos do jogador atual com Riot API
   async getCurrentSummonerWithRiotData(): Promise<any> {
     try {

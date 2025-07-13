@@ -24,27 +24,33 @@ export class MatchFoundService {
     this.dbManager = dbManager;
     this.wss = wss;
 
-    // Verificar se o DiscordService está pronto
-    if (discordService && discordService.isReady()) {
+    // ✅ CORREÇÃO: Aceitar DiscordService mesmo que não esteja pronto
+    if (discordService) {
       this.discordService = discordService;
-      console.log('🔗 [MatchFound] DiscordService configurado e pronto');
+      console.log('🔗 [MatchFound] DiscordService configurado (pode não estar pronto ainda)');
+      console.log('🔧 [MatchFound] DiscordService tipo:', typeof discordService);
+      console.log('🔧 [MatchFound] DiscordService é instância:', discordService.constructor.name);
+      console.log('🔧 [MatchFound] DiscordService isReady:', discordService.isReady());
     } else {
-      console.warn('⚠️ [MatchFound] DiscordService não está pronto ou não foi fornecido');
+      console.warn('⚠️ [MatchFound] DiscordService não foi fornecido');
     }
 
     // ✅ DEBUG: Verificar se DiscordService foi injetado
     console.log('🔧 [MatchFound] Construtor chamado');
     console.log('🔧 [MatchFound] DiscordService recebido:', !!discordService);
-    if (discordService) {
-      console.log('🔧 [MatchFound] DiscordService tipo:', typeof discordService);
-      console.log('🔧 [MatchFound] DiscordService é instância:', discordService.constructor.name);
-    }
   }
 
   // ✅ NOVO: Método para definir DiscordService após construção
   setDiscordService(discordService: DiscordService): void {
     this.discordService = discordService;
-    console.log('🔗 [MatchFound] DiscordService configurado');
+    console.log('🔗 [MatchFound] DiscordService configurado via setDiscordService');
+    console.log('🔧 [MatchFound] DiscordService isReady:', discordService.isReady());
+    console.log('🔧 [MatchFound] DiscordService isConnected:', discordService.isDiscordConnected());
+  }
+
+  // ✅ NOVO: Método para verificar se DiscordService está disponível e pronto
+  isDiscordServiceReady(): boolean {
+    return !!(this.discordService && this.discordService.isReady());
   }
 
   async initialize(): Promise<void> {
@@ -325,22 +331,57 @@ export class MatchFoundService {
       // Os jogadores precisam permanecer na fila para o DraftService buscar seus dados
       console.log(`✅ [MatchFound] Jogadores mantidos na fila para o DraftService`);
 
-      // 6. Notificar que todos aceitaram (será processado pelo DraftService)
-      this.notifyAllPlayersAccepted(matchId, match);
+      // 6. ✅ CORREÇÃO: Criar match no Discord PRIMEIRO
+      if (this.discordService) {
+        // ✅ NOVO: Verificar se o DiscordService está pronto
+        if (this.discordService.isReady()) {
+          try {
+            console.log(`🤖 [MatchFound] ========== CRIANDO MATCH DISCORD ==========`);
+            console.log(`🤖 [MatchFound] Match ID: ${matchId}`);
+            console.log(`🤖 [MatchFound] DiscordService status:`, {
+              isReady: this.discordService.isReady(),
+              isConnected: this.discordService.isDiscordConnected(),
+              botUsername: this.discordService.getBotUsername(),
+              activeMatches: this.discordService.getAllActiveMatches().size
+            });
+            console.log(`🤖 [MatchFound] Dados da partida:`, {
+              team1_players: match.team1_players,
+              team2_players: match.team2_players,
+              status: match.status
+            });
 
-      // 7. Criar match no Discord
-      if (this.discordService?.isReady()) {
-        try {
-          console.log(`🤖 [MatchFound] Criando match Discord para partida ${matchId}...`);
-          await this.discordService.createDiscordMatch(matchId, match);
-          console.log(`🤖 [MatchFound] Match Discord criado com sucesso`);
-        } catch (discordError) {
-          console.error(`❌ [MatchFound] Erro ao criar match Discord:`, discordError);
-          // Não falhar o processo, apenas registrar o erro
+            await this.discordService.createDiscordMatch(matchId, match);
+            console.log(`🤖 [MatchFound] Match Discord criado com sucesso`);
+
+            // ✅ NOVO: Verificar se o match foi realmente criado
+            const activeMatches = this.discordService.getAllActiveMatches();
+            const matchExists = activeMatches.has(matchId.toString());
+            console.log(`🤖 [MatchFound] Verificação pós-criação: match ${matchId} existe no DiscordService: ${matchExists}`);
+
+          } catch (discordError) {
+            console.error(`❌ [MatchFound] Erro ao criar match Discord:`, discordError);
+            console.error(`❌ [MatchFound] Stack trace:`, (discordError as Error).stack);
+            // Não falhar o processo, apenas registrar o erro
+          }
+        } else {
+          console.warn(`⚠️ [MatchFound] DiscordService não está pronto ainda`);
+          console.warn(`⚠️ [MatchFound] DiscordService status:`, {
+            exists: !!this.discordService,
+            isReady: this.discordService.isReady(),
+            isConnected: this.discordService.isDiscordConnected(),
+            botUsername: this.discordService.getBotUsername(),
+            activeMatches: this.discordService.getAllActiveMatches().size
+          });
         }
       } else {
-        console.warn(`⚠️ [MatchFound] DiscordService não está disponível ou não está pronto`);
+        console.warn(`⚠️ [MatchFound] DiscordService não está disponível`);
       }
+
+      // 7. ✅ CORREÇÃO: Notificar que todos aceitaram (será processado pelo DraftService)
+      this.notifyAllPlayersAccepted(matchId, match);
+
+      // 8. ✅ REMOVIDO: Chamada desnecessária do DraftService
+      // O DraftService será chamado automaticamente pelo monitoramento
 
       console.log(`✅ [MatchFound] Partida ${matchId} totalmente aceita - encaminhando para Draft`);
 

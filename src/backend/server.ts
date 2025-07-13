@@ -17,6 +17,7 @@ import { DiscordService } from './services/DiscordService';
 import { DataDragonService } from './services/DataDragonService';
 import { DraftService } from './services/DraftService';
 import { MatchFoundService } from './services/MatchFoundService';
+import { CustomGameService } from './services/CustomGameService';
 import { setupChampionRoutes } from './routes/champions';
 
 // Carregar variáveis de ambiente do arquivo .env
@@ -209,6 +210,7 @@ const lcuService = new LCUService(globalRiotAPI);
 const matchHistoryService = new MatchHistoryService(globalRiotAPI, dbManager);
 const dataDragonService = new DataDragonService();
 const draftService = new DraftService(dbManager, wss, discordService);
+const customGameService = new CustomGameService(dbManager, lcuService, wss, discordService);
 // matchFoundService agora está dentro do matchmakingService - removido para evitar duplicação
 
 // WebSocket para comunicação em tempo real
@@ -395,6 +397,59 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
           hasUsers: false,
           usersCount: 0,
           inChannel: false
+        }));
+      }
+      break;
+    case 'start_custom_game':
+      console.log('🎮 Iniciando criação de partida customizada...');
+      try {
+        const { matchId } = data;
+        if (!matchId) {
+          ws.send(JSON.stringify({
+            type: 'custom_game_error',
+            error: 'ID da partida não fornecido'
+          }));
+          return;
+        }
+
+        await customGameService.startCustomGameCreation(matchId);
+        ws.send(JSON.stringify({
+          type: 'custom_game_started',
+          success: true,
+          matchId: matchId,
+          message: 'Criação de partida customizada iniciada'
+        }));
+      } catch (error: any) {
+        console.error('❌ Erro ao iniciar partida customizada:', error);
+        ws.send(JSON.stringify({
+          type: 'custom_game_error',
+          error: error.message || 'Erro ao iniciar partida customizada'
+        }));
+      }
+      break;
+    case 'get_custom_game_status':
+      console.log('🎮 Buscando status da partida customizada...');
+      try {
+        const { matchId } = data;
+        if (!matchId) {
+          ws.send(JSON.stringify({
+            type: 'custom_game_error',
+            error: 'ID da partida não fornecido'
+          }));
+          return;
+        }
+
+        const gameData = await customGameService.getCustomGameByMatchId(matchId);
+        ws.send(JSON.stringify({
+          type: 'custom_game_status',
+          success: true,
+          gameData: gameData
+        }));
+      } catch (error: any) {
+        console.error('❌ Erro ao buscar status da partida customizada:', error);
+        ws.send(JSON.stringify({
+          type: 'custom_game_error',
+          error: error.message || 'Erro ao buscar status da partida customizada'
         }));
       }
       break;
@@ -2785,6 +2840,71 @@ async function startServer() {
 
     // ROTAS DE CAMPEÕES REMOVIDAS - já definidas em routes/champions.ts
 
+    // Rotas de partidas customizadas
+    app.post('/api/custom-game/start/:matchId', (async (req: Request, res: Response) => {
+      try {
+        const matchId = parseInt(req.params.matchId);
+        if (isNaN(matchId)) {
+          return res.status(400).json({ error: 'ID da partida inválido' });
+        }
+
+        console.log(`🎮 [API] Iniciando criação de partida customizada para match ${matchId}`);
+        await customGameService.startCustomGameCreation(matchId);
+
+        res.json({
+          success: true,
+          message: 'Criação de partida customizada iniciada',
+          matchId
+        });
+      } catch (error: any) {
+        console.error(`❌ [API] Erro ao iniciar partida customizada:`, error);
+        res.status(500).json({
+          error: 'Erro ao iniciar partida customizada',
+          message: error.message
+        });
+      }
+    }) as RequestHandler);
+
+    app.get('/api/custom-game/status/:matchId', (async (req: Request, res: Response) => {
+      try {
+        const matchId = parseInt(req.params.matchId);
+        if (isNaN(matchId)) {
+          return res.status(400).json({ error: 'ID da partida inválido' });
+        }
+
+        const gameData = await customGameService.getCustomGameByMatchId(matchId);
+        if (!gameData) {
+          return res.status(404).json({ error: 'Partida customizada não encontrada' });
+        }
+
+        res.json({
+          success: true,
+          gameData
+        });
+      } catch (error: any) {
+        console.error(`❌ [API] Erro ao buscar status da partida customizada:`, error);
+        res.status(500).json({
+          error: 'Erro ao buscar status da partida customizada',
+          message: error.message
+        });
+      }
+    }) as RequestHandler);
+
+    app.get('/api/custom-game/active', (async (req: Request, res: Response) => {
+      try {
+        const activeGames = await customGameService.getActiveCustomGames();
+        res.json({
+          success: true,
+          activeGames
+        });
+      } catch (error: any) {
+        console.error(`❌ [API] Erro ao buscar partidas customizadas ativas:`, error);
+        res.status(500).json({
+          error: 'Erro ao buscar partidas customizadas ativas',
+          message: error.message
+        });
+      }
+    }) as RequestHandler);
 
     // Endpoint para corrigir status das partidas antigas
     app.put('/api/matches/custom/:matchId', (async (req: Request, res: Response) => {
@@ -2892,6 +3012,66 @@ async function initializeServices() {
     await dbManager.initialize();
     console.log('✅ Banco de dados inicializado');
 
+    // ✅ CORREÇÃO: Inicializar Discord Bot ANTES do MatchmakingService
+    console.log('🤖 [Server] Inicializando Discord Bot...');
+    const savedDiscordToken = await dbManager.getSetting('discord_bot_token');
+    if (savedDiscordToken && savedDiscordToken.trim() !== '') {
+      console.log('🤖 [Server] Token do Discord Bot encontrado no banco de dados');
+      console.log('🤖 [Server] Tentando inicializar Discord Bot...');
+
+      const discordInitialized = await discordService.initialize(savedDiscordToken);
+      if (discordInitialized) {
+        console.log('✅ [Server] Discord Bot inicializado com sucesso');
+        console.log('🔍 [Server] Status após inicialização:', discordService.isDiscordConnected());
+        console.log('🔍 [Server] DiscordService isReady:', discordService.isReady());
+        console.log('🔍 [Server] DiscordService botUsername:', discordService.getBotUsername());
+
+        // ✅ NOVO: Configurar DiscordService nos serviços após inicialização
+        console.log('🔗 [Server] Configurando DiscordService nos serviços...');
+        matchmakingService.setDiscordService(discordService);
+        console.log('✅ [Server] DiscordService configurado em todos os serviços');
+
+      } else {
+        console.warn('⚠️ [Server] Falha ao inicializar Discord Bot');
+        console.log('🔍 [Server] Status após falha:', discordService.isDiscordConnected());
+      }
+    } else {
+      // Fallback para .env
+      const envDiscordToken = process.env.DISCORD_BOT_TOKEN;
+      if (envDiscordToken && envDiscordToken.trim() !== '') {
+        console.log('🤖 [Server] Token do Discord Bot encontrado no .env (fallback)');
+        console.log('🤖 [Server] Tentando inicializar Discord Bot com token do .env...');
+
+        const discordInitialized = await discordService.initialize(envDiscordToken);
+        if (discordInitialized) {
+          console.log('✅ [Server] Discord Bot inicializado com token do .env como fallback');
+          // Salvar no banco para uso futuro
+          await dbManager.setSetting('discord_bot_token', envDiscordToken);
+          console.log('[Server] Discord Bot Token do .env salvo no banco de dados.');
+
+          // ✅ NOVO: Configurar DiscordService nos serviços após inicialização
+          console.log('🔗 [Server] Configurando DiscordService nos serviços...');
+          matchmakingService.setDiscordService(discordService);
+          console.log('✅ [Server] DiscordService configurado em todos os serviços');
+
+        } else {
+          console.warn('⚠️ [Server] Falha ao inicializar Discord Bot com token do .env');
+        }
+      } else {
+        console.log('⚠️ [Server] Token do Discord Bot não configurado no banco ou .env. Discord será desabilitado.');
+      }
+    }
+
+    // SEMPRE conectar ao WebSocket, independente do status do bot
+    discordService.setWebSocketServer(wss);
+    console.log('🔗 [Server] DiscordService conectado ao WebSocket (modo ativo)');
+
+    // ✅ NOVO: Verificar status do DiscordService antes de criar o MatchmakingService
+    console.log('🔍 [Server] Verificação antes de criar MatchmakingService:');
+    console.log('🔍 [Server] DiscordService existe:', !!discordService);
+    console.log('🔍 [Server] DiscordService isReady:', discordService.isReady());
+    console.log('🔍 [Server] DiscordService isConnected:', discordService.isDiscordConnected());
+
     // Carregar API Key do Banco de Dados
     const savedApiKey = await dbManager.getSetting('riot_api_key');
     if (savedApiKey && savedApiKey.trim() !== '') {
@@ -2923,8 +3103,21 @@ async function initializeServices() {
     }
 
     // Matchmaking
+    console.log('🚀 [Server] Iniciando MatchmakingService...');
+    console.log('🔍 [Server] DiscordService antes da inicialização do MatchmakingService:', {
+      exists: !!discordService,
+      isReady: discordService?.isReady(),
+      isConnected: discordService?.isDiscordConnected(),
+      botUsername: discordService?.getBotUsername()
+    });
+
     await matchmakingService.initialize();
     console.log('✅ Serviço de matchmaking inicializado');
+
+    // ✅ NOVO: Verificar status após inicialização
+    console.log('🔍 [Server] Verificação após inicialização do MatchmakingService:');
+    const matchFoundStatus = matchmakingService.getMatchFoundDebugStatus();
+    console.log('🔍 [Server] MatchFoundService status:', matchFoundStatus);
 
     // MatchFoundService (via MatchmakingService)
     await matchmakingService.initializeMatchFoundService();
@@ -2953,44 +3146,7 @@ async function initializeServices() {
 
     console.log('✅ Conectado ao cliente do League of Legends');
 
-    // Discord Bot
-    const savedDiscordToken = await dbManager.getSetting('discord_bot_token');
-    if (savedDiscordToken && savedDiscordToken.trim() !== '') {
-      console.log('🤖 [Server] Token do Discord Bot encontrado no banco de dados');
-      console.log('🤖 [Server] Tentando inicializar Discord Bot...');
-
-      const discordInitialized = await discordService.initialize(savedDiscordToken);
-      if (discordInitialized) {
-        console.log('✅ [Server] Discord Bot inicializado com sucesso');
-        console.log('🔍 [Server] Status após inicialização:', discordService.isDiscordConnected());
-      } else {
-        console.warn('⚠️ [Server] Falha ao inicializar Discord Bot');
-        console.log('🔍 [Server] Status após falha:', discordService.isDiscordConnected());
-      }
-    } else {
-      // Fallback para .env
-      const envDiscordToken = process.env.DISCORD_BOT_TOKEN;
-      if (envDiscordToken && envDiscordToken.trim() !== '') {
-        console.log('🤖 [Server] Token do Discord Bot encontrado no .env (fallback)');
-        console.log('🤖 [Server] Tentando inicializar Discord Bot com token do .env...');
-
-        const discordInitialized = await discordService.initialize(envDiscordToken);
-        if (discordInitialized) {
-          console.log('✅ [Server] Discord Bot inicializado com token do .env como fallback');
-          // Salvar no banco para uso futuro
-          await dbManager.setSetting('discord_bot_token', envDiscordToken);
-          console.log('[Server] Discord Bot Token do .env salvo no banco de dados.');
-        } else {
-          console.warn('⚠️ [Server] Falha ao inicializar Discord Bot com token do .env');
-        }
-      } else {
-        console.log('⚠️ [Server] Token do Discord Bot não configurado no banco ou .env. Discord será desabilitado.');
-      }
-    }
-
-    // SEMPRE conectar ao WebSocket, independente do status do bot
-    discordService.setWebSocketServer(wss);
-    console.log('🔗 [Server] DiscordService conectado ao WebSocket (modo ativo)');
+    // ✅ REMOVIDO: Inicialização duplicada do Discord Bot (já foi feita antes do MatchmakingService)
 
     // Log final do status do Discord Bot
     console.log('🔍 [Server] Status final do Discord Bot após inicialização:', {
@@ -3029,3 +3185,139 @@ process.on('SIGTERM', async () => {
 
 // Iniciar aplicação
 startServer();
+
+// ✅ NOVO: Endpoint de debug para verificar status do DiscordService
+app.get('/api/debug/discord-status', (async (req: Request, res: Response) => {
+  try {
+    console.log('🔍 [Debug] Verificando status do DiscordService...');
+
+    const discordStatus = {
+      isConnected: discordService.isDiscordConnected(),
+      isReady: discordService.isReady(),
+      botUsername: discordService.getBotUsername(),
+      activeMatchesCount: discordService.getAllActiveMatches().size,
+      activeMatches: Array.from(discordService.getAllActiveMatches().entries()).map(([key, match]) => ({
+        matchId: key,
+        blueTeamCount: match.blueTeam.length,
+        redTeamCount: match.redTeam.length,
+        blueChannelId: match.blueChannelId,
+        redChannelId: match.redChannelId,
+        categoryId: match.categoryId,
+        startTime: new Date(match.startTime).toISOString()
+      }))
+    };
+
+    console.log('📋 [Debug] Status do DiscordService:', discordStatus);
+
+    res.json({
+      success: true,
+      discordStatus
+    });
+
+  } catch (error: any) {
+    console.error('❌ [Debug] Erro ao verificar status do DiscordService:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}) as RequestHandler);
+
+// ✅ NOVO: Endpoint para testar criação de match Discord
+app.post('/api/debug/test-discord-match', (async (req: Request, res: Response) => {
+  try {
+    const { matchId, matchData } = req.body;
+
+    console.log('🧪 [Debug] Testando criação de match Discord:', { matchId, matchData });
+
+    if (!matchId || !matchData) {
+      return res.status(400).json({
+        success: false,
+        error: 'matchId e matchData são obrigatórios'
+      });
+    }
+
+    // Testar criação do match
+    await discordService.createDiscordMatch(matchId, matchData);
+
+    // Verificar se foi criado
+    const activeMatches = discordService.getAllActiveMatches();
+    const matchExists = activeMatches.has(matchId.toString());
+
+    res.json({
+      success: true,
+      message: 'Teste de criação de match Discord executado',
+      matchCreated: matchExists,
+      activeMatchesCount: activeMatches.size
+    });
+
+  } catch (error: any) {
+    console.error('❌ [Debug] Erro no teste de criação de match Discord:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}) as RequestHandler);
+
+// ✅ NOVO: Endpoint para forçar limpeza de um match específico
+app.post('/api/debug/force-cleanup-match', (async (req: Request, res: Response) => {
+  try {
+    const { matchId } = req.body;
+
+    console.log('🧹 [Debug] Forçando limpeza do match:', matchId);
+
+    if (!matchId) {
+      return res.status(400).json({
+        success: false,
+        error: 'ID da partida é obrigatório'
+      });
+    }
+
+    // Listar matches antes da limpeza
+    console.log('📋 [Debug] Matches antes da limpeza:');
+    discordService.listActiveMatches();
+
+    // Forçar limpeza
+    await discordService.cleanupMatchByCustomId(parseInt(matchId));
+
+    // Listar matches após a limpeza
+    console.log('📋 [Debug] Matches após a limpeza:');
+    discordService.listActiveMatches();
+
+    res.json({
+      success: true,
+      message: `Limpeza forçada executada para match ${matchId}`
+    });
+
+  } catch (error: any) {
+    console.error('❌ [Debug] Erro na limpeza forçada:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}) as RequestHandler);
+
+// ✅ NOVO: Endpoint para verificar status do MatchFoundService
+app.get('/api/debug/matchfound-status', (async (req: Request, res: Response) => {
+  try {
+    console.log('🔍 [Debug] Verificando status do MatchFoundService...');
+
+    const matchFoundStatus = matchmakingService.getMatchFoundDebugStatus();
+
+    console.log('📋 [Debug] Status do MatchFoundService:', matchFoundStatus);
+
+    res.json({
+      success: true,
+      matchFoundStatus
+    });
+
+  } catch (error: any) {
+    console.error('❌ [Debug] Erro ao verificar status do MatchFoundService:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}) as RequestHandler);

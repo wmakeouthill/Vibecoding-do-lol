@@ -48,7 +48,7 @@ export class GameInProgressService {
   constructor(dbManager: DatabaseManager, wss?: any, discordService?: DiscordService) {
     console.log('🔧 [GameInProgress] Construtor chamado');
     console.log('🔧 [GameInProgress] DiscordService recebido:', !!discordService);
-    
+
     this.dbManager = dbManager;
     this.wss = wss;
     this.discordService = discordService;
@@ -56,20 +56,20 @@ export class GameInProgressService {
 
   async initialize(): Promise<void> {
     console.log('🎮 [GameInProgress] Inicializando GameInProgressService...');
-    
+
     // Monitorar partidas que foram finalizadas no draft e precisam iniciar
     this.startGameMonitoring();
-    
+
     // Carregar jogos em andamento existentes
     await this.loadActiveGames();
-    
+
     console.log('✅ [GameInProgress] GameInProgressService inicializado com sucesso');
   }
 
   // ✅ Iniciar jogo após draft completo
   async startGame(matchId: number, draftResults: any): Promise<void> {
     console.log(`🎮 [GameInProgress] Iniciando jogo para partida ${matchId}...`);
-    
+
     try {
       // 1. Buscar partida no banco
       const match = await this.dbManager.getCustomMatchById(matchId);
@@ -80,8 +80,8 @@ export class GameInProgressService {
       // 2. Parsear dados do draft
       let draftData: any = {};
       try {
-        draftData = typeof match.draft_data === 'string' 
-          ? JSON.parse(match.draft_data) 
+        draftData = typeof match.draft_data === 'string'
+          ? JSON.parse(match.draft_data)
           : (match.draft_data || {});
       } catch (parseError) {
         console.warn('⚠️ [GameInProgress] Erro ao parsear draft_data, usando dados básicos');
@@ -157,7 +157,7 @@ export class GameInProgressService {
   // ✅ Registrar evento do jogo
   async recordGameEvent(matchId: number, eventType: GameEvent['type'], eventData: any, message: string): Promise<void> {
     console.log(`📝 [GameInProgress] Registrando evento para partida ${matchId}: ${eventType}`);
-    
+
     try {
       const gameData = this.activeGames.get(matchId);
       if (!gameData) {
@@ -188,7 +188,7 @@ export class GameInProgressService {
   // ✅ Finalizar jogo
   async finishGame(matchId: number, gameResult: GameResult): Promise<void> {
     console.log(`🏁 [GameInProgress] Finalizando jogo ${matchId}...`);
-    
+
     try {
       const gameData = this.activeGames.get(matchId);
       if (!gameData) {
@@ -199,7 +199,7 @@ export class GameInProgressService {
       gameData.status = 'completed';
 
       // 2. Registrar evento de fim de jogo
-      await this.recordGameEvent(matchId, 'game_end', gameResult, 
+      await this.recordGameEvent(matchId, 'game_end', gameResult,
         `Jogo finalizado - Time ${gameResult.winnerTeam} venceu (${gameResult.endReason})`);
 
       // 3. Atualizar partida no banco
@@ -250,7 +250,7 @@ export class GameInProgressService {
   // ✅ Processar recompensas pós-jogo (LP/MMR)
   private async processPostGameRewards(matchId: number, gameResult: GameResult): Promise<void> {
     console.log(`💰 [GameInProgress] Processando recompensas para partida ${matchId}...`);
-    
+
     try {
       // Buscar partida para obter dados dos jogadores
       const match = await this.dbManager.getCustomMatchById(matchId);
@@ -262,13 +262,13 @@ export class GameInProgressService {
       // Parsear jogadores dos times
       let team1Players: string[] = [];
       let team2Players: string[] = [];
-      
+
       try {
-        team1Players = typeof match.team1_players === 'string' 
-          ? JSON.parse(match.team1_players) 
+        team1Players = typeof match.team1_players === 'string'
+          ? JSON.parse(match.team1_players)
           : (match.team1_players || []);
-        team2Players = typeof match.team2_players === 'string' 
-          ? JSON.parse(match.team2_players) 
+        team2Players = typeof match.team2_players === 'string'
+          ? JSON.parse(match.team2_players)
           : (match.team2_players || []);
       } catch (parseError) {
         console.error('❌ [GameInProgress] Erro ao parsear jogadores para recompensas');
@@ -277,15 +277,15 @@ export class GameInProgressService {
 
       // Calcular mudanças de LP
       const lpChanges: { [playerName: string]: number } = {};
-      
+
       // Time vencedor ganha LP, perdedor perde
       const winnerPlayers = gameResult.winnerTeam === 1 ? team1Players : team2Players;
       const loserPlayers = gameResult.winnerTeam === 1 ? team2Players : team1Players;
-      
+
       // LP base ganho/perdido
       const baseLPGain = 20;
       const baseLPLoss = -15;
-      
+
       // Aplicar mudanças
       for (const playerName of winnerPlayers) {
         lpChanges[playerName] = baseLPGain;
@@ -299,7 +299,7 @@ export class GameInProgressService {
           console.error(`❌ [GameInProgress] Erro ao atualizar LP de ${playerName}:`, error);
         }
       }
-      
+
       for (const playerName of loserPlayers) {
         lpChanges[playerName] = baseLPLoss;
         try {
@@ -328,27 +328,65 @@ export class GameInProgressService {
   // ✅ Cancelar jogo
   async cancelGame(matchId: number, reason: string): Promise<void> {
     console.log(`🚫 [GameInProgress] Cancelando jogo ${matchId}: ${reason}`);
-    
+
     try {
       const gameData = this.activeGames.get(matchId);
       if (gameData) {
         gameData.status = 'cancelled';
-        
-        await this.recordGameEvent(matchId, 'surrender', { reason }, 
+
+        await this.recordGameEvent(matchId, 'surrender', { reason },
           `Jogo cancelado: ${reason}`);
       }
 
       // Atualizar no banco
       await this.dbManager.updateCustomMatchStatus(matchId, 'cancelled');
 
-      // ✅ NOVO: Limpar canais do Discord se disponível
+      // ✅ MELHORADO: Limpar canais do Discord com logs detalhados
+      console.log(`🤖 [GameInProgress] ========== VERIFICANDO DISCORD SERVICE ==========`);
+      console.log(`🤖 [GameInProgress] DiscordService existe:`, !!this.discordService);
+      console.log(`🤖 [GameInProgress] DiscordService referência:`, this.discordService ? 'VÁLIDA' : 'NULL/UNDEFINED');
+
       if (this.discordService) {
         try {
-          console.log(`🤖 [GameInProgress] Limpando canais do Discord para partida cancelada ${matchId}...`);
-          await this.discordService.cleanupMatchByCustomId(matchId);
-          console.log(`🤖 [GameInProgress] Canais do Discord limpos para partida cancelada ${matchId}`);
+          console.log(`🤖 [GameInProgress] DiscordService tipo:`, typeof this.discordService);
+          console.log(`🤖 [GameInProgress] DiscordService constructor:`, this.discordService.constructor.name);
+          console.log(`🤖 [GameInProgress] DiscordService isReady:`, this.discordService.isReady());
+          console.log(`🤖 [GameInProgress] DiscordService activeMatches count:`, this.discordService.getAllActiveMatches().size);
+
+          // ✅ NOVO: Verificar se o match existe no DiscordService antes de tentar limpar
+          const activeMatches = this.discordService.getAllActiveMatches();
+          const matchExists = activeMatches.has(matchId.toString());
+          console.log(`🤖 [GameInProgress] Match ${matchId} existe no DiscordService:`, matchExists);
+
+          if (matchExists) {
+            console.log(`🤖 [GameInProgress] Limpando canais do Discord para partida cancelada ${matchId}...`);
+            await this.discordService.cleanupMatchByCustomId(matchId);
+            console.log(`🤖 [GameInProgress] Canais do Discord limpos para partida cancelada ${matchId}`);
+          } else {
+            console.warn(`⚠️ [GameInProgress] Match ${matchId} não encontrado no DiscordService, tentando limpeza forçada...`);
+
+            // ✅ NOVO: Tentar limpeza forçada mesmo se o match não estiver no tracking
+            try {
+              await this.discordService.cleanupMatchByCustomId(matchId);
+              console.log(`🤖 [GameInProgress] Limpeza forçada bem-sucedida para partida ${matchId}`);
+            } catch (forcedCleanupError) {
+              console.error(`❌ [GameInProgress] Limpeza forçada falhou para partida ${matchId}:`, forcedCleanupError);
+            }
+          }
         } catch (discordError) {
           console.error(`❌ [GameInProgress] Erro ao limpar Discord para partida cancelada ${matchId}:`, discordError);
+
+          // ✅ NOVO: Tentar método alternativo de cancelamento
+          try {
+            console.log(`🔄 [GameInProgress] Tentando método alternativo de cancelamento para partida ${matchId}...`);
+            await this.discordService.onGameCancel({
+              matchId: matchId.toString(),
+              reason: reason
+            });
+            console.log(`✅ [GameInProgress] Método alternativo de cancelamento executado para partida ${matchId}`);
+          } catch (alternativeError) {
+            console.error(`❌ [GameInProgress] Método alternativo também falhou para partida ${matchId}:`, alternativeError);
+          }
         }
       } else {
         console.warn(`⚠️ [GameInProgress] DiscordService não disponível para limpar partida cancelada ${matchId}`);
@@ -371,7 +409,7 @@ export class GameInProgressService {
   // ✅ Monitoramento de jogos
   private startGameMonitoring(): void {
     console.log('🔍 [GameInProgress] Iniciando monitoramento de jogos...');
-    
+
     this.monitoringInterval = setInterval(async () => {
       await this.monitorGames();
     }, 5000); // Verificar a cada 5 segundos
@@ -381,17 +419,17 @@ export class GameInProgressService {
     try {
       // Buscar partidas que finalizaram draft e precisam iniciar jogo
       const draftedMatches = await this.dbManager.getCustomMatchesByStatus('draft');
-      
+
       for (const match of draftedMatches) {
         // Verificar se o draft foi realmente completado
         if (match.pick_ban_data && !this.activeGames.has(match.id)) {
           console.log(`🎮 [GameInProgress] Partida ${match.id} pronta para iniciar jogo...`);
-          
+
           try {
-            const draftResults = typeof match.pick_ban_data === 'string' 
-              ? JSON.parse(match.pick_ban_data) 
+            const draftResults = typeof match.pick_ban_data === 'string'
+              ? JSON.parse(match.pick_ban_data)
               : match.pick_ban_data;
-            
+
             await this.startGame(match.id, draftResults);
           } catch (error) {
             console.error(`❌ [GameInProgress] Erro ao iniciar jogo ${match.id}:`, error);
@@ -407,10 +445,10 @@ export class GameInProgressService {
   private async loadActiveGames(): Promise<void> {
     try {
       const activeMatches = await this.dbManager.getCustomMatchesByStatus('in_progress');
-      
+
       for (const match of activeMatches) {
         console.log(`🔄 [GameInProgress] Carregando jogo ativo: ${match.id}`);
-        
+
         // Reconstruir dados do jogo a partir do banco
         const gameData: GameData = {
           matchId: match.id,
@@ -422,10 +460,10 @@ export class GameInProgressService {
           draftResults: match.pick_ban_data ? JSON.parse(match.pick_ban_data) : {},
           gameEvents: match.game_events ? JSON.parse(match.game_events) : []
         };
-        
+
         this.activeGames.set(match.id, gameData);
       }
-      
+
       console.log(`✅ [GameInProgress] ${activeMatches.length} jogos ativos carregados`);
     } catch (error) {
       console.error('❌ [GameInProgress] Erro ao carregar jogos ativos:', error);
@@ -497,7 +535,7 @@ export class GameInProgressService {
 
     // ✅ NOVO: Envio direcionado igual ao match_found
     console.log(`🚫 [GameInProgress] Preparando notificação de cancelamento de jogo para partida ${matchId}`);
-    
+
     // Buscar dados da partida para obter lista de jogadores
     this.dbManager.getCustomMatchById(matchId).then(match => {
       if (!match) {
@@ -508,13 +546,13 @@ export class GameInProgressService {
 
       let allPlayersInMatch: string[] = [];
       try {
-        const team1 = typeof match.team1_players === 'string' 
-          ? JSON.parse(match.team1_players) 
+        const team1 = typeof match.team1_players === 'string'
+          ? JSON.parse(match.team1_players)
           : (match.team1_players || []);
-        const team2 = typeof match.team2_players === 'string' 
-          ? JSON.parse(match.team2_players) 
+        const team2 = typeof match.team2_players === 'string'
+          ? JSON.parse(match.team2_players)
           : (match.team2_players || []);
-        
+
         allPlayersInMatch = [...team1, ...team2];
       } catch (error) {
         console.error(`❌ [GameInProgress] Erro ao parsear jogadores da partida ${matchId}:`, error);
@@ -533,7 +571,7 @@ export class GameInProgressService {
         if (client.readyState === WebSocket.OPEN) {
           const clientInfo = (client as any).playerInfo;
           const isIdentified = (client as any).isIdentified;
-          
+
           if (isIdentified) {
             identifiedClients++;
           }
@@ -541,7 +579,7 @@ export class GameInProgressService {
           // ✅ VERIFICAR: Se o cliente estava na partida cancelada
           if (isIdentified && clientInfo) {
             const isInMatch = this.isPlayerInMatch(clientInfo, allPlayersInMatch);
-            
+
             if (isInMatch) {
               try {
                 client.send(JSON.stringify(message));
@@ -588,7 +626,7 @@ export class GameInProgressService {
 
     // Obter identificadores possíveis do jogador
     const identifiers = [];
-    
+
     if (playerInfo.displayName) {
       identifiers.push(playerInfo.displayName);
     }
@@ -610,7 +648,7 @@ export class GameInProgressService {
           console.log(`✅ [GameInProgress] Match exato: ${identifier} === ${matchPlayer}`);
           return true;
         }
-        
+
         // Comparação por gameName (ignorando tag)
         if (identifier.includes('#') && matchPlayer.includes('#')) {
           const identifierGameName = identifier.split('#')[0];
@@ -620,7 +658,7 @@ export class GameInProgressService {
             return true;
           }
         }
-        
+
         // Comparação de gameName com nome completo
         if (identifier.includes('#')) {
           const identifierGameName = identifier.split('#')[0];
@@ -629,7 +667,7 @@ export class GameInProgressService {
             return true;
           }
         }
-        
+
         if (matchPlayer.includes('#')) {
           const matchPlayerGameName = matchPlayer.split('#')[0];
           if (identifier === matchPlayerGameName) {
@@ -672,6 +710,13 @@ export class GameInProgressService {
 
   getActiveGamesList(): GameData[] {
     return Array.from(this.activeGames.values());
+  }
+
+  // ✅ NOVO: Método para configurar DiscordService após inicialização
+  setDiscordService(discordService: DiscordService): void {
+    this.discordService = discordService;
+    console.log('🔗 [GameInProgress] DiscordService configurado via setDiscordService');
+    console.log('🔧 [GameInProgress] DiscordService isReady:', discordService.isReady());
   }
 
   // ✅ Shutdown
