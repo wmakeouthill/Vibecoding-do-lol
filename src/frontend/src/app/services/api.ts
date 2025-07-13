@@ -1248,25 +1248,41 @@ export class ApiService {
             return;
           }
 
+          // ✅ PADRONIZAÇÃO: Construir identificador único antes de enviar
+          const playerIdentifier = this.buildPlayerIdentifier(playerData);
+          if (!playerIdentifier) {
+            observer.error('Não foi possível construir identificador único do jogador');
+            return;
+          }
+
+          console.log('🆔 [ApiService] Identificando jogador com identificador único:', playerIdentifier);
+
           // ✅ WebSocket está pronto, enviar mensagem de identificação
           const message = {
             type: 'identify_player',
             playerData: {
-              displayName: playerData.displayName,
-              summonerName: playerData.summonerName,
+              displayName: playerIdentifier, // ✅ USAR IDENTIFICADOR PADRONIZADO
+              summonerName: playerIdentifier, // ✅ COMPATIBILIDADE
               gameName: playerData.gameName,
               tagLine: playerData.tagLine,
               id: playerData.id,
-              puuid: playerData.puuid
+              puuid: playerData.puuid,
+              // ✅ ADICIONAR: Dados adicionais para validação
+              region: playerData.region,
+              customLp: playerData.customLp,
+              profileIconId: playerData.profileIconId,
+              summonerLevel: playerData.summonerLevel
             }
           };
 
           try {
             this.webSocket!.send(JSON.stringify(message));
+            console.log('📤 [ApiService] Mensagem de identificação enviada:', message.type);
 
             // Aguardar resposta de confirmação
             const subscription = this.webSocketMessageSubject.subscribe(response => {
               if (response.type === 'player_identified') {
+                console.log('✅ [ApiService] Jogador identificado com sucesso:', playerIdentifier);
                 observer.next(response);
                 observer.complete();
                 subscription.unsubscribe();
@@ -1275,18 +1291,42 @@ export class ApiService {
 
             // Timeout após 10 segundos (aumentado para dar mais tempo)
             setTimeout(() => {
+              console.error('⏰ [ApiService] Timeout na identificação do jogador:', playerIdentifier);
               observer.error('Timeout na identificação do jogador');
               subscription.unsubscribe();
             }, 10000);
 
           } catch (sendError) {
+            console.error('❌ [ApiService] Erro ao enviar mensagem de identificação:', sendError);
             observer.error(`Erro ao enviar mensagem de identificação: ${sendError}`);
           }
         },
         error: (error) => {
+          console.error('❌ [ApiService] Erro ao aguardar WebSocket:', error);
           observer.error(`Erro ao aguardar WebSocket: ${error}`);
         }
       });
     });
+  }
+
+  // ✅ NOVO: Construir identificador único padronizado
+  private buildPlayerIdentifier(playerData: any): string | null {
+    // ✅ PRIORIDADE 1: gameName#tagLine (padrão)
+    if (playerData.gameName && playerData.tagLine) {
+      return `${playerData.gameName}#${playerData.tagLine}`;
+    }
+
+    // ✅ PRIORIDADE 2: displayName (se já está no formato correto)
+    if (playerData.displayName && playerData.displayName.includes('#')) {
+      return playerData.displayName;
+    }
+
+    // ✅ PRIORIDADE 3: summonerName (fallback)
+    if (playerData.summonerName) {
+      return playerData.summonerName;
+    }
+
+    console.warn('⚠️ [ApiService] Não foi possível construir identificador único:', playerData);
+    return null;
   }
 }

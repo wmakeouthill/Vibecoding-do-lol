@@ -564,46 +564,53 @@ export class LCUService {
       const summoner = await this.getCurrentSummoner();
       const gameflow = await this.getGameflowPhase();
 
-      // ✅ CORREÇÃO: Construir displayName se não estiver disponível
+      // ✅ PADRONIZAÇÃO COMPLETA: Sempre construir gameName#tagLine como identificador único
       let processedSummoner: any = { ...summoner };
+      let gameName: string;
+      let tagLine: string;
 
-      if (!processedSummoner.displayName || processedSummoner.displayName.trim() === '') {
-        // Tentar construir displayName a partir de outros campos
-        if (summoner.gameName && summoner.tagLine) {
-          processedSummoner.displayName = `${summoner.gameName}#${summoner.tagLine}`;
-          console.log('🔧 [LCU] DisplayName construído a partir de gameName#tagLine:', processedSummoner.displayName);
-        } else if (summoner.internalName) {
-          processedSummoner.displayName = summoner.internalName;
-          console.log('🔧 [LCU] DisplayName usando internalName:', processedSummoner.displayName);
-        } else {
-          // Tentar buscar dados do alias endpoint
-          try {
-            const aliasResponse = await this.client.get('/lol-summoner/v1/current-summoner/alias');
-            if (aliasResponse.data && aliasResponse.data.gameName) {
-              const alias = aliasResponse.data;
-              processedSummoner.displayName = alias.tagLine ?
-                `${alias.gameName}#${alias.tagLine}` :
-                alias.gameName;
-              processedSummoner.gameName = alias.gameName;
-              processedSummoner.tagLine = alias.tagLine || 'BR1';
-              console.log('🔧 [LCU] DisplayName obtido via alias endpoint:', processedSummoner.displayName);
-            }
-          } catch (aliasError) {
-            console.log('⚠️ [LCU] Endpoint alias não disponível, usando fallback');
-            processedSummoner.displayName = `Summoner${summoner.summonerId}`;
-            processedSummoner.gameName = processedSummoner.displayName;
-            processedSummoner.tagLine = 'BR1';
+      // Estratégia 1: Usar dados diretos do LCU se disponíveis
+      if (summoner.gameName && summoner.tagLine) {
+        gameName = summoner.gameName;
+        tagLine = summoner.tagLine;
+        console.log('✅ [LCU] Usando gameName e tagLine diretos do LCU:', `${gameName}#${tagLine}`);
+      }
+      // Estratégia 2: Extrair de displayName se contém #
+      else if (summoner.displayName && summoner.displayName.includes('#')) {
+        [gameName, tagLine] = summoner.displayName.split('#');
+        console.log('✅ [LCU] Extraindo gameName e tagLine do displayName:', `${gameName}#${tagLine}`);
+      }
+      // Estratégia 3: Tentar endpoint de alias
+      else {
+        try {
+          const aliasResponse = await this.client.get('/lol-summoner/v1/current-summoner/alias');
+          if (aliasResponse.data && aliasResponse.data.gameName) {
+            gameName = aliasResponse.data.gameName;
+            tagLine = aliasResponse.data.tagLine || 'BR1';
+            console.log('✅ [LCU] Obtendo gameName e tagLine via endpoint alias:', `${gameName}#${tagLine}`);
+          } else {
+            throw new Error('Dados de alias não disponíveis');
           }
-        }
-      } else {
-        // Se displayName existe, extrair gameName e tagLine se necessário
-        if (!summoner.gameName && processedSummoner.displayName.includes('#')) {
-          const [gameName, tagLine] = processedSummoner.displayName.split('#');
-          processedSummoner.gameName = gameName;
-          processedSummoner.tagLine = tagLine;
-          console.log('🔧 [LCU] GameName e TagLine extraídos do displayName:', `${gameName}#${tagLine}`);
+        } catch (aliasError) {
+          console.warn('⚠️ [LCU] Endpoint alias não disponível, usando fallback');
+          gameName = summoner.internalName || `Summoner${summoner.summonerId}`;
+          tagLine = 'BR1';
+          console.log('⚠️ [LCU] Usando fallback para gameName e tagLine:', `${gameName}#${tagLine}`);
         }
       }
+
+      // ✅ GARANTIR: Sempre ter um identificador único válido
+      if (!gameName || !tagLine) {
+        throw new Error('Não foi possível obter identificador único do jogador');
+      }
+
+      // ✅ PADRONIZAÇÃO: Sempre usar gameName#tagLine como displayName
+      processedSummoner.gameName = gameName;
+      processedSummoner.tagLine = tagLine;
+      processedSummoner.displayName = `${gameName}#${tagLine}`;
+      processedSummoner.summonerName = processedSummoner.displayName; // Compatibilidade
+
+      console.log('🎯 [LCU] Identificador único padronizado:', processedSummoner.displayName);
 
       return {
         isConnected: this.isConnected,
@@ -611,6 +618,7 @@ export class LCUService {
         gameflowPhase: gameflow
       };
     } catch (error) {
+      console.error('❌ [LCU] Erro ao obter status do cliente:', error);
       throw new Error('Erro ao obter status do cliente');
     }
   }

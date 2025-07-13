@@ -290,12 +290,20 @@ export class App implements OnInit, OnDestroy {
     console.warn('⚠️ [App] Todas as tentativas de carregar dados falharam, usando dados padrão se disponíveis');
   }
 
-  // ✅ NOVO: Identificar jogador de forma segura
+  // ✅ MELHORADO: Identificar jogador de forma segura
   private async identifyPlayerSafely(): Promise<void> {
     if (!this.currentPlayer) {
       console.warn('⚠️ [App] Nenhum jogador disponível para identificação');
       return;
     }
+
+    const playerIdentifier = this.buildPlayerIdentifier(this.currentPlayer);
+    if (!playerIdentifier) {
+      console.error('❌ [App] Não foi possível construir identificador único para identificação');
+      return;
+    }
+
+    console.log('🆔 [App] Iniciando identificação com identificador único:', playerIdentifier);
 
     const maxAttempts = 3;
 
@@ -307,7 +315,7 @@ export class App implements OnInit, OnDestroy {
           this.apiService.identifyPlayer(this.currentPlayer).subscribe({
             next: (response: any) => {
               if (response.success) {
-                console.log('✅ [App] Jogador identificado com sucesso no backend');
+                console.log('✅ [App] Jogador identificado com sucesso no backend:', playerIdentifier);
                 resolve();
               } else {
                 reject(new Error(response.error || 'Erro desconhecido na identificação'));
@@ -320,7 +328,7 @@ export class App implements OnInit, OnDestroy {
         });
 
         // Se chegou até aqui, identificação foi bem-sucedida
-        console.log('✅ [App] Identificação do jogador completa');
+        console.log('✅ [App] Identificação do jogador completa:', playerIdentifier);
         return;
 
       } catch (error) {
@@ -367,23 +375,28 @@ export class App implements OnInit, OnDestroy {
 
   // ✅ NOVO: Salvar dados do jogador
   private savePlayerData(player: Player): void {
-    // ✅ CORREÇÃO: Usar displayName diretamente do backend se disponível
-    if (player.displayName) {
-      // O backend já construiu o displayName corretamente
-      player.summonerName = player.displayName;
-      console.log('✅ [App] Usando displayName do backend:', player.displayName);
-    } else if (player.gameName && player.tagLine) {
-      // Fallback: construir se não veio do backend
-      player.displayName = `${player.gameName}#${player.tagLine}`;
-      player.summonerName = player.displayName;
-      console.log('✅ [App] DisplayName construído como fallback:', player.displayName);
+    // ✅ PADRONIZAÇÃO COMPLETA: Sempre usar gameName#tagLine como identificador único
+    const playerIdentifier = this.buildPlayerIdentifier(player);
+
+    if (playerIdentifier) {
+      player.displayName = playerIdentifier;
+      player.summonerName = playerIdentifier;
+      console.log('✅ [App] Identificador único padronizado:', playerIdentifier);
     } else {
-      console.warn('⚠️ [App] Dados incompletos do jogador:', {
+      console.warn('⚠️ [App] Não foi possível construir identificador único:', {
         gameName: player.gameName,
         tagLine: player.tagLine,
         summonerName: player.summonerName,
         displayName: player.displayName
       });
+
+      // Fallback: usar dados disponíveis
+      if (player.displayName) {
+        player.summonerName = player.displayName;
+      } else if (player.gameName && player.tagLine) {
+        player.displayName = `${player.gameName}#${player.tagLine}`;
+        player.summonerName = player.displayName;
+      }
     }
 
     // Adicionar propriedade customLp se não existir
@@ -394,7 +407,27 @@ export class App implements OnInit, OnDestroy {
     // Salvar no localStorage para backup
     localStorage.setItem('currentPlayer', JSON.stringify(player));
 
-    console.log('✅ [App] Jogador salvo:', player.summonerName, 'displayName:', player.displayName);
+    console.log('✅ [App] Jogador salvo com identificador único:', player.displayName);
+  }
+
+  // ✅ NOVO: Construir identificador único padronizado
+  private buildPlayerIdentifier(player: Player): string | null {
+    // ✅ PRIORIDADE 1: gameName#tagLine (padrão)
+    if (player.gameName && player.tagLine) {
+      return `${player.gameName}#${player.tagLine}`;
+    }
+
+    // ✅ PRIORIDADE 2: displayName (se já está no formato correto)
+    if (player.displayName && player.displayName.includes('#')) {
+      return player.displayName;
+    }
+
+    // ✅ PRIORIDADE 3: summonerName (fallback)
+    if (player.summonerName) {
+      return player.summonerName;
+    }
+
+    return null;
   }
 
   // ✅ NOVO: Processar mensagens do backend

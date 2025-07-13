@@ -135,7 +135,7 @@ export class MatchFoundService {
       this.pendingMatches.set(matchId as number, acceptanceStatus);
 
       // 7. Notificar frontend sobre partida encontrada PRIMEIRO
-      this.notifyMatchFound(matchId as number, matchData);
+      this.notifyMatchFound(matchId as number, playersForAcceptance);
 
       // 8. ✅ NOVO: Iniciar atualizações de timer em tempo real
       this.startTimerUpdates(matchId as number);
@@ -517,53 +517,74 @@ export class MatchFoundService {
       playerName.toLowerCase().includes('cpu');
   }
 
-  // ✅ Notificações WebSocket
-  private notifyMatchFound(matchId: number, matchData: any): void {
-    console.log('🔍 [MatchFound] notifyMatchFound chamado');
-    console.log('🔍 [MatchFound] WebSocket Server:', !!this.wss);
-    console.log('🔍 [MatchFound] WebSocket clients:', this.wss?.clients?.size || 0);
-
+  // ✅ MELHORADO: Sistema de notificação com múltiplas estratégias de entrega
+  private async notifyMatchFound(matchId: number, allPlayersInMatch: string[]): Promise<void> {
     if (!this.wss) {
-      console.error('❌ [MatchFound] WebSocket Server não disponível!');
+      console.error('❌ [MatchFound] WebSocket Server não disponível para notificação');
       return;
     }
-
-    console.log(`🎮 [MatchFound] Preparando notificação match_found para partida ${matchId}`);
-    console.log(`🎮 [MatchFound] Dados da partida:`, {
-      matchId,
-      team1Count: matchData.team1Players?.length || 0,
-      team2Count: matchData.team2Players?.length || 0,
-      hasBalancedTeams: !!matchData.balancedTeams,
-      clientsConnected: this.wss.clients?.size || 0
-    });
-
-    // ✅ NOVO: Obter lista de jogadores da partida
-    const allPlayersInMatch = [...(matchData.team1Players || []), ...(matchData.team2Players || [])];
-    console.log('🎯 [MatchFound] Jogadores da partida:', allPlayersInMatch);
 
     const message = {
       type: 'match_found',
       data: {
         matchId,
-        team1: matchData.team1Players,
-        team2: matchData.team2Players,
-        averageMMR: matchData.averageMMR,
-        balancedTeams: matchData.balancedTeams,
-        message: 'Partida encontrada! Aguardando aceitação dos jogadores...',
-        acceptanceTimeout: this.ACCEPTANCE_TIMEOUT_MS
-      },
-      timestamp: Date.now()
+        players: allPlayersInMatch,
+        timestamp: Date.now()
+      }
     };
 
+    console.log(`🎯 [MatchFound] === INICIANDO NOTIFICAÇÃO PARA PARTIDA ${matchId} ===`);
+    console.log(`📋 [MatchFound] Jogadores na partida:`, allPlayersInMatch);
     console.log(`📤 [MatchFound] Enviando mensagem match_found:`, JSON.stringify(message, null, 2));
 
-    // ✅ NOVO: Enviar apenas para jogadores que estão na partida
-    let sentCount = 0;
+    // ✅ ESTRATÉGIA 1: Notificação direcionada via WebSocket (PRINCIPAL)
+    const wsResults = await this.sendWebSocketNotifications(message, allPlayersInMatch);
+
+    // ✅ ESTRATÉGIA 2: Verificar se todos os jogadores foram notificados
+    const notifiedPlayers = new Set(wsResults.notifiedPlayers);
+    const missingPlayers = allPlayersInMatch.filter(player => !notifiedPlayers.has(player));
+
+    console.log(`📊 [MatchFound] Resultado WebSocket:`, {
+      totalPlayers: allPlayersInMatch.length,
+      notifiedPlayers: wsResults.notifiedPlayers.length,
+      missingPlayers: missingPlayers.length,
+      totalClients: wsResults.totalClients,
+      identifiedClients: wsResults.identifiedClients,
+      matchedClients: wsResults.matchedClients
+    });
+
+    // ✅ ESTRATÉGIA 3: Fallback para jogadores não notificados
+    if (missingPlayers.length > 0) {
+      console.warn(`⚠️ [MatchFound] Jogadores não notificados via WebSocket:`, missingPlayers);
+      await this.sendFallbackNotifications(matchId, missingPlayers);
+    }
+
+    // ✅ ESTRATÉGIA 4: Log final com métricas
+    console.log(`✅ [MatchFound] === NOTIFICAÇÃO COMPLETA PARA PARTIDA ${matchId} ===`);
+    console.log(`📈 [MatchFound] Métricas finais:`, {
+      matchId,
+      totalPlayers: allPlayersInMatch.length,
+      wsNotified: wsResults.notifiedPlayers.length,
+      fallbackAttempted: missingPlayers.length,
+      successRate: `${((wsResults.notifiedPlayers.length / allPlayersInMatch.length) * 100).toFixed(1)}%`
+    });
+  }
+
+  // ✅ NOVO: Sistema de notificação WebSocket melhorado
+  private async sendWebSocketNotifications(message: any, allPlayersInMatch: string[]): Promise<{
+    notifiedPlayers: string[],
+    totalClients: number,
+    identifiedClients: number,
+    matchedClients: number
+  }> {
+    const notifiedPlayers: string[] = [];
+    let totalClients = 0;
     let identifiedClients = 0;
     let matchedClients = 0;
 
     this.wss.clients.forEach((client: WebSocket) => {
       if (client.readyState === WebSocket.OPEN) {
+        totalClients++;
         const clientInfo = (client as any).playerInfo;
         const isIdentified = (client as any).isIdentified;
 
@@ -578,20 +599,24 @@ export class MatchFoundService {
           if (isInMatch) {
             try {
               client.send(JSON.stringify(message));
-              sentCount++;
               matchedClients++;
-              console.log(`✅ [MatchFound] Notificação enviada para: ${clientInfo.displayName || clientInfo.summonerName}`);
+
+              // ✅ RASTREAR: Qual jogador foi notificado
+              const playerIdentifier = this.getPlayerIdentifier(clientInfo);
+              if (playerIdentifier) {
+                notifiedPlayers.push(playerIdentifier);
+                console.log(`✅ [MatchFound] Notificação enviada para: ${playerIdentifier}`);
+              }
             } catch (error) {
               console.error('❌ [MatchFound] Erro ao enviar notificação:', error);
             }
           } else {
-            console.log(`➖ [MatchFound] Cliente identificado mas não está na partida: ${clientInfo.displayName || clientInfo.summonerName}`);
+            console.log(`➖ [MatchFound] Cliente identificado mas não está na partida: ${this.getPlayerIdentifier(clientInfo)}`);
           }
         } else {
           // ✅ FALLBACK: Para clientes não identificados, enviar para todos (compatibilidade)
           try {
             client.send(JSON.stringify(message));
-            sentCount++;
             console.log(`📡 [MatchFound] Notificação enviada para cliente não identificado (fallback)`);
           } catch (error) {
             console.error('❌ [MatchFound] Erro ao enviar notificação:', error);
@@ -600,77 +625,94 @@ export class MatchFoundService {
       }
     });
 
-    console.log(`📢 [MatchFound] Resumo do envio:`, {
-      totalClients: this.wss.clients?.size || 0,
+    return {
+      notifiedPlayers,
+      totalClients,
       identifiedClients,
-      matchedClients,
-      sentCount,
-      matchId
+      matchedClients
+    };
+  }
+
+  // ✅ NOVO: Sistema de fallback para jogadores não notificados
+  private async sendFallbackNotifications(matchId: number, missingPlayers: string[]): Promise<void> {
+    console.log(`🔄 [MatchFound] Iniciando fallback para ${missingPlayers.length} jogadores não notificados`);
+
+    // ✅ FALLBACK 1: Tentar notificar via banco de dados (para jogadores offline)
+    try {
+      for (const playerIdentifier of missingPlayers) {
+        console.log(`📝 [MatchFound] Registrando notificação pendente para: ${playerIdentifier}`);
+        // Aqui você pode implementar um sistema de notificações pendentes no banco
+        // que será entregue quando o jogador reconectar
+      }
+    } catch (error) {
+      console.error('❌ [MatchFound] Erro ao registrar notificações pendentes:', error);
+    }
+
+    // ✅ FALLBACK 2: Broadcast geral como último recurso
+    console.log(`📢 [MatchFound] Executando broadcast geral como fallback`);
+    this.broadcastMessage({
+      type: 'match_found_fallback',
+      data: {
+        matchId,
+        message: 'Partida encontrada! Verifique se você está na partida.',
+        timestamp: Date.now()
+      }
     });
   }
 
-  // ✅ NOVO: Verificar se um jogador está na partida
+  // ✅ NOVO: Obter identificador único do jogador
+  private getPlayerIdentifier(playerInfo: any): string | null {
+    // ✅ PRIORIDADE 1: gameName#tagLine (padrão)
+    if (playerInfo.gameName && playerInfo.tagLine) {
+      return `${playerInfo.gameName}#${playerInfo.tagLine}`;
+    }
+
+    // ✅ PRIORIDADE 2: displayName (se já está no formato correto)
+    if (playerInfo.displayName && playerInfo.displayName.includes('#')) {
+      return playerInfo.displayName;
+    }
+
+    // ✅ PRIORIDADE 3: summonerName (fallback)
+    if (playerInfo.summonerName) {
+      return playerInfo.summonerName;
+    }
+
+    return null;
+  }
+
+  // ✅ MELHORADO: Verificar se um jogador está na partida com identificação mais precisa
   private isPlayerInMatch(playerInfo: any, playersInMatch: string[]): boolean {
     if (!playerInfo || !playersInMatch.length) return false;
 
-    // Obter identificadores possíveis do jogador
-    const identifiers = [];
+    const playerIdentifier = this.getPlayerIdentifier(playerInfo);
+    if (!playerIdentifier) {
+      console.warn('⚠️ [MatchFound] Não foi possível obter identificador do jogador:', playerInfo);
+      return false;
+    }
 
-    if (playerInfo.displayName) {
-      identifiers.push(playerInfo.displayName);
-    }
-    if (playerInfo.summonerName) {
-      identifiers.push(playerInfo.summonerName);
-    }
-    if (playerInfo.gameName) {
-      identifiers.push(playerInfo.gameName);
-      if (playerInfo.tagLine) {
-        identifiers.push(`${playerInfo.gameName}#${playerInfo.tagLine}`);
+    // ✅ COMPARAÇÃO EXATA: Priorizar match exato
+    for (const matchPlayer of playersInMatch) {
+      if (playerIdentifier === matchPlayer) {
+        console.log(`✅ [MatchFound] Match exato: ${playerIdentifier} === ${matchPlayer}`);
+        return true;
       }
     }
 
-    // Verificar se algum identificador coincide com os jogadores da partida
-    for (const identifier of identifiers) {
+    // ✅ COMPARAÇÃO POR GAMENAME: Fallback apenas se necessário
+    if (playerIdentifier.includes('#')) {
+      const playerGameName = playerIdentifier.split('#')[0];
       for (const matchPlayer of playersInMatch) {
-        // Comparação exata
-        if (identifier === matchPlayer) {
-          console.log(`✅ [MatchFound] Match exato: ${identifier} === ${matchPlayer}`);
-          return true;
-        }
-
-        // Comparação por gameName (ignorando tag)
-        if (identifier.includes('#') && matchPlayer.includes('#')) {
-          const identifierGameName = identifier.split('#')[0];
-          const matchPlayerGameName = matchPlayer.split('#')[0];
-          if (identifierGameName === matchPlayerGameName) {
-            console.log(`✅ [MatchFound] Match por gameName: ${identifierGameName} === ${matchPlayerGameName}`);
-            return true;
-          }
-        }
-
-        // Comparação de gameName com nome completo
-        if (identifier.includes('#')) {
-          const identifierGameName = identifier.split('#')[0];
-          if (identifierGameName === matchPlayer) {
-            console.log(`✅ [MatchFound] Match gameName com nome completo: ${identifierGameName} === ${matchPlayer}`);
-            return true;
-          }
-        }
-
         if (matchPlayer.includes('#')) {
           const matchPlayerGameName = matchPlayer.split('#')[0];
-          if (identifier === matchPlayerGameName) {
-            console.log(`✅ [MatchFound] Match nome com gameName: ${identifier} === ${matchPlayerGameName}`);
+          if (playerGameName === matchPlayerGameName) {
+            console.log(`✅ [MatchFound] Match por gameName: ${playerGameName} === ${matchPlayerGameName}`);
             return true;
           }
         }
       }
     }
 
-    console.log(`❌ [MatchFound] Nenhum match encontrado para:`, {
-      playerIdentifiers: identifiers,
-      matchPlayers: playersInMatch
-    });
+    console.log(`❌ [MatchFound] Nenhum match encontrado para: ${playerIdentifier}`);
     return false;
   }
 
