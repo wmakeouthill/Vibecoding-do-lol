@@ -23,7 +23,7 @@
     z-index: 0;
   }
 
-  > * {
+  >* {
     position: relative;
     z-index: 1;
   }
@@ -238,7 +238,8 @@
   padding: var(--spacing-xl);
   overflow-y: auto;
   overflow-x: hidden;
-  max-height: calc(100vh - 120px); /* Ajustando altura para garantir scroll */
+  max-height: calc(100vh - 120px);
+  /* Ajustando altura para garantir scroll */
 
   .view-container {
     max-width: 1200px;
@@ -370,7 +371,8 @@
         font-weight: 500;
       }
 
-      input, select {
+      input,
+      select {
         width: 100%;
         padding: var(--spacing-md);
         border: 2px solid var(--border-primary);
@@ -422,7 +424,8 @@
     gap: var(--spacing-md);
     margin-top: var(--spacing-md);
 
-    .btn-primary, .btn-secondary {
+    .btn-primary,
+    .btn-secondary {
       flex: 1;
     }
   }
@@ -578,112 +581,284 @@
   }
 }
 
-// Notifications
+// Notifications - Enhanced Overlay System
 .notifications-container {
   position: fixed;
-  top: 20px; // Adjust as needed, e.g., below header
-  right: 20px;
-  z-index: 1050; // Ensure it's above most other content
+  bottom: 20px; // Bottom-right position
+  right: 20px; // Right margin
+  z-index: 1050;
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
-  width: 350px; // Or max-width
+  gap: 8px; // Compact spacing
+  width: 320px; // Optimal width for readability
+  pointer-events: none; // Allow clicking through container
 }
 
 .notification {
-  background: var(--bg-secondary);
+  background: rgba(15, 20, 25, 0.6); // Even more transparent background
+  backdrop-filter: blur(6px); // Reduced blur for more transparency
   color: var(--text-primary);
-  border-radius: var(--radius-md);
-  padding: var(--spacing-lg);
-  border-left: 5px solid;
-  box-shadow: var(--shadow-md);
+  border-radius: 12px;
+  padding: 12px 16px;
+  border: 1px solid rgba(200, 155, 60, 0.1); // Even more subtle border
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.15),
+    0 0 0 1px rgba(255, 255, 255, 0.02); // Softer shadow
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  animation: slideInRight 0.3s ease, fadeOut 0.3s ease 4.7s forwards; // Auto-dismiss animation
-  opacity: 1;
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  opacity: 0;
+  transform: translateX(100%); // Start off-screen (from right)
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  font-size: 13px;
+  max-height: 80px;
+  overflow: hidden;
+  pointer-events: auto; // Re-enable pointer events for the notification itself
+
+  // Animation states
+  &.show {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  &.hide {
+    opacity: 0;
+    transform: translateX(100%);
+  }
 
   .notification-content {
     flex-grow: 1;
+    margin-right: 8px;
 
     .title {
       font-weight: 600;
-      font-size: 16px;
-      margin-bottom: var(--spacing-xs);
+      font-size: 13px;
+      margin-bottom: 2px;
+      color: var(--primary-gold);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+
+      // Icons for different types
+      &::before {
+        font-size: 14px;
+      }
     }
 
     .message {
-      font-size: 14px;
-      line-height: 1.4;
+      font-size: 12px;
+      line-height: 1.3;
+      color: var(--text-secondary);
+      margin: 0;
     }
   }
 
-  .close-btn {
+  .notification-close {
     background: transparent;
     border: none;
     color: var(--text-secondary);
-    font-size: 20px;
+    font-size: 14px;
     cursor: pointer;
-    padding: 0 var(--spacing-xs);
-    margin-left: var(--spacing-md);
-    line-height: 1;
+    padding: 2px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    opacity: 0.6;
 
     &:hover {
       color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.1);
+      opacity: 1;
     }
   }
 
-  // Type-specific styling
+  // Type-specific styling with enhanced colors and icons
   &.success {
-    border-left-color: var(--success);
-    .title { color: var(--success); }
+    border-color: rgba(76, 175, 80, 0.15);
+    background: rgba(15, 20, 25, 0.6);
+
+    .title::before {
+      content: '✅';
+    }
+
+    .title {
+      color: #4caf50;
+    }
   }
+
   &.error {
-    border-left-color: var(--error);
-    .title { color: var(--error); }
+    border-color: rgba(244, 67, 54, 0.15);
+    background: rgba(15, 20, 25, 0.6);
+
+    .title::before {
+      content: '❌';
+    }
+
+    .title {
+      color: #f44336;
+    }
   }
+
   &.warning {
-    border-left-color: var(--warning);
-    .title { color: var(--warning); }
+    border-color: rgba(255, 152, 0, 0.15);
+    background: rgba(15, 20, 25, 0.6);
+
+    .title::before {
+      content: '⚠️';
+    }
+
+    .title {
+      color: #ff9800;
+    }
   }
+
   &.info {
-    border-left-color: var(--info);
-    .title { color: var(--info); }
+    border-color: rgba(33, 150, 243, 0.15);
+    background: rgba(15, 20, 25, 0.6);
+
+    .title::before {
+      content: 'ℹ️';
+    }
+
+    .title {
+      color: #2196f3;
+    }
+  }
+
+  // Hover effects
+  &:hover {
+    transform: translateX(-2px);
+    box-shadow:
+      0 6px 25px rgba(0, 0, 0, 0.2),
+      0 0 0 1px rgba(255, 255, 255, 0.03);
+    background: rgba(15, 20, 25, 0.75); // Slightly more opaque on hover
   }
 }
 
-// Keyframe animations for notifications
+// Enhanced animations
 @keyframes slideInRight {
   from {
-    transform: translateX(100%);
     opacity: 0;
+    transform: translateX(100%);
   }
+
   to {
-    transform: translateX(0);
     opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideOutRight {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+// Responsive adjustments
+@media (max-width: 768px) {
+  .notifications-container {
+    right: 10px;
+    left: 10px;
+    bottom: 10px;
+    width: auto;
+  }
+
+  .notification {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+// Ensure notifications are always visible and properly positioned
+.notifications-container {
+  // Force proper positioning
+  position: fixed !important;
+  bottom: 20px !important;
+  right: 20px !important;
+  left: auto !important;
+  top: auto !important;
+  z-index: 9999 !important;
+}
+
+.notification {
+  // Ensure proper transform origin and positioning
+  transform-origin: right center;
+  will-change: transform, opacity;
+
+  &.show {
+    transform: translateX(0) !important;
+    opacity: 1 !important;
+  }
+
+  &.hide {
+    transform: translateX(100%) !important;
+    opacity: 0 !important;
+  }
+}
+
+// Keyframe animations
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 0.9;
+    transform: translateY(0);
   }
 }
 
 @keyframes fadeOut {
   from {
-    opacity: 1;
+    opacity: 0.9;
   }
+
   to {
     opacity: 0;
-    transform: scale(0.95); // Optional: slightly shrink before disappearing
+    transform: translateY(-20px);
   }
 }
 
 // Animations
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes scaleIn {
-  from { transform: scale(0.9); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
+  from {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 // Draft Phase Styles - Enhanced
@@ -734,7 +909,7 @@
       font-size: 1.4rem;
     }
 
-    > p {
+    >p {
       text-align: center;
       margin-bottom: var(--spacing-lg);
       font-family: monospace;
@@ -887,6 +1062,7 @@
   from {
     text-shadow: 0 0 15px rgba(200, 155, 60, 0.4);
   }
+
   to {
     text-shadow: 0 0 25px rgba(200, 155, 60, 0.8);
   }

@@ -22,7 +22,7 @@ export interface Player {
   };
   wins?: number;
   losses?: number;
-  lastMatchDate?: Date;rankedData?: {
+  lastMatchDate?: Date; rankedData?: {
     soloQueue?: any;
     flexQueue?: any;
   };
@@ -98,6 +98,9 @@ export interface Notification {
   message: string;
   timestamp: Date;
   isRead?: boolean;
+  isVisible?: boolean;
+  isHiding?: boolean;
+  autoHideTimeout?: number;
 }
 
 export interface CurrentGame {

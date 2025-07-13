@@ -27,7 +27,7 @@
       justify-content: center !important;
       text-align: center !important;
       margin: 0 auto !important;
-      
+
       span {
         text-align: center !important;
         display: inline-block !important;
@@ -80,7 +80,7 @@
         animation: pulse 2s infinite;
       }
     }
-    
+
     // Discord toggle section
     .discord-toggle {
       margin-top: var(--spacing-sm);
@@ -88,7 +88,7 @@
       background: var(--bg-tertiary);
       border-radius: var(--radius-md);
       border: 1px solid var(--border-color);
-      
+
       .discord-status {
         display: flex;
         align-items: center;
@@ -99,16 +99,16 @@
         color: var(--text-secondary);
         transition: color 0.3s ease;
         margin-bottom: var(--spacing-xs);
-        
+
         &.connected {
           color: var(--success);
         }
-        
+
         i {
           font-size: var(--font-size-md);
         }
       }
-      
+
       .discord-user {
         margin-top: var(--spacing-xs);
         font-size: var(--font-size-sm);
@@ -116,6 +116,7 @@
       }
     }
   }
+
   // Player info card
   .player-info-card {
     display: flex;
@@ -128,6 +129,7 @@
 
     .player-avatar {
       position: relative;
+
       .profile-icon {
         width: 80px;
         height: 80px;
@@ -142,6 +144,7 @@
           transition: transform 0.3s ease;
         }
       }
+
       .player-level {
         position: absolute;
         bottom: -5px;
@@ -220,6 +223,7 @@
           align-items: center;
           gap: 4px;
         }
+
         .preference-separator {
           color: var(--primary-gold);
           margin: 0 var(--spacing-xs);
@@ -458,7 +462,7 @@
               transition: color 0.3s ease;
             }
 
-            .icon-check.met + span {
+            .icon-check.met+span {
               color: var(--success);
             }
           }
@@ -782,7 +786,8 @@
     border-radius: var(--radius-md);
     background: var(--bg-primary);
 
-    .player-in-queue, .empty-slots {
+    .player-in-queue,
+    .empty-slots {
       display: flex;
       align-items: center;
       gap: var(--spacing-md);
@@ -953,7 +958,10 @@
         font-size: var(--font-size-sm);
       }
     }
-    .bot-note, .simulate-note, .cleanup-note {
+
+    .bot-note,
+    .simulate-note,
+    .cleanup-note {
       display: block;
       margin-top: var(--spacing-sm);
       color: #ccc;
@@ -964,13 +972,23 @@
 
 // Animations
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes rotate {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 // Animações de entrada para a fila
@@ -979,6 +997,7 @@
     opacity: 0;
     transform: translateY(-20px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -990,12 +1009,15 @@
     opacity: 0;
     transform: scale(0.3);
   }
+
   50% {
     transform: scale(1.05);
   }
+
   70% {
     transform: scale(0.9);
   }
+
   100% {
     opacity: 1;
     transform: scale(1);
@@ -1028,8 +1050,13 @@
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes slideInUp {
@@ -1037,6 +1064,7 @@
     opacity: 0;
     transform: translateY(30px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -1048,6 +1076,7 @@
     opacity: 0;
     transform: scale(0.95);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
@@ -1439,14 +1468,19 @@
   gap: 0.5rem;
   font-size: 1rem;
 }
+
 .refresh-btn:hover {
   background: #2c313a;
 }
+
 .refresh-btn .spinning {
   animation: spin 1s linear infinite;
 }
+
 @keyframes spin {
-  100% { transform: rotate(360deg); }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .auto-refresh {
@@ -1459,6 +1493,7 @@
   gap: 0.5rem;
   margin-bottom: var(--spacing-sm);
 }
+
 .tab-btn {
   background: #181c22;
   color: #aaa;
@@ -1469,6 +1504,7 @@
   font-size: 1rem;
   transition: background 0.2s, color 0.2s;
 }
+
 .tab-btn.active {
   background: #2c313a;
   color: #fff;
@@ -1483,65 +1519,106 @@
   margin-bottom: var(--spacing-sm);
   box-shadow: 0 1px 4px #0002;
 }
-.table-header, .table-row {
+
+.table-header,
+.table-row {
   display: flex;
   align-items: center;
   padding: 0.6rem 1rem;
 }
+
 .table-header {
   background: #23272e;
   font-weight: bold;
   color: #fff;
   border-bottom: 1px solid #333;
 }
+
 .table-row {
   border-bottom: 1px solid #23272e;
   transition: background 0.15s;
 }
+
 .table-row.current-player {
   background: #2c313a;
   color: #fff;
 }
+
 .table-row.has-lol {
   background: #23272e;
 }
+
 .table-row:hover {
   background: #23272e;
 }
-.col-position, .col-player, .col-lanes, .col-mmr, .col-time, .col-status, .col-lol, .col-queue, .col-actions {
+
+.col-position,
+.col-player,
+.col-lanes,
+.col-mmr,
+.col-time,
+.col-status,
+.col-lol,
+.col-queue,
+.col-actions {
   flex: 1 1 0;
   min-width: 80px;
   text-align: left;
   padding: 0 0.5rem;
 }
-.col-position { max-width: 40px; }
-.col-mmr { max-width: 80px; }
-.col-time { max-width: 90px; }
-.col-status, .col-queue { max-width: 90px; }
-.col-actions { max-width: 120px; }
 
-.player-info, .discord-user-info {
+.col-position {
+  max-width: 40px;
+}
+
+.col-mmr {
+  max-width: 80px;
+}
+
+.col-time {
+  max-width: 90px;
+}
+
+.col-status,
+.col-queue {
+  max-width: 90px;
+}
+
+.col-actions {
+  max-width: 120px;
+}
+
+.player-info,
+.discord-user-info {
   display: flex;
   align-items: center;
   gap: 0.5rem;
 }
-.player-name, .username {
+
+.player-name,
+.username {
   font-weight: 500;
   color: #fff;
 }
-.player-tag, .tag-line {
+
+.player-tag,
+.tag-line {
   color: #aaa;
   font-size: 0.95em;
 }
-.lane-preferences, .lol-account {
+
+.lane-preferences,
+.lol-account {
   display: flex;
   align-items: center;
   gap: 0.3rem;
 }
+
 .lane-separator {
   color: #666;
   margin: 0 0.2rem;
 }
+
 .status-badge {
   display: inline-block;
   padding: 0.2em 0.7em;
@@ -1551,11 +1628,31 @@
   color: #fff;
   font-weight: 500;
 }
-.status-badge.in-queue { background: #3b82f6; color: #fff; }
-.status-badge.online { background: #22c55e; color: #fff; }
-.status-badge.offline { background: #888; color: #fff; }
-.queue-status.in-queue { color: #22c55e; font-weight: bold; }
-.queue-status.not-in-queue { color: #888; }
+
+.status-badge.in-queue {
+  background: #3b82f6;
+  color: #fff;
+}
+
+.status-badge.online {
+  background: #22c55e;
+  color: #fff;
+}
+
+.status-badge.offline {
+  background: #888;
+  color: #fff;
+}
+
+.queue-status.in-queue {
+  color: #22c55e;
+  font-weight: bold;
+}
+
+.queue-status.not-in-queue {
+  color: #888;
+}
+
 .action-btn {
   background: #23272e;
   color: #fff;
@@ -1567,10 +1664,12 @@
   font-size: 0.95em;
   transition: background 0.2s, color 0.2s;
 }
+
 .action-btn:hover {
   background: #3b82f6;
   color: #fff;
 }
+
 .empty-state {
   text-align: center;
   color: #888;
@@ -1579,15 +1678,23 @@
 }
 
 @media (max-width: 900px) {
-  .players-table-section { 
-    padding: var(--spacing-sm); 
+  .players-table-section {
+    padding: var(--spacing-sm);
   }
-  .table-header, .table-row { 
-    padding: 0.4rem 0.3rem; 
-    font-size: 0.97em; 
+
+  .table-header,
+  .table-row {
+    padding: 0.4rem 0.3rem;
+    font-size: 0.97em;
   }
-  .col-position, .col-mmr, .col-time, .col-status, .col-queue, .col-actions { 
-    min-width: 50px; 
+
+  .col-position,
+  .col-mmr,
+  .col-time,
+  .col-status,
+  .col-queue,
+  .col-actions {
+    min-width: 50px;
   }
 }
 
@@ -1597,6 +1704,7 @@
     opacity: 0;
     transform: translateY(30px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -1607,9 +1715,11 @@
   0% {
     transform: scale(1);
   }
+
   50% {
     transform: scale(1.05);
   }
+
   100% {
     transform: scale(1);
   }
@@ -1619,6 +1729,7 @@
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
@@ -1628,6 +1739,7 @@
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
@@ -1646,7 +1758,7 @@
   &.loading {
     position: relative;
     color: transparent;
-    
+
     &::after {
       content: '';
       position: absolute;
@@ -1660,45 +1772,5 @@
       border-radius: 50%;
       animation: spin 1s linear infinite;
     }
-  }
-}
-
-// Melhorias para notificações
-.notification {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  padding: var(--spacing-md) var(--spacing-lg);
-  border-radius: var(--radius-md);
-  color: white;
-  font-weight: 600;
-  z-index: 1000;
-  animation: slideInRight 0.3s ease-out;
-  
-  &.success {
-    background: var(--success);
-  }
-  
-  &.error {
-    background: var(--error);
-  }
-  
-  &.warning {
-    background: var(--warning);
-  }
-  
-  &.info {
-    background: var(--primary-blue);
-  }
-}
-
-@keyframes slideInRight {
-  from {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
   }
 }

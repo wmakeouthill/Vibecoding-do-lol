@@ -97,6 +97,10 @@ export class App implements OnInit, OnDestroy {
   private lcuCheckInterval: any;
   private readonly LCU_CHECK_INTERVAL = 5000; // Intervalo de verificação do status do LCU
 
+  // Update the notifications array and addNotification method
+  private maxNotifications = 2; // Limit to 2 visible notifications
+  private notificationQueue: Notification[] = []; // Queue for pending notifications
+
   constructor(
     private apiService: ApiService,
     private queueStateService: QueueStateService,
@@ -1285,29 +1289,77 @@ export class App implements OnInit, OnDestroy {
     console.log('📞 [App] === FIM DA RECUSA DA PARTIDA ===');
   }
 
-  // ✅ MANTIDO: Métodos de interface simples
-  addNotification(type: 'success' | 'info' | 'warning' | 'error', title: string, message: string): void {
+  // ✅ ENHANCED: Métodos de notificação com animações suaves
+  private addNotification(type: 'success' | 'error' | 'warning' | 'info', title: string, message: string): void {
     const notification: Notification = {
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+      id: Date.now().toString() + Math.random().toString(36).substr(2, 9), // More unique ID
       type,
       title,
       message,
       timestamp: new Date(),
-      isRead: false
+      isVisible: false,
+      isHiding: false
     };
 
-    this.notifications.unshift(notification);
-
-    // Auto-remover após 5 segundos para notificações de sucesso/info
-    if (type === 'success' || type === 'info') {
-      setTimeout(() => {
-        this.dismissNotification(notification.id);
-      }, 5000);
+    // Add to notifications array
+    if (this.notifications.length < this.maxNotifications) {
+      this.notifications.push(notification);
+    } else {
+      // Remove oldest notification and add new one
+      this.notifications.shift();
+      this.notifications.push(notification);
     }
+
+    // Trigger change detection for initial render
+    this.cdr.detectChanges();
+
+    // Show animation after a brief delay
+    setTimeout(() => {
+      notification.isVisible = true;
+      this.cdr.detectChanges();
+    }, 50);
+
+    // Auto-hide after 4 seconds (reduced from 5)
+    const autoHideTimeout = setTimeout(() => {
+      this.dismissNotification(notification.id);
+    }, 4000);
+
+    notification.autoHideTimeout = autoHideTimeout;
+
+    // Process queue if there are pending notifications
+    this.processNotificationQueue();
   }
 
   dismissNotification(id: string): void {
-    this.notifications = this.notifications.filter(n => n.id !== id);
+    const notification = this.notifications.find(n => n.id === id);
+    if (notification) {
+      // Clear auto-hide timeout if exists
+      if (notification.autoHideTimeout) {
+        clearTimeout(notification.autoHideTimeout);
+      }
+
+      // Start hide animation
+      notification.isHiding = true;
+      this.cdr.detectChanges();
+
+      // Remove from array after animation completes
+      setTimeout(() => {
+        this.notifications = this.notifications.filter(n => n.id !== id);
+        this.cdr.detectChanges();
+      }, 400); // Match CSS transition duration
+    }
+  }
+
+  private processNotificationQueue(): void {
+    // This method can be used for future queue processing if needed
+    // For now, we're using a simpler approach with direct replacement
+    if (this.notificationQueue.length > 0 && this.notifications.length < this.maxNotifications) {
+      const next = this.notificationQueue.shift();
+      if (next) {
+        this.notifications.push(next);
+        this.cdr.detectChanges();
+      }
+    }
   }
 
   trackNotification(index: number, notification: Notification): string {
