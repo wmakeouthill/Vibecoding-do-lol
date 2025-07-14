@@ -727,19 +727,33 @@ export class DiscordService {
 
   // Método para mover jogadores de volta ao canal de origem
   private async movePlayersBackToOrigin(matchId: string): Promise<void> {
+    console.log(`🏠 [movePlayersBackToOrigin] ========== INICIANDO MOVIMENTAÇÃO ==========`);
+    console.log(`🏠 [movePlayersBackToOrigin] Match ID: ${matchId}`);
+
     const match = this.activeMatches.get(matchId);
-    if (!match) return;
+    if (!match) {
+      console.error(`❌ [movePlayersBackToOrigin] Match ${matchId} não encontrado no activeMatches`);
+      return;
+    }
 
     const guild = this.client.guilds.cache.first();
-    if (!guild) return;
+    if (!guild) {
+      console.error(`❌ [movePlayersBackToOrigin] Guild não encontrada`);
+      return;
+    }
 
-    console.log(`🏠 [DiscordService] Movendo jogadores de volta aos canais de origem para match ${matchId}`);
+    console.log(`🏠 [movePlayersBackToOrigin] Movendo jogadores de volta aos canais de origem para match ${matchId}`);
+    console.log(`🏠 [movePlayersBackToOrigin] Total de jogadores: ${match.blueTeam.length + match.redTeam.length}`);
 
     // Combinar todos os jogadores do match
     const allPlayers = [...match.blueTeam, ...match.redTeam];
+    console.log(`🏠 [movePlayersBackToOrigin] Jogadores a mover:`, allPlayers.map(p => p.username));
+
+    let movedCount = 0;
+    let errorCount = 0;
 
     for (const player of allPlayers) {
-      console.log(`🏠 [DiscordService] Processando retorno do jogador:`, player);
+      console.log(`🏠 [movePlayersBackToOrigin] Processando retorno do jogador:`, player);
 
       let discordId = player.userId;
 
@@ -751,36 +765,56 @@ export class DiscordService {
         );
         if (foundDiscordId) {
           discordId = foundDiscordId;
-          console.log(`🔗 [DiscordService] Usando Discord ID da vinculação: ${discordId} para ${player.linkedNickname.gameName}#${player.linkedNickname.tagLine}`);
+          console.log(`🔗 [movePlayersBackToOrigin] Usando Discord ID da vinculação: ${discordId} para ${player.linkedNickname.gameName}#${player.linkedNickname.tagLine}`);
         }
       }
 
       const member = guild.members.cache.get(discordId);
       const originalChannelId = match.originalChannels.get(discordId);
 
+      console.log(`🏠 [movePlayersBackToOrigin] Dados do jogador:`, {
+        username: player.username,
+        discordId: discordId,
+        memberFound: !!member,
+        hasVoiceChannel: !!member?.voice?.channel,
+        originalChannelId: originalChannelId
+      });
+
       if (member && member.voice.channel && originalChannelId) {
         try {
           const originalChannel = guild.channels.cache.get(originalChannelId);
           if (originalChannel && originalChannel.type === ChannelType.GuildVoice) {
+            console.log(`🏠 [movePlayersBackToOrigin] Movendo ${member.user.username} para ${originalChannel.name}`);
             await member.voice.setChannel(originalChannel);
-            console.log(`🏠 ${member.user.username} (${player.linkedNickname ? `${player.linkedNickname.gameName}#${player.linkedNickname.tagLine}` : player.username}) movido de volta para ${originalChannel.name}`);
+            console.log(`✅ [movePlayersBackToOrigin] ${member.user.username} (${player.linkedNickname ? `${player.linkedNickname.gameName}#${player.linkedNickname.tagLine}` : player.username}) movido de volta para ${originalChannel.name}`);
+            movedCount++;
           } else {
             // Se o canal original não existe mais, mover para o canal de matchmaking
             const matchmakingChannel = guild.channels.cache.find(
               channel => channel.name === this.targetChannelName && channel.type === ChannelType.GuildVoice
             );
             if (matchmakingChannel && matchmakingChannel.type === ChannelType.GuildVoice) {
+              console.log(`🏠 [movePlayersBackToOrigin] Canal original não encontrado, movendo ${member.user.username} para ${this.targetChannelName}`);
               await member.voice.setChannel(matchmakingChannel);
-              console.log(`🏠 ${member.user.username} (${player.linkedNickname ? `${player.linkedNickname.gameName}#${player.linkedNickname.tagLine}` : player.username}) movido para ${this.targetChannelName} (canal original não encontrado)`);
+              console.log(`✅ [movePlayersBackToOrigin] ${member.user.username} (${player.linkedNickname ? `${player.linkedNickname.gameName}#${player.linkedNickname.tagLine}` : player.username}) movido para ${this.targetChannelName} (canal original não encontrado)`);
+              movedCount++;
+            } else {
+              console.warn(`⚠️ [movePlayersBackToOrigin] Canal de matchmaking não encontrado para ${member.user.username}`);
+              errorCount++;
             }
           }
         } catch (error) {
-          console.error(`❌ Erro ao mover ${member.user.username} de volta:`, error);
+          console.error(`❌ [movePlayersBackToOrigin] Erro ao mover ${member.user.username} de volta:`, error);
+          errorCount++;
         }
       } else {
-        console.log(`⚠️ [DiscordService] Jogador não encontrado, não está em canal de voz, ou canal original não foi salvo: ${player.username} (ID: ${discordId})`);
+        console.log(`⚠️ [movePlayersBackToOrigin] Jogador não encontrado, não está em canal de voz, ou canal original não foi salvo: ${player.username} (ID: ${discordId})`);
+        errorCount++;
       }
     }
+
+    console.log(`🏠 [movePlayersBackToOrigin] ========== MOVIMENTAÇÃO CONCLUÍDA ==========`);
+    console.log(`🏠 [movePlayersBackToOrigin] Resumo: ${movedCount} jogadores movidos, ${errorCount} erros`);
   }
 
   private broadcastQueueUpdate(): void {
@@ -1947,9 +1981,12 @@ export class DiscordService {
 
   async cleanupMatchByCustomId(matchId: number): Promise<void> {
     const matchIdString = matchId.toString();
+    console.log(`🔍 [cleanupMatchByCustomId] ========== INÍCIO DA LIMPEZA ==========`);
     console.log(`🔍 [cleanupMatchByCustomId] Iniciando limpeza para match ${matchId} (string: ${matchIdString})`);
     console.log(`🔍 [cleanupMatchByCustomId] Total de matches ativos:`, this.activeMatches.size);
     console.log(`🔍 [cleanupMatchByCustomId] Chaves dos matches ativos:`, Array.from(this.activeMatches.keys()));
+    console.log(`🔍 [cleanupMatchByCustomId] Client disponível:`, !!this.client);
+    console.log(`🔍 [cleanupMatchByCustomId] Client guilds:`, this.client?.guilds?.cache?.size || 0);
 
     const match = this.activeMatches.get(matchIdString);
     if (!match) {
@@ -1971,27 +2008,56 @@ export class DiscordService {
       }
 
       console.log(`❌ [cleanupMatchByCustomId] Nenhuma correspondência encontrada para match ${matchId}`);
+      console.log(`❌ [cleanupMatchByCustomId] ========== LIMPEZA FALHOU - MATCH NÃO ENCONTRADO ==========`);
       return;
     }
 
     console.log(`✅ [cleanupMatchByCustomId] Match ${matchId} encontrado, iniciando limpeza...`);
+    console.log(`✅ [cleanupMatchByCustomId] Dados do match:`, {
+      blueTeamCount: match.blueTeam.length,
+      redTeamCount: match.redTeam.length,
+      blueChannelId: match.blueChannelId,
+      redChannelId: match.redChannelId,
+      categoryId: match.categoryId
+    });
+
     await this.performCleanup(matchIdString, match);
+    console.log(`✅ [cleanupMatchByCustomId] ========== LIMPEZA CONCLUÍDA COM SUCESSO ==========`);
   }
 
   // ✅ NOVO: Método auxiliar para realizar a limpeza
   private async performCleanup(matchIdString: string, match: DiscordMatch): Promise<void> {
+    console.log(`🔄 [performCleanup] ========== INICIANDO PERFORM CLEANUP ==========`);
+    console.log(`🔄 [performCleanup] Match ID: ${matchIdString}`);
+    console.log(`🔄 [performCleanup] Dados do match:`, {
+      blueTeamCount: match.blueTeam.length,
+      redTeamCount: match.redTeam.length,
+      blueChannelId: match.blueChannelId,
+      redChannelId: match.redChannelId,
+      categoryId: match.categoryId
+    });
+
     const guild = this.client.guilds.cache.first();
     if (!guild) {
       console.error(`❌ [performCleanup] Guild não encontrada para match ${matchIdString}`);
+      console.error(`❌ [performCleanup] ========== PERFORM CLEANUP FALHOU - SEM GUILD ==========`);
       return;
     }
 
+    console.log(`✅ [performCleanup] Guild encontrada: ${guild.name}`);
+
     try {
+      console.log(`🔄 [performCleanup] ========== MOVENDO JOGADORES DE VOLTA ==========`);
       console.log(`🔄 [performCleanup] Movendo jogadores de volta para match ${matchIdString}...`);
+
       // Mover jogadores de volta
       await this.movePlayersBackToOrigin(matchIdString);
 
+      console.log(`✅ [performCleanup] Jogadores movidos de volta com sucesso`);
+
+      console.log(`🗑️ [performCleanup] ========== DELETANDO CANAIS ==========`);
       console.log(`🗑️ [performCleanup] Deletando canais para match ${matchIdString}...`);
+
       // Deletar canais
       const channelsToDelete = [match.blueChannelId, match.redChannelId, match.categoryId].filter(Boolean);
       console.log(`🗑️ [performCleanup] Canais a deletar:`, channelsToDelete);
@@ -2000,8 +2066,9 @@ export class DiscordService {
         try {
           const channel = guild.channels.cache.get(channelId);
           if (channel) {
+            console.log(`🗑️ [performCleanup] Deletando canal: ${channel.name} (${channelId})`);
             await channel.delete(`Cleanup for match ${matchIdString}`);
-            console.log(`🗑️ [performCleanup] Canal ${channel.name} (${channelId}) deletado`);
+            console.log(`🗑️ [performCleanup] Canal ${channel.name} (${channelId}) deletado com sucesso`);
           } else {
             console.warn(`⚠️ [performCleanup] Canal ${channelId} não encontrado no cache`);
           }
@@ -2010,12 +2077,19 @@ export class DiscordService {
         }
       }
 
+      console.log(`🗑️ [performCleanup] ========== REMOVENDO DO TRACKING ==========`);
+
       // Remover do mapa de matches ativos
       this.activeMatches.delete(matchIdString);
+      console.log(`✅ [performCleanup] Match ${matchIdString} removido do tracking local`);
+
+      console.log(`✅ [performCleanup] ========== PERFORM CLEANUP CONCLUÍDO COM SUCESSO ==========`);
       console.log(`✅ [performCleanup] Match ${matchIdString} completamente limpo e removido do tracking`);
 
     } catch (error) {
+      console.error(`❌ [performCleanup] ========== ERRO NO PERFORM CLEANUP ==========`);
       console.error(`❌ [performCleanup] Erro ao limpar match ${matchIdString}:`, error);
+      console.error(`❌ [performCleanup] Stack trace:`, (error as Error).stack);
       throw error;
     }
   }

@@ -1216,12 +1216,23 @@ export class ApiService {
 
   // ✅ NOVO: Método para enviar mensagens WebSocket
   sendWebSocketMessage(message: any): void {
+    console.log('📤 [ApiService] Tentando enviar mensagem WebSocket:', message.type);
+    console.log('🔍 [ApiService] DEBUG - webSocket existe:', !!this.webSocket);
+    console.log('🔍 [ApiService] DEBUG - webSocket readyState:', this.webSocket?.readyState);
+    console.log('🔍 [ApiService] DEBUG - WebSocket.OPEN:', WebSocket.OPEN);
+
     if (this.webSocket && this.webSocket.readyState === WebSocket.OPEN) {
       console.log('📤 [ApiService] Enviando mensagem WebSocket:', message.type);
+      console.log('📤 [ApiService] Mensagem completa:', JSON.stringify(message, null, 2));
       this.webSocket.send(JSON.stringify(message));
       console.log('✅ [ApiService] Mensagem enviada com sucesso');
     } else {
       console.error('❌ [ApiService] WebSocket não conectado');
+      console.error('❌ [ApiService] WebSocket status:', {
+        exists: !!this.webSocket,
+        readyState: this.webSocket?.readyState,
+        isOpen: this.webSocket?.readyState === WebSocket.OPEN
+      });
     }
   }
 

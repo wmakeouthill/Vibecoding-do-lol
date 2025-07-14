@@ -1165,7 +1165,11 @@ export class MatchmakingService {
   async cancelGameInProgress(matchId: number, reason: string): Promise<void> {
     try {
       console.log(`🚫 [Matchmaking] Redirecionando cancelamento para GameInProgressService`);
+      console.log(`🔍 [Matchmaking] DEBUG - matchId: ${matchId}, reason: ${reason}`);
+      console.log(`🔍 [Matchmaking] DEBUG - gameInProgressService existe: ${!!this.gameInProgressService}`);
+
       await this.gameInProgressService.cancelGame(matchId, reason);
+      console.log(`✅ [Matchmaking] GameInProgressService.cancelGame executado com sucesso`);
     } catch (error) {
       console.error('❌ [Matchmaking] Erro ao cancelar jogo:', error);
       throw error;

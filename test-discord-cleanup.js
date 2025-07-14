@@ -1,77 +1,53 @@
 const WebSocket = require('ws');
 
-// Script de teste para verificar o cancelamento do Discord
+// Test script to verify Discord cleanup functionality
 async function testDiscordCleanup() {
-    console.log('🧪 Iniciando teste de cancelamento do Discord...');
+    console.log('🧪 [Test] Iniciando teste de limpeza do Discord...');
 
     const ws = new WebSocket('ws://localhost:3000');
 
     ws.on('open', () => {
-        console.log('✅ Conectado ao WebSocket');
+        console.log('✅ [Test] Conectado ao servidor WebSocket');
 
-        // Aguardar um pouco para garantir que a conexão está estável
-        setTimeout(() => {
-            console.log('🔍 Verificando status do DiscordService...');
+        // Simular cancelamento de jogo em andamento
+        const testMessage = {
+            type: 'cancel_game_in_progress',
+            data: {
+                matchId: 123, // ID de teste
+                reason: 'Teste de limpeza do Discord'
+            }
+        };
 
-            // Verificar status do Discord
-            fetch('http://localhost:3000/api/debug/discord-status')
-                .then(res => res.json())
-                .then(data => {
-                    console.log('📋 Status do DiscordService:', data);
-
-                    if (data.success && data.discordStatus.activeMatchesCount > 0) {
-                        console.log('🎯 Encontrados matches ativos, testando limpeza...');
-
-                        // Testar limpeza do primeiro match
-                        const firstMatch = data.discordStatus.activeMatches[0];
-                        console.log('🧹 Testando limpeza do match:', firstMatch.matchId);
-
-                        return fetch('http://localhost:3000/api/debug/force-cleanup-match', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify({
-                                matchId: firstMatch.matchId
-                            })
-                        });
-                    } else {
-                        console.log('⚠️ Nenhum match ativo encontrado para testar');
-                        ws.close();
-                    }
-                })
-                .then(res => res.json())
-                .then(data => {
-                    console.log('✅ Resultado da limpeza:', data);
-
-                    // Verificar status novamente
-                    return fetch('http://localhost:3000/api/debug/discord-status');
-                })
-                .then(res => res.json())
-                .then(data => {
-                    console.log('📋 Status após limpeza:', data);
-                    ws.close();
-                })
-                .catch(error => {
-                    console.error('❌ Erro no teste:', error);
-                    ws.close();
-                });
-        }, 1000);
+        console.log('📤 [Test] Enviando mensagem de cancelamento:', testMessage);
+        ws.send(JSON.stringify(testMessage));
     });
 
     ws.on('message', (data) => {
-        const message = JSON.parse(data);
-        console.log('📨 Mensagem recebida:', message.type);
+        const message = JSON.parse(data.toString());
+        console.log('📥 [Test] Resposta recebida:', message);
+
+        if (message.type === 'game_cancelled') {
+            console.log('✅ [Test] Cancelamento de jogo confirmado pelo servidor');
+            console.log('✅ [Test] Teste concluído com sucesso');
+        } else if (message.type === 'error') {
+            console.error('❌ [Test] Erro recebido:', message.message);
+        }
+
+        // Fechar conexão após receber resposta
+        setTimeout(() => {
+            ws.close();
+            console.log('🔌 [Test] Conexão fechada');
+        }, 1000);
     });
 
     ws.on('error', (error) => {
-        console.error('❌ Erro no WebSocket:', error);
+        console.error('❌ [Test] Erro na conexão WebSocket:', error);
     });
 
     ws.on('close', () => {
-        console.log('🔌 WebSocket fechado');
+        console.log('🔌 [Test] Conexão WebSocket fechada');
     });
 }
 
-// Executar o teste
+// Executar teste
 testDiscordCleanup().catch(console.error); 

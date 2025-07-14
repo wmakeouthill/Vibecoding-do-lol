@@ -897,10 +897,14 @@ export class App implements OnInit, OnDestroy {
   }
 
   private handleGameStarting(data: any): void {
+    console.log('🎮 [App] ========== INÍCIO DO handleGameStarting ==========');
     console.log('🎮 [App] Jogo iniciando:', data);
     console.log('🔍 [App] DEBUG - gameData originalMatchId:', data.originalMatchId);
     console.log('🔍 [App] DEBUG - gameData matchId:', data.matchId);
     console.log('🔍 [App] DEBUG - gameData completo:', JSON.stringify(data, null, 2));
+    console.log('🔍 [App] DEBUG - gameData.gameData:', data.gameData);
+    console.log('🔍 [App] DEBUG - gameData.gameData?.matchId:', data.gameData?.matchId);
+    console.log('🎮 [App] ========== FIM DO handleGameStarting ==========');
 
     // ✅ CORREÇÃO: Verificar se os dados dos times estão presentes
     if (!data.team1 || !data.team2) {
@@ -1815,10 +1819,127 @@ export class App implements OnInit, OnDestroy {
   }
 
   onGameCancel(): void {
-    console.log('🚪 [App] Jogo cancelado');
-    this.inGamePhase = false;
-    this.gameData = null;
-    this.currentView = 'dashboard';
+    console.log('🚪 [App] ========== INÍCIO DO onGameCancel ==========');
+    console.log('🚪 [App] Jogo cancelado - MÉTODO CORRETO CHAMADO');
+    console.log('🚪 [App] ========== VERIFICANDO SE ESTE LOG APARECE ==========');
+    console.log('🔍 [App] DEBUG - gameData:', this.gameData);
+    console.log('🔍 [App] DEBUG - gameData.originalMatchId:', this.gameData?.originalMatchId);
+    console.log('🔍 [App] DEBUG - gameData.matchId:', this.gameData?.matchId);
+    console.log('🔍 [App] DEBUG - gameData.gameData:', this.gameData?.gameData);
+    console.log('🔍 [App] DEBUG - gameData.gameData?.matchId:', this.gameData?.gameData?.matchId);
+    console.log('🔍 [App] DEBUG - gameData.data:', this.gameData?.data);
+    console.log('🔍 [App] DEBUG - gameData.data?.matchId:', this.gameData?.data?.matchId);
+    console.log('🔍 [App] DEBUG - gameData completo:', JSON.stringify(this.gameData, null, 2));
+
+    // ✅ CORREÇÃO: Notificar backend sobre cancelamento ANTES de limpar estado
+    let matchIdToUse = null;
+
+    // ✅ PRIORIDADE 1: originalMatchId (mais confiável)
+    if (this.gameData?.originalMatchId) {
+      matchIdToUse = this.gameData.originalMatchId;
+      console.log(`📤 [App] Usando originalMatchId: ${matchIdToUse}`);
+    }
+    // ✅ PRIORIDADE 2: matchId direto
+    else if (this.gameData?.matchId) {
+      matchIdToUse = this.gameData.matchId;
+      console.log(`📤 [App] FALLBACK: Usando matchId: ${matchIdToUse}`);
+    }
+    // ✅ PRIORIDADE 3: matchId aninhado em gameData
+    else if (this.gameData?.gameData?.matchId) {
+      matchIdToUse = this.gameData.gameData.matchId;
+      console.log(`📤 [App] FALLBACK: Usando gameData.matchId: ${matchIdToUse}`);
+    }
+    // ✅ PRIORIDADE 4: matchId do gameData do backend
+    else if (this.gameData?.data?.matchId) {
+      matchIdToUse = this.gameData.data.matchId;
+      console.log(`📤 [App] FALLBACK: Usando data.matchId: ${matchIdToUse}`);
+    }
+    // ✅ PRIORIDADE 5: Busca profunda em todos os objetos aninhados
+    else {
+      console.log(`🔍 [App] Busca profunda por matchId...`);
+      const deepSearch = (obj: any, path: string = ''): any => {
+        if (!obj || typeof obj !== 'object') return null;
+
+        // Verificar se este objeto tem matchId
+        if (obj.matchId !== undefined) {
+          console.log(`🔍 [App] MatchId encontrado em ${path}: ${obj.matchId}`);
+          return obj.matchId;
+        }
+
+        // Verificar se este objeto tem id
+        if (obj.id !== undefined && typeof obj.id === 'number') {
+          console.log(`🔍 [App] ID encontrado em ${path}: ${obj.id}`);
+          return obj.id;
+        }
+
+        // Buscar recursivamente em todas as propriedades
+        for (const [key, value] of Object.entries(obj)) {
+          if (typeof value === 'object' && value !== null) {
+            const result = deepSearch(value, `${path}.${key}`);
+            if (result !== null) return result;
+          }
+        }
+
+        return null;
+      };
+
+      const deepMatchId = deepSearch(this.gameData, 'gameData');
+      if (deepMatchId !== null) {
+        matchIdToUse = deepMatchId;
+        console.log(`📤 [App] FALLBACK: Usando matchId da busca profunda: ${matchIdToUse}`);
+      }
+    }
+
+    if (matchIdToUse) {
+      console.log(`📤 [App] Enviando cancelamento de jogo para backend: ${matchIdToUse}`);
+
+      // ✅ CORREÇÃO: Enviar mensagem WebSocket para cancelar jogo
+      this.apiService.sendWebSocketMessage({
+        type: 'cancel_game_in_progress',
+        data: {
+          matchId: matchIdToUse,
+          reason: 'Cancelado pelo usuário'
+        }
+      });
+
+      console.log(`✅ [App] Mensagem de cancelamento enviada para backend`);
+    } else {
+      console.error('❌ [App] Nenhum ID de partida disponível para cancelamento');
+      console.error('❌ [App] gameData é null ou não tem IDs válidos');
+      console.error('❌ [App] Estrutura do gameData:', {
+        hasGameData: !!this.gameData,
+        hasOriginalMatchId: !!this.gameData?.originalMatchId,
+        hasMatchId: !!this.gameData?.matchId,
+        hasGameDataMatchId: !!this.gameData?.gameData?.matchId,
+        hasDataMatchId: !!this.gameData?.data?.matchId
+      });
+
+      // ✅ CORREÇÃO: Tentar usar o último matchId conhecido como fallback
+      if (this.lastMatchId) {
+        console.log(`📤 [App] FALLBACK FINAL: Usando lastMatchId: ${this.lastMatchId}`);
+        this.apiService.sendWebSocketMessage({
+          type: 'cancel_game_in_progress',
+          data: {
+            matchId: this.lastMatchId,
+            reason: 'Cancelado pelo usuário (fallback)'
+          }
+        });
+        console.log(`✅ [App] Mensagem de cancelamento enviada com fallback`);
+      } else {
+        this.addNotification('error', 'Erro', 'Não foi possível cancelar o jogo - ID da partida não encontrado');
+      }
+    }
+
+    // ✅ CORREÇÃO: Aguardar um pouco antes de limpar o estado para garantir que a mensagem seja enviada
+    setTimeout(() => {
+      // Limpar estado local
+      this.inGamePhase = false;
+      this.gameData = null;
+      this.currentView = 'dashboard';
+
+      // Adicionar notificação
+      this.addNotification('info', 'Jogo Cancelado', 'O jogo foi cancelado e você retornará à fila.');
+    }, 100);
   }
 
   refreshLCUConnection(): void {

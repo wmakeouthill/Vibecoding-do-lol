@@ -495,18 +495,26 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
       }
       break;
     case 'cancel_game_in_progress':
-      console.log('❌ Recebida mensagem cancel_game_in_progress:', data.data);
+      console.log('❌ [WebSocket] Recebida mensagem cancel_game_in_progress:', data.data);
+      console.log('🔍 [WebSocket] DEBUG - matchId:', data.data?.matchId);
+      console.log('🔍 [WebSocket] DEBUG - reason:', data.data?.reason);
+      console.log('🔍 [WebSocket] DEBUG - data completo:', JSON.stringify(data, null, 2));
+
       try {
+        console.log('🔄 [WebSocket] Chamando matchmakingService.cancelGameInProgress...');
         await matchmakingService.cancelGameInProgress(
           data.data.matchId,
           data.data.reason || 'Partida cancelada pelo usuário'
         );
+        console.log('✅ [WebSocket] cancelGameInProgress executado com sucesso');
+
         ws.send(JSON.stringify({
           type: 'game_cancelled',
           data: { matchId: data.data.matchId }
         }));
+        console.log('✅ [WebSocket] Resposta game_cancelled enviada para cliente');
       } catch (error: any) {
-        console.error('❌ Erro ao cancelar partida em andamento:', error);
+        console.error('❌ [WebSocket] Erro ao cancelar partida em andamento:', error);
         ws.send(JSON.stringify({
           type: 'error',
           message: 'Erro ao cancelar partida em andamento: ' + error.message

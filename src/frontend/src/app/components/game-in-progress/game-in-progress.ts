@@ -79,7 +79,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
   // Game tracking
   private currentGameSession: any = null;
 
-  constructor(private apiService: ApiService) {}  ngOnInit() {
+  constructor(private apiService: ApiService) { } ngOnInit() {
     console.log('🚀 [GameInProgress] Inicializando componente...');
     console.log('📊 [GameInProgress] gameData recebido:', {
       hasGameData: !!this.gameData,
@@ -113,7 +113,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
 
   ngOnDestroy() {
     this.stopTimers();
-  }  private initializeGame() {
+  } private initializeGame() {
     console.log('🎮 [GameInProgress] Inicializando jogo...');
     console.log('📊 [GameInProgress] gameData atual:', {
       gameData: this.gameData,
@@ -185,7 +185,8 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
     // Then try every 2 minutes
     this.lcuDetectionTimer = interval(120000).subscribe(() => { // 2 minutes
       this.tryLinkToLiveMatch();
-    });  }
+    });
+  }
 
   private async tryLinkToLiveMatch(): Promise<void> {
     const now = Date.now();
@@ -354,7 +355,8 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
           // Game was detected but now we're not in game anymore
           this.onLCUGameEnded(null);
         }
-      }        } catch (error) {
+      }
+    } catch (error) {
       // console.log('🔍 LCU não disponível para detecção automática');
     }
   }
@@ -363,7 +365,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
     this.lcuGameDetected = true;
     this.gameStatus = 'in-progress';
     this.currentGameSession = gameData;
-  }  private onLCUGameEnded(endGameData: any) {
+  } private onLCUGameEnded(endGameData: any) {
     // console.log('🏁 Fim de jogo detectado pelo LCU:', endGameData);
 
     if (endGameData && endGameData.teams) {
@@ -381,7 +383,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   private autoCompleteGame(winner: 'blue' | 'red', detectedByLCU: boolean) {
-    if (!this.gameData) return;    const result: GameResult = {
+    if (!this.gameData) return; const result: GameResult = {
       sessionId: this.gameData.sessionId,
       gameId: this.generateGameId(),
       winner: winner,
@@ -457,24 +459,8 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
   async cancelGame() {
     console.log('❌ [GameInProgress] Cancelando partida...');
 
-    try {
-      // ✅ NOVO: Notificar backend para apagar a partida do banco
-      if (this.gameData?.originalMatchId) {
-        console.log('🗑️ [GameInProgress] Notificando backend para apagar partida:', this.gameData.originalMatchId);
-
-        // Chamar API para cancelar/apagar a partida
-        const response = await this.apiService.cancelMatch(this.gameData.originalMatchId).toPromise();
-        if (response?.success) {
-          console.log('✅ [GameInProgress] Partida apagada do banco com sucesso');
-        } else {
-          console.warn('⚠️ [GameInProgress] Erro ao apagar partida do banco:', response?.message);
-        }
-      } else {
-        console.warn('⚠️ [GameInProgress] originalMatchId não disponível para apagar do banco');
-      }
-    } catch (error) {
-      console.error('❌ [GameInProgress] Erro ao cancelar partida no backend:', error);
-    }
+    // ✅ CORREÇÃO: Remover chamada HTTP duplicada - o cancelamento será tratado via WebSocket no app component
+    // O app component agora envia mensagem WebSocket 'cancel_game_in_progress' que inclui Discord cleanup e retorno à fila
 
     // Emitir evento de cancelamento para o componente pai
     this.onGameCancel.emit();
@@ -636,10 +622,10 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
 
       // Check if current teams match either configuration in LCU
       const team1MatchScore = this.compareChampionLists(currentTeam1Champions, lcuChampions.team1) +
-                             this.compareChampionLists(currentTeam2Champions, lcuChampions.team2);
+        this.compareChampionLists(currentTeam2Champions, lcuChampions.team2);
 
       const team2MatchScore = this.compareChampionLists(currentTeam1Champions, lcuChampions.team2) +
-                             this.compareChampionLists(currentTeam2Champions, lcuChampions.team1);
+        this.compareChampionLists(currentTeam2Champions, lcuChampions.team1);
 
       const bestScore = Math.max(team1MatchScore, team2MatchScore);
       totalScore += bestScore;
@@ -761,7 +747,8 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
       this.selectedWinner = winner;
 
       // Completar jogo automaticamente com dados reais - APENAS uma vez via evento onGameComplete
-      this.autoCompleteGameWithRealData(winner, true, lcuMatch);    } else {
+      this.autoCompleteGameWithRealData(winner, true, lcuMatch);
+    } else {
       console.log('⚠️ Partida confirmada mas sem vencedor detectado - completando partida como inconclusiva');
 
       // Mesmo sem vencedor detectado, completar a partida automaticamente
