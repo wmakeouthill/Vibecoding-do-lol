@@ -3,6 +3,7 @@ import { DatabaseManager } from '../database/DatabaseManager';
 import { MatchFoundService } from './MatchFoundService';
 import { DraftService } from './DraftService';
 import { GameInProgressService } from './GameInProgressService';
+import { LCUService } from './LCUService';
 
 // Interfaces para jogadores na fila
 interface QueuedPlayer {
@@ -80,9 +81,12 @@ export class MatchmakingService {
   private cacheSyncInterval: NodeJS.Timeout | null = null;
   private readonly CACHE_SYNC_INTERVAL_MS = 5000; // Sincronizar a cada 5 segundos
 
-  constructor(dbManager: DatabaseManager, wss?: any, discordService?: any) {
+  private lcuService: LCUService; // Adicionado para acesso ao LCU
+
+  constructor(dbManager: DatabaseManager, wss?: any, discordService?: any, lcuService?: LCUService) {
     this.dbManager = dbManager;
     this.wss = wss;
+    this.lcuService = lcuService!;
 
     console.log('🔍 [Matchmaking] WebSocket Server recebido:', !!wss);
     console.log('🔍 [Matchmaking] WebSocket clients:', wss?.clients?.size || 0);
@@ -1021,11 +1025,37 @@ export class MatchmakingService {
       if (!player) {
         console.log('❌ [Discord] Jogador não encontrado no banco, criando automaticamente...');
 
-        // ✅ CRIAR JOGADOR AUTOMATICAMENTE se não existir
+        // NOVO: Buscar puuid do LCU antes de criar o jogador
+        let puuid: string | undefined = undefined;
+        let summonerId: string | undefined = undefined;
+        if (this.lcuService && this.lcuService.isClientConnected()) {
+          try {
+            const lcuSummoner = await this.lcuService.getCurrentSummoner();
+            if (
+              lcuSummoner &&
+              lcuSummoner.gameName === requestData.gameName &&
+              lcuSummoner.tagLine === requestData.tagLine
+            ) {
+              puuid = lcuSummoner.puuid;
+              summonerId = lcuSummoner.summonerId?.toString();
+            }
+          } catch (err) {
+            console.error('❌ [Discord] Erro ao buscar puuid do LCU:', err);
+          }
+        }
+
+        if (!puuid) {
+          websocket.send(JSON.stringify({
+            type: 'error',
+            message: 'Não foi possível obter o PUUID do jogador via LCU. Certifique-se de estar logado no LoL com o mesmo Riot ID.'
+          }));
+          return;
+        }
+
         const newPlayerData = {
           summoner_name: fullSummonerName,
-          summoner_id: requestData.discordId || '0', // Usar Discord ID como fallback
-          puuid: '', // Será preenchido depois
+          summoner_id: summonerId || requestData.discordId || '0',
+          puuid: puuid,
           region: 'br1',
           current_mmr: 1200,
           peak_mmr: 1200,
