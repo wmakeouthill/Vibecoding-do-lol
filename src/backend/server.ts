@@ -17,7 +17,7 @@ import { DiscordService } from './services/DiscordService';
 import { DataDragonService } from './services/DataDragonService';
 import { DraftService } from './services/DraftService';
 import { MatchFoundService } from './services/MatchFoundService';
-import { CustomGameService } from './services/CustomGameService';
+
 import { setupChampionRoutes } from './routes/champions';
 
 // Carregar variáveis de ambiente do arquivo .env
@@ -210,7 +210,7 @@ const playerService = new PlayerService(globalRiotAPI, dbManager);
 const matchHistoryService = new MatchHistoryService(globalRiotAPI, dbManager);
 const dataDragonService = new DataDragonService();
 const draftService = new DraftService(dbManager, wss, discordService);
-const customGameService = new CustomGameService(dbManager, lcuService, wss, discordService);
+
 // matchFoundService agora está dentro do matchmakingService - removido para evitar duplicação
 
 // WebSocket para comunicação em tempo real
@@ -400,59 +400,7 @@ async function handleWebSocketMessage(ws: WebSocket, data: any) {
         }));
       }
       break;
-    case 'start_custom_game':
-      console.log('🎮 Iniciando criação de partida customizada...');
-      try {
-        const { matchId } = data;
-        if (!matchId) {
-          ws.send(JSON.stringify({
-            type: 'custom_game_error',
-            error: 'ID da partida não fornecido'
-          }));
-          return;
-        }
 
-        await customGameService.startCustomGameCreation(matchId);
-        ws.send(JSON.stringify({
-          type: 'custom_game_started',
-          success: true,
-          matchId: matchId,
-          message: 'Criação de partida customizada iniciada'
-        }));
-      } catch (error: any) {
-        console.error('❌ Erro ao iniciar partida customizada:', error);
-        ws.send(JSON.stringify({
-          type: 'custom_game_error',
-          error: error.message || 'Erro ao iniciar partida customizada'
-        }));
-      }
-      break;
-    case 'get_custom_game_status':
-      console.log('🎮 Buscando status da partida customizada...');
-      try {
-        const { matchId } = data;
-        if (!matchId) {
-          ws.send(JSON.stringify({
-            type: 'custom_game_error',
-            error: 'ID da partida não fornecido'
-          }));
-          return;
-        }
-
-        const gameData = await customGameService.getCustomGameByMatchId(matchId);
-        ws.send(JSON.stringify({
-          type: 'custom_game_status',
-          success: true,
-          gameData: gameData
-        }));
-      } catch (error: any) {
-        console.error('❌ Erro ao buscar status da partida customizada:', error);
-        ws.send(JSON.stringify({
-          type: 'custom_game_error',
-          error: error.message || 'Erro ao buscar status da partida customizada'
-        }));
-      }
-      break;
     case 'ping':
       ws.send(JSON.stringify({ type: 'pong' }));
       break;
@@ -2848,71 +2796,7 @@ async function startServer() {
 
     // ROTAS DE CAMPEÕES REMOVIDAS - já definidas em routes/champions.ts
 
-    // Rotas de partidas customizadas
-    app.post('/api/custom-game/start/:matchId', (async (req: Request, res: Response) => {
-      try {
-        const matchId = parseInt(req.params.matchId);
-        if (isNaN(matchId)) {
-          return res.status(400).json({ error: 'ID da partida inválido' });
-        }
 
-        console.log(`🎮 [API] Iniciando criação de partida customizada para match ${matchId}`);
-        await customGameService.startCustomGameCreation(matchId);
-
-        res.json({
-          success: true,
-          message: 'Criação de partida customizada iniciada',
-          matchId
-        });
-      } catch (error: any) {
-        console.error(`❌ [API] Erro ao iniciar partida customizada:`, error);
-        res.status(500).json({
-          error: 'Erro ao iniciar partida customizada',
-          message: error.message
-        });
-      }
-    }) as RequestHandler);
-
-    app.get('/api/custom-game/status/:matchId', (async (req: Request, res: Response) => {
-      try {
-        const matchId = parseInt(req.params.matchId);
-        if (isNaN(matchId)) {
-          return res.status(400).json({ error: 'ID da partida inválido' });
-        }
-
-        const gameData = await customGameService.getCustomGameByMatchId(matchId);
-        if (!gameData) {
-          return res.status(404).json({ error: 'Partida customizada não encontrada' });
-        }
-
-        res.json({
-          success: true,
-          gameData
-        });
-      } catch (error: any) {
-        console.error(`❌ [API] Erro ao buscar status da partida customizada:`, error);
-        res.status(500).json({
-          error: 'Erro ao buscar status da partida customizada',
-          message: error.message
-        });
-      }
-    }) as RequestHandler);
-
-    app.get('/api/custom-game/active', (async (req: Request, res: Response) => {
-      try {
-        const activeGames = await customGameService.getActiveCustomGames();
-        res.json({
-          success: true,
-          activeGames
-        });
-      } catch (error: any) {
-        console.error(`❌ [API] Erro ao buscar partidas customizadas ativas:`, error);
-        res.status(500).json({
-          error: 'Erro ao buscar partidas customizadas ativas',
-          message: error.message
-        });
-      }
-    }) as RequestHandler);
 
     // Endpoint para corrigir status das partidas antigas
     app.put('/api/matches/custom/:matchId', (async (req: Request, res: Response) => {
