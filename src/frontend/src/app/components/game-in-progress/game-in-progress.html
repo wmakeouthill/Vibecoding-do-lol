@@ -37,15 +37,31 @@
         </div>
         <div class="bans-list">
           <div class="ban-item" *ngFor="let ban of getTeamBans('blue')">
-            <span class="ban-champion" *ngIf="ban.champion">{{ ban.champion.name || ban.championName || 'Campeão' }}</span>
+            <span class="ban-champion" *ngIf="ban.champion">{{ ban.champion.name || ban.championName || 'Campeão'
+              }}</span>
             <span class="ban-champion" *ngIf="!ban.champion && ban.championId">ID: {{ ban.championId }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ✅ NOVO: Picks do Time Azul -->
+      <div class="team-picks" *ngIf="getTeamPicks('blue').length > 0">
+        <div class="picks-header">
+          <span class="picks-title">🏆 Picks:</span>
+        </div>
+        <div class="picks-list">
+          <div class="pick-item" *ngFor="let pick of getTeamPicks('blue')">
+            <span class="pick-champion" *ngIf="pick.champion">{{ pick.champion.name || pick.championName || 'Campeão'
+              }}</span>
+            <span class="pick-champion" *ngIf="!pick.champion && pick.championId">ID: {{ pick.championId }}</span>
+            <span class="pick-player" *ngIf="pick.player">({{ pick.player }})</span>
           </div>
         </div>
       </div>
 
       <div class="team-players">
         <div class="player" *ngFor="let player of getTeamPlayers('blue')"
-             [class.current-player]="currentPlayer && player.id === currentPlayer.id">
+          [class.current-player]="currentPlayer && player.id === currentPlayer.id">
           <div class="player-lane">
             <span class="lane-icon">{{ getLaneIcon(player.assignedLane || player.lane || player.role) }}</span>
             <span class="lane-name">{{ getLaneName(player.assignedLane || player.lane || player.role) }}</span>
@@ -86,15 +102,31 @@
         </div>
         <div class="bans-list">
           <div class="ban-item" *ngFor="let ban of getTeamBans('red')">
-            <span class="ban-champion" *ngIf="ban.champion">{{ ban.champion.name || ban.championName || 'Campeão' }}</span>
+            <span class="ban-champion" *ngIf="ban.champion">{{ ban.champion.name || ban.championName || 'Campeão'
+              }}</span>
             <span class="ban-champion" *ngIf="!ban.champion && ban.championId">ID: {{ ban.championId }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ✅ NOVO: Picks do Time Vermelho -->
+      <div class="team-picks" *ngIf="getTeamPicks('red').length > 0">
+        <div class="picks-header">
+          <span class="picks-title">🏆 Picks:</span>
+        </div>
+        <div class="picks-list">
+          <div class="pick-item" *ngFor="let pick of getTeamPicks('red')">
+            <span class="pick-champion" *ngIf="pick.champion">{{ pick.champion.name || pick.championName || 'Campeão'
+              }}</span>
+            <span class="pick-champion" *ngIf="!pick.champion && pick.championId">ID: {{ pick.championId }}</span>
+            <span class="pick-player" *ngIf="pick.player">({{ pick.player }})</span>
           </div>
         </div>
       </div>
 
       <div class="team-players">
         <div class="player" *ngFor="let player of getTeamPlayers('red')"
-             [class.current-player]="currentPlayer && player.id === currentPlayer.id">
+          [class.current-player]="currentPlayer && player.id === currentPlayer.id">
           <div class="player-lane">
             <span class="lane-icon">{{ getLaneIcon(player.assignedLane || player.lane || player.role) }}</span>
             <span class="lane-name">{{ getLaneName(player.assignedLane || player.lane || player.role) }}</span>
@@ -161,17 +193,15 @@
       <p>Ou selecione manualmente o time vencedor da partida:</p>
 
       <div class="winner-buttons">
-        <button class="team-button team-blue-btn"
-                [class.selected]="selectedWinner === 'blue'"
-                (click)="declareWinner('blue')">
+        <button class="team-button team-blue-btn" [class.selected]="selectedWinner === 'blue'"
+          (click)="declareWinner('blue')">
           <span class="team-icon">🛡️</span>
           <span class="team-name">Time Azul</span>
           <span class="winner-icon" *ngIf="selectedWinner === 'blue'">✓</span>
         </button>
 
-        <button class="team-button team-red-btn"
-                [class.selected]="selectedWinner === 'red'"
-                (click)="declareWinner('red')">
+        <button class="team-button team-red-btn" [class.selected]="selectedWinner === 'red'"
+          (click)="declareWinner('red')">
           <span class="team-icon">⚔️</span>
           <span class="team-name">Time Vermelho</span>
           <span class="winner-icon" *ngIf="selectedWinner === 'red'">✓</span>
@@ -193,36 +223,36 @@
   <!-- Settings Section -->
   <div class="settings-section">
     <div class="settings-card">
-      <h4>Configurações</h4>      <div class="setting-item">
+      <h4>Configurações</h4>
+      <div class="setting-item">
         <label class="setting-label">
-          <input type="checkbox"
-                 [(ngModel)]="lcuDetectionEnabled"
-                 (change)="toggleLCUDetection()">
+          <input type="checkbox" [(ngModel)]="lcuDetectionEnabled" (change)="toggleLCUDetection()">
           <span class="checkmark"></span>
           Detecção automática via LCU
         </label>
         <p class="setting-description">
           Detectar automaticamente o fim da partida através do cliente do League of Legends
         </p>
-      </div>      <div class="setting-item">        <div class="detection-buttons">
-          <button class="btn btn-outline retry-detection-btn"
-                  (click)="retryAutoDetection()"
-                  [disabled]="isAutoDetecting">
+      </div>
+      <div class="setting-item">
+        <div class="detection-buttons">
+          <button class="btn btn-outline retry-detection-btn" (click)="retryAutoDetection()"
+            [disabled]="isAutoDetecting">
             <span class="btn-icon" *ngIf="!isAutoDetecting">🔄</span>
             <span class="btn-icon spinning" *ngIf="isAutoDetecting">⏳</span>
             <span *ngIf="!isAutoDetecting">Tentar Detectar Vencedor</span>
             <span *ngIf="isAutoDetecting">Detectando...</span>
           </button>
 
-          <button class="btn btn-outline simulate-last-match-btn"
-                  (click)="simulateLastMatch()"
-                  [disabled]="isAutoDetecting">
+          <button class="btn btn-outline simulate-last-match-btn" (click)="simulateLastMatch()"
+            [disabled]="isAutoDetecting">
             <span class="btn-icon">🎭</span>
             Detectar Última Partida
           </button>
         </div>
         <p class="setting-description">
-          Tenta detectar o vencedor automaticamente via LCU ou comparando com o histórico. Use "Detectar Última Partida" para simular um jogo igual à sua última partida.
+          Tenta detectar o vencedor automaticamente via LCU ou comparando com o histórico. Use "Detectar Última Partida"
+          para simular um jogo igual à sua última partida.
         </p>
       </div>
     </div>
@@ -230,10 +260,8 @@
 
   <!-- Action Buttons -->
   <div class="action-buttons">
-    <button class="btn btn-primary"
-            [disabled]="!selectedWinner"
-            (click)="confirmWinner()"
-            *ngIf="gameStatus === 'ended' || !lcuDetectionEnabled">
+    <button class="btn btn-primary" [disabled]="!selectedWinner" (click)="confirmWinner()"
+      *ngIf="gameStatus === 'ended' || !lcuDetectionEnabled">
       <span class="btn-icon">✅</span>
       Confirmar Resultado
     </button>
@@ -264,12 +292,12 @@
         <button class="close-btn" (click)="closeMatchConfirmation()">×</button>
       </div>
 
-      <div class="modal-content" *ngIf="detectedLCUMatch && matchComparisonResult">        <!-- Match Information -->
+      <div class="modal-content" *ngIf="detectedLCUMatch && matchComparisonResult"> <!-- Match Information -->
         <div class="match-info-section">
           <div class="confidence-indicator">
             <div class="confidence-badge" [class.high-confidence]="matchComparisonResult.confidence >= 80"
-                 [class.medium-confidence]="matchComparisonResult.confidence >= 50 && matchComparisonResult.confidence < 80"
-                 [class.low-confidence]="matchComparisonResult.confidence < 50">
+              [class.medium-confidence]="matchComparisonResult.confidence >= 50 && matchComparisonResult.confidence < 80"
+              [class.low-confidence]="matchComparisonResult.confidence < 50">
               {{ matchComparisonResult.confidence }}% de similaridade
             </div>
             <p class="confidence-reason">{{ matchComparisonResult.reason }}</p>
@@ -297,7 +325,8 @@
             </div>
             <div class="match-detail-row" *ngIf="getLCUMatchWinner(detectedLCUMatch)">
               <span class="label">Vencedor:</span>
-              <span class="value winner" [style.color]="getLCUMatchWinner(detectedLCUMatch) === 'blue' ? '#4FC3F7' : '#F44336'">
+              <span class="value winner"
+                [style.color]="getLCUMatchWinner(detectedLCUMatch) === 'blue' ? '#4FC3F7' : '#F44336'">
                 Time {{ getLCUMatchWinner(detectedLCUMatch) === 'blue' ? 'Azul' : 'Vermelho' }} 🏆
               </span>
             </div>
@@ -366,9 +395,9 @@
             Se confirmar, o resultado desta partida será aplicado ao seu jogo no aplicativo.
           </p>
         </div>
-      </div>      <div class="modal-actions">
-        <button class="btn btn-primary" (click)="confirmDetectedMatch()"
-                [disabled]="!detectedLCUMatch">
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" (click)="confirmDetectedMatch()" [disabled]="!detectedLCUMatch">
           <span class="btn-icon">✅</span>
           <span *ngIf="getLCUMatchWinner(detectedLCUMatch)">Sim, Esta é a Partida</span>
           <span *ngIf="!getLCUMatchWinner(detectedLCUMatch)">Confirmar (Declarar Vencedor Manualmente)</span>

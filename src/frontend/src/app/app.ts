@@ -2382,13 +2382,26 @@ export class App implements OnInit, OnDestroy {
             console.log('[simular game] Pick/ban data da partida:', latestMatch.pick_ban_data);
 
             // ✅ NOVO: Preparar dados para o GameInProgress
+            // ✅ CORREÇÃO: Extrair pickBanData da partida real
+            let extractedPickBanData = {};
+            try {
+              if (latestMatch.pick_ban_data) {
+                extractedPickBanData = typeof latestMatch.pick_ban_data === 'string'
+                  ? JSON.parse(latestMatch.pick_ban_data)
+                  : latestMatch.pick_ban_data;
+                console.log('[simular game] Pick/ban data extraída da partida real:', extractedPickBanData);
+              }
+            } catch (parseError) {
+              console.warn('[simular game] Erro ao parsear pick_ban_data da partida real:', parseError);
+            }
+
             const gameData = {
               sessionId: `simulation_${matchId}`,
               gameId: gameId?.toString() || `sim_${matchId}`,
               team1: this.extractTeamFromMatchData(latestMatch, 1),
               team2: this.extractTeamFromMatchData(latestMatch, 2),
               startTime: new Date(),
-              pickBanData: pickBanData || {},
+              pickBanData: extractedPickBanData, // ✅ CORREÇÃO: Usar dados reais da partida
               isCustomGame: true,
               originalMatchId: matchId,
               originalMatchData: latestMatch,

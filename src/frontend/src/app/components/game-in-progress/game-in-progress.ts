@@ -1175,17 +1175,99 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
         return teamBans;
       }
 
-      // ✅ FALLBACK: Verificar estrutura alternativa
+      // ✅ FALLBACK: Verificar estrutura alternativa para dados de partida real
       if (team === 'blue' && pickBanData.team1Bans) {
         return pickBanData.team1Bans || [];
       } else if (team === 'red' && pickBanData.team2Bans) {
         return pickBanData.team2Bans || [];
       }
 
+      // ✅ NOVO: Verificar estrutura de dados da partida real (Riot API)
+      if (pickBanData.bans && Array.isArray(pickBanData.bans)) {
+        const teamId = team === 'blue' ? 100 : 200;
+        const teamBans = pickBanData.bans
+          .filter((ban: any) => ban.teamId === teamId)
+          .map((ban: any) => ({
+            champion: { id: ban.championId, name: this.getChampionNameById(ban.championId) },
+            championName: this.getChampionNameById(ban.championId),
+            championId: ban.championId
+          }));
+
+        console.log(`✅ [GameInProgress] Bans da partida real encontrados para time ${team}:`, teamBans);
+        return teamBans;
+      }
+
       console.log(`⚠️ [GameInProgress] Nenhum ban encontrado para time ${team}`);
       return [];
     } catch (error) {
       console.error('❌ [GameInProgress] Erro ao obter bans do time:', error);
+      return [];
+    }
+  }
+
+  // ✅ NOVO: Método para obter picks dos times
+  getTeamPicks(team: 'blue' | 'red'): any[] {
+    if (!this.gameData?.pickBanData) {
+      console.warn('⚠️ [GameInProgress] pickBanData não disponível para picks');
+      return [];
+    }
+
+    try {
+      const pickBanData = this.gameData.pickBanData;
+      console.log(`🔍 [GameInProgress] Buscando picks do time ${team}:`, {
+        hasPickBanData: !!pickBanData,
+        hasPhases: !!pickBanData.phases,
+        phasesLength: pickBanData.phases?.length || 0,
+        pickBanDataStructure: Object.keys(pickBanData)
+      });
+
+      // ✅ CORREÇÃO: Extrair picks das phases (estrutura correta)
+      if (pickBanData.phases && Array.isArray(pickBanData.phases)) {
+        const teamPicks = pickBanData.phases
+          .filter((phase: any) =>
+            phase.action === 'pick' &&
+            phase.team === team &&
+            phase.champion &&
+            phase.locked
+          )
+          .map((phase: any) => ({
+            champion: phase.champion,
+            championName: phase.champion?.name,
+            championId: phase.champion?.id,
+            player: phase.playerName || phase.player
+          }));
+
+        console.log(`✅ [GameInProgress] Picks encontrados para time ${team}:`, teamPicks);
+        return teamPicks;
+      }
+
+      // ✅ FALLBACK: Verificar estrutura alternativa para dados de partida real
+      if (team === 'blue' && pickBanData.team1Picks) {
+        return pickBanData.team1Picks || [];
+      } else if (team === 'red' && pickBanData.team2Picks) {
+        return pickBanData.team2Picks || [];
+      }
+
+      // ✅ NOVO: Verificar estrutura de dados da partida real (Riot API)
+      if (pickBanData.picks && Array.isArray(pickBanData.picks)) {
+        const teamId = team === 'blue' ? 100 : 200;
+        const teamPicks = pickBanData.picks
+          .filter((pick: any) => pick.teamId === teamId)
+          .map((pick: any) => ({
+            champion: { id: pick.championId, name: this.getChampionNameById(pick.championId) },
+            championName: this.getChampionNameById(pick.championId),
+            championId: pick.championId,
+            player: pick.playerName || pick.summonerName
+          }));
+
+        console.log(`✅ [GameInProgress] Picks da partida real encontrados para time ${team}:`, teamPicks);
+        return teamPicks;
+      }
+
+      console.log(`⚠️ [GameInProgress] Nenhum pick encontrado para time ${team}`);
+      return [];
+    } catch (error) {
+      console.error('❌ [GameInProgress] Erro ao obter picks do time:', error);
       return [];
     }
   }

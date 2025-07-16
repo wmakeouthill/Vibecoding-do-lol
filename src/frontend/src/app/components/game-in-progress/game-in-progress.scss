@@ -167,6 +167,53 @@
       }
     }
 
+    // ✅ NOVO: Estilos para os picks
+    .team-picks {
+      margin-bottom: 15px;
+      padding: 12px;
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 8px;
+      border: 1px solid #3c3c41;
+
+      .picks-header {
+        margin-bottom: 8px;
+
+        .picks-title {
+          font-size: 14px;
+          font-weight: 600;
+          color: #f0e6d2;
+        }
+      }
+
+      .picks-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+
+        .pick-item {
+          padding: 4px 8px;
+          background: rgba(0, 208, 132, 0.2);
+          border: 1px solid #00d084;
+          border-radius: 6px;
+          font-size: 12px;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+
+          .pick-champion {
+            color: #f0e6d2;
+            font-weight: 500;
+          }
+
+          .pick-player {
+            color: #a09b8c;
+            font-size: 11px;
+            font-style: italic;
+          }
+        }
+      }
+    }
+
     .team-players {
       .player {
         display: grid;
@@ -469,7 +516,7 @@
           }
         }
 
-        input[type="checkbox"]:checked + .checkmark {
+        input[type="checkbox"]:checked+.checkmark {
           background: #c8aa6e;
           border-color: #c8aa6e;
 
@@ -525,7 +572,9 @@
         color: #a09b8c;
         cursor: not-allowed;
       }
-    }    &.btn-secondary {
+    }
+
+    &.btn-secondary {
       background: #3c3c41;
       color: #e0e6ed;
       border: 1px solid #5a5a5a;
@@ -545,7 +594,8 @@
         background: #c8aa6e;
         color: #1e2328;
         transform: translateY(-2px);
-      }    }
+      }
+    }
   }
 
   .detection-buttons {
@@ -591,8 +641,13 @@
 
 // Auto detection loading animation
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .spinning {
