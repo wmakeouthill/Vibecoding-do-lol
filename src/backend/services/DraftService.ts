@@ -37,6 +37,7 @@ export class DraftService {
   private draftSyncInterval: NodeJS.Timeout | null = null;
   private lastPickBanDataHash = new Map<number, string>();
   private discordService?: DiscordService;
+  private processingDrafts = new Set<string>(); // ✅ NOVO: Controle de ordem de processamento
 
   constructor(dbManager: DatabaseManager, wss?: any, discordService?: DiscordService) {
     console.log('🔧 [DraftService] Construtor chamado');
@@ -504,9 +505,19 @@ export class DraftService {
     return sortedPlayers;
   }
 
-  // ✅ CORRIGIDO: Processar ação de draft (pick/ban) com salvamento (sem necessidade de draft ativo)
+  // ✅ CORRIGIDO: Processar ação de draft (pick/ban) com salvamento MySQL PRIMEIRO
   async processDraftAction(matchId: number, playerId: string, championId: number, action: 'pick' | 'ban'): Promise<void> {
     console.log(`🎯 [Draft] Processando ${action} do campeão ${championId} por jogador ${playerId} na partida ${matchId}`);
+
+    // ✅ NOVO: Controle de ordem - aguardar processamento anterior
+    const processingKey = `draft_${matchId}`;
+    if (this.processingDrafts.has(processingKey)) {
+      console.log(`⏳ [Draft] Partida ${matchId} já está sendo processada, aguardando...`);
+      await this.waitForProcessing(processingKey, 5000); // Aguardar até 5 segundos
+    }
+
+    // ✅ NOVO: Marcar como sendo processado
+    this.processingDrafts.add(processingKey);
 
     try {
       // 1. ✅ NOVO: Buscar partida no banco (não precisa de draft ativo na memória)
@@ -528,6 +539,16 @@ export class DraftService {
       } catch (error) {
         console.warn(`⚠️ [Draft] Erro ao parsear pick_ban_data existente:`, error);
         pickBanData = {};
+      }
+
+      // ✅ NOVO: Verificar se a ação já foi processada (evitar duplicação)
+      const existingAction = pickBanData.actions?.find((a: any) =>
+        a.playerName === playerId && a.championId === championId && a.action === action
+      );
+
+      if (existingAction) {
+        console.log(`⚠️ [Draft] Ação já processada anteriormente:`, existingAction);
+        return;
       }
 
       // 3. ✅ NOVO: Inicializar estrutura se não existir
@@ -661,8 +682,9 @@ export class DraftService {
         totalAcoes: pickBanData.actions.length
       });
 
-      // 8. ✅ NOVO: Notificar todos os clientes conectados sobre a ação do draft
-      this.notifyDraftAction(matchId, playerTeamIndex, championId, action, {
+      // 8. ✅ CORREÇÃO: Notificar todos os clientes conectados sobre a ação do draft
+      // ✅ NOVO: Enviar notificação com retry para garantir entrega
+      await this.notifyDraftActionWithRetry(matchId, playerTeamIndex, championId, action, {
         playerName,
         playerLane,
         teamIndex,
@@ -677,9 +699,36 @@ export class DraftService {
 
       console.log(`🎉 [Draft] Ação do draft processada e notificada para partida ${matchId}`);
 
+      // === NOVO: Verificar se o draft terminou ===
+      // Supondo que são 10 jogadores, 10 picks e 10 bans (5 por time)
+      const totalPicks = (pickBanData.team1Picks?.length || 0) + (pickBanData.team2Picks?.length || 0);
+      const totalBans = (pickBanData.team1Bans?.length || 0) + (pickBanData.team2Bans?.length || 0);
+      const draftCompleted = totalPicks === 10 && totalBans === 10;
+      if (draftCompleted) {
+        console.log(`🏁 [Draft] Todas as picks e bans concluídas para a partida ${matchId}. Finalizando draft...`);
+        await this.finalizeDraft(matchId, pickBanData);
+      }
+
     } catch (error) {
       console.error(`❌ [Draft] Erro ao processar ação do draft:`, error);
       throw error;
+    } finally {
+      // ✅ NOVO: Sempre remover do processamento, mesmo em caso de erro
+      this.processingDrafts.delete(processingKey);
+      console.log(`✅ [Draft] Processamento da partida ${matchId} finalizado`);
+    }
+  }
+
+  // ✅ NOVO: Aguardar processamento anterior
+  private async waitForProcessing(processingKey: string, timeoutMs: number): Promise<void> {
+    const startTime = Date.now();
+
+    while (this.processingDrafts.has(processingKey)) {
+      if (Date.now() - startTime > timeoutMs) {
+        console.warn(`⚠️ [Draft] Timeout aguardando processamento de ${processingKey}`);
+        break;
+      }
+      await new Promise(resolve => setTimeout(resolve, 100)); // Aguardar 100ms
     }
   }
 
@@ -970,7 +1019,7 @@ export class DraftService {
       timestamp: Date.now()
     };
 
-    this.broadcastMessage(message);
+    this.broadcastMessage(message, matchId);
     console.log(`📢 [Draft] Notificação de draft iniciado enviada (${matchId}) com dados estruturados:`, {
       teammates: teammates.length,
       enemies: enemies.length,
@@ -1012,7 +1061,7 @@ export class DraftService {
       timestamp: Date.now()
     };
 
-    this.broadcastMessage(message);
+    this.broadcastMessage(message, matchId);
 
     console.log(`📢 [Draft] Notificação de ${action} enviada:`, {
       matchId,
@@ -1022,6 +1071,33 @@ export class DraftService {
       championId,
       action
     });
+  }
+
+  // ✅ NOVO: Método com retry para garantir entrega das notificações de draft
+  private async notifyDraftActionWithRetry(matchId: number, playerId: number, championId: number, action: string, extraData?: any): Promise<void> {
+    const maxRetries = 3;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        this.notifyDraftAction(matchId, playerId, championId, action, extraData);
+
+        // ✅ NOVO: Aguardar um pouco para dar tempo da notificação ser processada
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        console.log(`✅ [Draft] Notificação de ${action} enviada com sucesso na tentativa ${attempt}`);
+        return;
+
+      } catch (error) {
+        console.error(`❌ [Draft] Erro na tentativa ${attempt} de enviar notificação:`, error);
+
+        if (attempt < maxRetries) {
+          // Aguardar antes da próxima tentativa (backoff exponencial)
+          await new Promise(resolve => setTimeout(resolve, 500 * attempt));
+        }
+      }
+    }
+
+    console.error(`❌ [Draft] Falha ao enviar notificação após ${maxRetries} tentativas`);
   }
 
   // ✅ NOVO: Notificar sobre sincronização de dados do draft
@@ -1053,7 +1129,7 @@ export class DraftService {
         timestamp: Date.now()
       };
 
-      this.broadcastMessage(message);
+      this.broadcastMessage(message, matchId);
 
       console.log(`🔄 [Draft] Sincronização enviada para partida ${matchId}:`, {
         totalActions: message.data.totalActions,
@@ -1213,7 +1289,7 @@ export class DraftService {
         timestamp: Date.now()
       };
 
-      this.broadcastMessage(message);
+      this.broadcastMessage(message, matchId);
       console.log(`✅ [Draft] Notificação de início de jogo enviada com dados completos (${matchId})`);
 
     } catch (error) {
@@ -1387,18 +1463,68 @@ export class DraftService {
     return false;
   }
 
-  private broadcastMessage(message: any): void {
+  // ✅ CORRIGIDO: Broadcast direcionado para jogadores da partida
+  private broadcastMessage(message: any, matchId?: number): void {
     if (!this.wss?.clients) return;
 
-    this.wss.clients.forEach((client: WebSocket) => {
-      if (client.readyState === WebSocket.OPEN) {
-        try {
-          client.send(JSON.stringify(message));
-        } catch (error) {
-          console.error('❌ [Draft] Erro ao enviar mensagem:', error);
+    // Se matchId fornecido, enviar apenas para jogadores da partida
+    if (matchId) {
+      this.sendTargetedMessage(message, matchId);
+    } else {
+      // Broadcast geral apenas quando necessário
+      this.wss.clients.forEach((client: WebSocket) => {
+        if (client.readyState === WebSocket.OPEN) {
+          try {
+            client.send(JSON.stringify(message));
+          } catch (error) {
+            console.error('❌ [Draft] Erro ao enviar mensagem:', error);
+          }
         }
+      });
+    }
+  }
+
+  // ✅ NOVO: Método para envio direcionado
+  private async sendTargetedMessage(message: any, matchId: number): Promise<void> {
+    try {
+      const match = await this.dbManager.getCustomMatchById(matchId);
+      if (!match) return;
+
+      let allPlayersInMatch: string[] = [];
+      try {
+        const team1 = typeof match.team1_players === 'string'
+          ? JSON.parse(match.team1_players)
+          : (match.team1_players || []);
+        const team2 = typeof match.team2_players === 'string'
+          ? JSON.parse(match.team2_players)
+          : (match.team2_players || []);
+
+        allPlayersInMatch = [...team1, ...team2];
+      } catch (error) {
+        console.error(`❌ [Draft] Erro ao parsear jogadores da partida ${matchId}:`, error);
+        return;
       }
-    });
+
+      this.wss.clients.forEach((client: WebSocket) => {
+        if (client.readyState === WebSocket.OPEN) {
+          const clientInfo = (client as any).playerInfo;
+          const isIdentified = (client as any).isIdentified;
+
+          if (isIdentified && clientInfo) {
+            const isInMatch = this.isPlayerInMatch(clientInfo, allPlayersInMatch);
+            if (isInMatch) {
+              try {
+                client.send(JSON.stringify(message));
+              } catch (error) {
+                console.error('❌ [Draft] Erro ao enviar mensagem direcionada:', error);
+              }
+            }
+          }
+        }
+      });
+    } catch (error) {
+      console.error(`❌ [Draft] Erro ao enviar mensagem direcionada para partida ${matchId}:`, error);
+    }
   }
 
   // ✅ CORRIGIDO: Gerar fases do draft (sequência EXATA da ranqueada do LoL)

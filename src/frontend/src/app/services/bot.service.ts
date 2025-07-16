@@ -62,12 +62,13 @@ export class BotService {
         const hasAI = playerName.toLowerCase().includes('ai');
         const hasComputer = playerName.toLowerCase().includes('computer');
         const hasCPU = playerName.toLowerCase().includes('cpu');
+        const hasBOTTag = playerName.includes('#BOT'); // ✅ NOVO: Verificar tag específica
 
-        const isBotPlayer = hasBot || hasAI || hasComputer || hasCPU;
+        const isBotPlayer = hasBot || hasAI || hasComputer || hasCPU || hasBOTTag;
 
         console.log(`🤖 [BotService] === isBot check ===`, {
             playerName: playerName,
-            hasBot, hasAI, hasComputer, hasCPU,
+            hasBot, hasAI, hasComputer, hasCPU, hasBOTTag,
             isBotPlayer,
             id: player.id,
             summonerName: player.summonerName,
@@ -225,13 +226,77 @@ export class BotService {
     }
 
     /**
-     * Verifica se uma fase deve ter ação automática de bot
+     * ✅ NOVO: Verifica se o usuário atual é o special user autorizado
      */
-    shouldPerformBotAction(phase: PickBanPhase, session: CustomPickBanSession): boolean {
+    private isSpecialUser(currentPlayer: any): boolean {
+        if (!currentPlayer) {
+            console.log('🔐 [BotService] currentPlayer é null/undefined');
+            return false;
+        }
+
+        console.log('🔐 [BotService] === VERIFICAÇÃO DE SPECIAL USER ===');
+        console.log('🔐 [BotService] currentPlayer completo:', currentPlayer);
+
+        const playerName = currentPlayer.summonerName || currentPlayer.name || currentPlayer.gameName || '';
+        const playerTag = currentPlayer.tagLine || '';
+        const playerDisplayName = currentPlayer.displayName || '';
+
+        console.log('🔐 [BotService] Dados extraídos:', {
+            playerName,
+            playerTag,
+            playerDisplayName,
+            summonerName: currentPlayer.summonerName,
+            name: currentPlayer.name,
+            gameName: currentPlayer.gameName,
+            tagLine: currentPlayer.tagLine,
+            displayName: currentPlayer.displayName
+        });
+
+        // ✅ CORREÇÃO: Verificar se é o popcorn seller#coup (case insensitive)
+        const fullRiotId = playerTag ? `${playerName}#${playerTag}` : playerName;
+
+        // ✅ NOVO: Verificar também pelo displayName
+        const isSpecial = fullRiotId.toLowerCase() === 'popcorn seller#coup' ||
+            playerName.toLowerCase() === 'popcorn seller' ||
+            fullRiotId.toLowerCase() === 'popcorn seller#coup' ||
+            playerDisplayName.toLowerCase() === 'popcorn seller#coup';
+
+        console.log(`🔐 [BotService] Verificação de special user:`, {
+            playerName,
+            playerTag,
+            playerDisplayName,
+            fullRiotId,
+            isSpecial,
+            expected: 'popcorn seller#coup',
+            checks: {
+                fullRiotIdMatch: fullRiotId.toLowerCase() === 'popcorn seller#coup',
+                playerNameMatch: playerName.toLowerCase() === 'popcorn seller',
+                displayNameMatch: playerDisplayName.toLowerCase() === 'popcorn seller#coup'
+            }
+        });
+
+        return isSpecial;
+    }
+
+    /**
+     * Verifica se uma fase deve ter ação automática de bot
+     * ✅ CORREÇÃO: Agora requer validação de special user
+     */
+    shouldPerformBotAction(phase: PickBanPhase, session: CustomPickBanSession, currentPlayer?: any): boolean {
         console.log('🤖 [BotService] === VERIFICANDO AÇÃO AUTOMÁTICA ===');
         console.log('🤖 [BotService] Phase:', phase);
         console.log('🤖 [BotService] Tipo de ação:', phase.action);
         console.log('🤖 [BotService] Session currentAction:', session.currentAction);
+
+        // ✅ NOVO: Verificar se o usuário atual é o special user autorizado
+        const isSpecialUser = this.isSpecialUser(currentPlayer);
+        console.log('🤖 [BotService] É special user?', isSpecialUser);
+
+        if (!isSpecialUser) {
+            console.log('🚫 [BotService] Ação de bot BLOQUEADA - não é special user');
+            console.log('🚫 [BotService] Apenas popcorn seller#coup pode executar ações de bot');
+            return false;
+        }
 
         const currentTeam = phase.team;
         const teamPlayers = currentTeam === 'blue' ? session.blueTeam : session.redTeam;
@@ -245,39 +310,43 @@ export class BotService {
             isBot: this.isBot(p)
         })));
 
-        let currentPlayer = null;
+        let phasePlayer = null;
 
         // ✅ CORREÇÃO: Primeiro tentar pelo playerId se existir
         if (phase.playerId) {
             console.log(`🤖 [BotService] Procurando por playerId: ${phase.playerId}`);
-            currentPlayer = teamPlayers.find(p => this.comparePlayerWithId(p, phase.playerId!));
+            phasePlayer = teamPlayers.find(p => this.comparePlayerWithId(p, phase.playerId!));
         }
 
         // ✅ CORREÇÃO: Se não encontrou por playerId, tentar pelo teamIndex
-        if (!currentPlayer && phase.playerIndex !== undefined) {
+        if (!phasePlayer && phase.playerIndex !== undefined) {
             console.log(`🤖 [BotService] Tentando encontrar por teamIndex: ${phase.playerIndex}`);
-            currentPlayer = teamPlayers.find(p => p.teamIndex === phase.playerIndex);
+            phasePlayer = teamPlayers.find(p => p.teamIndex === phase.playerIndex);
         }
 
         // ✅ CORREÇÃO: Se ainda não encontrou, tentar pelo índice do array
-        if (!currentPlayer && phase.playerIndex !== undefined) {
+        if (!phasePlayer && phase.playerIndex !== undefined) {
             console.log(`🤖 [BotService] Tentando encontrar por índice do array: ${phase.playerIndex}`);
-            currentPlayer = teamPlayers[phase.playerIndex];
+            phasePlayer = teamPlayers[phase.playerIndex];
         }
 
-        console.log('🤖 [BotService] Current player encontrado:', currentPlayer);
+        console.log('🤖 [BotService] Phase player encontrado:', phasePlayer);
 
-        if (currentPlayer) {
-            const isBotPlayer = this.isBot(currentPlayer);
+        if (phasePlayer) {
+            const isBotPlayer = this.isBot(phasePlayer);
             console.log('🤖 [BotService] É bot?', isBotPlayer);
             console.log('🤖 [BotService] Detalhes do jogador:', {
-                id: currentPlayer.id,
-                name: currentPlayer.summonerName,
-                teamIndex: currentPlayer.teamIndex,
+                id: phasePlayer.id,
+                name: phasePlayer.summonerName,
+                teamIndex: phasePlayer.teamIndex,
                 isBot: isBotPlayer,
                 action: phase.action
             });
-            return isBotPlayer;
+
+            // ✅ CORREÇÃO: Só executar se for bot E special user estiver logado
+            const shouldExecute = isBotPlayer && isSpecialUser;
+            console.log('🤖 [BotService] Deve executar ação de bot?', shouldExecute);
+            return shouldExecute;
         } else {
             console.log('⚠️ [BotService] Jogador não encontrado!');
             console.log('🤖 [BotService] Phase.playerId:', phase.playerId);
@@ -387,7 +456,8 @@ export class BotService {
         console.log('🤖 [BotService] Tipo de ação:', phase.action);
         console.log('🤖 [BotService] currentAction:', session.currentAction);
 
-        const delay = Math.random() * 2000 + 1000; // 1-3 segundos
+        // ✅ CORREÇÃO: Reduzir delay para bots agirem mais rapidamente
+        const delay = Math.random() * 1000 + 500; // 0.5-1.5 segundos
         console.log(`🤖 [BotService] Delay agendado: ${delay}ms`);
 
         const timerId = setTimeout(() => {

@@ -141,7 +141,7 @@ export class MatchFoundService {
       this.pendingMatches.set(matchId as number, acceptanceStatus);
 
       // 7. Notificar frontend sobre partida encontrada PRIMEIRO
-      this.notifyMatchFound(matchId as number, playersForAcceptance);
+      this.notifyMatchFound(matchId as number, playersForAcceptance, matchData.balancedTeams, matchData.averageMMR);
 
       // 8. ✅ NOVO: Iniciar atualizações de timer em tempo real
       this.startTimerUpdates(matchId as number);
@@ -559,13 +559,14 @@ export class MatchFoundService {
   }
 
   // ✅ MELHORADO: Sistema de notificação com múltiplas estratégias de entrega
-  private async notifyMatchFound(matchId: number, allPlayersInMatch: string[]): Promise<void> {
+  private async notifyMatchFound(matchId: number, allPlayersInMatch: string[], balancedTeams?: any, averageMMR?: any): Promise<void> {
     if (!this.wss) {
       console.error('❌ [MatchFound] WebSocket Server não disponível para notificação');
       return;
     }
 
-    const message = {
+    // ✅ CORREÇÃO: Preparar dados completos se balancedTeams estiver disponível
+    let matchFoundData: any = {
       type: 'match_found',
       data: {
         matchId,
@@ -574,44 +575,88 @@ export class MatchFoundService {
       }
     };
 
+    // ✅ NOVO: Se temos dados balanceados, incluir informações completas
+    if (balancedTeams && balancedTeams.team1 && balancedTeams.team2) {
+      const team1 = balancedTeams.team1;
+      const team2 = balancedTeams.team2;
+      const team1MMR = averageMMR?.team1 || 1200;
+      const team2MMR = averageMMR?.team2 || 1200;
+
+      matchFoundData.data = {
+        ...matchFoundData.data,
+        // ✅ CORREÇÃO: Incluir todas as informações necessárias para o frontend
+        teammates: team1.map((p: any, index: number) => ({
+          summonerName: p.summonerName,
+          mmr: p.mmr,
+          primaryLane: p.primaryLane,
+          secondaryLane: p.secondaryLane,
+          assignedLane: p.assignedLane, // ✅ NOVO: Lane atribuída após balanceamento
+          teamIndex: index, // ✅ NOVO: Índice no time (0-4)
+          isAutofill: p.isAutofill || false, // ✅ NOVO: Se foi autofill
+          team: 'blue' // ✅ NOVO: Identificação do time
+        })),
+        enemies: team2.map((p: any, index: number) => ({
+          summonerName: p.summonerName,
+          mmr: p.mmr,
+          primaryLane: p.primaryLane,
+          secondaryLane: p.secondaryLane,
+          assignedLane: p.assignedLane, // ✅ NOVO: Lane atribuída após balanceamento
+          teamIndex: index + 5, // ✅ NOVO: Índice no time (5-9)
+          isAutofill: p.isAutofill || false, // ✅ NOVO: Se foi autofill
+          team: 'red' // ✅ NOVO: Identificação do time
+        })),
+        // ✅ CORREÇÃO: Estatísticas detalhadas dos times
+        teamStats: {
+          team1: {
+            averageMMR: Math.round(team1MMR),
+            totalMMR: Math.round(team1MMR * 5),
+            players: team1.length,
+            lanes: team1.map((p: any) => p.assignedLane).sort()
+          },
+          team2: {
+            averageMMR: Math.round(team2MMR),
+            totalMMR: Math.round(team2MMR * 5),
+            players: team2.length,
+            lanes: team2.map((p: any) => p.assignedLane).sort()
+          }
+        },
+        // ✅ CORREÇÃO: Informações de balanceamento
+        balancingInfo: {
+          mmrDifference: Math.abs(team1MMR - team2MMR),
+          isWellBalanced: Math.abs(team1MMR - team2MMR) <= 100,
+          autofillCount: {
+            team1: team1.filter((p: any) => p.isAutofill).length,
+            team2: team2.filter((p: any) => p.isAutofill).length
+          }
+        },
+        // ✅ CORREÇÃO: Timer e deadline
+        acceptanceDeadline: new Date(Date.now() + 30000).toISOString(), // 30 segundos para aceitar
+        acceptanceTimer: 30, // ✅ NOVO: Timer em segundos para o frontend
+        acceptTimeout: 30, // ✅ COMPATIBILIDADE: Campo antigo para compatibilidade
+        phase: 'accept', // ✅ NOVO: Fase da partida
+        message: 'Partida encontrada! Aceite para continuar.',
+        // ✅ NOVO: Informações adicionais para o frontend
+        gameMode: 'RANKED_SOLO_5x5',
+        mapId: 11, // Summoner's Rift
+        queueType: 'RANKED'
+      };
+    }
+
+    const message = matchFoundData;
+
     console.log(`🎯 [MatchFound] === INICIANDO NOTIFICAÇÃO PARA PARTIDA ${matchId} ===`);
     console.log(`📋 [MatchFound] Jogadores na partida:`, allPlayersInMatch);
     console.log(`📤 [MatchFound] Enviando mensagem match_found:`, JSON.stringify(message, null, 2));
 
-    // ✅ ESTRATÉGIA 1: Notificação direcionada via WebSocket (PRINCIPAL)
-    const wsResults = await this.sendWebSocketNotifications(message, allPlayersInMatch);
-
-    // ✅ ESTRATÉGIA 2: Verificar se todos os jogadores foram notificados
-    const notifiedPlayers = new Set(wsResults.notifiedPlayers);
-    const missingPlayers = allPlayersInMatch.filter(player => !notifiedPlayers.has(player));
-
-    console.log(`📊 [MatchFound] Resultado WebSocket:`, {
-      totalPlayers: allPlayersInMatch.length,
-      notifiedPlayers: wsResults.notifiedPlayers.length,
-      missingPlayers: missingPlayers.length,
-      totalClients: wsResults.totalClients,
-      identifiedClients: wsResults.identifiedClients,
-      matchedClients: wsResults.matchedClients
-    });
-
-    // ✅ ESTRATÉGIA 3: Fallback para jogadores não notificados
-    if (missingPlayers.length > 0) {
-      console.warn(`⚠️ [MatchFound] Jogadores não notificados via WebSocket:`, missingPlayers);
-      await this.sendFallbackNotifications(matchId, missingPlayers);
-    }
+    // ✅ USAR RETRY
+    await this.sendNotificationWithRetry(message, allPlayersInMatch);
 
     // ✅ ESTRATÉGIA 4: Log final com métricas
+    // (O log detalhado já está no método de retry)
     console.log(`✅ [MatchFound] === NOTIFICAÇÃO COMPLETA PARA PARTIDA ${matchId} ===`);
-    console.log(`📈 [MatchFound] Métricas finais:`, {
-      matchId,
-      totalPlayers: allPlayersInMatch.length,
-      wsNotified: wsResults.notifiedPlayers.length,
-      fallbackAttempted: missingPlayers.length,
-      successRate: `${((wsResults.notifiedPlayers.length / allPlayersInMatch.length) * 100).toFixed(1)}%`
-    });
   }
 
-  // ✅ NOVO: Sistema de notificação WebSocket melhorado
+  // ✅ CORRIGIDO: Sistema de notificação WebSocket direcionado
   private async sendWebSocketNotifications(message: any, allPlayersInMatch: string[]): Promise<{
     notifiedPlayers: string[],
     totalClients: number,
@@ -633,7 +678,7 @@ export class MatchFoundService {
           identifiedClients++;
         }
 
-        // ✅ VERIFICAR: Se o cliente está identificado e está na partida
+        // ✅ CORREÇÃO: Enviar APENAS para jogadores identificados na partida
         if (isIdentified && clientInfo) {
           const isInMatch = this.isPlayerInMatch(clientInfo, allPlayersInMatch);
 
@@ -655,13 +700,8 @@ export class MatchFoundService {
             console.log(`➖ [MatchFound] Cliente identificado mas não está na partida: ${this.getPlayerIdentifier(clientInfo)}`);
           }
         } else {
-          // ✅ FALLBACK: Para clientes não identificados, enviar para todos (compatibilidade)
-          try {
-            client.send(JSON.stringify(message));
-            console.log(`📡 [MatchFound] Notificação enviada para cliente não identificado (fallback)`);
-          } catch (error) {
-            console.error('❌ [MatchFound] Erro ao enviar notificação:', error);
-          }
+          // ❌ REMOVIDO: Fallback perigoso para clientes não identificados
+          console.log(`⚠️ [MatchFound] Cliente não identificado ignorado: ${clientInfo ? 'tem dados' : 'sem dados'}`);
         }
       }
     });
@@ -672,6 +712,25 @@ export class MatchFoundService {
       identifiedClients,
       matchedClients
     };
+  }
+
+  // ✅ NOVO: Sistema de retry para notificações WebSocket
+  private async sendNotificationWithRetry(message: any, allPlayersInMatch: string[], maxRetries: number = 3): Promise<void> {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const wsResults = await this.sendWebSocketNotifications(message, allPlayersInMatch);
+      const missingPlayers = allPlayersInMatch.filter(player => !wsResults.notifiedPlayers.includes(player));
+      if (missingPlayers.length === 0) {
+        console.log(`✅ [MatchFound] Todas as notificações enviadas com sucesso na tentativa ${attempt}`);
+        return;
+      }
+      console.warn(`⚠️ [MatchFound] Tentativa ${attempt}: ${missingPlayers.length} jogadores não notificados:`, missingPlayers);
+      if (attempt < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+      }
+    }
+    // Última tentativa: fallback
+    console.error(`❌ [MatchFound] Falha após ${maxRetries} tentativas, usando fallback`);
+    await this.sendFallbackNotifications(message.data.matchId, allPlayersInMatch);
   }
 
   // ✅ NOVO: Sistema de fallback para jogadores não notificados

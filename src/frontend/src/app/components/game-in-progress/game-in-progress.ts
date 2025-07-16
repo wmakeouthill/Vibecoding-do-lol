@@ -2,6 +2,7 @@ import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, OnChanges, S
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api';
+import { ChampionService } from '../../services/champion.service';
 import { interval, Subscription } from 'rxjs';
 
 interface GameData {
@@ -79,7 +80,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
   // Game tracking
   private currentGameSession: any = null;
 
-  constructor(private apiService: ApiService) { } ngOnInit() {
+  constructor(private apiService: ApiService, private championService: ChampionService) { } ngOnInit() {
     console.log('🚀 [GameInProgress] Inicializando componente...');
     console.log('📊 [GameInProgress] gameData recebido:', {
       hasGameData: !!this.gameData,
@@ -488,7 +489,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
     // console.log('⚠️ Não foi possível auto-resolver o vencedor');
   }  // Enhanced method to detect winner with automatic confirmation
   async retryAutoDetection() {
-    console.log('🔄 [MANUAL] Detectando vencedor via comparação com LCU...');
+    console.log('[DEBUG-SIMULATE] 🔄 Detectando vencedor via comparação com LCU...');
 
     // Set loading state
     this.isAutoDetecting = true;
@@ -498,34 +499,37 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
       const historyResponse = await this.apiService.getLCUMatchHistoryAll(0, 30, false).toPromise();
 
       if (!historyResponse || !historyResponse.success || !historyResponse.matches || historyResponse.matches.length === 0) {
-        console.log('⚠️ [MANUAL] Nenhuma partida encontrada no histórico do LCU');
+        console.log('[DEBUG-SIMULATE] ⚠️ Nenhuma partida encontrada no histórico do LCU');
         alert('Nenhuma partida encontrada no histórico do LCU. Certifique-se de que o League of Legends está aberto.');
         return;
       }
 
-      console.log('🔍 [MANUAL] Histórico LCU obtido:', historyResponse.matches.length, 'partidas');
+      console.log('[DEBUG-SIMULATE] 🔍 Histórico LCU obtido:', historyResponse.matches.length, 'partidas');
 
       // Try to find matching game
       const matchResult = this.findMatchingLCUGame(historyResponse.matches);
 
       if (!matchResult.match) {
-        console.log('⚠️ [MANUAL] Nenhuma partida correspondente encontrada');
+        console.log('[DEBUG-SIMULATE] ⚠️ Nenhuma partida correspondente encontrada');
+        console.log('[DEBUG-SIMULATE] 🔍 Dados da partida atual para comparação:');
+        console.log('[DEBUG-SIMULATE] 🔍 Team1:', this.gameData?.team1?.map(p => ({ name: p.summonerName, champion: p.champion, lane: p.lane })));
+        console.log('[DEBUG-SIMULATE] 🔍 Team2:', this.gameData?.team2?.map(p => ({ name: p.summonerName, champion: p.champion, lane: p.lane })));
         alert('Nenhuma partida correspondente foi encontrada no histórico do LCU. Verifique se a partida foi concluída no League of Legends.');
         return;
       }
 
-      console.log('✅ [MANUAL] Partida correspondente encontrada:', matchResult);
+      console.log('[DEBUG-SIMULATE] ✅ Partida correspondente encontrada:', matchResult);
 
       // Store detected match data
       this.detectedLCUMatch = matchResult.match;
       this.matchComparisonResult = matchResult;
 
       // Automatically confirm the match without showing modal
-      console.log('⚡ [AUTO] Confirmando partida automaticamente...');
+      console.log('[DEBUG-SIMULATE] ⚡ Confirmando partida automaticamente...');
       this.confirmDetectedMatch();
 
     } catch (error) {
-      console.log('❌ [MANUAL] Erro ao detectar via histórico do LCU:', error);
+      console.log('[DEBUG-SIMULATE] ❌ Erro ao detectar via histórico do LCU:', error);
       alert('Erro ao acessar o histórico do LCU. Certifique-se de que o League of Legends está aberto.');
     } finally {
       // Reset loading state
@@ -538,7 +542,14 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
       return { match: null, confidence: 0, reason: 'Nenhum dado de jogo disponível' };
     }
 
-    console.log('🔍 Procurando partida correspondente entre', lcuMatches.length, 'partidas do LCU');
+    console.log('[DEBUG-SIMULATE] 🔍 Procurando partida correspondente entre', lcuMatches.length, 'partidas do LCU');
+    console.log('[DEBUG-SIMULATE] 🔍 GameData atual:', {
+      sessionId: this.gameData.sessionId,
+      gameId: this.gameData.gameId,
+      originalMatchId: this.gameData.originalMatchId,
+      team1Count: this.gameData.team1?.length,
+      team2Count: this.gameData.team2?.length
+    });
 
     // HIGHEST PRIORITY: Check if we have a live-linked match
     if (this.currentLiveMatchId) {
@@ -571,8 +582,27 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
     let bestScore = 0;
     let bestReason = '';
 
+    // ✅ NOVO: Log das primeiras partidas para debug
+    console.log('[DEBUG-SIMULATE] 🔍 Primeiras 3 partidas do LCU para debug:');
+    lcuMatches.slice(0, 3).forEach((match, index) => {
+      console.log(`[DEBUG-SIMULATE] 🔍 LCU Match ${index + 1}:`, {
+        gameId: match.gameId,
+        queueId: match.queueId,
+        gameCreation: match.gameCreation,
+        participantsCount: match.participants?.length || 0,
+        hasTeams: !!match.teams,
+        teams: match.teams?.map((t: any) => ({ teamId: t.teamId, win: t.win }))
+      });
+    });
+
     for (const lcuMatch of lcuMatches) {
       const similarity = this.calculateMatchSimilarity(lcuMatch);
+
+      // ✅ NOVO: Log do score de cada partida
+      if (similarity.confidence > 20) { // Só logar partidas com score > 20
+        console.log(`[DEBUG-SIMULATE] 🔍 LCU Match ${lcuMatch.gameId}: score=${similarity.confidence}, reason="${similarity.reason}"`);
+      }
+
       if (similarity.confidence > bestScore) {
         bestMatch = lcuMatch;
         bestScore = similarity.confidence;
@@ -582,7 +612,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
 
     // Only accept matches with reasonable confidence
     if (bestScore >= 70) {
-      console.log('✅ Partida correspondente encontrada por similaridade:', { match: bestMatch.gameId, score: bestScore });
+      console.log('[DEBUG-SIMULATE] ✅ Partida correspondente encontrada por similaridade:', { match: bestMatch.gameId, score: bestScore });
       return {
         match: bestMatch,
         confidence: bestScore,
@@ -591,7 +621,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
     }
 
     // No good match found
-    console.log('⚠️ Nenhuma partida correspondente encontrada');
+    console.log('[DEBUG-SIMULATE] ⚠️ Nenhuma partida correspondente encontrada');
     return {
       match: null,
       confidence: 0,
@@ -615,6 +645,14 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
 
     // Extract LCU match champions
     const lcuChampions = this.extractChampionsFromLCUMatch(lcuMatch);
+
+    // ✅ NOVO: Logs para debug da comparação
+    console.log('[DEBUG-SIMULATE] 🔍 Comparando partidas:');
+    console.log('[DEBUG-SIMULATE] 🔍 Current Team1 Champions:', currentTeam1Champions);
+    console.log('[DEBUG-SIMULATE] 🔍 Current Team2 Champions:', currentTeam2Champions);
+    console.log('[DEBUG-SIMULATE] 🔍 LCU Team1 Champions:', lcuChampions.team1);
+    console.log('[DEBUG-SIMULATE] 🔍 LCU Team2 Champions:', lcuChampions.team2);
+    console.log('[DEBUG-SIMULATE] 🔍 LCU Match ID:', lcuMatch.gameId);
 
     // Compare team compositions
     if (currentTeam1Champions.length > 0 && currentTeam2Champions.length > 0) {
@@ -668,10 +706,20 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
   // Extract champion names from team
   private extractChampionsFromTeam(team: any[]): string[] {
     return team.map(player => {
-      if (player.champion && player.champion.name) {
-        return player.champion.name.toLowerCase();
+      // ✅ CORREÇÃO: Suportar diferentes formatos de dados de campeão
+      let championName = null;
+
+      if (player.champion) {
+        if (typeof player.champion === 'string') {
+          // Formato: player.champion = "Trundle"
+          championName = player.champion;
+        } else if (player.champion.name) {
+          // Formato: player.champion = { name: "Trundle" }
+          championName = player.champion.name;
+        }
       }
-      return null;
+
+      return championName ? championName.toLowerCase() : null;
     }).filter(name => name !== null);
   }
 
@@ -680,9 +728,15 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
     const team1: string[] = [];
     const team2: string[] = [];
 
+    console.log('[DEBUG-SIMULATE] 🔍 Extraindo campeões do LCU Match:', lcuMatch.gameId);
+    console.log('[DEBUG-SIMULATE] 🔍 Participants:', lcuMatch.participants?.length || 0);
+    console.log('[DEBUG-SIMULATE] 🔍 ParticipantIdentities:', lcuMatch.participantIdentities?.length || 0);
+
     if (lcuMatch.participants && lcuMatch.participantIdentities) {
-      lcuMatch.participants.forEach((participant: any) => {
+      lcuMatch.participants.forEach((participant: any, index: number) => {
         const championName = this.getChampionNameById(participant.championId);
+        console.log(`[DEBUG-SIMULATE] 🔍 Participant ${index}: championId=${participant.championId}, championName="${championName}", teamId=${participant.teamId}`);
+
         if (championName) {
           if (participant.teamId === 100) {
             team1.push(championName.toLowerCase());
@@ -693,6 +747,10 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
       });
     }
 
+    console.log('[DEBUG-SIMULATE] 🔍 Resultado final:');
+    console.log('[DEBUG-SIMULATE] 🔍 Team1 champions:', team1);
+    console.log('[DEBUG-SIMULATE] 🔍 Team2 champions:', team2);
+
     return { team1, team2 };
   }
 
@@ -702,12 +760,31 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
 
     let matches = 0;
     for (const champion of list1) {
-      if (list2.includes(champion)) {
+      // ✅ NOVO: Comparação mais flexível
+      const found = list2.find(c => {
+        // Comparação exata
+        if (c === champion) return true;
+        // Comparação ignorando espaços e caracteres especiais
+        const normalized1 = champion.replace(/[^a-zA-Z]/g, '').toLowerCase();
+        const normalized2 = c.replace(/[^a-zA-Z]/g, '').toLowerCase();
+        if (normalized1 === normalized2) return true;
+        // Comparação parcial (um contém o outro)
+        if (normalized1.includes(normalized2) || normalized2.includes(normalized1)) return true;
+        return false;
+      });
+
+      if (found) {
         matches++;
+        console.log(`[DEBUG-SIMULATE] ✅ Match encontrado: "${champion}" = "${found}"`);
+      } else {
+        console.log(`[DEBUG-SIMULATE] ❌ No match: "${champion}" não encontrado em [${list2.join(', ')}]`);
       }
     }
 
-    return (matches / Math.max(list1.length, list2.length)) * 50; // Max 50 points per team
+    const similarity = (matches / Math.max(list1.length, list2.length)) * 50; // Max 50 points per team
+    console.log(`[DEBUG-SIMULATE] 📊 Similaridade: ${matches}/${Math.max(list1.length, list2.length)} = ${similarity} pontos`);
+
+    return similarity;
   }
 
   // Modal actions
@@ -776,6 +853,20 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
 
   // Get champion name by ID (helper method)
   getChampionNameById(championId: number): string | null {
+    // ✅ CORREÇÃO: Usar o ChampionService para resolver nomes de campeões
+    if (!championId) return null;
+
+    try {
+      // Tentar usar o ChampionService primeiro (método estático)
+      const championName = ChampionService.getChampionNameById(championId);
+      if (championName && championName !== 'Minion') {
+        return championName;
+      }
+    } catch (error) {
+      console.warn('⚠️ [GameInProgress] Erro ao usar ChampionService:', error);
+    }
+
+    // ✅ FALLBACK: Se ChampionService falhar, usar o método do backend
     // O backend agora resolve os nomes dos campeões usando DataDragonService
     // Este método é mantido apenas para compatibilidade com dados antigos
     return `Champion${championId}`;

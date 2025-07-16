@@ -101,6 +101,15 @@ export class App implements OnInit, OnDestroy {
   private maxNotifications = 2; // Limit to 2 visible notifications
   private notificationQueue: Notification[] = []; // Queue for pending notifications
 
+  // ✅ NOVO: Sistema de polling inteligente para sincronização
+  private pollingInterval: any = null;
+  private lastPollingStatus: string | null = null;
+  private readonly POLLING_INTERVAL_MS = 2000; // 2 segundos - aguardar backend processar
+  private lastCacheInvalidation = 0; // ✅ NOVO: Controle de invalidação de cache
+  private readonly CACHE_INVALIDATION_COOLDOWN = 3000; // ✅ NOVO: 3 segundos entre invalidações
+  private lastBackendAction = 0; // ✅ NOVO: Controle de ações do backend
+  private readonly BACKEND_ACTION_COOLDOWN = 1500; // ✅ NOVO: 1.5 segundos após ação do backend
+
   constructor(
     private apiService: ApiService,
     private queueStateService: QueueStateService,
@@ -161,6 +170,10 @@ export class App implements OnInit, OnDestroy {
       // 8. Iniciar atualizações periódicas
       console.log('🔄 [App] Passo 8: Iniciando atualizações periódicas...');
       this.startPeriodicUpdates();
+
+      // 9. Iniciar polling inteligente para sincronização
+      console.log('🔄 [App] Passo 9: Iniciando polling inteligente...');
+      this.startIntelligentPolling();
 
       console.log('✅ [App] === INICIALIZAÇÃO COMPLETA ===');
       this.isConnected = true;
@@ -375,6 +388,15 @@ export class App implements OnInit, OnDestroy {
 
   // ✅ NOVO: Salvar dados do jogador
   private savePlayerData(player: Player): void {
+    console.log('💾 [App] === SALVANDO DADOS DO JOGADOR ===');
+    console.log('💾 [App] Dados originais do player:', {
+      id: player.id,
+      summonerName: player.summonerName,
+      gameName: player.gameName,
+      tagLine: player.tagLine,
+      displayName: player.displayName
+    });
+
     // ✅ PADRONIZAÇÃO COMPLETA: Sempre usar gameName#tagLine como identificador único
     const playerIdentifier = this.buildPlayerIdentifier(player);
 
@@ -408,6 +430,14 @@ export class App implements OnInit, OnDestroy {
     localStorage.setItem('currentPlayer', JSON.stringify(player));
 
     console.log('✅ [App] Jogador salvo com identificador único:', player.displayName);
+    console.log('💾 [App] Dados finais do player:', {
+      id: player.id,
+      summonerName: player.summonerName,
+      gameName: player.gameName,
+      tagLine: player.tagLine,
+      displayName: player.displayName
+    });
+    console.log('💾 [App] === FIM DO SALVAMENTO ===');
   }
 
   // ✅ NOVO: Construir identificador único padronizado
@@ -440,13 +470,16 @@ export class App implements OnInit, OnDestroy {
     const now = Date.now();
     if (message.type === 'match_found' || message.type === 'match_timer_update') {
       const timeSinceLastMessage = now - this.lastMessageTimestamp;
-      if (timeSinceLastMessage < 1000) { // Máximo 1 mensagem por segundo
+      if (timeSinceLastMessage < 500) { // Máximo 1 mensagem a cada 500ms - menos agressivo
         console.log('🔍 [App] Throttling mensagem backend - muito frequente');
         console.log('🔍 [App] Tipo:', message.type, 'Intervalo:', timeSinceLastMessage + 'ms');
         return;
       }
       this.lastMessageTimestamp = now;
     }
+
+    // ✅ NOVO: Marcar ação do backend para controle de timing
+    this.markBackendAction();
 
     switch (message.type) {
       case 'backend_connection_success':
@@ -604,6 +637,12 @@ export class App implements OnInit, OnDestroy {
     // ✅ CORREÇÃO: Usar dados do MatchmakingService se disponível
     if (data.teammates && data.enemies) {
       console.log('🎮 [App] Usando dados estruturados do MatchmakingService');
+      console.log('🎮 [App] Dados recebidos:', {
+        teammates: data.teammates?.map((p: any) => ({ name: p.summonerName, lane: p.assignedLane })),
+        enemies: data.enemies?.map((p: any) => ({ name: p.summonerName, lane: p.assignedLane })),
+        hasTeamStats: !!data.teamStats,
+        hasBalancingInfo: !!data.balancingInfo
+      });
 
       // ✅ IDENTIFICAR: Em qual time o jogador atual está
       const currentPlayerIdentifiers = this.getCurrentPlayerIdentifiers();
@@ -613,7 +652,8 @@ export class App implements OnInit, OnDestroy {
       console.log('🎮 [App] Identificação do time:', {
         currentPlayerIdentifiers,
         isInTeammates,
-        isInEnemies
+        isInEnemies,
+        currentPlayer: this.currentPlayer
       });
 
       matchFoundData.playerSide = isInTeammates ? 'blue' : 'red';
@@ -746,30 +786,47 @@ export class App implements OnInit, OnDestroy {
   private isPlayerInTeam(playerIdentifiers: string[], team: any[]): boolean {
     if (!playerIdentifiers.length || !team.length) return false;
 
+    console.log('🔍 [App] Verificando se jogador está no time:', {
+      playerIdentifiers,
+      teamPlayers: team.map(p => p.summonerName || p.name)
+    });
+
     return team.some(player => {
       const playerName = player.summonerName || player.name || '';
 
       // Verificar se algum identificador do jogador atual coincide
       return playerIdentifiers.some((identifier: string) => {
         // Comparação exata
-        if (identifier === playerName) return true;
+        if (identifier === playerName) {
+          console.log(`✅ [App] Match exato encontrado: ${identifier} === ${playerName}`);
+          return true;
+        }
 
         // Comparação sem tag (gameName vs gameName#tagLine)
         if (identifier.includes('#') && playerName.includes('#')) {
           const identifierGameName = identifier.split('#')[0];
           const playerGameName = playerName.split('#')[0];
-          return identifierGameName === playerGameName;
+          if (identifierGameName === playerGameName) {
+            console.log(`✅ [App] Match por gameName encontrado: ${identifierGameName} === ${playerGameName}`);
+            return true;
+          }
         }
 
         // Comparação de gameName com nome completo
         if (identifier.includes('#')) {
           const identifierGameName = identifier.split('#')[0];
-          return identifierGameName === playerName;
+          if (identifierGameName === playerName) {
+            console.log(`✅ [App] Match por gameName vs nome completo: ${identifierGameName} === ${playerName}`);
+            return true;
+          }
         }
 
         if (playerName.includes('#')) {
           const playerGameName = playerName.split('#')[0];
-          return identifier === playerGameName;
+          if (identifier === playerGameName) {
+            console.log(`✅ [App] Match por nome vs gameName: ${identifier} === ${playerGameName}`);
+            return true;
+          }
         }
 
         return false;
@@ -780,6 +837,14 @@ export class App implements OnInit, OnDestroy {
   // ✅ NOVO: Converter dados do backend para PlayerInfo
   private convertPlayersToPlayerInfo(players: any[]): any[] {
     console.log('🔄 [App] Convertendo players para PlayerInfo:', players);
+    console.log('🔄 [App] Dados brutos dos players:', players.map(p => ({
+      summonerName: p.summonerName,
+      assignedLane: p.assignedLane,
+      primaryLane: p.primaryLane,
+      secondaryLane: p.secondaryLane,
+      teamIndex: p.teamIndex,
+      isAutofill: p.isAutofill
+    })));
 
     return players.map((player: any, index: number) => {
       const playerInfo = {
@@ -796,11 +861,12 @@ export class App implements OnInit, OnDestroy {
         profileIconId: player.profileIconId
       };
 
-      console.log(`🔄 [App] Player ${index}:`, {
+      console.log(`🔄 [App] Player ${index} convertido:`, {
         name: playerInfo.summonerName,
         lane: playerInfo.assignedLane,
         teamIndex: playerInfo.teamIndex,
-        autofill: playerInfo.isAutofill
+        autofill: playerInfo.isAutofill,
+        originalAssignedLane: player.assignedLane
       });
 
       return playerInfo;
@@ -891,6 +957,9 @@ export class App implements OnInit, OnDestroy {
       } else {
         console.log('⚠️ [App] Componente de draft não encontrado ou não suporta sincronização');
       }
+
+      // ✅ NOVO: Forçar atualização da interface
+      this.cdr.detectChanges();
 
       console.log('✅ [App] Dados do draft sincronizados com sucesso');
     }
@@ -1049,7 +1118,7 @@ export class App implements OnInit, OnDestroy {
     } else {
       // ✅ IGNORAR: Log apenas quando necessário, evitar spam
       const timeSinceLastIgnoreLog = Date.now() - (this.lastIgnoreLogTime || 0);
-      if (timeSinceLastIgnoreLog > 10000) { // Log apenas a cada 10 segundos
+      if (timeSinceLastIgnoreLog > 5000) { // Log apenas a cada 5 segundos
         console.log('⏭️ [App] Atualizações da fila ignoradas - sem mudanças significativas');
         this.lastIgnoreLogTime = Date.now();
       }
@@ -1060,6 +1129,9 @@ export class App implements OnInit, OnDestroy {
     this.destroy$.next();
     this.destroy$.complete();
     clearInterval(this.lcuCheckInterval);
+
+    // ✅ PARAR: Polling inteligente
+    this.stopIntelligentPolling();
   }
 
   // ✅ MANTIDO: Métodos de interface
@@ -1813,9 +1885,58 @@ export class App implements OnInit, OnDestroy {
   onGameComplete(event: any): void {
     console.log('🏁 [App] Jogo completado:', event);
     this.gameResult = event;
+
+    // ✅ NOVO: Salvar resultado no banco de dados
+    this.saveGameResultToDatabase(event);
+
+    // Limpar estado
     this.inGamePhase = false;
+    this.gameData = null;
     this.currentView = 'dashboard';
     this.addNotification('success', 'Jogo Concluído!', 'Resultado salvo com sucesso');
+  }
+
+  // ✅ NOVO: Método para salvar resultado no banco
+  private saveGameResultToDatabase(gameResult: any): void {
+    console.log('💾 [App] Salvando resultado no banco:', gameResult);
+
+    try {
+      // Preparar dados para salvar
+      const matchData = {
+        title: gameResult.originalMatchId ? `Partida Simulada ${gameResult.originalMatchId}` : 'Partida Customizada',
+        description: gameResult.detectedByLCU ? 'Partida detectada via LCU' : 'Partida manual',
+        team1Players: gameResult.team1.map((p: any) => p.summonerName || p.name),
+        team2Players: gameResult.team2.map((p: any) => p.summonerName || p.name),
+        createdBy: this.currentPlayer?.summonerName || 'Sistema',
+        matchLeader: 'popcorn seller#coup', // ✅ SEMPRE popcorn seller#coup para partidas simuladas
+        gameMode: '5v5',
+        winnerTeam: gameResult.winner === 'blue' ? 1 : (gameResult.winner === 'red' ? 2 : null),
+        duration: gameResult.duration,
+        pickBanData: gameResult.pickBanData,
+        participantsData: gameResult.originalMatchData?.participants || [],
+        riotGameId: gameResult.originalMatchId?.toString(),
+        detectedByLCU: gameResult.detectedByLCU,
+        status: 'completed'
+      };
+
+      console.log('💾 [App] Dados preparados para salvar:', matchData);
+
+      // Salvar via API
+      this.apiService.saveCustomMatch(matchData).subscribe({
+        next: (response) => {
+          console.log('✅ [App] Resultado salvo no banco:', response);
+          this.addNotification('success', 'Resultado Salvo', 'Dados da partida foram salvos no histórico');
+        },
+        error: (error) => {
+          console.error('❌ [App] Erro ao salvar resultado:', error);
+          this.addNotification('error', 'Erro ao Salvar', 'Não foi possível salvar o resultado da partida');
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ [App] Erro ao preparar dados para salvar:', error);
+      this.addNotification('error', 'Erro Interno', 'Erro ao processar dados da partida');
+    }
   }
 
   onGameCancel(): void {
@@ -2080,9 +2201,37 @@ export class App implements OnInit, OnDestroy {
     ];
 
     if (this.currentPlayer) {
-      const isSpecial = specialUsers.includes(this.currentPlayer.summonerName);
+      // ✅ CORREÇÃO: Verificar múltiplas variações do nome
+      const playerIdentifiers = this.getCurrentPlayerIdentifiers();
+
+      const isSpecial = specialUsers.some(specialUser =>
+        playerIdentifiers.some(identifier => {
+          // Comparação exata
+          if (identifier === specialUser) return true;
+
+          // Comparação case-insensitive
+          if (identifier.toLowerCase() === specialUser.toLowerCase()) return true;
+
+          // Comparação por gameName (ignorando tag)
+          if (identifier.includes('#') && specialUser.includes('#')) {
+            const gameName1 = identifier.split('#')[0].toLowerCase();
+            const gameName2 = specialUser.split('#')[0].toLowerCase();
+            return gameName1 === gameName2;
+          }
+
+          // Comparação de gameName com nome completo
+          if (identifier.includes('#')) {
+            const gameName = identifier.split('#')[0].toLowerCase();
+            return gameName === specialUser.toLowerCase();
+          }
+
+          return false;
+        })
+      );
+
       console.log(`🔍 [App] Verificação de usuário especial:`, {
         currentPlayerName: this.currentPlayer.summonerName,
+        playerIdentifiers,
         isSpecialUser: isSpecial,
         specialUsers: specialUsers
       });
@@ -2093,23 +2242,23 @@ export class App implements OnInit, OnDestroy {
   }
 
   simulateLastMatch(): void {
-    console.log('🎮 [App] Simulando última partida ranqueada do LCU');
-    console.log('🎮 [App] Current player:', this.currentPlayer);
+    console.log('[simular game] 🎮 Iniciando simulação da última partida ranqueada');
+    console.log('[simular game] Current player:', this.currentPlayer);
 
     if (!this.currentPlayer) {
       this.addNotification('warning', 'Nenhum Jogador', 'Carregue os dados do jogador primeiro');
       return;
     }
 
-    // ✅ CORREÇÃO: Buscar TODAS as partidas do histórico do LCU (incluindo ranqueadas)
-    console.log('🎮 [App] Chamando getLCUMatchHistoryAll com customOnly=false...');
+    // ✅ IMPLEMENTAÇÃO COMPLETA: Buscar última partida ranqueada e criar simulação
+    console.log('[simular game] Chamando getLCUMatchHistoryAll com customOnly=false...');
     this.apiService.getLCUMatchHistoryAll(0, 20, false).subscribe({
       next: (response) => {
-        console.log('🎮 [App] Resposta completa do LCU Match History All:', JSON.stringify(response, null, 2));
+        console.log('[simular game] Resposta completa do LCU Match History All:', JSON.stringify(response, null, 2));
 
         // Verificar se a resposta existe e tem dados
         const matches = response?.matches || response?.games || [];
-        console.log('🎮 [App] Matches encontrados:', matches.length);
+        console.log('[simular game] Matches encontrados:', matches.length);
 
         if (matches && matches.length > 0) {
           // Buscar a primeira partida ranqueada (RANKED_FLEX_SR ou RANKED_SOLO_5x5)
@@ -2118,19 +2267,42 @@ export class App implements OnInit, OnDestroy {
             game.queueId === 420    // RANKED_SOLO_5x5
           );
 
-          console.log('🎮 [App] Partida ranqueada encontrada:', rankedMatch);
+          console.log('[simular game] Partida ranqueada encontrada:', rankedMatch);
 
           if (rankedMatch) {
-            console.log('🎮 [App] Simulando partida ranqueada do LCU:', rankedMatch);
-            console.log(`🎮 [App] Total de partidas encontradas: ${matches.length}, Tipo: ${rankedMatch.queueId === 440 ? 'Flex' : 'Solo/Duo'}`);
+            console.log('[simular game] Simulando partida ranqueada do LCU:', rankedMatch);
+            console.log(`[simular game] Total de partidas encontradas: ${matches.length}, Tipo: ${rankedMatch.queueId === 440 ? 'Flex' : 'Solo/Duo'}`);
 
-            this.addNotification('success', 'Simulação Iniciada',
-              `Simulando partida ranqueada ${rankedMatch.queueId === 440 ? 'Flex' : 'Solo/Duo'} (ID: ${rankedMatch.gameId})...`);
+            this.addNotification('info', 'Simulação Iniciada',
+              `Buscando dados da partida ranqueada ${rankedMatch.queueId === 440 ? 'Flex' : 'Solo/Duo'} (ID: ${rankedMatch.gameId})...`);
 
-            // Simular que a partida está sendo executada
-            setTimeout(() => {
-              this.addNotification('info', 'Simulação Completa', 'Partida ranqueada simulada com sucesso');
-            }, 3000);
+            // ✅ NOVO: Criar partida customizada baseada nos dados do LCU
+            const playerIdentifier = this.currentPlayer?.summonerName || '';
+            if (!playerIdentifier) {
+              this.addNotification('error', 'Erro na Simulação', 'Nome do jogador não disponível.');
+              return;
+            }
+
+            this.apiService.createLCUBasedMatch({
+              lcuMatchData: rankedMatch,
+              playerIdentifier: playerIdentifier
+            }).subscribe({
+              next: (createResponse) => {
+                console.log('[simular game] ✅ Partida customizada criada:', createResponse);
+
+                this.addNotification('success', 'Simulação Criada',
+                  `Partida ranqueada simulada com sucesso! Match ID: ${createResponse.matchId}`);
+
+                // ✅ NOVO: Iniciar GameInProgress com os dados da partida criada
+                this.startGameInProgressFromSimulation(createResponse);
+              },
+              error: (createError) => {
+                console.error('❌ [App] Erro ao criar partida customizada:', createError);
+                this.addNotification('error', 'Erro na Simulação',
+                  'Não foi possível criar a partida customizada. Verifique se o LoL está aberto.');
+              }
+            });
+
           } else {
             // Se não houver partidas ranqueadas, usar a última partida disponível
             const lastMatch = matches[0];
@@ -2139,9 +2311,32 @@ export class App implements OnInit, OnDestroy {
             this.addNotification('warning', 'Simulando Última Partida',
               `Nenhuma partida ranqueada encontrada. Simulando última partida (ID: ${lastMatch.gameId || lastMatch.id})...`);
 
-            setTimeout(() => {
-              this.addNotification('info', 'Simulação Completa', 'Última partida simulada com sucesso');
-            }, 3000);
+            // ✅ NOVO: Criar partida customizada mesmo para partidas não-ranqueadas
+            const playerIdentifier = this.currentPlayer?.summonerName || '';
+            if (!playerIdentifier) {
+              this.addNotification('error', 'Erro na Simulação', 'Nome do jogador não disponível.');
+              return;
+            }
+
+            this.apiService.createLCUBasedMatch({
+              lcuMatchData: lastMatch,
+              playerIdentifier: playerIdentifier
+            }).subscribe({
+              next: (createResponse) => {
+                console.log('✅ [App] Partida customizada criada (não-ranqueada):', createResponse);
+
+                this.addNotification('success', 'Simulação Criada',
+                  `Última partida simulada com sucesso! Match ID: ${createResponse.matchId}`);
+
+                // ✅ NOVO: Iniciar GameInProgress com os dados da partida criada
+                this.startGameInProgressFromSimulation(createResponse);
+              },
+              error: (createError) => {
+                console.error('❌ [App] Erro ao criar partida customizada:', createError);
+                this.addNotification('error', 'Erro na Simulação',
+                  'Não foi possível criar a partida customizada. Verifique se o LoL está aberto.');
+              }
+            });
           }
         } else {
           console.log('🎮 [App] Nenhuma partida encontrada no LCU');
@@ -2153,6 +2348,256 @@ export class App implements OnInit, OnDestroy {
         this.addNotification('error', 'Erro Simulação LCU', 'Não foi possível carregar partidas do LCU. Verifique se o LoL está aberto.');
       }
     });
+  }
+
+  // ✅ NOVO: Método para iniciar GameInProgress com dados da simulação
+  private startGameInProgressFromSimulation(simulationData: any): void {
+    console.log('[simular game] 🎮 Iniciando GameInProgress com dados da simulação:', simulationData);
+
+    try {
+      // Extrair dados da resposta da simulação
+      const matchId = simulationData.matchId;
+      const gameId = simulationData.gameId;
+      const pickBanData = simulationData.pickBanData;
+      const participantsCount = simulationData.participantsCount;
+
+      // ✅ NOVO: Buscar dados completos da partida criada
+      const playerName = this.currentPlayer?.summonerName || '';
+      if (!playerName) {
+        this.addNotification('error', 'Erro na Simulação', 'Nome do jogador não disponível.');
+        return;
+      }
+
+      this.apiService.getCustomMatches(playerName, 0, 1).subscribe({
+        next: (matchesResponse) => {
+          console.log('[simular game] Dados da partida criada:', matchesResponse);
+          console.log('[simular game] Estrutura completa da resposta:', JSON.stringify(matchesResponse, null, 2));
+
+          const matches = matchesResponse.matches || [];
+          console.log('[simular game] Matches encontrados:', matches.length);
+
+          if (matches.length > 0) {
+            const latestMatch = matches[0]; // A partida mais recente (que acabamos de criar)
+            console.log('[simular game] Dados da partida mais recente:', latestMatch);
+            console.log('[simular game] Pick/ban data da partida:', latestMatch.pick_ban_data);
+
+            // ✅ NOVO: Preparar dados para o GameInProgress
+            const gameData = {
+              sessionId: `simulation_${matchId}`,
+              gameId: gameId?.toString() || `sim_${matchId}`,
+              team1: this.extractTeamFromMatchData(latestMatch, 1),
+              team2: this.extractTeamFromMatchData(latestMatch, 2),
+              startTime: new Date(),
+              pickBanData: pickBanData || {},
+              isCustomGame: true,
+              originalMatchId: matchId,
+              originalMatchData: latestMatch,
+              riotId: this.currentPlayer?.summonerName || ''
+            };
+
+            console.log('[simular game] Dados preparados para GameInProgress:', gameData);
+
+            // ✅ NOVO: Iniciar fase de jogo
+            console.log('[simular game] Definindo inGamePhase = true');
+            this.inGamePhase = true;
+            console.log('[simular game] Definindo gameData:', gameData);
+            this.gameData = gameData;
+            console.log('[simular game] Definindo inDraftPhase = false');
+            this.inDraftPhase = false; // Garantir que não está em draft
+            this.draftData = null;
+            console.log('[simular game] Definindo currentView = dashboard');
+            this.currentView = 'dashboard'; // Garantir que estamos na view correta
+
+            // ✅ NOVO: Forçar detecção de mudanças
+            console.log('[simular game] Forçando detecção de mudanças...');
+            this.cdr.detectChanges();
+
+            // ✅ NOVO: Usar setTimeout para garantir que a mudança seja aplicada
+            setTimeout(() => {
+              console.log('[simular game] ⏰ Verificação após timeout:');
+              console.log('[simular game] - inGamePhase:', this.inGamePhase);
+              console.log('[simular game] - inDraftPhase:', this.inDraftPhase);
+              console.log('[simular game] - gameData existe:', !!this.gameData);
+              this.cdr.detectChanges();
+            }, 100);
+
+            console.log('[simular game] ✅ GameInProgress iniciado com sucesso:', {
+              inGamePhase: this.inGamePhase,
+              inDraftPhase: this.inDraftPhase,
+              hasGameData: !!this.gameData,
+              team1Length: this.gameData?.team1?.length || 0,
+              team2Length: this.gameData?.team2?.length || 0,
+              currentView: this.currentView
+            });
+
+            // ✅ NOVO: Verificar se as condições do template estão corretas
+            console.log('[simular game] 🔍 Verificação das condições do template:');
+            console.log('[simular game] - inGamePhase:', this.inGamePhase);
+            console.log('[simular game] - inDraftPhase:', this.inDraftPhase);
+            console.log('[simular game] - !inDraftPhase && !inGamePhase:', !this.inDraftPhase && !this.inGamePhase);
+            console.log('[simular game] - currentView:', this.currentView);
+            console.log('[simular game] - gameData existe:', !!this.gameData);
+
+            this.addNotification('success', 'Simulação Ativa',
+              `Partida simulada iniciada! ${participantsCount} jogadores, ${gameData.team1.length} vs ${gameData.team2.length}`);
+
+          } else {
+            console.error('❌ [App] Nenhuma partida encontrada após criação');
+            this.addNotification('error', 'Erro na Simulação', 'Partida criada mas não foi possível carregar os dados.');
+          }
+        },
+        error: (matchesError) => {
+          console.error('❌ [App] Erro ao buscar dados da partida criada:', matchesError);
+          this.addNotification('error', 'Erro na Simulação', 'Partida criada mas não foi possível carregar os dados.');
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ [App] Erro ao preparar dados para GameInProgress:', error);
+      this.addNotification('error', 'Erro na Simulação', 'Erro interno ao preparar dados da partida.');
+    }
+  }
+
+  // ✅ NOVO: Método auxiliar para extrair dados dos times da partida
+  private extractTeamFromMatchData(matchData: any, teamNumber: number): any[] {
+    try {
+      console.log(`[simular game] Extraindo time ${teamNumber} de:`, matchData);
+
+      // ✅ NOVO: Tentar extrair dados do pick_ban_data primeiro
+      let pickBanData = null;
+      try {
+        if (matchData.pick_ban_data) {
+          pickBanData = typeof matchData.pick_ban_data === 'string'
+            ? JSON.parse(matchData.pick_ban_data)
+            : matchData.pick_ban_data;
+          console.log(`[simular game] Pick/ban data encontrada para time ${teamNumber}:`, pickBanData);
+        }
+      } catch (parseError) {
+        console.warn(`[simular game] Erro ao parsear pick_ban_data:`, parseError);
+      }
+
+      // ✅ NOVO: Se temos dados de pick/ban, usar eles para extrair campeões e lanes
+      if (pickBanData && pickBanData.team1Picks && pickBanData.team2Picks) {
+        const picks = teamNumber === 1 ? pickBanData.team1Picks : pickBanData.team2Picks;
+        console.log(`[simular game] Picks encontrados para time ${teamNumber}:`, picks);
+
+        if (Array.isArray(picks) && picks.length > 0) {
+          // ✅ NOVO: Criar estrutura compatível com GameInProgress
+          return picks.map((pick: any, index: number) => {
+            // ✅ CORREÇÃO: Usar championName processado pelo backend como prioridade
+            let championName = null;
+            if (pick.championName) {
+              // ✅ PRIORIDADE 1: championName já processado pelo backend
+              championName = pick.championName;
+            } else if (pick.champion) {
+              // ✅ PRIORIDADE 2: champion (pode ser nome ou ID)
+              championName = pick.champion;
+            } else if (pick.championId) {
+              // ✅ PRIORIDADE 3: championId - usar fallback
+              championName = `Champion${pick.championId}`;
+            }
+
+            // ✅ NOVO: Mapear lanes corretamente
+            const mapLane = (lane: string): string => {
+              if (!lane || lane === 'UNKNOWN' || lane === 'unknown') {
+                // ✅ FALLBACK: Tentar determinar lane baseada no índice ou campeão
+                const laneByIndex = ['top', 'jungle', 'mid', 'adc', 'support'][index] || 'unknown';
+                console.log(`[simular game] Lane UNKNOWN, usando lane por índice ${index}: ${laneByIndex}`);
+                return laneByIndex;
+              }
+
+              // Mapear valores do Riot API para valores do nosso sistema
+              const laneMap: { [key: string]: string } = {
+                'TOP': 'top',
+                'JUNGLE': 'jungle',
+                'MIDDLE': 'mid',
+                'BOTTOM': 'adc',
+                'UTILITY': 'support',
+                'NONE': 'unknown'
+              };
+
+              return laneMap[lane.toUpperCase()] || lane.toLowerCase() || 'unknown';
+            };
+
+            const mappedLane = mapLane(pick.lane);
+            const teamIndex = teamNumber === 1 ? index : index + 5; // 0-4 para team1, 5-9 para team2
+
+            console.log(`[simular game] Criando jogador: ${pick.player} (${mappedLane}) - champion: ${championName} - teamIndex: ${teamIndex}`);
+
+            return {
+              summonerName: pick.player || pick.summonerName || 'Unknown',
+              name: pick.player || pick.summonerName || 'Unknown',
+              id: null,
+              champion: championName, // ✅ CORREÇÃO: Usar championName resolvido
+              championName: championName, // ✅ ADICIONADO: Para compatibilidade
+              championId: pick.championId || null,
+              lane: mappedLane,
+              assignedLane: mappedLane,
+              // ✅ NOVO: Adicionar campos necessários para GameInProgress
+              teamIndex: teamIndex,
+              mmr: 1000, // MMR padrão para simulação
+              primaryLane: mappedLane,
+              secondaryLane: 'unknown',
+              isAutofill: false
+            };
+          });
+        }
+      }
+
+      // ✅ FALLBACK: Usar dados básicos dos jogadores se não houver pick/ban data
+      const teamPlayers = teamNumber === 1 ? matchData.team1_players : matchData.team2_players;
+      console.log(`[simular game] Usando fallback - teamPlayers para time ${teamNumber}:`, teamPlayers);
+
+      if (typeof teamPlayers === 'string') {
+        const players = JSON.parse(teamPlayers);
+        return players.map((playerName: string, index: number) => {
+          const teamIndex = teamNumber === 1 ? index : index + 5;
+          const laneByIndex = ['top', 'jungle', 'mid', 'adc', 'support'][index] || 'unknown';
+
+          return {
+            summonerName: playerName,
+            name: playerName,
+            id: null,
+            champion: null,
+            championName: null, // ✅ ADICIONADO: Para compatibilidade
+            championId: null,
+            lane: laneByIndex,
+            assignedLane: laneByIndex,
+            teamIndex: teamIndex,
+            mmr: 1000,
+            primaryLane: laneByIndex,
+            secondaryLane: 'unknown',
+            isAutofill: false
+          };
+        });
+      } else if (Array.isArray(teamPlayers)) {
+        return teamPlayers.map((playerName: string, index: number) => {
+          const teamIndex = teamNumber === 1 ? index : index + 5;
+          const laneByIndex = ['top', 'jungle', 'mid', 'adc', 'support'][index] || 'unknown';
+
+          return {
+            summonerName: playerName,
+            name: playerName,
+            id: null,
+            champion: null,
+            championName: null, // ✅ ADICIONADO: Para compatibilidade
+            championId: null,
+            lane: laneByIndex,
+            assignedLane: laneByIndex,
+            teamIndex: teamIndex,
+            mmr: 1000,
+            primaryLane: laneByIndex,
+            secondaryLane: 'unknown',
+            isAutofill: false
+          };
+        });
+      }
+
+      return [];
+    } catch (error) {
+      console.error(`❌ [App] Erro ao extrair time ${teamNumber}:`, error);
+      return [];
+    }
   }
 
   cleanupTestMatches(): void {
@@ -2187,5 +2632,355 @@ export class App implements OnInit, OnDestroy {
   // ✅ NOVO: Verificar se jogador atual é bot
   isCurrentPlayerBot(): boolean {
     return this.currentPlayer ? this.botService.isBot(this.currentPlayer) : false;
+  }
+
+  // ✅ NOVO: Iniciar polling inteligente
+  private startIntelligentPolling(): void {
+    console.log('🔄 [App] Iniciando polling inteligente para sincronização...');
+
+    this.pollingInterval = setInterval(async () => {
+      await this.checkSyncStatus();
+    }, this.POLLING_INTERVAL_MS);
+  }
+
+  // ✅ NOVO: Parar polling
+  private stopIntelligentPolling(): void {
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+      this.pollingInterval = null;
+      console.log('🛑 [App] Polling inteligente parado');
+    }
+  }
+
+  // ✅ NOVO: Verificar status de sincronização com controle de timing
+  private async checkSyncStatus(): Promise<void> {
+    if (!this.currentPlayer?.displayName) {
+      return; // Sem jogador identificado
+    }
+
+    // ✅ NOVO: Verificar se há ação recente do backend
+    const now = Date.now();
+    const timeSinceLastBackendAction = now - this.lastBackendAction;
+
+    if (timeSinceLastBackendAction < this.BACKEND_ACTION_COOLDOWN) {
+      console.log(`⏳ [App] Aguardando backend processar (${this.BACKEND_ACTION_COOLDOWN - timeSinceLastBackendAction}ms restantes)`);
+      return;
+    }
+
+    try {
+      const response = await this.apiService.checkSyncStatus(this.currentPlayer.displayName).toPromise();
+      const currentStatus = response.status;
+
+      console.log(`🔄 [App] Polling status: ${currentStatus} (anterior: ${this.lastPollingStatus})`);
+
+      // ✅ VERIFICAR: Se o status mudou desde a última verificação
+      if (currentStatus !== this.lastPollingStatus) {
+        console.log(`🔄 [App] Mudança de status detectada: ${this.lastPollingStatus} → ${currentStatus}`);
+        await this.handleStatusChange(currentStatus, response);
+        this.lastPollingStatus = currentStatus;
+
+        // ✅ NOVO: Invalidar cache apenas quando há mudança real
+        this.invalidateCacheIntelligently();
+      }
+    } catch (error) {
+      console.error('❌ [App] Erro no polling de sincronização:', error);
+    }
+  }
+
+  // ✅ NOVO: Invalidar cache de forma inteligente (com cooldown)
+  private invalidateCacheIntelligently(): void {
+    const now = Date.now();
+    const timeSinceLastInvalidation = now - this.lastCacheInvalidation;
+
+    if (timeSinceLastInvalidation < this.CACHE_INVALIDATION_COOLDOWN) {
+      console.log(`⏳ [App] Cache invalidation throttled - aguardando ${this.CACHE_INVALIDATION_COOLDOWN - timeSinceLastInvalidation}ms`);
+      return;
+    }
+
+    console.log('🔄 [App] Invalidando cache (mudança de status detectada)');
+    this.lastCacheInvalidation = now;
+
+    // ✅ NOVO: Forçar atualização da interface apenas quando necessário
+    this.cdr.detectChanges();
+  }
+
+  // ✅ NOVO: Marcar ação do backend para controle de timing
+  private markBackendAction(): void {
+    this.lastBackendAction = Date.now();
+    console.log('🔄 [App] Ação do backend marcada - aguardando processamento');
+  }
+
+  // ✅ NOVO: Lidar com mudança de status detectada via polling
+  private async handleStatusChange(newStatus: string, response: any): Promise<void> {
+    console.log(`🔄 [App] === PROCESSANDO MUDANÇA DE STATUS ===`);
+    console.log(`🔄 [App] Novo status: ${newStatus}`);
+    console.log(`🔄 [App] Dados da resposta:`, response);
+
+    switch (newStatus) {
+      case 'match_found':
+        await this.handleMatchFoundFromPolling(response);
+        break;
+      case 'draft':
+        await this.handleDraftFromPolling(response);
+        break;
+      case 'game_in_progress':
+        await this.handleGameInProgressFromPolling(response);
+        break;
+      case 'none':
+        await this.handleNoStatusFromPolling();
+        break;
+      default:
+        console.warn(`⚠️ [App] Status desconhecido: ${newStatus}`);
+    }
+  }
+
+  // ✅ NOVO: Processar match_found detectado via polling
+  private async handleMatchFoundFromPolling(response: any): Promise<void> {
+    console.log('🎮 [App] Match found detectado via polling!');
+
+    // ✅ VERIFICAR: Se já estamos mostrando match_found
+    if (this.showMatchFound && this.matchFoundData?.matchId === response.matchId) {
+      console.log('✅ [App] Match found já está sendo exibido, ignorando');
+      return;
+    }
+
+    // ✅ PROCESSAR: Dados do match_found
+    const matchData = response.match;
+    if (!matchData) {
+      console.error('❌ [App] Dados do match não encontrados na resposta');
+      return;
+    }
+
+    // ✅ CONSTRUIR: Dados estruturados para o frontend
+    let team1Players: string[] = [];
+    let team2Players: string[] = [];
+
+    try {
+      team1Players = typeof matchData.team1_players === 'string'
+        ? JSON.parse(matchData.team1_players)
+        : (matchData.team1_players || []);
+      team2Players = typeof matchData.team2_players === 'string'
+        ? JSON.parse(matchData.team2_players)
+        : (matchData.team2_players || []);
+    } catch (error) {
+      console.error('❌ [App] Erro ao parsear dados dos times:', error);
+      return;
+    }
+
+    // ✅ IDENTIFICAR: Time do jogador atual
+    const currentPlayerIdentifiers = this.getCurrentPlayerIdentifiers();
+    const isInTeam1 = team1Players.some((name: string) =>
+      currentPlayerIdentifiers.some(id => this.namesMatch(id, name))
+    );
+
+    // ✅ CONSTRUIR: Dados do match_found
+    const matchFoundData: MatchFoundData = {
+      matchId: response.matchId,
+      playerSide: isInTeam1 ? 'blue' : 'red',
+      teammates: this.convertBasicPlayersToPlayerInfo(isInTeam1 ? team1Players : team2Players),
+      enemies: this.convertBasicPlayersToPlayerInfo(isInTeam1 ? team2Players : team1Players),
+      averageMMR: { yourTeam: 1200, enemyTeam: 1200 },
+      estimatedGameDuration: 25,
+      phase: 'accept',
+      acceptTimeout: 30,
+      acceptanceTimer: 30
+    };
+
+    // ✅ ATUALIZAR: Estado local
+    this.matchFoundData = matchFoundData;
+    this.isInQueue = false;
+    this.showMatchFound = true;
+    this.lastMatchId = response.matchId;
+
+    console.log('✅ [App] Match found processado via polling:', {
+      matchId: response.matchId,
+      playerSide: matchFoundData.playerSide,
+      teammatesCount: matchFoundData.teammates.length,
+      enemiesCount: matchFoundData.enemies.length
+    });
+
+    this.addNotification('success', 'Partida Encontrada!', 'Você tem 30 segundos para aceitar.');
+  }
+
+  // ✅ NOVO: Processar draft detectado via polling
+  private async handleDraftFromPolling(response: any): Promise<void> {
+    console.log('🎯 [App] Draft detectado via polling!');
+
+    // ✅ VERIFICAR: Se já estamos em draft
+    if (this.inDraftPhase && this.draftData?.matchId === response.matchId) {
+      console.log('✅ [App] Draft já está ativo, ignorando');
+      return;
+    }
+
+    // ✅ PROCESSAR: Dados do draft
+    const matchData = response.match;
+    if (!matchData) {
+      console.error('❌ [App] Dados do draft não encontrados na resposta');
+      return;
+    }
+
+    // ✅ CONSTRUIR: Dados do draft
+    let team1Players: string[] = [];
+    let team2Players: string[] = [];
+
+    try {
+      team1Players = typeof matchData.team1_players === 'string'
+        ? JSON.parse(matchData.team1_players)
+        : (matchData.team1_players || []);
+      team2Players = typeof matchData.team2_players === 'string'
+        ? JSON.parse(matchData.team2_players)
+        : (matchData.team2_players || []);
+    } catch (error) {
+      console.error('❌ [App] Erro ao parsear dados dos times do draft:', error);
+      return;
+    }
+
+    // ✅ IDENTIFICAR: Time do jogador atual
+    const currentPlayerIdentifiers = this.getCurrentPlayerIdentifiers();
+    const isInTeam1 = team1Players.some((name: string) =>
+      currentPlayerIdentifiers.some(id => this.namesMatch(id, name))
+    );
+
+    // ✅ CONSTRUIR: Dados estruturados do draft
+    const draftData = {
+      matchId: response.matchId,
+      teammates: this.convertBasicPlayersToPlayerInfo(isInTeam1 ? team1Players : team2Players),
+      enemies: this.convertBasicPlayersToPlayerInfo(isInTeam1 ? team2Players : team1Players),
+      team1: this.convertBasicPlayersToPlayerInfo(team1Players),
+      team2: this.convertBasicPlayersToPlayerInfo(team2Players),
+      phase: 'draft',
+      phases: [],
+      currentAction: 0
+    };
+
+    // ✅ ATUALIZAR: Estado local
+    this.draftData = draftData;
+    this.inDraftPhase = true;
+    this.showMatchFound = false;
+    this.isInQueue = false;
+    this.lastMatchId = response.matchId;
+
+    console.log('✅ [App] Draft processado via polling:', {
+      matchId: response.matchId,
+      teammatesCount: draftData.teammates.length,
+      enemiesCount: draftData.enemies.length
+    });
+
+    this.addNotification('success', 'Draft Iniciado!', 'A fase de seleção de campeões começou.');
+  }
+
+  // ✅ NOVO: Processar game_in_progress detectado via polling
+  private async handleGameInProgressFromPolling(response: any): Promise<void> {
+    console.log('🎮 [App] Game in progress detectado via polling!');
+
+    // ✅ VERIFICAR: Se já estamos em game
+    if (this.inGamePhase && this.gameData?.matchId === response.matchId) {
+      console.log('✅ [App] Game já está ativo, ignorando');
+      return;
+    }
+
+    // ✅ PROCESSAR: Dados do game
+    const matchData = response.match;
+    if (!matchData) {
+      console.error('❌ [App] Dados do game não encontrados na resposta');
+      return;
+    }
+
+    // ✅ CONSTRUIR: Dados do game
+    let team1Players: string[] = [];
+    let team2Players: string[] = [];
+
+    try {
+      team1Players = typeof matchData.team1_players === 'string'
+        ? JSON.parse(matchData.team1_players)
+        : (matchData.team1_players || []);
+      team2Players = typeof matchData.team2_players === 'string'
+        ? JSON.parse(matchData.team2_players)
+        : (matchData.team2_players || []);
+    } catch (error) {
+      console.error('❌ [App] Erro ao parsear dados dos times do game:', error);
+      return;
+    }
+
+    // ✅ IDENTIFICAR: Time do jogador atual
+    const currentPlayerIdentifiers = this.getCurrentPlayerIdentifiers();
+    const isInTeam1 = team1Players.some((name: string) =>
+      currentPlayerIdentifiers.some(id => this.namesMatch(id, name))
+    );
+
+    // ✅ CONSTRUIR: Dados do game
+    const gameData = {
+      matchId: response.matchId,
+      team1: this.convertBasicPlayersToPlayerInfo(team1Players),
+      team2: this.convertBasicPlayersToPlayerInfo(team2Players),
+      status: 'in_progress',
+      startedAt: new Date(),
+      estimatedDuration: 1800
+    };
+
+    // ✅ ATUALIZAR: Estado local
+    this.gameData = gameData;
+    this.inGamePhase = true;
+    this.inDraftPhase = false;
+    this.showMatchFound = false;
+    this.isInQueue = false;
+    this.lastMatchId = response.matchId;
+
+    console.log('✅ [App] Game in progress processado via polling:', {
+      matchId: response.matchId,
+      team1Count: gameData.team1.length,
+      team2Count: gameData.team2.length
+    });
+
+    this.addNotification('success', 'Jogo Iniciado!', 'A partida começou.');
+  }
+
+  // ✅ NOVO: Processar status 'none' detectado via polling
+  private async handleNoStatusFromPolling(): Promise<void> {
+    console.log('🔄 [App] Status "none" detectado via polling');
+
+    // ✅ VERIFICAR: Se estamos em algum estado que deveria ser limpo
+    if (this.showMatchFound || this.inDraftPhase || this.inGamePhase) {
+      console.log('🔄 [App] Estados ativos detectados, verificando se devem ser limpos...');
+
+      // ✅ PROTEÇÃO: Aguardar um pouco antes de limpar para dar tempo ao WebSocket
+      // Se estamos em draft, dar mais tempo para sincronização
+      const shouldWait = this.inDraftPhase;
+      if (shouldWait) {
+        console.log('🔄 [App] Aguardando 5 segundos antes de limpar estado do draft...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
+
+        // Verificar novamente se ainda não temos status
+        try {
+          const currentPlayer = this.currentPlayer?.displayName || this.currentPlayer?.summonerName;
+          if (currentPlayer) {
+            const response = await this.apiService.checkSyncStatus(currentPlayer).toPromise();
+            if (response && response.status !== 'none') {
+              console.log('🔄 [App] Status recuperado durante espera, não limpando estado');
+              return;
+            }
+          }
+        } catch (error) {
+          console.log('🔄 [App] Erro ao verificar status durante espera:', error);
+        }
+      }
+
+      console.log('🔄 [App] Limpando estados ativos...');
+
+      // ✅ LIMPAR: Estados ativos
+      this.showMatchFound = false;
+      this.inDraftPhase = false;
+      this.inGamePhase = false;
+      this.matchFoundData = null;
+      this.draftData = null;
+      this.gameData = null;
+      this.lastMatchId = null;
+
+      // ✅ VOLTAR: Para fila se não estiver
+      if (!this.isInQueue) {
+        this.isInQueue = true;
+        console.log('🔄 [App] Voltando para fila');
+      }
+    }
   }
 }

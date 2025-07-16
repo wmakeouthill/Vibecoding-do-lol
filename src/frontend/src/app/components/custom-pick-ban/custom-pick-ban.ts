@@ -467,10 +467,25 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
       return;
     }
 
+    // ✅ NOVO: Verificar se o usuário atual é o special user autorizado
+    const isSpecialUser = this.isSpecialUser(this.currentPlayer);
+    console.log('🔐 [CustomPickBan] Verificação de special user:', {
+      currentPlayer: this.currentPlayer?.summonerName || this.currentPlayer?.name,
+      isSpecialUser
+    });
+
+    if (!isSpecialUser) {
+      console.log('🚫 [CustomPickBan] Ação de bot BLOQUEADA - não é special user');
+      console.log('🚫 [CustomPickBan] Apenas popcorn seller#coup pode executar ações de bot');
+      return;
+    }
+
     // Verificar se é um bot
     const isBot = this.isBot(currentPlayer);
 
     if (isBot) {
+      console.log('🤖 [CustomPickBan] Bot detectado e special user autorizado, agendando ação...');
+
       // Limpar timer anterior se existir
       if (this.botPickTimer) {
         clearTimeout(this.botPickTimer);
@@ -483,6 +498,30 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
         this.performBotAction(phase);
       }, delay);
     }
+  }
+
+  /**
+   * ✅ NOVO: Verifica se o usuário atual é o special user autorizado
+   */
+  private isSpecialUser(currentPlayer: any): boolean {
+    if (!currentPlayer) return false;
+
+    const playerName = currentPlayer.summonerName || currentPlayer.name || currentPlayer.gameName || '';
+    const playerTag = currentPlayer.tagLine || '';
+
+    // Verificar se é o popcorn seller#coup
+    const fullRiotId = playerTag ? `${playerName}#${playerTag}` : playerName;
+    const isSpecial = fullRiotId.toLowerCase() === 'popcorn seller#coup' ||
+      playerName.toLowerCase() === 'popcorn seller';
+
+    console.log(`🔐 [CustomPickBan] Verificação de special user:`, {
+      playerName,
+      playerTag,
+      fullRiotId,
+      isSpecial
+    });
+
+    return isSpecial;
   }
   private getCurrentPlayer(): any {
     if (!this.session) return null;
@@ -955,7 +994,7 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     if (this._cacheInvalidationNeeded) {
       return false;
     }
-    
+
     return (Date.now() - this._lastStateUpdate) < this.CACHE_DURATION;
   }
 
@@ -1008,7 +1047,7 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
 
     // Obter jogadores ordenados por lane
     const sortedPlayers = this.getSortedTeamByLane(team);
-    
+
     // Obter todos os picks do time
     const teamPicks = this.session.phases
       .filter(p => p.action === 'pick' && p.team === team && p.champion);
@@ -1072,7 +1111,7 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     // Garantir que temos exatamente 5 jogadores
     if (teamPlayers.length !== 5) {
       console.warn(`⚠️ [getSortedTeamByLane] Time ${team} não tem exatamente 5 jogadores: ${teamPlayers.length}`);
-      
+
       // Se temos menos de 5 jogadores, criar jogadores placeholder
       const paddedPlayers = [...teamPlayers];
       while (paddedPlayers.length < 5) {
@@ -1087,12 +1126,12 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
           isBot: true
         });
       }
-      
+
       // Se temos mais de 5 jogadores, truncar para 5
       if (paddedPlayers.length > 5) {
         paddedPlayers.splice(5);
       }
-      
+
       console.log(`✅ [getSortedTeamByLane] Time ${team} normalizado para 5 jogadores`);
       const result = this.sortPlayersByLane(paddedPlayers);
       if (team === 'blue') this._cachedSortedBlueTeam = result;
@@ -1775,7 +1814,7 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     }
 
     // Iniciar timer do modal
-  this.startModalTimer();
+    this.startModalTimer();
 
     // Focus no campo de busca após um pequeno delay
     setTimeout(() => {
@@ -2163,7 +2202,7 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
   cancelModalSelection(): void {
     console.log('❌ [cancelModalSelection] Cancelando seleção no modal');
     this.closeChampionModal();
-    
+
     // Resetar modo de edição se estava editando
     if (this.isEditingMode) {
       this.isEditingMode = false;
@@ -2227,7 +2266,7 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     console.log('✅ [confirmFinalDraft] Confirmando draft final');
     this.showFinalConfirmation = false;
     this.finalConfirmationData = null;
-    
+
     // Completar o pick/ban
     this.completePickBan();
   }
@@ -2251,7 +2290,7 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
     if (this.isEditingMode && this.editingPlayerId) {
       const allPlayers = [...this.session.blueTeam, ...this.session.redTeam];
       const editingPlayer = allPlayers.find(p => this.comparePlayerWithId(p, this.editingPlayerId!));
-      
+
       if (editingPlayer) {
         return editingPlayer.summonerName || editingPlayer.name || 'Jogador';
       }
@@ -2278,7 +2317,7 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
       if (bluePlayer) {
         return '🔵 Time Azul';
       }
-      
+
       const redPlayer = this.session.redTeam.find(p => this.comparePlayerWithId(p, this.editingPlayerId!));
       if (redPlayer) {
         return '🔴 Time Vermelho';
@@ -2306,7 +2345,7 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
       if (bluePlayer) {
         return '#007bff'; // Azul
       }
-      
+
       const redPlayer = this.session.redTeam.find(p => this.comparePlayerWithId(p, this.editingPlayerId!));
       if (redPlayer) {
         return '#dc3545'; // Vermelho
@@ -2327,7 +2366,7 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
    */
   private generateSessionStateHash(): string {
     if (!this.session) return '';
-    
+
     const state = {
       currentAction: this.session.currentAction,
       phase: this.session.phase,
@@ -2341,7 +2380,7 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
       blueTeam: this.session.blueTeam.map(p => p.id),
       redTeam: this.session.redTeam.map(p => p.id)
     };
-    
+
     return JSON.stringify(state);
   }
 
@@ -2350,17 +2389,17 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
    */
   private checkStateChange(): boolean {
     if (!this.session) return false;
-    
+
     const currentHash = this.generateSessionStateHash();
     const hasChanged = currentHash !== this._sessionStateHash;
-    
+
     if (hasChanged) {
       this._sessionStateHash = currentHash;
       this._cacheInvalidationNeeded = true;
       this._lastStateUpdate = Date.now();
       console.log('🔄 [Cache] Estado mudou, cache será invalidado');
     }
-    
+
     return hasChanged;
   }
 
@@ -2378,7 +2417,7 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
         next: (champions) => {
           this.champions = champions;
           console.log(`✅ [custom-pick-ban] ${this.champions.length} campeões carregados`);
-          
+
           // Carregar campeões por role
           this.championService.getChampionsByRole().subscribe({
             next: (championsByRole) => {

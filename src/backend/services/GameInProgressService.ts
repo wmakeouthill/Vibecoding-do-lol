@@ -403,13 +403,13 @@ export class GameInProgressService {
 
   private async monitorGames(): Promise<void> {
     try {
-      // Buscar partidas que finalizaram draft e precisam iniciar jogo
-      const draftedMatches = await this.dbManager.getCustomMatchesByStatus('draft');
+      // Buscar partidas que estão prontas para iniciar o jogo (status 'in_progress')
+      const inProgressMatches = await this.dbManager.getCustomMatchesByStatus('in_progress');
 
-      for (const match of draftedMatches) {
-        // Verificar se o draft foi realmente completado
-        if (match.pick_ban_data && !this.activeGames.has(match.id)) {
-          console.log(`🎮 [GameInProgress] Partida ${match.id} pronta para iniciar jogo...`);
+      for (const match of inProgressMatches) {
+        // Verificar se o jogo já está ativo
+        if (!this.activeGames.has(match.id)) {
+          console.log(`🎮 [GameInProgress] Partida ${match.id} pronta para iniciar jogo (status in_progress)...`);
 
           try {
             const draftResults = typeof match.pick_ban_data === 'string'

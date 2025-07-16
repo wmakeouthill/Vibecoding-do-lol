@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, throwError, Subject } from 'rxjs';
-import { catchError, retry, map, switchMap } from 'rxjs/operators';
+import { catchError, retry, map, switchMap, tap } from 'rxjs/operators';
 import { Player, RefreshPlayerResponse } from '../interfaces'; // Importar Player e RefreshPlayerResponse
 
 interface QueueStatus {
@@ -1339,5 +1339,21 @@ export class ApiService {
 
     console.warn('⚠️ [ApiService] Não foi possível construir identificador único:', playerData);
     return null;
+  }
+
+  // ✅ NOVO: Verificar status de sincronização via polling
+  checkSyncStatus(summonerName: string): Observable<any> {
+    const url = `${this.baseUrl}/sync/status?summonerName=${encodeURIComponent(summonerName)}`;
+    console.log(`🔄 [ApiService] Verificando status de sincronização para: ${summonerName}`);
+
+    return this.http.get(url).pipe(
+      tap(response => {
+        console.log(`🔄 [ApiService] Status de sincronização recebido:`, response);
+      }),
+      catchError(error => {
+        console.error(`❌ [ApiService] Erro ao verificar status de sincronização:`, error);
+        return throwError(() => error);
+      })
+    );
   }
 }

@@ -1972,8 +1972,12 @@ app.post('/api/lcu/fetch-and-save-match/:gameId', (req: Request, res: Response) 
 
       console.log(`✅ [FETCH-SAVE-MATCH] Dados obtidos: ${matchData.participants.length} participantes`);
 
+      // ✅ CORREÇÃO: Processar participantes com DataDragonService para resolver nomes de campeões
+      const processedParticipants = dataDragonService.processParticipants(matchData.participants);
+      console.log(`✅ [FETCH-SAVE-MATCH] Participantes processados com DataDragon: ${processedParticipants.length}`);
+
       // Processar dados da partida
-      const participants = matchData.participants || [];
+      const participants = processedParticipants || matchData.participants || [];
       const participantIdentities = matchData.participantIdentities || [];
       const team1Players: string[] = [];
       const team2Players: string[] = [];
@@ -2006,8 +2010,11 @@ app.post('/api/lcu/fetch-and-save-match/:gameId', (req: Request, res: Response) 
         }
 
         const championId = participant.championId || participant.champion || 0;
+        // ✅ CORREÇÃO: Usar championName processado pelo DataDragonService
         const championName = participant.championName || `Champion${championId}`;
         const lane = participant.lane || participant.teamPosition || participant.individualPosition || 'UNKNOWN';
+
+        console.log(`🔍 [FETCH-SAVE-MATCH] Participant ${index}: championId=${championId}, championName="${championName}", lane="${lane}"`);
 
         // Extrair dados completos do participante
         const stats = participant.stats || {};
@@ -2057,6 +2064,7 @@ app.post('/api/lcu/fetch-and-save-match/:gameId', (req: Request, res: Response) 
           team1Players.push(playerName);
           team1Picks.push({
             champion: championName,
+            championName: championName, // ✅ ADICIONADO: Para compatibilidade com frontend
             player: playerName,
             lane: lane,
             championId: championId
@@ -2065,6 +2073,7 @@ app.post('/api/lcu/fetch-and-save-match/:gameId', (req: Request, res: Response) 
           team2Players.push(playerName);
           team2Picks.push({
             champion: championName,
+            championName: championName, // ✅ ADICIONADO: Para compatibilidade com frontend
             player: playerName,
             lane: lane,
             championId: championId
@@ -2189,7 +2198,8 @@ app.post('/api/matches/custom', (async (req: Request, res: Response) => {
       participantsData, // Adicionar campo participantsData
       riotGameId,
       detectedByLCU,
-      status
+      status,
+      matchLeader // ✅ NOVO: Campo para definir o líder da partida
     } = req.body;
 
     console.log('💾 [POST /api/matches/custom] Recebendo dados:', {
@@ -2219,7 +2229,8 @@ app.post('/api/matches/custom', (async (req: Request, res: Response) => {
       team1Players,
       team2Players,
       createdBy,
-      gameMode
+      gameMode,
+      matchLeader // ✅ NOVO: Passar o líder da partida
     });
 
     // Se a partida já está finalizada, atualizá-la com o resultado
@@ -3211,5 +3222,77 @@ app.get('/api/debug/matchfound-status', (async (req: Request, res: Response) => 
       success: false,
       error: error.message
     });
+  }
+}) as RequestHandler);
+
+// ✅ NOVO: Endpoint para polling de status de sincronização
+app.get('/api/sync/status', (async (req: Request, res: Response) => {
+  try {
+    const summonerName = req.query.summonerName as string;
+    if (!summonerName) {
+      return res.status(400).json({ error: 'summonerName é obrigatório' });
+    }
+
+    // 1. Verificar se o jogador está em partida pendente de aceitação
+    const pendingMatches = await dbManager.getCustomMatchesByStatus('pending');
+    for (const match of pendingMatches) {
+      let allPlayers: string[] = [];
+      try {
+        const team1 = typeof match.team1_players === 'string' ? JSON.parse(match.team1_players) : (match.team1_players || []);
+        const team2 = typeof match.team2_players === 'string' ? JSON.parse(match.team2_players) : (match.team2_players || []);
+        allPlayers = [...team1, ...team2];
+      } catch { }
+      if (allPlayers.includes(summonerName)) {
+        return res.json({ status: 'match_found', matchId: match.id, match });
+      }
+    }
+
+    // 2. Verificar se o jogador está em partida em draft (status 'draft')
+    const draftMatches = await dbManager.getCustomMatchesByStatus('draft');
+    for (const match of draftMatches) {
+      let allPlayers: string[] = [];
+      try {
+        const team1 = typeof match.team1_players === 'string' ? JSON.parse(match.team1_players) : (match.team1_players || []);
+        const team2 = typeof match.team2_players === 'string' ? JSON.parse(match.team2_players) : (match.team2_players || []);
+        allPlayers = [...team1, ...team2];
+      } catch { }
+      if (allPlayers.includes(summonerName)) {
+        return res.json({ status: 'draft', matchId: match.id, match });
+      }
+    }
+
+    // 3. Verificar se o jogador está em partida aceita (aguardando draft)
+    const acceptedMatches = await dbManager.getCustomMatchesByStatus('accepted');
+    for (const match of acceptedMatches) {
+      let allPlayers: string[] = [];
+      try {
+        const team1 = typeof match.team1_players === 'string' ? JSON.parse(match.team1_players) : (match.team1_players || []);
+        const team2 = typeof match.team2_players === 'string' ? JSON.parse(match.team2_players) : (match.team2_players || []);
+        allPlayers = [...team1, ...team2];
+      } catch { }
+      if (allPlayers.includes(summonerName)) {
+        return res.json({ status: 'match_found', matchId: match.id, match });
+      }
+    }
+
+    // 4. Verificar se o jogador está em partida em andamento
+    const inProgressMatches = await dbManager.getCustomMatchesByStatus('in_progress');
+    for (const match of inProgressMatches) {
+      let allPlayers: string[] = [];
+      try {
+        const team1 = typeof match.team1_players === 'string' ? JSON.parse(match.team1_players) : (match.team1_players || []);
+        const team2 = typeof match.team2_players === 'string' ? JSON.parse(match.team2_players) : (match.team2_players || []);
+        allPlayers = [...team1, ...team2];
+      } catch { }
+      if (allPlayers.includes(summonerName)) {
+        return res.json({ status: 'game_in_progress', matchId: match.id, match });
+      }
+    }
+
+    // 5. Caso não esteja em nenhum fluxo
+    return res.json({ status: 'none' });
+  } catch (error: any) {
+    console.error('❌ [API] Erro ao consultar status de sincronização:', error);
+    res.status(500).json({ error: error.message });
   }
 }) as RequestHandler);

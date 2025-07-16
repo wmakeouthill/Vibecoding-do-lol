@@ -47,6 +47,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
 
     public timer: Subscription | null = null;
     public botPickTimer: number | null = null;
+    private realTimeSyncTimer: number | null = null;
 
     @ViewChild('confirmationModal') confirmationModal!: DraftConfirmationModalComponent;
     private baseUrl: string;
@@ -64,6 +65,14 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
     ngOnInit() {
         console.log('🚀 [DraftPickBan] ngOnInit iniciado');
         console.log('🚀 [DraftPickBan] currentPlayer recebido:', this.currentPlayer);
+        console.log('🚀 [DraftPickBan] currentPlayer detalhes:', {
+            id: this.currentPlayer?.id,
+            summonerName: this.currentPlayer?.summonerName,
+            name: this.currentPlayer?.name,
+            gameName: this.currentPlayer?.gameName,
+            tagLine: this.currentPlayer?.tagLine,
+            displayName: this.currentPlayer?.displayName
+        });
         console.log('🚀 [DraftPickBan] matchData recebido:', this.matchData);
 
         this.loadChampions().then(() => {
@@ -78,6 +87,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         if (this.botPickTimer) {
             this.botService.cancelScheduledAction(this.botPickTimer);
         }
+        this.stopRealTimeSync();
     }
 
     ngOnChanges(changes: SimpleChanges) {
@@ -117,6 +127,11 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         }
 
         if (changes['currentPlayer']) {
+            console.log('🔄 [DraftPickBan] currentPlayer mudou:', {
+                previousValue: changes['currentPlayer'].previousValue,
+                currentValue: changes['currentPlayer'].currentValue,
+                firstChange: changes['currentPlayer'].firstChange
+            });
             this.checkCurrentPlayerChange();
         }
     }
@@ -302,6 +317,13 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
             phasesCount: this.session.phases.length,
             currentAction: this.session.currentAction
         });
+
+        // ✅ NOVO: Carregar dados do MySQL para sincronizar picks e bans existentes
+        console.log('🔄 [DraftPickBan] Carregando dados do MySQL para sincronização inicial...');
+        this.forceMySQLSync();
+
+        // ✅ NOVO: Iniciar polling frequente para detectar mudanças em tempo real
+        this.startRealTimeSync();
     }
 
     private getLaneForIndex(index: number): string {
@@ -508,6 +530,17 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         console.log(`🤖 [checkForBotAutoAction] Tipo de ação: ${phase.action} (${phase.action === 'pick' ? 'PICK' : 'BAN'})`);
         console.log(`🤖 [checkForBotAutoAction] Campeões disponíveis: ${this.champions.length}`);
 
+        // ✅ NOVO: Log detalhado do currentPlayer
+        console.log(`🤖 [checkForBotAutoAction] currentPlayer recebido:`, this.currentPlayer);
+        console.log(`🤖 [checkForBotAutoAction] currentPlayer detalhes:`, {
+            id: this.currentPlayer?.id,
+            summonerName: this.currentPlayer?.summonerName,
+            name: this.currentPlayer?.name,
+            gameName: this.currentPlayer?.gameName,
+            tagLine: this.currentPlayer?.tagLine,
+            displayName: this.currentPlayer?.displayName
+        });
+
         // Cancelar ação anterior se existir
         if (this.botPickTimer) {
             console.log(`🤖 [checkForBotAutoAction] Cancelando timer anterior: ${this.botPickTimer}`);
@@ -516,7 +549,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         }
 
         // Verificar se deve executar ação de bot
-        const shouldPerformAction = this.botService.shouldPerformBotAction(phase, this.session);
+        const shouldPerformAction = this.botService.shouldPerformBotAction(phase, this.session, this.currentPlayer);
         console.log(`🤖 [checkForBotAutoAction] shouldPerformBotAction retornou: ${shouldPerformAction}`);
 
         if (shouldPerformAction) {
@@ -526,26 +559,39 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
                 phase,
                 this.session,
                 this.champions,
-                () => {
+                async () => {
                     // Callback executado após a ação do bot
-                    console.log(`🤖 [checkForBotAutoAction] Ação do bot (${phase.action}) concluída, atualizando interface...`);
+                    console.log(`🤖 [checkForBotAutoAction] Ação do bot (${phase.action}) concluída, sincronizando com MySQL...`);
                     console.log(`🤖 [checkForBotAutoAction] currentAction após bot: ${this.session?.currentAction}`);
                     console.log(`🤖 [checkForBotAutoAction] total de fases: ${this.session?.phases.length}`);
 
-                    // ✅ CORREÇÃO: O BotService já incrementou currentAction e configurou a fase
-                    // Agora invalidar cache e forçar detecção de mudanças
-                    this.forceInterfaceUpdate();
-
-                    // ✅ NOVO: Enviar ação de bot para backend se eu for um jogador humano
+                    // ✅ NOVO: SEMPRE enviar ação de bot para backend (MySQL) se eu for special user
                     // Buscar a fase que acabou de ser completada (currentAction - 1)
-                    if (this.session && this.session.currentAction > 0) {
+                    if (this.session && this.session.currentAction > 0 && this.matchData?.id) {
                         const completedPhase = this.session.phases[this.session.currentAction - 1];
-                        if (completedPhase && completedPhase.champion && this.currentPlayer &&
-                            !this.botService.isBot(this.currentPlayer) && this.matchData?.id) {
-                            console.log('🤖 [checkForBotAutoAction] Enviando ação de bot para backend');
-                            this.sendDraftActionToBackend(completedPhase.champion, completedPhase.action).catch(error => {
-                                console.error('❌ [checkForBotAutoAction] Erro ao enviar ação de bot para backend:', error);
+                        if (completedPhase && completedPhase.champion) {
+                            console.log('🤖 [checkForBotAutoAction] Enviando ação de bot para MySQL (special user)');
+                            console.log('🤖 [checkForBotAutoAction] Detalhes da ação:', {
+                                champion: completedPhase.champion.name,
+                                action: completedPhase.action,
+                                matchId: this.matchData.id,
+                                isSpecialUser: this.currentPlayer?.summonerName === 'popcorn seller'
                             });
+
+                            try {
+                                await this.sendDraftActionToBackend(completedPhase.champion, completedPhase.action);
+                                console.log('✅ [checkForBotAutoAction] Ação de bot enviada para MySQL com sucesso');
+
+                                // ✅ CORREÇÃO: Aguardar menos tempo e forçar sincronização com MySQL
+                                setTimeout(() => {
+                                    this.forceInterfaceUpdate();
+                                    this.forceMySQLSync();
+                                    console.log('🔄 [checkForBotAutoAction] Sincronização forçada após ação de bot');
+                                }, 200);
+
+                            } catch (error) {
+                                console.error('❌ [checkForBotAutoAction] Erro ao enviar ação de bot para MySQL:', error);
+                            }
                         }
                     }
 
@@ -558,7 +604,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
                         this.updateCurrentTurn();
                     }
 
-                    // ✅ CORRIGIDO: Uma única atualização da interface no final
+                    // ✅ CORREÇÃO: Atualizar interface após sincronização
                     this.forceInterfaceUpdate();
 
                     console.log('✅ [checkForBotAutoAction] Interface atualizada após ação do bot');
@@ -690,11 +736,28 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         // O BotService já configura a fase e incrementa currentAction
         this.botService.performBotAction(currentPhase, this.session, this.champions);
 
-        // ✅ NOVO: Enviar ação de timeout para backend se eu for um jogador humano
-        if (currentPhase.champion && this.currentPlayer && !this.botService.isBot(this.currentPlayer) && this.matchData?.id) {
-            console.log('⏰ [handleTimeOut] Enviando ação de timeout para backend');
-            this.sendDraftActionToBackend(currentPhase.champion, currentPhase.action).catch(error => {
-                console.error('❌ [handleTimeOut] Erro ao enviar timeout para backend:', error);
+        // ✅ NOVO: SEMPRE enviar ação de timeout para backend (MySQL) se eu for special user
+        if (currentPhase.champion && this.matchData?.id) {
+            console.log('⏰ [handleTimeOut] Enviando ação de timeout para MySQL (special user)');
+            console.log('⏰ [handleTimeOut] Detalhes da ação:', {
+                champion: currentPhase.champion.name,
+                action: currentPhase.action,
+                matchId: this.matchData.id,
+                isSpecialUser: this.currentPlayer?.summonerName === 'popcorn seller'
+            });
+
+            this.sendDraftActionToBackend(currentPhase.champion, currentPhase.action).then(() => {
+                console.log('✅ [handleTimeOut] Ação de timeout enviada para MySQL com sucesso');
+
+                // ✅ CORREÇÃO: Aguardar menos tempo e forçar sincronização com MySQL
+                setTimeout(() => {
+                    this.forceInterfaceUpdate();
+                    this.forceMySQLSync();
+                    console.log('🔄 [handleTimeOut] Sincronização forçada após timeout');
+                }, 200);
+
+            }).catch(error => {
+                console.error('❌ [handleTimeOut] Erro ao enviar timeout para MySQL:', error);
             });
         }
 
@@ -1084,7 +1147,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
     }
 
     // MÉTODO PARA RECEBER SELEÇÃO DO MODAL
-    onChampionSelected(champion: Champion): void {
+    async onChampionSelected(champion: Champion): Promise<void> {
         console.log('🎯 [onChampionSelected] === CAMPEÃO SELECIONADO ===');
         console.log('🎯 [onChampionSelected] Campeão selecionado:', champion.name);
 
@@ -1115,37 +1178,48 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
 
         console.log('✅ [onChampionSelected] Fase atualizada com campeão:', champion.name);
 
-        // ✅ NOVO: Enviar ação para o backend (qualquer jogador humano pode atualizar)
-        // Isso resolve o problema de quando o líder é um bot
-        if (this.currentPlayer && !this.botService.isBot(this.currentPlayer) && this.matchData?.id) {
-            console.log('🎯 [onChampionSelected] Enviando ação para backend (jogador humano)');
-            console.log('🎯 [onChampionSelected] Detalhes do jogador:', {
-                name: this.currentPlayer.summonerName || this.currentPlayer.name,
-                isBot: this.botService.isBot(this.currentPlayer),
-                isLeader: this.isLeader,
+        // ✅ CORREÇÃO: SEMPRE enviar ação para o backend (MySQL) - GATILHO UNIVERSAL
+        // Qualquer ação de qualquer jogador deve sincronizar com MySQL
+        if (this.matchData?.id) {
+            console.log('🎯 [onChampionSelected] Enviando ação para MySQL (gatilho universal)');
+            console.log('🎯 [onChampionSelected] Detalhes da ação:', {
+                champion: champion.name,
+                action: currentPhase.action,
+                playerName: this.currentPlayer?.summonerName || this.currentPlayer?.name,
+                isBot: this.currentPlayer ? this.botService.isBot(this.currentPlayer) : false,
+                isSpecialUser: this.currentPlayer ? this.currentPlayer.summonerName === 'popcorn seller' : false,
                 matchId: this.matchData.id,
-                reasoning: 'Jogador humano pode atualizar independente de ser líder'
+                reasoning: 'Gatilho universal - qualquer ação sincroniza com MySQL'
             });
 
-            this.sendDraftActionToBackend(champion, currentPhase.action).catch(error => {
-                console.error('❌ [onChampionSelected] Erro ao enviar para backend:', error);
+            this.sendDraftActionToBackend(champion, currentPhase.action).then(() => {
+                console.log('✅ [onChampionSelected] Ação enviada para MySQL com sucesso');
+
+                // ✅ CORREÇÃO: Sincronizar imediatamente com MySQL após envio (reduzido para 100ms)
+                setTimeout(() => {
+                    this.forceMySQLSync();
+                    console.log('🔄 [onChampionSelected] Sincronização imediata com MySQL após confirmação');
+                }, 100);
+
+            }).catch(error => {
+                console.error('❌ [onChampionSelected] Erro ao enviar para MySQL:', error);
             });
-        } else if (this.currentPlayer && this.botService.isBot(this.currentPlayer)) {
-            console.log('ℹ️ [onChampionSelected] Jogador atual é bot - não enviando para backend');
-            console.log('ℹ️ [onChampionSelected] Detalhes do bot:', {
-                name: this.currentPlayer.summonerName || this.currentPlayer.name,
-                isBot: this.botService.isBot(this.currentPlayer),
-                isLeader: this.isLeader
-            });
-        } else if (!this.currentPlayer) {
-            console.log('ℹ️ [onChampionSelected] currentPlayer não disponível - não enviando para backend');
         } else {
-            console.log('ℹ️ [onChampionSelected] matchData.id não disponível - não enviando para backend');
-            console.log('ℹ️ [onChampionSelected] matchData disponível:', !!this.matchData);
+            console.log('⚠️ [onChampionSelected] matchData.id não disponível - não enviando para MySQL');
         }
 
         // ✅ CORREÇÃO: Fechar modal imediatamente
         this.showChampionModal = false;
+
+        // ✅ CORREÇÃO: Parar timer da fase atual quando pick é feito
+        if (currentPhase.timeRemaining > 0) {
+            console.log('⏰ [onChampionSelected] Parando timer da fase atual (pick feito)');
+            currentPhase.timeRemaining = 0;
+        }
+
+        // ✅ CORREÇÃO: ENVIAR PARA MYSQL PRIMEIRO, depois aplicar localmente
+        console.log('🌐 [onChampionSelected] Enviando ação para MySQL primeiro...');
+        await this.sendDraftActionToBackend(champion, currentPhase.action);
 
         // ✅ CORREÇÃO: AGORA invalidar cache e forçar detecção de mudanças
         this.forceInterfaceUpdate();
@@ -1514,22 +1588,86 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
             return;
         }
 
+        // ✅ NOVO: Verificar se realmente há mudanças antes de processar
+        const currentTotalActions = this.session.phases?.filter(p => p.locked).length || 0;
+        const newTotalActions = data.totalActions || 0;
+
+        if (currentTotalActions === newTotalActions) {
+            console.log('🔄 [DraftPickBan] Nenhuma mudança detectada - ignorando sincronização');
+            return;
+        }
+
         console.log('🔄 [DraftPickBan] Aplicando sincronização:', {
-            currentTotalActions: this.session.phases?.filter(p => p.locked).length || 0,
-            newTotalActions: data.totalActions,
+            currentTotalActions,
+            newTotalActions,
             lastAction: data.lastAction
         });
 
         // ✅ ATUALIZAR: Aplicar picks e bans sincronizados nas fases
         if (data.pickBanData.actions && Array.isArray(data.pickBanData.actions)) {
+            console.log('🔄 [DraftPickBan] Aplicando ações do MySQL:', data.pickBanData.actions);
             this.applySyncedActions(data.pickBanData.actions);
         }
+
+        // ✅ ATUALIZAR: Atualizar currentAction baseado no número de ações aplicadas
+        if (data.totalActions > 0) {
+            console.log(`🔄 [DraftPickBan] Atualizando currentAction de ${this.session.currentAction} para ${data.totalActions}`);
+            this.session.currentAction = data.totalActions;
+        }
+
+        // ✅ ATUALIZAR: Dados da sessão já foram atualizados via applySyncedActions
 
         // ✅ ATUALIZAR: Forçar recálculo do turno atual e interface
         this.updateCurrentTurn();
         this.forceInterfaceUpdate();
 
         console.log('✅ [DraftPickBan] Sincronização aplicada com sucesso');
+    }
+
+    // ✅ NOVO: Forçar sincronização com MySQL
+    private forceMySQLSync(): void {
+        console.log('🔄 [DraftPickBan] Forçando sincronização com MySQL...');
+
+        // ✅ ESTRATÉGIA: Buscar dados atualizados do MySQL via polling
+        if (this.currentPlayer?.summonerName) {
+            console.log('🔄 [DraftPickBan] Buscando dados para jogador:', this.currentPlayer.summonerName);
+
+            this.apiService.checkSyncStatus(this.currentPlayer.summonerName).subscribe({
+                next: (response) => {
+                    console.log('🔄 [DraftPickBan] Dados do MySQL recebidos:', response);
+
+                    // Se há dados de draft, aplicar sincronização
+                    if (response.status === 'draft' && response.matchData?.pick_ban_data) {
+                        console.log('🔄 [DraftPickBan] Aplicando dados sincronizados do MySQL');
+                        console.log('🔄 [DraftPickBan] pick_ban_data:', response.matchData.pick_ban_data);
+
+                        // Parsear pick_ban_data se for string
+                        let pickBanData = response.matchData.pick_ban_data;
+                        if (typeof pickBanData === 'string') {
+                            try {
+                                pickBanData = JSON.parse(pickBanData);
+                            } catch (error) {
+                                console.error('❌ [DraftPickBan] Erro ao parsear pick_ban_data:', error);
+                                return;
+                            }
+                        }
+
+                        this.handleDraftDataSync({
+                            pickBanData: pickBanData,
+                            totalActions: pickBanData.actions?.length || 0,
+                            lastAction: pickBanData.actions?.[pickBanData.actions.length - 1]
+                        });
+                    } else {
+                        console.log('🔄 [DraftPickBan] Nenhum dado de draft encontrado no MySQL');
+                    }
+                },
+                error: (error) => {
+                    console.warn('⚠️ [DraftPickBan] Erro ao sincronizar com MySQL:', error);
+                }
+            });
+        } else {
+            console.warn('⚠️ [DraftPickBan] currentPlayer.summonerName não disponível para sincronização');
+        }
     }
 
     // ✅ NOVO: Aplicar ações sincronizadas do MySQL nas fases locais
@@ -1546,7 +1684,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
             const action = actions[i];
             const phase = this.session.phases[i];
 
-            if (action && action.championId && !phase.locked) {
+            if (action && action.championId) {
                 console.log(`🎯 [DraftPickBan] Aplicando ação ${i}: ${action.action} campeão ${action.championId} por ${action.playerName}`);
 
                 // Buscar campeão pelo ID
@@ -1555,14 +1693,100 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
                     // Aplicar ação na fase
                     phase.champion = champion;
                     phase.locked = true;
+                    phase.timeRemaining = 0; // Marcar como concluída
 
                     console.log(`✅ [DraftPickBan] Ação aplicada na fase ${i}: ${champion.name}`);
                 } else {
-                    console.warn(`⚠️ [DraftPickBan] Campeão ${action.championId} não encontrado`);
+                    console.warn(`⚠️ [DraftPickBan] Campeão ${action.championId} não encontrado na lista de campeões`);
+                    console.warn(`⚠️ [DraftPickBan] Campeões disponíveis:`, this.champions.slice(0, 5).map(c => ({ id: c.id, name: c.name })));
                 }
+            } else {
+                console.log(`⚠️ [DraftPickBan] Ação ${i} inválida ou já aplicada:`, action);
             }
         }
 
         console.log('✅ [DraftPickBan] Todas as ações sincronizadas foram aplicadas');
+        console.log('✅ [DraftPickBan] Fases após sincronização:', this.session.phases.slice(0, 5).map((p, i) => ({
+            index: i,
+            action: p.action,
+            team: p.team,
+            locked: p.locked,
+            champion: p.champion?.name
+        })));
+    }
+
+    // ✅ NOVO: Sistema de sincronização em tempo real
+    private startRealTimeSync(): void {
+        console.log('🔄 [DraftPickBan] Iniciando sincronização em tempo real...');
+
+        // Parar timer anterior se existir
+        if (this.realTimeSyncTimer) {
+            clearInterval(this.realTimeSyncTimer);
+        }
+
+        // Polling a cada 1000ms para detectar mudanças (otimizado - aguardar backend)
+        this.realTimeSyncTimer = window.setInterval(() => {
+            if (!this.session || this.session.phase === 'completed') {
+                console.log('🔄 [DraftPickBan] Sessão completada - parando sincronização em tempo real');
+                this.stopRealTimeSync();
+                return;
+            }
+
+            // ✅ VERIFICAR: Se há mudanças no MySQL
+            if (this.currentPlayer?.summonerName) {
+                this.apiService.checkSyncStatus(this.currentPlayer.summonerName).subscribe({
+                    next: (response) => {
+                        // ✅ VERIFICAR: Se há mudanças nos dados do draft
+                        if (response.status === 'draft' && response.matchData?.pick_ban_data) {
+                            const newTotalActions = response.matchData.pick_ban_data.actions?.length || 0;
+                            const currentTotalActions = this.session?.phases?.filter(p => p.locked).length || 0;
+
+                            if (newTotalActions > currentTotalActions) {
+                                console.log('🔄 [DraftPickBan] Mudança detectada! Aplicando sincronização...');
+
+                                // ✅ CORREÇÃO: Parar timer ANTES de aplicar sincronização
+                                this.stopCurrentPhaseTimer();
+
+                                // ✅ CORREÇÃO: Aplicar sincronização do MySQL
+                                this.handleDraftDataSync({
+                                    pickBanData: response.matchData.pick_ban_data,
+                                    totalActions: newTotalActions,
+                                    lastAction: response.matchData.pick_ban_data.actions?.[newTotalActions - 1]
+                                });
+
+                                // ✅ CORREÇÃO: Forçar atualização da interface
+                                this.forceInterfaceUpdate();
+                            }
+                        }
+                    },
+                    error: (error) => {
+                        console.warn('⚠️ [DraftPickBan] Erro na sincronização em tempo real:', error);
+                    }
+                });
+            }
+        }, 1000);
+
+        console.log('✅ [DraftPickBan] Sincronização em tempo real iniciada (1000ms)');
+    }
+
+    // ✅ NOVO: Parar sincronização em tempo real
+    private stopRealTimeSync(): void {
+        if (this.realTimeSyncTimer) {
+            clearInterval(this.realTimeSyncTimer);
+            this.realTimeSyncTimer = null;
+            console.log('🛑 [DraftPickBan] Sincronização em tempo real parada');
+        }
+    }
+
+    // ✅ NOVO: Parar timer da fase atual quando mudança é detectada
+    private stopCurrentPhaseTimer(): void {
+        if (this.session?.phases && this.session.currentAction < this.session.phases.length) {
+            const currentPhase = this.session.phases[this.session.currentAction];
+            if (currentPhase && currentPhase.timeRemaining > 0) {
+                console.log('⏰ [DraftPickBan] Parando timer da fase atual (mudança detectada)');
+                currentPhase.timeRemaining = 0;
+                this.stopTimer();
+            }
+        }
     }
 }

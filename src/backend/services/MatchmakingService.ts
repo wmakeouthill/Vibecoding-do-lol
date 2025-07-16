@@ -940,11 +940,20 @@ export class MatchmakingService {
           `Partida ${matchId} criada automaticamente! 10 jogadores encontrados - MMR médio: Team1(${Math.round(team1MMR)}) vs Team2(${Math.round(team2MMR)})`
         );
 
-        // ✅ NOVO: Notificar frontend sobre partida encontrada (para mostrar tela de aceitar)
-        await this.notifyMatchFound(matchId, team1, team2, team1MMR, team2MMR);
+        // ✅ CORREÇÃO: Usar MatchFoundService para notificação padronizada
+        await this.matchFoundService.createMatchForAcceptance({
+          team1Players: team1.map(p => p.summonerName),
+          team2Players: team2.map(p => p.summonerName),
+          averageMMR: { team1: team1MMR, team2: team2MMR },
+          balancedTeams: { team1, team2 },
+          matchId: matchId
+        });
 
         // ✅ CORREÇÃO: Aceitar automaticamente a partida para bots APÓS notificar
         await this.autoAcceptMatchForBots(matchId, team1, team2);
+
+        // ✅ NOVO: NÃO chamar notifyMatchFound aqui - apenas o MatchFoundService deve notificar
+        console.log(`✅ [AutoMatch] Notificação delegada para MatchFoundService - partida ${matchId}`);
 
         // ✅ IMPORTANTE: NÃO REMOVER JOGADORES DA FILA AINDA
         // Eles serão removidos apenas quando aceitarem a partida
@@ -1387,8 +1396,6 @@ export class MatchmakingService {
     }
   }
 
-  // ✅ NOVO: Notificar frontend que partida foi cancelada
-  // ✅ NOVO: Notificar frontend que draft iniciou com dados completos
   // ✅ NOVO: Balancear times por MMR e lanes
   private balanceTeamsByMMRAndLanes(players: any[]): { team1: any[], team2: any[] } | null {
     console.log('🎯 [Matchmaking] Balanceando times por MMR e lanes...');
@@ -1728,108 +1735,8 @@ export class MatchmakingService {
     return orderedPlayers;
   }
 
-  // ✅ NOVO: Notificar frontend que partida foi cancelada
-  private async notifyMatchFound(matchId: number, team1: any[], team2: any[], team1MMR: number, team2MMR: number): Promise<void> {
-    try {
-      console.log(`📡 [MatchFound] Notificando frontend sobre partida ${matchId}...`);
-
-      if (!this.wss || !this.wss.clients) {
-        console.warn('⚠️ [MatchFound] WebSocket Server não disponível');
-        return;
-      }
-
-      // ✅ CORREÇÃO: Preparar dados completos da partida para o frontend com lanes atribuídas
-      const matchFoundData = {
-        type: 'match_found',
-        data: {
-          matchId: matchId,
-          // ✅ CORREÇÃO: Incluir todas as informações necessárias para o frontend
-          teammates: team1.map((p, index) => ({
-            summonerName: p.summonerName,
-            mmr: p.mmr,
-            primaryLane: p.primaryLane,
-            secondaryLane: p.secondaryLane,
-            assignedLane: p.assignedLane, // ✅ NOVO: Lane atribuída após balanceamento
-            teamIndex: index, // ✅ NOVO: Índice no time (0-4)
-            isAutofill: p.isAutofill || false, // ✅ NOVO: Se foi autofill
-            team: 'blue' // ✅ NOVO: Identificação do time
-          })),
-          enemies: team2.map((p, index) => ({
-            summonerName: p.summonerName,
-            mmr: p.mmr,
-            primaryLane: p.primaryLane,
-            secondaryLane: p.secondaryLane,
-            assignedLane: p.assignedLane, // ✅ NOVO: Lane atribuída após balanceamento
-            teamIndex: index + 5, // ✅ NOVO: Índice no time (5-9)
-            isAutofill: p.isAutofill || false, // ✅ NOVO: Se foi autofill
-            team: 'red' // ✅ NOVO: Identificação do time
-          })),
-          // ✅ CORREÇÃO: Estatísticas detalhadas dos times
-          teamStats: {
-            team1: {
-              averageMMR: Math.round(team1MMR),
-              totalMMR: Math.round(team1MMR * 5),
-              players: team1.length,
-              lanes: team1.map(p => p.assignedLane).sort()
-            },
-            team2: {
-              averageMMR: Math.round(team2MMR),
-              totalMMR: Math.round(team2MMR * 5),
-              players: team2.length,
-              lanes: team2.map(p => p.assignedLane).sort()
-            }
-          },
-          // ✅ CORREÇÃO: Informações de balanceamento
-          balancingInfo: {
-            mmrDifference: Math.abs(team1MMR - team2MMR),
-            isWellBalanced: Math.abs(team1MMR - team2MMR) <= 100,
-            autofillCount: {
-              team1: team1.filter(p => p.isAutofill).length,
-              team2: team2.filter(p => p.isAutofill).length
-            }
-          },
-          // ✅ CORREÇÃO: Timer e deadline
-          acceptanceDeadline: new Date(Date.now() + 30000).toISOString(), // 30 segundos para aceitar
-          acceptanceTimer: 30, // ✅ NOVO: Timer em segundos para o frontend
-          acceptTimeout: 30, // ✅ COMPATIBILIDADE: Campo antigo para compatibilidade
-          phase: 'accept', // ✅ NOVO: Fase da partida
-          message: 'Partida encontrada! Aceite para continuar.',
-          // ✅ NOVO: Informações adicionais para o frontend
-          gameMode: 'RANKED_SOLO_5x5',
-          mapId: 11, // Summoner's Rift
-          queueType: 'RANKED'
-        },
-        timestamp: new Date().toISOString()
-      };
-
-      // Enviar notificação para todos os jogadores da partida
-      const allPlayerNames = [...team1.map(p => p.summonerName), ...team2.map(p => p.summonerName)];
-
-      let sentCount = 0;
-      this.wss.clients.forEach((client: any) => {
-        if (client.readyState === 1) { // WebSocket.OPEN
-          try {
-            // Enviar para todos os clientes (o frontend filtrará se o jogador está na partida)
-            client.send(JSON.stringify(matchFoundData));
-            sentCount++;
-          } catch (error) {
-            console.error('❌ [MatchFound] Erro ao enviar notificação:', error);
-          }
-        }
-      });
-
-      console.log(`✅ [MatchFound] Notificação enviada para ${sentCount} clientes sobre partida ${matchId}`);
-      console.log(`📋 [MatchFound] Jogadores da partida:`, allPlayerNames);
-      console.log(`📊 [MatchFound] Dados da partida:`, {
-        team1Stats: matchFoundData.data.teamStats.team1,
-        team2Stats: matchFoundData.data.teamStats.team2,
-        balancing: matchFoundData.data.balancingInfo
-      });
-
-    } catch (error) {
-      console.error('❌ [MatchFound] Erro ao notificar frontend:', error);
-    }
-  }
+  // ✅ REMOVIDO: Método notifyMatchFound - agora apenas o MatchFoundService notifica
+  // Isso evita duplicação de lógica e garante que todos os jogadores recebam os mesmos dados
 
   // ✅ NOVO: Função para escolher um líder humano da partida
   private selectHumanLeader(team1: any[], team2: any[]): string {
