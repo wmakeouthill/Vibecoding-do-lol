@@ -934,10 +934,46 @@ export class MatchmakingService {
       if (matchId) {
         console.log(`✅ [AutoMatch] Partida ${matchId} criada automaticamente!`);
 
+        // ✅ CORREÇÃO: Salvar dados preliminares de lane e composição no banco
+        const preliminaryData = {
+          team1Players: team1.map(p => p.summonerName),
+          team2Players: team2.map(p => p.summonerName),
+          averageMMR: { team1: team1MMR, team2: team2MMR },
+          lanes: {
+            team1: team1.map((p: any) => ({
+              player: p.summonerName,
+              lane: p.assignedLane,
+              teamIndex: p.teamIndex,
+              mmr: p.mmr,
+              isAutofill: p.isAutofill
+            })),
+            team2: team2.map((p: any) => ({
+              player: p.summonerName,
+              lane: p.assignedLane,
+              teamIndex: p.teamIndex,
+              mmr: p.mmr,
+              isAutofill: p.isAutofill
+            }))
+          }
+        };
+
+        // ✅ CORREÇÃO: Atualizar partida com dados preliminares
+        await this.dbManager.updateCustomMatch(matchId, {
+          draft_data: JSON.stringify(preliminaryData),
+          pick_ban_data: JSON.stringify({
+            team1Picks: [],
+            team2Picks: [],
+            team1Bans: [],
+            team2Bans: [],
+            isReal: true,
+            source: 'AUTO_MATCHMAKING'
+          })
+        });
+
         // Adicionar atividade
         this.addActivity(
           'match_created',
-          `Partida ${matchId} criada automaticamente! 10 jogadores encontrados - MMR médio: Team1(${Math.round(team1MMR)}) vs Team2(${Math.round(team2MMR)})`
+          `Partida ${matchId} criada automaticamente! 10adores encontrados - MMR médio: Team1(${Math.round(team1MMR)}) vs Team2(${Math.round(team2MMR)})`
         );
 
         // ✅ CORREÇÃO: Usar MatchFoundService para notificação padronizada

@@ -3306,7 +3306,18 @@ app.get('/api/sync/status', (async (req: Request, res: Response) => {
         allPlayers = [...team1, ...team2];
       } catch { }
       if (allPlayers.includes(summonerName)) {
-        return res.json({ status: 'draft', matchId: match.id, match });
+        // ✅ CORREÇÃO: Incluir dados de pick_ban_data para sincronização
+        let pickBanData = null;
+        if (match.pick_ban_data) {
+          try {
+            pickBanData = typeof match.pick_ban_data === 'string'
+              ? JSON.parse(match.pick_ban_data)
+              : match.pick_ban_data;
+          } catch (parseError) {
+            console.error('❌ [API] Erro ao parsear pick_ban_data:', parseError);
+          }
+        }
+        return res.json({ status: 'draft', matchId: match.id, match, pick_ban_data: pickBanData });
       }
     }
 
