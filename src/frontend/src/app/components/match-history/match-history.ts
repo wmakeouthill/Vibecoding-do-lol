@@ -1130,18 +1130,18 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     return modes[gameMode || ''] || 'Desconhecido';
   } getChampionImageUrl(championName?: string): string {
     if (!championName) return '';
-    
+
     // Usar a versão mais recente do Data Dragon (igual ao backend)
-    const version = '15.13.1';
-    
+    const version = '15.14.1';
+
     // O nome do campeão já vem normalizado do backend, então usar diretamente
-    return `https://ddragon.leagueoflegends.com/cdn/${version}/img/champion/${championName}.png`;
+    return `https://ddragon.leagueoflegends.com/cdn/15.14.1/img/champion/${championName}.png`;
   }
 
   getItemImageUrl(itemId: number): string {
     if (!itemId || itemId === 0) return '';
     // Data Dragon item image URL
-    return `https://ddragon.leagueoflegends.com/cdn/15.13.1/img/item/${itemId}.png`;
+    return `https://ddragon.leagueoflegends.com/cdn/15.14.1/img/item/${itemId}.png`;
   }
 
   getPlayerItems(match: Match): number[] {
@@ -1661,7 +1661,7 @@ export class MatchHistoryComponent implements OnInit, OnDestroy {
     // Fallback simples - retornar tags básicas baseadas no nome do campeão
     // Em uma implementação completa, isso seria resolvido pelo backend
     const championNameLower = championName.toLowerCase();
-    
+
     // Mapeamento básico de alguns campeões conhecidos
     const championTags: { [key: string]: string[] } = {
       'jinx': ['Marksman'],

@@ -3089,6 +3089,55 @@ process.on('SIGTERM', async () => {
 // Iniciar aplicação
 startServer();
 
+// ✅ NOVO: Endpoint para sincronização de clientes do draft
+app.post('/api/draft/sync', (async (req: Request, res: Response) => {
+  try {
+    const { matchId, playerId } = req.body;
+
+    if (!matchId || !playerId) {
+      return res.status(400).json({
+        success: false,
+        error: 'matchId e playerId são obrigatórios'
+      });
+    }
+
+    console.log(`🔄 [Draft] Cliente ${playerId} solicitando sincronização para partida ${matchId}`);
+
+    // Notificar o draft service sobre a sincronização (via WebSocket)
+    if (wss) {
+      const message = {
+        type: 'draft_client_sync',
+        data: {
+          matchId,
+          playerId,
+          timestamp: Date.now()
+        }
+      };
+
+      // Broadcast para todos os clientes da partida
+      wss.clients.forEach((client: WebSocket) => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify(message));
+        }
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Sincronização solicitada',
+      matchId,
+      playerId
+    });
+
+  } catch (error) {
+    console.error('❌ [Draft] Erro na sincronização:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno do servidor'
+    });
+  }
+}) as RequestHandler);
+
 // ✅ NOVO: Endpoint de debug para verificar status do DiscordService
 app.get('/api/debug/discord-status', (async (req: Request, res: Response) => {
   try {

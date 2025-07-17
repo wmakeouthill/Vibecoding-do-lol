@@ -1,6 +1,7 @@
 import { WebSocket } from 'ws';
 import { DatabaseManager } from '../database/DatabaseManager';
 import { DiscordService } from './DiscordService';
+import { PlayerIdentifierService } from './PlayerIdentifierService';
 
 interface GameData {
   matchId: number;
@@ -607,69 +608,9 @@ export class GameInProgressService {
     console.log(`📢 [GameInProgress] Notificação de jogo cancelado processada (${matchId})`);
   }
 
-  // ✅ NOVO: Função auxiliar para verificar se jogador está na partida (mesma lógica do MatchFoundService)
+  // ✅ CORREÇÃO: Usar PlayerIdentifierService centralizado
   private isPlayerInMatch(playerInfo: any, playersInMatch: string[]): boolean {
-    if (!playerInfo || !playersInMatch.length) return false;
-
-    // Obter identificadores possíveis do jogador
-    const identifiers = [];
-
-    if (playerInfo.displayName) {
-      identifiers.push(playerInfo.displayName);
-    }
-    if (playerInfo.summonerName) {
-      identifiers.push(playerInfo.summonerName);
-    }
-    if (playerInfo.gameName) {
-      identifiers.push(playerInfo.gameName);
-      if (playerInfo.tagLine) {
-        identifiers.push(`${playerInfo.gameName}#${playerInfo.tagLine}`);
-      }
-    }
-
-    // Verificar se algum identificador coincide com os jogadores da partida
-    for (const identifier of identifiers) {
-      for (const matchPlayer of playersInMatch) {
-        // Comparação exata
-        if (identifier === matchPlayer) {
-          console.log(`✅ [GameInProgress] Match exato: ${identifier} === ${matchPlayer}`);
-          return true;
-        }
-
-        // Comparação por gameName (ignorando tag)
-        if (identifier.includes('#') && matchPlayer.includes('#')) {
-          const identifierGameName = identifier.split('#')[0];
-          const matchPlayerGameName = matchPlayer.split('#')[0];
-          if (identifierGameName === matchPlayerGameName) {
-            console.log(`✅ [GameInProgress] Match por gameName: ${identifierGameName} === ${matchPlayerGameName}`);
-            return true;
-          }
-        }
-
-        // Comparação de gameName com nome completo
-        if (identifier.includes('#')) {
-          const identifierGameName = identifier.split('#')[0];
-          if (identifierGameName === matchPlayer) {
-            console.log(`✅ [GameInProgress] Match gameName com nome completo: ${identifierGameName} === ${matchPlayer}`);
-            return true;
-          }
-        }
-
-        if (matchPlayer.includes('#')) {
-          const matchPlayerGameName = matchPlayer.split('#')[0];
-          if (identifier === matchPlayerGameName) {
-            console.log(`✅ [GameInProgress] Match nome com gameName: ${identifier} === ${matchPlayerGameName}`);
-            return true;
-          }
-        }
-      }
-    }
-
-    console.log(`❌ [GameInProgress] Nenhum match encontrado para:`, {
-      playerIdentifiers: identifiers,
-      matchPlayers: playersInMatch
-    });
-    return false;
+    return PlayerIdentifierService.isPlayerInMatch(playerInfo, playersInMatch);
   }
 
   private broadcastMessage(message: any): void {

@@ -1,6 +1,7 @@
 import { WebSocket } from 'ws';
 import { DatabaseManager } from '../database/DatabaseManager';
 import { DiscordService } from './DiscordService';
+import { PlayerIdentifierService } from './PlayerIdentifierService';
 
 interface AcceptanceStatus {
   matchId: number;
@@ -760,60 +761,14 @@ export class MatchFoundService {
     });
   }
 
-  // ✅ NOVO: Obter identificador único do jogador
+  // ✅ CORREÇÃO: Usar PlayerIdentifierService centralizado
   private getPlayerIdentifier(playerInfo: any): string | null {
-    // ✅ PRIORIDADE 1: gameName#tagLine (padrão)
-    if (playerInfo.gameName && playerInfo.tagLine) {
-      return `${playerInfo.gameName}#${playerInfo.tagLine}`;
-    }
-
-    // ✅ PRIORIDADE 2: displayName (se já está no formato correto)
-    if (playerInfo.displayName && playerInfo.displayName.includes('#')) {
-      return playerInfo.displayName;
-    }
-
-    // ✅ PRIORIDADE 3: summonerName (fallback)
-    if (playerInfo.summonerName) {
-      return playerInfo.summonerName;
-    }
-
-    return null;
+    return PlayerIdentifierService.getPlayerIdentifier(playerInfo);
   }
 
-  // ✅ MELHORADO: Verificar se um jogador está na partida com identificação mais precisa
+  // ✅ CORREÇÃO: Usar PlayerIdentifierService centralizado
   private isPlayerInMatch(playerInfo: any, playersInMatch: string[]): boolean {
-    if (!playerInfo || !playersInMatch.length) return false;
-
-    const playerIdentifier = this.getPlayerIdentifier(playerInfo);
-    if (!playerIdentifier) {
-      console.warn('⚠️ [MatchFound] Não foi possível obter identificador do jogador:', playerInfo);
-      return false;
-    }
-
-    // ✅ COMPARAÇÃO EXATA: Priorizar match exato
-    for (const matchPlayer of playersInMatch) {
-      if (playerIdentifier === matchPlayer) {
-        console.log(`✅ [MatchFound] Match exato: ${playerIdentifier} === ${matchPlayer}`);
-        return true;
-      }
-    }
-
-    // ✅ COMPARAÇÃO POR GAMENAME: Fallback apenas se necessário
-    if (playerIdentifier.includes('#')) {
-      const playerGameName = playerIdentifier.split('#')[0];
-      for (const matchPlayer of playersInMatch) {
-        if (matchPlayer.includes('#')) {
-          const matchPlayerGameName = matchPlayer.split('#')[0];
-          if (playerGameName === matchPlayerGameName) {
-            console.log(`✅ [MatchFound] Match por gameName: ${playerGameName} === ${matchPlayerGameName}`);
-            return true;
-          }
-        }
-      }
-    }
-
-    console.log(`❌ [MatchFound] Nenhum match encontrado para: ${playerIdentifier}`);
-    return false;
+    return PlayerIdentifierService.isPlayerInMatch(playerInfo, playersInMatch);
   }
 
   private notifyAcceptanceProgress(matchId: number, matchStatus: AcceptanceStatus): void {

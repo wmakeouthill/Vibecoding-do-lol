@@ -1,6 +1,7 @@
 import { WebSocket } from 'ws';
 import { DatabaseManager } from '../database/DatabaseManager';
 import { DiscordService } from './DiscordService';
+import { PlayerIdentifierService } from './PlayerIdentifierService';
 
 interface DraftData {
   matchId: number;
@@ -38,6 +39,255 @@ export class DraftService {
   private lastPickBanDataHash = new Map<number, string>();
   private discordService?: DiscordService;
   private processingDrafts = new Set<string>(); // ✅ NOVO: Controle de ordem de processamento
+
+  // ✅ NOVO: Sistema de timer global centralizado
+  private globalTimers = new Map<number, {
+    timeRemaining: number;
+    isPaused: boolean;
+    phaseIndex: number;
+    lastActionTime: number;
+    syncStatus: Map<string, boolean>; // Jogador -> Sincronizado
+    timerInterval?: NodeJS.Timeout;
+  }>();
+
+  // ✅ NOVO: Lock de processamento por partida
+  private draftLocks = new Map<number, {
+    isProcessing: boolean;
+    lastActionTime: number;
+    currentPlayerId: string | null;
+  }>();
+
+  // ✅ CORREÇÃO: Usar PlayerIdentifierService centralizado
+  private normalizePlayerIdentifier(playerInfo: any): string | null {
+    return PlayerIdentifierService.normalizePlayerIdentifier(playerInfo);
+  }
+
+  // ✅ NOVO: Verificar se jogador está sincronizado
+  private isPlayerSynced(matchId: number, playerId: string): boolean {
+    const timer = this.globalTimers.get(matchId);
+    if (!timer) return false;
+    const normalizedId = this.normalizePlayerIdentifier({ summonerName: playerId });
+    if (!normalizedId) return false;
+    return timer.syncStatus.get(normalizedId) || false;
+  }
+
+  // ✅ NOVO: Marcar jogador como sincronizado
+  private markPlayerSynced(matchId: number, playerId: string): void {
+    const timer = this.globalTimers.get(matchId);
+    if (!timer) return;
+
+    const normalizedId = this.normalizePlayerIdentifier({ summonerName: playerId });
+    if (!normalizedId) return;
+    timer.syncStatus.set(normalizedId, true);
+
+    console.log(`✅ [Draft] Jogador ${normalizedId} marcado como sincronizado na partida ${matchId}`);
+  }
+
+  // ✅ NOVO: Verificar se todos os jogadores estão sincronizados
+  private areAllPlayersSynced(matchId: number): boolean {
+    const timer = this.globalTimers.get(matchId);
+    if (!timer) return false;
+
+    const draft = this.activeDrafts.get(matchId);
+    if (!draft) return false;
+
+    const allPlayers = [...draft.team1, ...draft.team2];
+    const expectedPlayers = allPlayers.length;
+    const syncedPlayers = Array.from(timer.syncStatus.values()).filter(synced => synced).length;
+
+    console.log(`🔍 [Draft] Sincronização partida ${matchId}: ${syncedPlayers}/${expectedPlayers} jogadores sincronizados`);
+
+    return syncedPlayers >= expectedPlayers;
+  }
+
+  // ✅ NOVO: Sistema de timer global centralizado
+  private startGlobalTimer(matchId: number, phaseIndex: number = 0): void {
+    console.log(`⏰ [Draft] Iniciando timer global para partida ${matchId}, fase ${phaseIndex}`);
+
+    // Parar timer anterior se existir
+    this.stopGlobalTimer(matchId);
+
+    const draft = this.activeDrafts.get(matchId);
+    if (!draft) {
+      console.error(`❌ [Draft] Draft não encontrado para timer global: ${matchId}`);
+      return;
+    }
+
+    // Inicializar timer global
+    this.globalTimers.set(matchId, {
+      timeRemaining: 30, // 30 segundos por fase
+      isPaused: false,
+      phaseIndex,
+      lastActionTime: Date.now(),
+      syncStatus: new Map()
+    });
+
+    const timer = this.globalTimers.get(matchId)!;
+
+    // Iniciar contagem regressiva
+    timer.timerInterval = setInterval(() => {
+      if (timer.isPaused) {
+        console.log(`⏸️ [Draft] Timer global pausado para partida ${matchId}`);
+        return;
+      }
+
+      if (timer.timeRemaining > 0) {
+        timer.timeRemaining--;
+
+        // Notificar todos os clientes sobre o tempo restante
+        this.notifyTimerUpdate(matchId, timer.timeRemaining);
+
+        console.log(`⏰ [Draft] Timer global partida ${matchId}: ${timer.timeRemaining}s restantes`);
+      } else {
+        // Timeout - executar ação automática
+        console.log(`⏰ [Draft] Timer global expirou para partida ${matchId}, executando ação automática`);
+        this.handleGlobalTimeout(matchId);
+      }
+    }, 1000);
+
+    console.log(`✅ [Draft] Timer global iniciado para partida ${matchId}`);
+  }
+
+  // ✅ NOVO: Parar timer global
+  private stopGlobalTimer(matchId: number): void {
+    const timer = this.globalTimers.get(matchId);
+    if (timer && timer.timerInterval) {
+      clearInterval(timer.timerInterval);
+      timer.timerInterval = undefined;
+      console.log(`🛑 [Draft] Timer global parado para partida ${matchId}`);
+    }
+  }
+
+  // ✅ NOVO: Pausar timer global até todos sincronizarem
+  private pauseTimerUntilSynced(matchId: number): void {
+    const timer = this.globalTimers.get(matchId);
+    if (!timer) return;
+
+    timer.isPaused = true;
+    console.log(`⏸️ [Draft] Timer global pausado para partida ${matchId} até todos sincronizarem`);
+
+    // Verificar a cada 500ms se todos sincronizaram
+    const checkInterval = setInterval(() => {
+      if (this.areAllPlayersSynced(matchId)) {
+        clearInterval(checkInterval);
+        timer.isPaused = false;
+        console.log(`▶️ [Draft] Todos sincronizados, retomando timer global para partida ${matchId}`);
+      }
+    }, 500);
+  }
+
+  // ✅ NOVO: Handler para timeout global
+  private async handleGlobalTimeout(matchId: number): Promise<void> {
+    console.log(`⏰ [Draft] Executando timeout global para partida ${matchId}`);
+
+    const draft = this.activeDrafts.get(matchId);
+    if (!draft) return;
+
+    // Executar ação automática (bot ou random)
+    const currentPhase = this.getCurrentPhase(matchId);
+    if (currentPhase) {
+      // Buscar jogador da fase atual
+      const currentPlayer = this.getCurrentPhasePlayer(matchId, currentPhase);
+      if (currentPlayer) {
+        // Executar ação automática
+        await this.executeAutoAction(matchId, currentPlayer, currentPhase);
+      }
+    }
+  }
+
+  // ✅ NOVO: Obter fase atual
+  private getCurrentPhase(matchId: number): any {
+    const timer = this.globalTimers.get(matchId);
+    if (!timer) return null;
+
+    // Implementar lógica para obter fase atual baseada no phaseIndex
+    // Por enquanto, retornar null
+    return null;
+  }
+
+  // ✅ NOVO: Obter jogador da fase atual
+  private getCurrentPhasePlayer(matchId: number, phase: any): any {
+    const draft = this.activeDrafts.get(matchId);
+    if (!draft || !phase) return null;
+
+    // Implementar lógica para obter jogador da fase atual
+    // Por enquanto, retornar null
+    return null;
+  }
+
+  // ✅ NOVO: Executar ação automática
+  private async executeAutoAction(matchId: number, player: any, phase: any): Promise<void> {
+    console.log(`🤖 [Draft] Executando ação automática para jogador ${player.summonerName} na partida ${matchId}`);
+
+    // Implementar lógica de ação automática
+    // Por enquanto, apenas log
+  }
+
+  // ✅ NOVO: Notificar atualização de timer
+  private notifyTimerUpdate(matchId: number, timeRemaining: number): void {
+    if (!this.wss) return;
+
+    const message = {
+      type: 'draft_timer_update',
+      data: {
+        matchId,
+        timeRemaining,
+        isUrgent: timeRemaining <= 10
+      },
+      timestamp: Date.now()
+    };
+
+    this.broadcastMessage(message, matchId);
+  }
+
+  // ✅ NOVO: Lock de processamento
+  private async acquireDraftLock(matchId: number, playerId: string): Promise<boolean> {
+    const lock = this.draftLocks.get(matchId);
+    const now = Date.now();
+
+    if (lock && lock.isProcessing) {
+      // Se o lock é muito antigo (>10s), liberar
+      if (now - lock.lastActionTime > 10000) {
+        console.log(`🔓 [Draft] Liberando lock antigo para partida ${matchId}`);
+        this.releaseDraftLock(matchId);
+      } else {
+        console.log(`🔒 [Draft] Lock ativo para partida ${matchId}, aguardando...`);
+        return false;
+      }
+    }
+
+    // Adquirir lock
+    this.draftLocks.set(matchId, {
+      isProcessing: true,
+      lastActionTime: now,
+      currentPlayerId: playerId
+    });
+
+    console.log(`🔒 [Draft] Lock adquirido para partida ${matchId} por ${playerId}`);
+    return true;
+  }
+
+  // ✅ NOVO: Liberar lock de processamento
+  private releaseDraftLock(matchId: number): void {
+    this.draftLocks.delete(matchId);
+    console.log(`🔓 [Draft] Lock liberado para partida ${matchId}`);
+  }
+
+  // ✅ NOVO: Forçar sincronização de todos os clientes
+  private forceClientSync(matchId: number): void {
+    if (!this.wss) return;
+
+    const message = {
+      type: 'draft_force_sync',
+      data: {
+        matchId,
+        timestamp: Date.now()
+      }
+    };
+
+    this.broadcastMessage(message, matchId);
+    console.log(`🔄 [Draft] Forçando sincronização para todos os clientes da partida ${matchId}`);
+  }
 
   constructor(dbManager: DatabaseManager, wss?: any, discordService?: DiscordService) {
     console.log('🔧 [DraftService] Construtor chamado');
@@ -259,6 +509,9 @@ export class DraftService {
 
       // 7. Notificar frontend
       this.notifyDraftStarted(matchId, draftData);
+
+      // 8. ✅ CORREÇÃO: Iniciar timer global imediatamente
+      this.startGlobalTimer(matchId, 0);
 
       // ✅ NOVO: Remover jogadores da fila após iniciar o draft
       const allPlayers = [
@@ -509,17 +762,38 @@ export class DraftService {
   async processDraftAction(matchId: number, playerId: string, championId: number, action: 'pick' | 'ban'): Promise<void> {
     console.log(`🎯 [Draft] Processando ${action} do campeão ${championId} por jogador ${playerId} na partida ${matchId}`);
 
-    // ✅ NOVO: Controle de ordem - aguardar processamento anterior
-    const processingKey = `draft_${matchId}`;
-    if (this.processingDrafts.has(processingKey)) {
-      console.log(`⏳ [Draft] Partida ${matchId} já está sendo processada, aguardando...`);
-      await this.waitForProcessing(processingKey, 5000); // Aguardar até 5 segundos
+    // ✅ NOVO: Padronizar identificador do jogador
+    const normalizedPlayerId = this.normalizePlayerIdentifier({ summonerName: playerId });
+    console.log(`🎯 [Draft] Identificador normalizado: ${playerId} -> ${normalizedPlayerId}`);
+
+    // ✅ NOVO: Adquirir lock de processamento
+    if (!normalizedPlayerId) {
+      console.error(`❌ [Draft] Não foi possível normalizar identificador do jogador: ${playerId}`);
+      return;
+    }
+    const lockAcquired = await this.acquireDraftLock(matchId, normalizedPlayerId);
+    if (!lockAcquired) {
+      console.log(`⏳ [Draft] Lock não adquirido para partida ${matchId}, aguardando...`);
+      // Aguardar até 5 segundos e tentar novamente
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      return this.processDraftAction(matchId, playerId, championId, action);
     }
 
-    // ✅ NOVO: Marcar como sendo processado
-    this.processingDrafts.add(processingKey);
+    const processingKey = `draft_${matchId}`;
 
     try {
+      // ✅ NOVO: Pausar timer global até todos sincronizarem
+      this.pauseTimerUntilSynced(matchId);
+
+      // ✅ NOVO: Controle de ordem - aguardar processamento anterior
+      if (this.processingDrafts.has(processingKey)) {
+        console.log(`⏳ [Draft] Partida ${matchId} já está sendo processada, aguardando...`);
+        await this.waitForProcessing(processingKey, 5000); // Aguardar até 5 segundos
+      }
+
+      // ✅ NOVO: Marcar como sendo processado
+      this.processingDrafts.add(processingKey);
+
       // 1. ✅ NOVO: Buscar partida no banco (não precisa de draft ativo na memória)
       const match = await this.dbManager.getCustomMatchById(matchId);
       if (!match) {
@@ -710,11 +984,12 @@ export class DraftService {
       }
 
     } catch (error) {
-      console.error(`❌ [Draft] Erro ao processar ação do draft:`, error);
+      console.error(`❌ [Draft] Erro ao processar ${action} na partida ${matchId}:`, error);
       throw error;
     } finally {
       // ✅ NOVO: Sempre remover do processamento, mesmo em caso de erro
       this.processingDrafts.delete(processingKey);
+      this.releaseDraftLock(matchId);
       console.log(`✅ [Draft] Processamento da partida ${matchId} finalizado`);
     }
   }
@@ -1399,68 +1674,9 @@ export class DraftService {
   }
 
   // ✅ NOVO: Função auxiliar para verificar se jogador está na partida (mesma lógica do MatchFoundService)
+  // ✅ CORREÇÃO: Usar PlayerIdentifierService centralizado
   private isPlayerInMatch(playerInfo: any, playersInMatch: string[]): boolean {
-    if (!playerInfo || !playersInMatch.length) return false;
-
-    // Obter identificadores possíveis do jogador
-    const identifiers = [];
-
-    if (playerInfo.displayName) {
-      identifiers.push(playerInfo.displayName);
-    }
-    if (playerInfo.summonerName) {
-      identifiers.push(playerInfo.summonerName);
-    }
-    if (playerInfo.gameName) {
-      identifiers.push(playerInfo.gameName);
-      if (playerInfo.tagLine) {
-        identifiers.push(`${playerInfo.gameName}#${playerInfo.tagLine}`);
-      }
-    }
-
-    // Verificar se algum identificador coincide com os jogadores da partida
-    for (const identifier of identifiers) {
-      for (const matchPlayer of playersInMatch) {
-        // Comparação exata
-        if (identifier === matchPlayer) {
-          console.log(`✅ [Draft] Match exato: ${identifier} === ${matchPlayer}`);
-          return true;
-        }
-
-        // Comparação por gameName (ignorando tag)
-        if (identifier.includes('#') && matchPlayer.includes('#')) {
-          const identifierGameName = identifier.split('#')[0];
-          const matchPlayerGameName = matchPlayer.split('#')[0];
-          if (identifierGameName === matchPlayerGameName) {
-            console.log(`✅ [Draft] Match por gameName: ${identifierGameName} === ${matchPlayerGameName}`);
-            return true;
-          }
-        }
-
-        // Comparação de gameName com nome completo
-        if (identifier.includes('#')) {
-          const identifierGameName = identifier.split('#')[0];
-          if (identifierGameName === matchPlayer) {
-            console.log(`✅ [Draft] Match gameName com nome completo: ${identifierGameName} === ${matchPlayer}`);
-            return true;
-          }
-        }
-
-        if (matchPlayer.includes('#')) {
-          const matchPlayerGameName = matchPlayer.split('#')[0];
-          if (identifier === matchPlayerGameName) {
-            console.log(`✅ [Draft] Match nome com gameName: ${identifier} === ${matchPlayerGameName}`);
-            return true;
-          }
-        }
-      }
-    }
-
-    console.log(`❌ [Draft] Nenhum match encontrado para:`, {
-      playerIdentifiers: identifiers,
-      matchPlayers: playersInMatch
-    });
-    return false;
+    return PlayerIdentifierService.isPlayerInMatch(playerInfo, playersInMatch);
   }
 
   // ✅ CORRIGIDO: Broadcast direcionado para jogadores da partida

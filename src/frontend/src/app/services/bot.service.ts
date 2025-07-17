@@ -121,7 +121,7 @@ export class BotService {
     }
 
     /**
-     * Compara um jogador com um ID específico
+     * Compara um jogador com um ID específico usando identificadores padronizados
      */
     comparePlayerWithId(player: any, targetId: string): boolean {
         if (!player || !targetId) {
@@ -129,100 +129,17 @@ export class BotService {
             return false;
         }
 
-        const playerId = player.id?.toString();
-        const playerName = player.summonerName || player.name || '';
-        const playerGameName = player.gameName || '';
-        const playerTagLine = player.tagLine || '';
+        // ✅ NOVO: Usar identificadores padronizados
+        const playerNormalized = this.normalizePlayerIdentifier(player);
+        const targetNormalized = targetId.toLowerCase().trim();
 
-        console.log(`🤖 [comparePlayerWithId] Comparando:`, {
-            playerId: playerId,
-            playerName: playerName,
-            playerGameName: playerGameName,
-            playerTagLine: playerTagLine,
-            targetId: targetId,
-            player: player
+        console.log('🔍 [BotService] Comparando jogadores:', {
+            player: playerNormalized,
+            target: targetNormalized,
+            match: playerNormalized === targetNormalized
         });
 
-        // ✅ CORREÇÃO: Priorizar comparação por summonerName (gameName#tagLine)
-        if (playerName === targetId) {
-            console.log(`🤖 [comparePlayerWithId] Match por summonerName: ${playerName} === ${targetId}`);
-            return true;
-        }
-
-        // ✅ CORREÇÃO: Match por Riot ID completo (gameName#tagLine)
-        if (playerGameName && playerTagLine) {
-            const fullRiotId = `${playerGameName}#${playerTagLine}`;
-            if (fullRiotId === targetId) {
-                console.log(`🤖 [comparePlayerWithId] Match por Riot ID completo: ${fullRiotId} === ${targetId}`);
-                return true;
-            }
-        }
-
-        // ✅ CORREÇÃO: Match por gameName quando targetId tem tag (quando currentPlayer tem só gameName, mas phase tem gameName#tagLine)
-        if (targetId.includes('#')) {
-            const targetGameName = targetId.split('#')[0];
-            if (playerGameName === targetGameName) {
-                console.log(`🤖 [comparePlayerWithId] Match por gameName quando targetId tem tag: ${playerGameName} === ${targetGameName}`);
-                return true;
-            }
-        }
-
-        // ✅ CORREÇÃO: Match por nome quando targetId tem tag (quando currentPlayer tem só name, mas phase tem gameName#tagLine)
-        if (targetId.includes('#')) {
-            const targetGameName = targetId.split('#')[0];
-            if (playerName === targetGameName) {
-                console.log(`🤖 [comparePlayerWithId] Match por nome quando targetId tem tag: ${playerName} === ${targetGameName}`);
-                return true;
-            }
-        }
-
-        // ✅ CORREÇÃO: Match por gameName apenas
-        if (playerGameName === targetId) {
-            console.log(`🤖 [comparePlayerWithId] Match por gameName: ${playerGameName} === ${targetId}`);
-            return true;
-        }
-
-        // ✅ CORREÇÃO: Match por nome com tag (quando currentPlayer tem nome sem tag, mas phase tem nome com tag)
-        if (playerName.includes('#')) {
-            const gameName = playerName.split('#')[0];
-            if (gameName === targetId) {
-                console.log(`🤖 [comparePlayerWithId] Match por gameName do nome: ${gameName} === ${targetId}`);
-                return true;
-            }
-        }
-
-        // ✅ CORREÇÃO: Match por ID (fallback)
-        if (playerId === targetId) {
-            console.log(`🤖 [comparePlayerWithId] Match por ID: ${playerId} === ${targetId}`);
-            return true;
-        }
-
-        // ✅ CORREÇÃO: Match por teamIndex (fallback)
-        if (player.teamIndex !== undefined && player.teamIndex !== null) {
-            const teamIndexStr = player.teamIndex.toString();
-            if (teamIndexStr === targetId) {
-                console.log(`🤖 [comparePlayerWithId] Match por teamIndex: ${teamIndexStr} === ${targetId}`);
-                return true;
-            }
-        }
-
-        // ✅ CORREÇÃO: Match por summonerId (fallback)
-        if (player.summonerId) {
-            const summonerIdStr = player.summonerId.toString();
-            if (summonerIdStr === targetId) {
-                console.log(`🤖 [comparePlayerWithId] Match por summonerId: ${summonerIdStr} === ${targetId}`);
-                return true;
-            }
-        }
-
-        // ✅ CORREÇÃO: Match por puuid (fallback)
-        if (player.puuid && player.puuid === targetId) {
-            console.log(`🤖 [comparePlayerWithId] Match por puuid: ${player.puuid} === ${targetId}`);
-            return true;
-        }
-
-        console.log(`🤖 [comparePlayerWithId] Nenhum match encontrado`);
-        return false;
+        return playerNormalized === targetNormalized;
     }
 
     /**
@@ -237,45 +154,52 @@ export class BotService {
         console.log('🔐 [BotService] === VERIFICAÇÃO DE SPECIAL USER ===');
         console.log('🔐 [BotService] currentPlayer completo:', currentPlayer);
 
-        const playerName = currentPlayer.summonerName || currentPlayer.name || currentPlayer.gameName || '';
-        const playerTag = currentPlayer.tagLine || '';
-        const playerDisplayName = currentPlayer.displayName || '';
+        // ✅ NOVO: Padronizar identificador do jogador
+        const normalizedId = this.normalizePlayerIdentifier(currentPlayer);
 
-        console.log('🔐 [BotService] Dados extraídos:', {
-            playerName,
-            playerTag,
-            playerDisplayName,
-            summonerName: currentPlayer.summonerName,
-            name: currentPlayer.name,
-            gameName: currentPlayer.gameName,
-            tagLine: currentPlayer.tagLine,
-            displayName: currentPlayer.displayName
-        });
+        console.log('🔐 [BotService] Identificador normalizado:', normalizedId);
 
         // ✅ CORREÇÃO: Verificar se é o popcorn seller#coup (case insensitive)
-        const fullRiotId = playerTag ? `${playerName}#${playerTag}` : playerName;
-
-        // ✅ NOVO: Verificar também pelo displayName
-        const isSpecial = fullRiotId.toLowerCase() === 'popcorn seller#coup' ||
-            playerName.toLowerCase() === 'popcorn seller' ||
-            fullRiotId.toLowerCase() === 'popcorn seller#coup' ||
-            playerDisplayName.toLowerCase() === 'popcorn seller#coup';
+        const isSpecial = normalizedId === 'popcorn seller#coup' ||
+            normalizedId === 'popcorn seller' ||
+            normalizedId.includes('popcorn seller');
 
         console.log(`🔐 [BotService] Verificação de special user:`, {
-            playerName,
-            playerTag,
-            playerDisplayName,
-            fullRiotId,
+            normalizedId,
             isSpecial,
-            expected: 'popcorn seller#coup',
-            checks: {
-                fullRiotIdMatch: fullRiotId.toLowerCase() === 'popcorn seller#coup',
-                playerNameMatch: playerName.toLowerCase() === 'popcorn seller',
-                displayNameMatch: playerDisplayName.toLowerCase() === 'popcorn seller#coup'
-            }
+            expected: 'popcorn seller#coup'
         });
 
         return isSpecial;
+    }
+
+    /**
+     * ✅ NOVO: Padronizar identificador do jogador (igual ao backend)
+     */
+    private normalizePlayerIdentifier(playerInfo: any): string {
+        if (!playerInfo) return '';
+
+        // Prioridade 1: gameName#tagLine (padrão)
+        if (playerInfo.gameName && playerInfo.tagLine) {
+            return `${playerInfo.gameName}#${playerInfo.tagLine}`.toLowerCase().trim();
+        }
+
+        // Prioridade 2: displayName (se já está no formato correto)
+        if (playerInfo.displayName && playerInfo.displayName.includes('#')) {
+            return playerInfo.displayName.toLowerCase().trim();
+        }
+
+        // Prioridade 3: summonerName (fallback)
+        if (playerInfo.summonerName) {
+            return playerInfo.summonerName.toLowerCase().trim();
+        }
+
+        // Prioridade 4: name (fallback)
+        if (playerInfo.name) {
+            return playerInfo.name.toLowerCase().trim();
+        }
+
+        return '';
     }
 
     /**

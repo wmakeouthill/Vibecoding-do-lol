@@ -56,9 +56,9 @@ interface DataDragonResponse {
 
 export class DataDragonService {
   private readonly baseUrl = 'https://ddragon.leagueoflegends.com/cdn';
-  private readonly version = '15.13.1';
+  private readonly version = '15.14.1';
   private readonly language = 'pt_BR';
-  
+
   private championsCache: { [championName: string]: ChampionData } = {};
   private championsLoaded = false;
   private championIdToNameMap: { [championId: number]: string } = {};
@@ -74,7 +74,7 @@ export class DataDragonService {
     try {
       const url = `${this.baseUrl}/${this.version}/data/${this.language}/champion.json`;
       console.log(`🔍 Carregando campeões da Data Dragon: ${url}`);
-      
+
       const response = await axios.get<DataDragonResponse>(url);
       this.championsCache = response.data.data;
       this.championsLoaded = true;
@@ -164,7 +164,7 @@ export class DataDragonService {
     return participants.map(participant => {
       const championId = participant.championId;
       const championName = this.getChampionNameById(championId);
-      
+
       return {
         ...participant,
         // Mantém a mesma estrutura que o frontend espera
@@ -188,7 +188,7 @@ export class DataDragonService {
 
     const tags = champion.tags;
     const stats = champion.stats;
-    
+
     // Sistema de pontuação para cada lane
     const laneScores: { [key: string]: number } = {
       'TOP': 0,
@@ -288,7 +288,7 @@ export class DataDragonService {
    */
   getChampionsByRole(): any {
     const allChampions = this.getAllChampions();
-    
+
     const roleMapping = {
       top: ['Fighter', 'Tank'],
       jungle: ['Assassin', 'Fighter', 'Tank'],

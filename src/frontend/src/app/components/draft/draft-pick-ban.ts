@@ -88,6 +88,9 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
             this.botService.cancelScheduledAction(this.botPickTimer);
         }
         this.stopRealTimeSync();
+
+        // ✅ NOVO: Remover listeners do WebSocket
+        this.removeWebSocketListeners();
     }
 
     ngOnChanges(changes: SimpleChanges) {
@@ -583,9 +586,13 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
                                 console.log('✅ [checkForBotAutoAction] Ação de bot enviada para MySQL com sucesso');
 
                                 // ✅ CORREÇÃO: Aguardar menos tempo e forçar sincronização com MySQL
-                                setTimeout(() => {
+                                setTimeout(async () => {
                                     this.forceInterfaceUpdate();
                                     this.forceMySQLSync();
+
+                                    // ✅ NOVO: Notificar backend sobre sincronização
+                                    await this.notifyBackendSync();
+
                                     console.log('🔄 [checkForBotAutoAction] Sincronização forçada após ação de bot');
                                 }, 200);
 
@@ -1445,19 +1452,15 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         // ✅ CORREÇÃO: Usar summonerName (gameName#tagLine) como playerId
         let playerId: string = currentPhase.playerId || '';
 
-        // ✅ NOVO: Garantir que playerId seja o summonerName correto
+        // ✅ NOVO: Garantir que playerId seja o identificador padronizado
         const currentPlayer = this.getCurrentPhasePlayer();
         if (currentPlayer) {
-            // Priorizar o formato gameName#tagLine se disponível
-            if (currentPlayer.gameName && currentPlayer.tagLine) {
-                playerId = `${currentPlayer.gameName}#${currentPlayer.tagLine}`;
-            } else if (currentPlayer.summonerName) {
-                playerId = currentPlayer.summonerName;
-            } else if (currentPlayer.name) {
-                playerId = currentPlayer.name;
-            } else {
-                playerId = currentPhase.playerId || `Player${currentPlayer.teamIndex || 0}`;
-            }
+            playerId = this.normalizePlayerIdentifier(currentPlayer);
+        } else if (this.currentPlayer) {
+            // Fallback para o jogador atual
+            playerId = this.normalizePlayerIdentifier(this.currentPlayer);
+        } else {
+            playerId = currentPhase.playerId || `Player${currentPhase.playerIndex || 0}`;
         }
 
         const requestData = {
@@ -1788,5 +1791,135 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
                 this.stopTimer();
             }
         }
+    }
+
+    // ✅ NOVO: Padronizar identificador do jogador
+    private normalizePlayerIdentifier(playerInfo: any): string {
+        if (!playerInfo) return '';
+
+        // Prioridade 1: gameName#tagLine (padrão)
+        if (playerInfo.gameName && playerInfo.tagLine) {
+            return `${playerInfo.gameName}#${playerInfo.tagLine}`.toLowerCase().trim();
+        }
+
+        // Prioridade 2: displayName (se já está no formato correto)
+        if (playerInfo.displayName && playerInfo.displayName.includes('#')) {
+            return playerInfo.displayName.toLowerCase().trim();
+        }
+
+        // Prioridade 3: summonerName (fallback)
+        if (playerInfo.summonerName) {
+            return playerInfo.summonerName.toLowerCase().trim();
+        }
+
+        // Prioridade 4: name (fallback)
+        if (playerInfo.name) {
+            return playerInfo.name.toLowerCase().trim();
+        }
+
+        return '';
+    }
+
+    // ✅ NOVO: Notificar backend sobre sincronização
+    private async notifyBackendSync(): Promise<void> {
+        if (!this.matchData?.id || !this.currentPlayer) {
+            console.warn('⚠️ [DraftPickBan] Dados insuficientes para notificar sincronização');
+            return;
+        }
+
+        const playerId = this.normalizePlayerIdentifier(this.currentPlayer);
+
+        try {
+            console.log(`🔄 [DraftPickBan] Notificando sincronização para backend: ${playerId}`);
+
+            const response = await this.http.post('/api/draft/sync', {
+                matchId: this.matchData.id,
+                playerId: playerId
+            }).toPromise();
+
+            console.log('✅ [DraftPickBan] Sincronização notificada com sucesso:', response);
+        } catch (error) {
+            console.warn('⚠️ [DraftPickBan] Erro ao notificar sincronização:', error);
+        }
+    }
+
+    // ✅ NOVO: Escutar eventos de sincronização do WebSocket
+    private setupWebSocketListeners(): void {
+        // Escutar eventos de timer global
+        document.addEventListener('draft_timer_update', this.onTimerUpdate);
+
+        // Escutar eventos de força sincronização
+        document.addEventListener('draft_force_sync', this.onForceSync);
+
+        // Escutar eventos de sincronização de cliente
+        document.addEventListener('draft_client_sync', this.onClientSync);
+    }
+
+    // ✅ NOVO: Handler para atualizações de timer global
+    private onTimerUpdate = (event: any): void => {
+        if (event.detail && this.matchData) {
+            console.log('⏰ [DraftPickBan] Timer global atualizado:', event.detail);
+
+            // Verificar se é para esta partida
+            if (event.detail.matchId !== this.matchData.id) {
+                return;
+            }
+
+            // Atualizar timer local
+            this.timeRemaining = event.detail.timeRemaining;
+
+            // Marcar como urgente se necessário
+            if (event.detail.isUrgent) {
+                console.log('🚨 [DraftPickBan] Timer urgente!');
+            }
+
+            // Forçar atualização da interface
+            this.cdr.markForCheck();
+        }
+    };
+
+    // ✅ NOVO: Handler para força sincronização
+    private onForceSync = (event: any): void => {
+        if (event.detail && this.matchData) {
+            console.log('🔄 [DraftPickBan] Força sincronização solicitada:', event.detail);
+
+            // Verificar se é para esta partida
+            if (event.detail.matchId !== this.matchData.id) {
+                return;
+            }
+
+            // Forçar sincronização com MySQL
+            this.forceMySQLSync();
+
+            // Notificar backend que sincronizou
+            this.notifyBackendSync();
+        }
+    };
+
+    // ✅ NOVO: Handler para sincronização de cliente
+    private onClientSync = (event: any): void => {
+        if (event.detail && this.matchData) {
+            console.log('🔄 [DraftPickBan] Sincronização de cliente:', event.detail);
+
+            // Verificar se é para esta partida
+            if (event.detail.matchId !== this.matchData.id) {
+                return;
+            }
+
+            // Se não sou eu, sincronizar também
+            const myPlayerId = this.normalizePlayerIdentifier(this.currentPlayer);
+            if (event.detail.playerId !== myPlayerId) {
+                console.log('🔄 [DraftPickBan] Outro cliente sincronizou, sincronizando também...');
+                this.forceMySQLSync();
+                this.notifyBackendSync();
+            }
+        }
+    };
+
+    // ✅ NOVO: Remover listeners do WebSocket
+    private removeWebSocketListeners(): void {
+        document.removeEventListener('draft_timer_update', this.onTimerUpdate);
+        document.removeEventListener('draft_force_sync', this.onForceSync);
+        document.removeEventListener('draft_client_sync', this.onClientSync);
     }
 }

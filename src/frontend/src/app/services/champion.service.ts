@@ -32,7 +32,7 @@ export interface ChampionsByRole {
   providedIn: 'root'
 })
 export class ChampionService {
-  private baseImageUrl = 'https://ddragon.leagueoflegends.com/cdn/15.13.1/img/champion/';
+  private baseImageUrl = 'https://ddragon.leagueoflegends.com/cdn/15.14.1/img/champion/';
   private baseUrl: string;
 
   private roleMapping = {

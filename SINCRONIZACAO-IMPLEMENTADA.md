@@ -1,218 +1,111 @@
-# Sistema de Sincronização Implementado
+# 🔄 Sistema de Sincronização Implementado
 
-## Resumo das Implementações
+## 📋 Resumo das Correções Implementadas
 
-Foram implementadas correções críticas para resolver o problema de sincronização entre jogadores em diferentes PCs, garantindo que todos vejam as mudanças de status em tempo real.
+### 1. **Timer Global Centralizado** ⏰
 
-## 🔧 Backend - Correções Implementadas
+- **Backend**: Implementado sistema de timer global no `DraftService` que controla o tempo de todas as fases do draft
+- **Funcionalidades**:
+  - Timer centralizado por partida
+  - Pausa automática até todos os clientes sincronizarem
+  - Notificação em tempo real para todos os clientes
+  - Timeout automático com ação de bot
 
-### 1. **MatchFoundService - Notificações Direcionadas**
+### 2. **Padronização de Identificadores** 🆔
 
-- ✅ **Corrigido**: `sendWebSocketNotifications()` agora envia apenas para jogadores identificados na partida
-- ✅ **Removido**: Fallback perigoso que enviava notificações para clientes não identificados
-- ✅ **Adicionado**: Sistema de retry com 3 tentativas antes de usar fallback
+- **Backend & Frontend**: Implementado método `normalizePlayerIdentifier()` que padroniza identificadores de jogadores
+- **Prioridades**:
+  1. `gameName#tagLine` (padrão)
+  2. `displayName` (se já está no formato correto)
+  3. `summonerName` (fallback)
+  4. `name` (fallback)
+- **Case-insensitive** e **trim()** para evitar problemas de formatação
 
-### 2. **DraftService - Broadcast Direcionado**
+### 3. **Lock de Processamento** 🔒
 
-- ✅ **Corrigido**: `broadcastMessage()` agora suporta envio direcionado por `matchId`
-- ✅ **Adicionado**: `sendTargetedMessage()` para enviar apenas para jogadores da partida
-- ✅ **Atualizado**: Todas as notificações de draft usam `broadcastMessage(message, matchId)`
+- **Backend**: Sistema de lock por partida no `DraftService`
+- **Funcionalidades**:
+  - Previne processamento simultâneo de ações
+  - Timeout automático para locks antigos (>10s)
+  - Logs detalhados de aquisição/liberação de locks
 
-### 3. **Endpoint REST para Polling**
+### 4. **Sincronização Forçada** 🔄
 
-- ✅ **Criado**: `/api/sync/status?summonerName=...`
-- ✅ **Funcionalidade**: Consulta MySQL para verificar status atual do jogador
-- ✅ **Estados suportados**: `match_found`, `draft`, `game_in_progress`, `none`
+- **Backend**: Endpoint `/api/draft/sync` para notificar sincronização
+- **Frontend**: Método `notifyBackendSync()` que notifica o backend após cada ação
+- **WebSocket**: Eventos `draft_force_sync` e `draft_client_sync` para sincronização em tempo real
 
-## 🎯 Frontend - Polling Inteligente
+### 5. **Bot/Special User Melhorado** 🤖
 
-### 1. **ApiService - Método de Polling**
+- **Frontend**: Melhorada detecção de special user usando identificadores padronizados
+- **Validação**: Apenas `popcorn seller#coup` pode executar ações de bot
+- **Segurança**: Previne que bots executem em PCs de outros jogadores
 
-- ✅ **Adicionado**: `checkSyncStatus(summonerName)` para consultar status via REST
-- ✅ **Integração**: Usa o endpoint `/api/sync/status` do backend
+### 6. **Sistema de Polling Otimizado** 📡
 
-### 2. **App Component - Sistema de Sincronização**
+- **Frontend**: Polling a cada 1s para detectar mudanças no MySQL
+- **Backend**: Monitoramento a cada 1.5s para detectar mudanças em `pick_ban_data`
+- **Sincronização**: Aplicação automática de ações do MySQL no frontend
 
-- ✅ **Adicionado**: `startIntelligentPolling()` - inicia polling a cada 3 segundos
-- ✅ **Adicionado**: `stopIntelligentPolling()` - para o polling no destroy
-- ✅ **Adicionado**: `checkSyncStatus()` - verifica mudanças de status
-- ✅ **Adicionado**: `handleStatusChange()` - processa mudanças detectadas
+## 🚀 Como Funciona
 
-### 3. **Handlers Específicos por Status**
+### Fluxo de Sincronização
 
-- ✅ **Adicionado**: `handleMatchFoundFromPolling()` - processa match_found via polling
-- ✅ **Adicionado**: `handleDraftFromPolling()` - processa draft via polling  
-- ✅ **Adicionado**: `handleGameInProgressFromPolling()` - processa game via polling
-- ✅ **Adicionado**: `handleNoStatusFromPolling()` - limpa estados quando necessário
+1. **Jogador faz pick/ban** → Frontend envia para backend
+2. **Backend processa** → Salva no MySQL com lock
+3. **Backend notifica** → WebSocket para todos os clientes
+4. **Frontend sincroniza** → Polling detecta mudança no MySQL
+5. **Frontend notifica** → Backend marca como sincronizado
+6. **Timer continua** → Próxima fase quando todos sincronizarem
 
-## 🔄 Fluxo de Sincronização
+### Timer Global
 
-### **WebSocket (Principal)**
+1. **Inicia** → 30s para cada fase
+2. **Pausa** → Quando ação é processada
+3. **Aguarda** → Todos os clientes sincronizarem
+4. **Continua** → Para próxima fase
+5. **Timeout** → Ação automática se necessário
 
-1. Backend envia notificação direcionada via WebSocket
-2. Frontend recebe e atualiza estado local
-3. Cache local é atualizado
+### Bot/Special User
 
-### **Polling (Fallback)**
+1. **Verifica** → Se usuário é special user
+2. **Valida** → Se jogador da fase é bot
+3. **Executa** → Ação automática apenas se ambas condições são verdadeiras
+4. **Notifica** → Backend sobre sincronização
 
-1. Frontend verifica status a cada 3 segundos via REST
-2. Compara com cache local (`lastPollingStatus`)
-3. Se diferente, processa mudança e atualiza UI
-4. Cache local é invalidado e atualizado
+## 🔧 Arquivos Modificados
 
-### **MySQL (Fonte Única de Verdade)**
+### Backend
 
-1. Todos os status são persistidos no MySQL
-2. Endpoint `/api/sync/status` sempre consulta o banco
-3. Garante consistência entre todos os backends
+- `src/backend/services/DraftService.ts` - Timer global, locks, sincronização
+- `src/backend/server.ts` - Endpoint de sincronização
 
-## 🎮 Estados Sincronizados
+### Frontend
 
-### **1. Match Found**
+- `src/frontend/src/app/components/draft/draft-pick-ban.ts` - Listeners WebSocket, sincronização
+- `src/frontend/src/app/services/bot.service.ts` - Identificadores padronizados, special user
 
-- ✅ **Detecção**: Via WebSocket ou polling
-- ✅ **Dados**: Times, jogadores, MMR, timer
-- ✅ **UI**: Modal de aceitação com timer
-- ✅ **Cache**: `matchFoundData`, `showMatchFound`
+## 🎯 Benefícios
 
-### **2. Draft**
+1. **Sincronização Real**: Todos os clientes veem os mesmos dados
+2. **Timer Centralizado**: Não há desincronização de tempo
+3. **Locks Seguros**: Previne race conditions
+4. **Bot Controlado**: Apenas special user pode executar ações
+5. **Identificadores Consistentes**: Mesmo formato em todo o sistema
+6. **Logs Detalhados**: Facilita debug e monitoramento
 
-- ✅ **Detecção**: Via WebSocket ou polling  
-- ✅ **Dados**: Times, lanes, fases do draft
-- ✅ **UI**: Interface de pick/ban
-- ✅ **Cache**: `draftData`, `inDraftPhase`
+## 🧪 Como Testar
 
-### **3. Game In Progress**
-
-- ✅ **Detecção**: Via WebSocket ou polling
-- ✅ **Dados**: Times, campeões, status do jogo
-- ✅ **UI**: Interface de jogo em andamento
-- ✅ **Cache**: `gameData`, `inGamePhase`
-
-### **4. None (Limpeza)**
-
-- ✅ **Detecção**: Via polling quando não há status ativo
-- ✅ **Ação**: Limpa todos os estados ativos
-- ✅ **UI**: Volta para fila ou dashboard
-- ✅ **Cache**: Limpa `matchFoundData`, `draftData`, `gameData`
-
-## 🛡️ Proteções Implementadas
-
-### **1. Duplicação de Eventos**
-
-- ✅ **Controle**: `lastMatchId` previne processamento duplicado
-- ✅ **Verificação**: Compara `matchId` antes de processar
-- ✅ **Logs**: Detalhados para debugging
-
-### **2. Estados Inconsistentes**
-
-- ✅ **Validação**: Verifica dados antes de processar
-- ✅ **Fallback**: Usa dados básicos se estruturados falharem
-- ✅ **Limpeza**: Remove estados inválidos automaticamente
-
-### **3. Conectividade**
-
-- ✅ **Retry**: 3 tentativas para notificações WebSocket
-- ✅ **Polling**: Fallback via REST se WebSocket falhar
-- ✅ **Timeout**: 15 segundos para conexão WebSocket
-
-## 📊 Métricas de Sucesso
-
-### **Antes da Implementação**
-
-- ❌ Apenas 1 jogador recebia `match_found`
-- ❌ Apenas 1 jogador iniciava draft
-- ❌ Sincronização via MySQL não funcionava
-- ❌ WebSocket enviava para todos (spam)
-
-### **Após a Implementação**
-
-- ✅ **Todos os 10 jogadores** recebem `match_found`
-- ✅ **Todos os 10 jogadores** iniciam draft simultaneamente
-- ✅ **Sincronização via MySQL** funciona como backup
-- ✅ **WebSocket direcionado** apenas para jogadores da partida
-- ✅ **Polling inteligente** como fallback robusto
-- ✅ **Cache invalidação** automática em mudanças
-
-## 🚀 Como Testar
-
-### **1. Teste Básico**
-
-1. Iniciar 2+ backends locais
-2. Conectar 2+ frontends
-3. Entrar na fila em todos
-4. Verificar se todos recebem `match_found`
-
-### **2. Teste de Robustez**
-
-1. Desconectar WebSocket de um frontend
-2. Verificar se polling detecta mudanças
-3. Reconectar WebSocket
-4. Verificar sincronização
-
-### **3. Teste de Fluxo Completo**
-
-1. Aceitar partida em todos
-2. Verificar transição para draft
-3. Completar draft
-4. Verificar transição para game
-
-## 🔧 Configurações
-
-### **Polling**
-
-- **Intervalo**: 3 segundos (`POLLING_INTERVAL_MS`)
-- **Ativação**: Automática na inicialização
-- **Parada**: Automática no `ngOnDestroy`
-
-### **Retry**
-
-- **Tentativas**: 3 (`maxRetries`)
-- **Delay**: Progressivo (1s, 2s, 3s)
-- **Fallback**: Polling se todas falharem
-
-### **WebSocket**
-
-- **Timeout**: 15 segundos para conexão
-- **Direcionamento**: Por `matchId` e jogadores
-- **Logs**: Detalhados para debugging
-
-## 📝 Logs Importantes
-
-### **Backend**
-
-✅ [MatchFound] Notificação enviada para: PlayerName
-🔄 [Draft] Broadcast direcionado para partida 123
-📊 [API] Status de sincronização consultado
-
-### **Frontend**
-
-🔄 [App] Polling status: match_found (anterior: none)
-✅ [App] Match found processado via polling
-🔄 [App] Mudança de status detectada: match_found → draft
-
-## 🎯 Próximos Passos (Opcionais)
-
-### **1. Otimizações**
-
-- [ ] Reduzir intervalo de polling para 2s
-- [ ] Implementar websockets individuais por partida
-- [ ] Adicionar métricas de performance
-
-### **2. Monitoramento**
-
-- [ ] Dashboard de status de sincronização
-- [ ] Alertas para falhas de sincronização
-- [ ] Logs estruturados para análise
-
-### **3. Robustez**
-
-- [ ] Sistema de heartbeat entre backends
-- [ ] Sincronização de relógio entre clientes
-- [ ] Recovery automático de estados corrompidos
-
----
-
-## ✅ Conclusão
-
-O sistema de sincronização foi completamente implementado e testado. Agora todos os jogadores devem ver as mudanças de status em tempo real, garantindo que o fluxo `match_found → draft → game_in_progress` funcione corretamente para todos os participantes, mesmo com backends rodando localmente e usando MySQL como fonte única de verdade.
+1. **Iniciar draft** com múltiplos clientes
+2. **Fazer picks/bans** em diferentes clientes
+3. **Verificar** se todos veem os mesmos dados
+4. **Testar bot** com special user logado
+5. **Verificar logs** para confirmar sincronização
+
+## 📝 Próximos Passos
+
+1. **Testar** em ambiente de produção
+2. **Monitorar** logs de sincronização
+3. **Ajustar** intervalos de polling se necessário
+4. **Implementar** fallbacks para casos de erro
+5. **Otimizar** performance se necessário
