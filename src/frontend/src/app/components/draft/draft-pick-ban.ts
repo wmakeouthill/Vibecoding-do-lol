@@ -1204,8 +1204,9 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
 
                 // ✅ CORREÇÃO: Sincronizar imediatamente com MySQL após envio (reduzido para 100ms)
                 setTimeout(() => {
+                    console.log('🔄 [Draft] === INICIANDO SINCRONIZAÇÃO IMEDIATA ===');
                     this.forceMySQLSync();
-                    console.log('🔄 [onChampionSelected] Sincronização imediata com MySQL após confirmação');
+                    console.log('🔄 [Draft] Sincronização imediata com MySQL após confirmação');
                 }, 100);
 
             }).catch(error => {
@@ -1220,12 +1221,12 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
 
         // ✅ CORREÇÃO: Parar timer da fase atual quando pick é feito
         if (currentPhase.timeRemaining > 0) {
-            console.log('⏰ [onChampionSelected] Parando timer da fase atual (pick feito)');
+            console.log('⏰ [Draft] Parando timer da fase atual (pick feito)');
             currentPhase.timeRemaining = 0;
         }
 
         // ✅ CORREÇÃO: ENVIAR PARA MYSQL PRIMEIRO, depois aplicar localmente
-        console.log('🌐 [onChampionSelected] Enviando ação para MySQL primeiro...');
+        console.log('🌐 [Draft] Enviando ação para MySQL primeiro...');
         await this.sendDraftActionToBackend(champion, currentPhase.action);
 
         // ✅ CORREÇÃO: AGORA invalidar cache e forçar detecção de mudanças
@@ -1233,8 +1234,8 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
 
         // ✅ CORREÇÃO: Verificar se estamos em modo de edição ANTES de incrementar currentAction
         if (this.isEditingMode) {
-            console.log('🎯 [onChampionSelected] Modo de edição - voltando para modal de confirmação');
-            console.log('🎯 [onChampionSelected] Fase editada com sucesso:', {
+            console.log('🎯 [Draft] Modo de edição - voltando para modal de confirmação');
+            console.log('🎯 [Draft] Fase editada com sucesso:', {
                 phaseIndex: this.editingPhaseIndex,
                 newChampion: champion.name,
                 currentAction: this.session.currentAction
@@ -1253,8 +1254,8 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
 
             // Abrir modal de confirmação após um pequeno delay
             setTimeout(() => {
-                console.log('🔄 [onChampionSelected] Abrindo modal de confirmação após edição');
-                console.log('🔄 [onChampionSelected] Session antes de abrir modal:', {
+                console.log('🔄 [Draft] Abrindo modal de confirmação após edição');
+                console.log('🔄 [Draft] Session antes de abrir modal:', {
                     currentAction: this.session?.currentAction,
                     phase: this.session?.phase,
                     totalPhases: this.session?.phases.length
@@ -1262,28 +1263,28 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
 
                 // ✅ NOVO: Forçar atualização do modal antes de abrir
                 if (this.confirmationModal) {
-                    console.log('🔄 [onChampionSelected] Forçando refresh do modal de confirmação');
+                    console.log('🔄 [Draft] Forçando refresh do modal de confirmação');
                     this.confirmationModal.forceRefresh();
                 }
 
                 this.openConfirmationModal();
             }, 200);
 
-            console.log('✅ [onChampionSelected] Voltando para modal de confirmação após edição');
+            console.log('✅ [Draft] Voltando para modal de confirmação após edição');
             return;
         }
 
         // ✅ CORREÇÃO: Incrementar currentAction APENAS se NÃO estamos em modo de edição
         this.session.currentAction++;
-        console.log('✅ [onChampionSelected] currentAction incrementado para:', this.session.currentAction);
+        console.log('✅ [Draft] currentAction incrementado para:', this.session.currentAction);
 
         // ✅ CORREÇÃO: Verificar se a sessão foi completada (modo normal)
         if (this.session.currentAction >= this.session.phases.length) {
-            console.log('🎉 [onChampionSelected] Sessão completada!');
+            console.log('🎉 [Draft] Sessão completada!');
             this.session.phase = 'completed';
             this.stopTimer();
         } else {
-            console.log('🔄 [onChampionSelected] Próxima ação:', this.session.currentAction);
+            console.log('🔄 [Draft] Próxima ação:', this.session.currentAction);
             // ✅ CORREÇÃO: Atualizar o turno atual para mostrar o próximo jogador
             this.updateCurrentTurn();
         }
@@ -1291,7 +1292,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         // ✅ CORREÇÃO: Forçar atualização final da interface
         this.forceInterfaceUpdate();
 
-        console.log('✅ [onChampionSelected] Atualização completa - interface deve estar atualizada');
+        console.log('✅ [Draft] Atualização completa - interface deve estar atualizada');
     }
 
     private stopTimer() {
@@ -1629,31 +1630,39 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
 
     // ✅ NOVO: Forçar sincronização com MySQL
     private forceMySQLSync(): void {
-        console.log('🔄 [DraftPickBan] Forçando sincronização com MySQL...');
+        console.log('🔄 [Draft] === FORÇANDO SINCRONIZAÇÃO COM MYSQL ===');
+        console.log('🔄 [Draft] Timestamp:', new Date().toISOString());
 
         // ✅ ESTRATÉGIA: Buscar dados atualizados do MySQL via polling
         if (this.currentPlayer?.summonerName) {
-            console.log('🔄 [DraftPickBan] Buscando dados para jogador:', this.currentPlayer.summonerName);
+            console.log('🔄 [Draft] Buscando dados para jogador:', this.currentPlayer.summonerName);
+            console.log('🔄 [Draft] Fazendo requisição para checkSyncStatus...');
 
             this.apiService.checkSyncStatus(this.currentPlayer.summonerName).subscribe({
                 next: (response) => {
-                    console.log('🔄 [DraftPickBan] Dados do MySQL recebidos:', response);
+                    console.log('🔄 [Draft] === RESPOSTA DO MYSQL RECEBIDA ===');
+                    console.log('🔄 [Draft] Status da resposta:', response.status);
+                    console.log('🔄 [Draft] Dados completos:', response);
 
                     // Se há dados de draft, aplicar sincronização
                     if (response.status === 'draft' && response.matchData?.pick_ban_data) {
-                        console.log('🔄 [DraftPickBan] Aplicando dados sincronizados do MySQL');
-                        console.log('🔄 [DraftPickBan] pick_ban_data:', response.matchData.pick_ban_data);
+                        console.log('🔄 [Draft] === APLICANDO DADOS SINCRONIZADOS ===');
+                        console.log('🔄 [Draft] pick_ban_data encontrado:', response.matchData.pick_ban_data);
 
                         // Parsear pick_ban_data se for string
                         let pickBanData = response.matchData.pick_ban_data;
                         if (typeof pickBanData === 'string') {
                             try {
                                 pickBanData = JSON.parse(pickBanData);
+                                console.log('🔄 [Draft] pick_ban_data parseado com sucesso');
                             } catch (error) {
-                                console.error('❌ [DraftPickBan] Erro ao parsear pick_ban_data:', error);
+                                console.error('❌ [Draft] Erro ao parsear pick_ban_data:', error);
                                 return;
                             }
                         }
+
+                        console.log('🔄 [Draft] Ações encontradas:', pickBanData.actions?.length || 0);
+                        console.log('🔄 [Draft] Última ação:', pickBanData.actions?.[pickBanData.actions.length - 1]);
 
                         this.handleDraftDataSync({
                             pickBanData: pickBanData,
@@ -1661,15 +1670,21 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
                             lastAction: pickBanData.actions?.[pickBanData.actions.length - 1]
                         });
                     } else {
-                        console.log('🔄 [DraftPickBan] Nenhum dado de draft encontrado no MySQL');
+                        console.log('🔄 [Draft] Nenhum dado de draft encontrado no MySQL');
+                        console.log('🔄 [Draft] Status recebido:', response.status);
+                        console.log('🔄 [Draft] matchData disponível:', !!response.matchData);
                     }
                 },
                 error: (error) => {
-                    console.warn('⚠️ [DraftPickBan] Erro ao sincronizar com MySQL:', error);
+                    console.error('❌ [Draft] === ERRO NA SINCRONIZAÇÃO ===');
+                    console.error('❌ [Draft] Erro ao sincronizar com MySQL:', error);
+                    console.error('❌ [Draft] Status do erro:', error.status);
+                    console.error('❌ [Draft] Mensagem do erro:', error.message);
                 }
             });
         } else {
-            console.warn('⚠️ [DraftPickBan] currentPlayer.summonerName não disponível para sincronização');
+            console.warn('⚠️ [Draft] currentPlayer.summonerName não disponível para sincronização');
+            console.warn('⚠️ [Draft] currentPlayer:', this.currentPlayer);
         }
     }
 
