@@ -2832,7 +2832,22 @@ export class App implements OnInit, OnDestroy {
       return;
     }
 
-    // ✅ CONSTRUIR: Dados do draft
+    // ✅ NOVO: Se vier pick_ban_data do backend, usar diretamente
+    if (response.pick_ban_data) {
+      console.log('✅ [App] Usando pick_ban_data do backend para inicializar draft:', response.pick_ban_data);
+      this.draftData = {
+        matchId: response.matchId,
+        ...response.pick_ban_data // Inclui phases, currentAction, blueTeam, redTeam, etc.
+      };
+      this.inDraftPhase = true;
+      this.showMatchFound = false;
+      this.isInQueue = false;
+      this.lastMatchId = response.matchId;
+      this.addNotification('success', 'Draft Iniciado!', 'A fase de seleção de campeões começou.');
+      return;
+    }
+
+    // ✅ CONSTRUIR: Dados do draft (fallback antigo)
     let team1Players: string[] = [];
     let team2Players: string[] = [];
 

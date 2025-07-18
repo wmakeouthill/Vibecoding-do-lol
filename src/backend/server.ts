@@ -1526,36 +1526,148 @@ app.post('/api/match/draft-action', (async (req: Request, res: Response) => {
   try {
     const { matchId, playerId, championId, action } = req.body;
 
-    console.log('🎯 [Draft API] Recebidos parâmetros:', { matchId, playerId, championId, action });
+    console.log('🎯 [Draft API] === RECEBENDO AÇÃO DE DRAFT ===');
+    console.log('🎯 [Draft API] Body completo recebido:', JSON.stringify(req.body, null, 2));
+    console.log('🎯 [Draft API] Parâmetros extraídos:', { matchId, playerId, championId, action });
+    console.log('🎯 [Draft API] Tipos dos parâmetros:', {
+      matchId: typeof matchId,
+      playerId: typeof playerId,
+      championId: typeof championId,
+      action: typeof action
+    });
 
-    // ✅ CORREÇÃO: Verificar se os parâmetros existem (playerId pode ser 0)
-    if (matchId === undefined || playerId === undefined || championId === undefined || action === undefined) {
-      console.log('❌ [Draft API] Parâmetros inválidos:', {
-        matchId: matchId === undefined ? 'UNDEFINED' : matchId,
-        playerId: playerId === undefined ? 'UNDEFINED' : playerId,
-        championId: championId === undefined ? 'UNDEFINED' : championId,
-        action: action === undefined ? 'UNDEFINED' : action
-      });
+    // ✅ CORREÇÃO: Validação mais rigorosa dos parâmetros
+    if (matchId === undefined || matchId === null) {
+      console.error('❌ [Draft API] matchId é obrigatório');
       return res.status(400).json({
         success: false,
-        error: 'Todos os parâmetros são obrigatórios'
+        error: 'matchId é obrigatório'
       });
     }
 
-    console.log('✅ [Draft API] Parâmetros válidos, processando ação...');
-    await draftService.processDraftAction(matchId, playerId, championId, action);
+    if (playerId === undefined || playerId === null || playerId === '') {
+      console.error('❌ [Draft API] playerId é obrigatório');
+      return res.status(400).json({
+        success: false,
+        error: 'playerId é obrigatório'
+      });
+    }
+
+    if (championId === undefined || championId === null || championId <= 0) {
+      console.error('❌ [Draft API] championId é obrigatório e deve ser maior que 0');
+      return res.status(400).json({
+        success: false,
+        error: 'championId é obrigatório e deve ser maior que 0'
+      });
+    }
+
+    if (action === undefined || action === null || (action !== 'pick' && action !== 'ban')) {
+      console.error('❌ [Draft API] action deve ser "pick" ou "ban"');
+      return res.status(400).json({
+        success: false,
+        error: 'action deve ser "pick" ou "ban"'
+      });
+    }
+
+    // ✅ CORREÇÃO: Converter matchId para número se necessário
+    const numericMatchId = typeof matchId === 'string' ? parseInt(matchId) : matchId;
+    if (isNaN(numericMatchId) || numericMatchId <= 0) {
+      console.error('❌ [Draft API] matchId deve ser um número válido maior que 0');
+      return res.status(400).json({
+        success: false,
+        error: 'matchId deve ser um número válido maior que 0'
+      });
+    }
+
+    console.log('✅ [Draft API] Parâmetros validados com sucesso:', {
+      matchId: numericMatchId,
+      playerId,
+      championId,
+      action
+    });
+
+    // ✅ CORREÇÃO: Verificar se a partida existe antes de processar
+    try {
+      const match = await dbManager.getCustomMatchById(numericMatchId);
+      if (!match) {
+        console.error(`❌ [Draft API] Partida ${numericMatchId} não encontrada no banco`);
+        return res.status(404).json({
+          success: false,
+          error: `Partida ${numericMatchId} não encontrada`
+        });
+      }
+
+      if (match.status !== 'draft') {
+        console.error(`❌ [Draft API] Partida ${numericMatchId} não está em fase de draft (status: ${match.status})`);
+        return res.status(400).json({
+          success: false,
+          error: `Partida ${numericMatchId} não está em fase de draft`
+        });
+      }
+
+      console.log(`✅ [Draft API] Partida ${numericMatchId} validada - Status: ${match.status}`);
+    } catch (dbError) {
+      console.error(`❌ [Draft API] Erro ao verificar partida no banco:`, dbError);
+      return res.status(500).json({
+        success: false,
+        error: 'Erro interno ao verificar partida'
+      });
+    }
+
+    console.log('✅ [Draft API] Enviando para DraftService:', {
+      matchId: numericMatchId,
+      playerId,
+      championId,
+      action
+    });
+
+    // ✅ CORREÇÃO: Processar ação com timeout
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Timeout ao processar ação do draft')), 10000);
+    });
+
+    const processPromise = draftService.processDraftAction(numericMatchId, playerId, championId, action);
+
+    await Promise.race([processPromise, timeoutPromise]);
 
     console.log('✅ [Draft API] Ação processada com sucesso');
     res.json({
       success: true,
-      message: 'Ação do draft processada com sucesso'
+      message: 'Ação do draft processada com sucesso',
+      data: {
+        matchId: numericMatchId,
+        playerId,
+        championId,
+        action,
+        timestamp: new Date().toISOString()
+      }
     });
+
   } catch (error: any) {
     console.error('❌ [Draft API] Erro ao processar ação do draft:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+
+    // ✅ CORREÇÃO: Tratamento de erro mais específico
+    if (error.message.includes('Timeout')) {
+      res.status(408).json({
+        success: false,
+        error: 'Timeout ao processar ação do draft'
+      });
+    } else if (error.message.includes('não encontrada')) {
+      res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    } else if (error.message.includes('inválido') || error.message.includes('inválida')) {
+      res.status(400).json({
+        success: false,
+        error: error.message
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno ao processar ação do draft'
+      });
+    }
   }
 }) as RequestHandler);
 
@@ -3103,24 +3215,14 @@ app.post('/api/draft/sync', (async (req: Request, res: Response) => {
 
     console.log(`🔄 [Draft] Cliente ${playerId} solicitando sincronização para partida ${matchId}`);
 
-    // Notificar o draft service sobre a sincronização (via WebSocket)
-    if (wss) {
-      const message = {
-        type: 'draft_client_sync',
-        data: {
-          matchId,
-          playerId,
-          timestamp: Date.now()
-        }
-      };
+    // ✅ CORREÇÃO: Notificar apenas o DraftService sobre a sincronização
+    console.log(`🔄 [Draft] Notificando DraftService sobre sincronização solicitada por ${playerId}`);
 
-      // Broadcast para todos os clientes da partida
-      wss.clients.forEach((client: WebSocket) => {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(JSON.stringify(message));
-        }
-      });
-    }
+    // ✅ CORREÇÃO: Não fazer broadcast WebSocket - apenas log para debug
+    console.log(`🔄 [Draft] Sincronização solicitada - matchId: ${matchId}, playerId: ${playerId}`);
+
+    // ✅ CORREÇÃO: O DraftService já monitora mudanças no MySQL automaticamente
+    // Não é necessário enviar mensagem WebSocket para sincronização
 
     res.json({
       success: true,
@@ -3282,6 +3384,8 @@ app.get('/api/sync/status', (async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'summonerName é obrigatório' });
     }
 
+    console.log(`🔄 [API] Verificando status de sincronização para: ${summonerName}`);
+
     // 1. Verificar se o jogador está em partida pendente de aceitação
     const pendingMatches = await dbManager.getCustomMatchesByStatus('pending');
     for (const match of pendingMatches) {
@@ -3292,7 +3396,12 @@ app.get('/api/sync/status', (async (req: Request, res: Response) => {
         allPlayers = [...team1, ...team2];
       } catch { }
       if (allPlayers.includes(summonerName)) {
-        return res.json({ status: 'match_found', matchId: match.id, match });
+        return res.json({
+          status: 'match_found',
+          matchId: match.id,
+          match,
+          totalActions: 0
+        });
       }
     }
 
@@ -3308,16 +3417,44 @@ app.get('/api/sync/status', (async (req: Request, res: Response) => {
       if (allPlayers.includes(summonerName)) {
         // ✅ CORREÇÃO: Incluir dados de pick_ban_data para sincronização
         let pickBanData = null;
+        let totalActions = 0;
+        let lastAction = null;
+
         if (match.pick_ban_data) {
           try {
             pickBanData = typeof match.pick_ban_data === 'string'
               ? JSON.parse(match.pick_ban_data)
               : match.pick_ban_data;
+
+            // ✅ CORREÇÃO: Calcular totalActions baseado nas ações
+            totalActions = pickBanData.actions?.length || 0;
+            lastAction = pickBanData.actions?.[pickBanData.actions.length - 1] || null;
+
+            console.log(`🔄 [API] Dados de draft encontrados:`, {
+              matchId: match.id,
+              totalActions,
+              lastAction: lastAction ? `${lastAction.action} - ${lastAction.playerName}` : 'Nenhuma',
+              picksAzul: pickBanData.team1Picks?.length || 0,
+              picksVermelho: pickBanData.team2Picks?.length || 0,
+              bansAzul: pickBanData.team1Bans?.length || 0,
+              bansVermelho: pickBanData.team2Bans?.length || 0
+            });
+
           } catch (parseError) {
             console.error('❌ [API] Erro ao parsear pick_ban_data:', parseError);
+            pickBanData = null;
+            totalActions = 0;
           }
         }
-        return res.json({ status: 'draft', matchId: match.id, match, pick_ban_data: pickBanData });
+
+        return res.json({
+          status: 'draft',
+          matchId: match.id,
+          match,
+          pick_ban_data: pickBanData,
+          totalActions: totalActions,
+          lastAction: lastAction
+        });
       }
     }
 
@@ -3331,7 +3468,12 @@ app.get('/api/sync/status', (async (req: Request, res: Response) => {
         allPlayers = [...team1, ...team2];
       } catch { }
       if (allPlayers.includes(summonerName)) {
-        return res.json({ status: 'match_found', matchId: match.id, match });
+        return res.json({
+          status: 'match_found',
+          matchId: match.id,
+          match,
+          totalActions: 0
+        });
       }
     }
 
@@ -3345,12 +3487,20 @@ app.get('/api/sync/status', (async (req: Request, res: Response) => {
         allPlayers = [...team1, ...team2];
       } catch { }
       if (allPlayers.includes(summonerName)) {
-        return res.json({ status: 'game_in_progress', matchId: match.id, match });
+        return res.json({
+          status: 'game_in_progress',
+          matchId: match.id,
+          match,
+          totalActions: 0
+        });
       }
     }
 
     // 5. Caso não esteja em nenhum fluxo
-    return res.json({ status: 'none' });
+    return res.json({
+      status: 'none',
+      totalActions: 0
+    });
   } catch (error: any) {
     console.error('❌ [API] Erro ao consultar status de sincronização:', error);
     res.status(500).json({ error: error.message });

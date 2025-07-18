@@ -760,49 +760,77 @@ export class DraftService {
 
   // ✅ CORRIGIDO: Processar ação de draft (pick/ban) com salvamento MySQL PRIMEIRO
   async processDraftAction(matchId: number, playerId: string, championId: number, action: 'pick' | 'ban'): Promise<void> {
-    console.log(`🎯 [Draft] Processando ${action} do campeão ${championId} por jogador ${playerId} na partida ${matchId}`);
+    console.log(`🎯 [Draft] === PROCESSANDO AÇÃO DE DRAFT ===`);
+    console.log(`🎯 [Draft] Parâmetros recebidos:`, {
+      matchId,
+      playerId,
+      championId,
+      action,
+      matchIdType: typeof matchId,
+      playerIdType: typeof playerId,
+      championIdType: typeof championId,
+      actionType: typeof action
+    });
 
-    // ✅ NOVO: Padronizar identificador do jogador
-    const normalizedPlayerId = this.normalizePlayerIdentifier({ summonerName: playerId });
-    console.log(`🎯 [Draft] Identificador normalizado: ${playerId} -> ${normalizedPlayerId}`);
+    // ✅ CORREÇÃO: Verificar se championId é válido
+    if (!championId || championId <= 0) {
+      console.error(`❌ [Draft] championId inválido: ${championId}`);
+      throw new Error(`championId inválido: ${championId}`);
+    }
 
-    // ✅ NOVO: Adquirir lock de processamento
-    if (!normalizedPlayerId) {
-      console.error(`❌ [Draft] Não foi possível normalizar identificador do jogador: ${playerId}`);
+    // ✅ CORREÇÃO: Verificar se action é válida
+    if (action !== 'pick' && action !== 'ban') {
+      console.error(`❌ [Draft] action inválida: ${action}`);
+      throw new Error(`action inválida: ${action}`);
+    }
+
+    console.log(`🎯 [Draft] Parâmetros validados, iniciando processamento...`);
+
+    const processingKey = `${matchId}-${playerId}-${championId}-${action}`;
+    console.log(`🎯 [Draft] Chave de processamento: ${processingKey}`);
+
+    // ✅ CORREÇÃO: Verificar se já está sendo processado
+    if (this.processingDrafts.has(processingKey)) {
+      console.log(`⚠️ [Draft] Ação já está sendo processada: ${processingKey}`);
       return;
     }
-    const lockAcquired = await this.acquireDraftLock(matchId, normalizedPlayerId);
-    if (!lockAcquired) {
-      console.log(`⏳ [Draft] Lock não adquirido para partida ${matchId}, aguardando...`);
-      // Aguardar até 5 segundos e tentar novamente
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      return this.processDraftAction(matchId, playerId, championId, action);
-    }
 
-    const processingKey = `draft_${matchId}`;
+    // ✅ CORREÇÃO: Marcar como em processamento (APENAS UMA VEZ)
+    this.processingDrafts.add(processingKey);
+    console.log(`🎯 [Draft] Ação marcada como em processamento: ${processingKey}`);
 
     try {
-      // ✅ NOVO: Pausar timer global até todos sincronizarem
-      this.pauseTimerUntilSynced(matchId);
+      // ✅ CORREÇÃO: Aguardar processamento anterior se necessário
+      await this.waitForProcessing(processingKey, 5000);
 
-      // ✅ NOVO: Controle de ordem - aguardar processamento anterior
-      if (this.processingDrafts.has(processingKey)) {
-        console.log(`⏳ [Draft] Partida ${matchId} já está sendo processada, aguardando...`);
-        await this.waitForProcessing(processingKey, 5000); // Aguardar até 5 segundos
+      // ✅ CORREÇÃO: Adquirir lock para evitar conflitos
+      const lockAcquired = await this.acquireDraftLock(matchId, playerId);
+      if (!lockAcquired) {
+        console.log(`⚠️ [Draft] Não foi possível adquirir lock para partida ${matchId}`);
+        return;
       }
 
-      // ✅ NOVO: Marcar como sendo processado
-      this.processingDrafts.add(processingKey);
+      console.log(`🎯 [Draft] Lock adquirido para partida ${matchId}`);
 
-      // 1. ✅ NOVO: Buscar partida no banco (não precisa de draft ativo na memória)
+      // ✅ CORREÇÃO: Buscar partida no banco de dados (APENAS UMA VEZ)
       const match = await this.dbManager.getCustomMatchById(matchId);
       if (!match) {
+        console.error(`❌ [Draft] Partida ${matchId} não encontrada no banco`);
         throw new Error(`Partida ${matchId} não encontrada no banco`);
       }
 
       console.log(`✅ [Draft] Partida encontrada: ${match.id} - Status: ${match.status}`);
 
-      // 2. ✅ NOVO: Carregar dados atuais de pick/ban
+      // ✅ CORREÇÃO: Verificar se partida está em draft
+      if (match.status !== 'draft') {
+        console.error(`❌ [Draft] Partida ${matchId} não está em fase de draft (status: ${match.status})`);
+        throw new Error(`Partida ${matchId} não está em fase de draft`);
+      }
+
+      // ✅ CORREÇÃO: Pausar timer global até todos sincronizarem
+      this.pauseTimerUntilSynced(matchId);
+
+      // ✅ CORREÇÃO: Carregar dados atuais de pick/ban
       let pickBanData: any = {};
       try {
         if (match.pick_ban_data) {
@@ -815,7 +843,7 @@ export class DraftService {
         pickBanData = {};
       }
 
-      // ✅ NOVO: Verificar se a ação já foi processada (evitar duplicação)
+      // ✅ CORREÇÃO: Verificar se a ação já foi processada (evitar duplicação)
       const existingAction = pickBanData.actions?.find((a: any) =>
         a.playerName === playerId && a.championId === championId && a.action === action
       );
@@ -825,19 +853,19 @@ export class DraftService {
         return;
       }
 
-      // 3. ✅ NOVO: Inicializar estrutura se não existir
+      // ✅ CORREÇÃO: Inicializar estrutura se não existir
       if (!pickBanData.team1Picks) pickBanData.team1Picks = [];
       if (!pickBanData.team1Bans) pickBanData.team1Bans = [];
       if (!pickBanData.team2Picks) pickBanData.team2Picks = [];
       if (!pickBanData.team2Bans) pickBanData.team2Bans = [];
       if (!pickBanData.actions) pickBanData.actions = [];
 
-      // 4. ✅ CORREÇÃO: Determinar qual time e jogador com base nos dados da partida
+      // ✅ CORREÇÃO: Determinar qual time e jogador com base nos dados da partida
       let teamIndex = 1; // Default team 1 (blue)
       let playerName = playerId; // Usar playerId como nome
       let playerLane = 'unknown';
 
-      // ✅ NOVO: Buscar jogador nos dados da partida (team1_players e team2_players)
+      // ✅ CORREÇÃO: Buscar jogador nos dados da partida (team1_players e team2_players)
       let foundInTeam1 = false;
       let foundInTeam2 = false;
       let playerTeamIndex = -1;
@@ -899,7 +927,7 @@ export class DraftService {
         playerLane = 'unknown';
       }
 
-      // 5. ✅ CORRIGIDO: Salvar ação baseada no tipo e time com dados completos
+      // ✅ CORREÇÃO: Salvar ação baseada no tipo e time com dados completos
       const actionData = {
         teamIndex,
         playerIndex: playerTeamIndex,
@@ -931,10 +959,10 @@ export class DraftService {
         }
       }
 
-      // 6. ✅ NOVO: Adicionar à lista de ações sequenciais
+      // ✅ CORREÇÃO: Adicionar à lista de ações sequenciais
       pickBanData.actions.push(actionData);
 
-      // 7. ✅ CORRIGIDO: Salvar no banco de dados com logs detalhados
+      // ✅ CORREÇÃO: Salvar no banco de dados com logs detalhados
       await this.dbManager.updateCustomMatch(matchId, {
         pick_ban_data: JSON.stringify(pickBanData)
       });
@@ -956,41 +984,27 @@ export class DraftService {
         totalAcoes: pickBanData.actions.length
       });
 
-      // 8. ✅ CORREÇÃO: Notificar todos os clientes conectados sobre a ação do draft
-      // ✅ NOVO: Enviar notificação com retry para garantir entrega
+      // ✅ CORREÇÃO: Notificar todos os clientes conectados sobre a ação do draft
       await this.notifyDraftActionWithRetry(matchId, playerTeamIndex, championId, action, {
         playerName,
         playerLane,
         teamIndex,
-        teamColor: teamIndex === 1 ? 'blue' : 'red',
-        actionType: action,
-        championSelected: championId,
-        playerInfo: actionData,
-        totalPicks: pickBanData.team1Picks.length + pickBanData.team2Picks.length,
-        totalBans: pickBanData.team1Bans.length + pickBanData.team2Bans.length,
-        pickBanData: pickBanData
+        totalActions: pickBanData.actions.length
       });
 
-      console.log(`🎉 [Draft] Ação do draft processada e notificada para partida ${matchId}`);
+      // ✅ CORREÇÃO: Marcar jogador como sincronizado
+      this.markPlayerSynced(matchId, playerId);
 
-      // === NOVO: Verificar se o draft terminou ===
-      // Supondo que são 10 jogadores, 10 picks e 10 bans (5 por time)
-      const totalPicks = (pickBanData.team1Picks?.length || 0) + (pickBanData.team2Picks?.length || 0);
-      const totalBans = (pickBanData.team1Bans?.length || 0) + (pickBanData.team2Bans?.length || 0);
-      const draftCompleted = totalPicks === 10 && totalBans === 10;
-      if (draftCompleted) {
-        console.log(`🏁 [Draft] Todas as picks e bans concluídas para a partida ${matchId}. Finalizando draft...`);
-        await this.finalizeDraft(matchId, pickBanData);
-      }
+      console.log(`✅ [Draft] Ação ${action} processada com sucesso para ${playerName}`);
 
     } catch (error) {
-      console.error(`❌ [Draft] Erro ao processar ${action} na partida ${matchId}:`, error);
+      console.error(`❌ [Draft] Erro ao processar ação do draft:`, error);
       throw error;
     } finally {
-      // ✅ NOVO: Sempre remover do processamento, mesmo em caso de erro
+      // ✅ CORREÇÃO: Limpar processamento e lock
       this.processingDrafts.delete(processingKey);
       this.releaseDraftLock(matchId);
-      console.log(`✅ [Draft] Processamento da partida ${matchId} finalizado`);
+      console.log(`🔓 [Draft] Processamento e lock liberados para: ${processingKey}`);
     }
   }
 

@@ -977,6 +977,16 @@ export class MatchmakingService {
         );
 
         // ✅ CORREÇÃO: Usar MatchFoundService para notificação padronizada
+        console.log('🎯 [AutoMatch] === DADOS PARA MATCHFOUNDSERVICE ===');
+        console.log('🎯 [AutoMatch] team1Players:', team1.map(p => p.summonerName));
+        console.log('🎯 [AutoMatch] team2Players:', team2.map(p => p.summonerName));
+        console.log('🎯 [AutoMatch] averageMMR:', { team1: team1MMR, team2: team2MMR });
+        console.log('🎯 [AutoMatch] balancedTeams:', {
+          team1: team1.map(p => ({ name: p.summonerName, lane: p.assignedLane, mmr: p.mmr })),
+          team2: team2.map(p => ({ name: p.summonerName, lane: p.assignedLane, mmr: p.mmr }))
+        });
+        console.log('🎯 [AutoMatch] matchId:', matchId);
+
         await this.matchFoundService.createMatchForAcceptance({
           team1Players: team1.map(p => p.summonerName),
           team2Players: team2.map(p => p.summonerName),

@@ -142,7 +142,7 @@ export class MatchFoundService {
       this.pendingMatches.set(matchId as number, acceptanceStatus);
 
       // 7. Notificar frontend sobre partida encontrada PRIMEIRO
-      this.notifyMatchFound(matchId as number, playersForAcceptance, matchData.balancedTeams, matchData.averageMMR);
+      await this.notifyMatchFound(matchId as number, playersForAcceptance, matchData.balancedTeams, matchData.averageMMR);
 
       // 8. ✅ NOVO: Iniciar atualizações de timer em tempo real
       this.startTimerUpdates(matchId as number);
@@ -577,11 +577,22 @@ export class MatchFoundService {
     };
 
     // ✅ NOVO: Se temos dados balanceados, incluir informações completas
+    console.log('🎯 [MatchFound] === VERIFICANDO DADOS BALANCEADOS ===');
+    console.log('🎯 [MatchFound] balancedTeams presente:', !!balancedTeams);
+    console.log('🎯 [MatchFound] balancedTeams.team1 presente:', !!(balancedTeams && balancedTeams.team1));
+    console.log('🎯 [MatchFound] balancedTeams.team2 presente:', !!(balancedTeams && balancedTeams.team2));
+    console.log('🎯 [MatchFound] averageMMR presente:', !!averageMMR);
+
     if (balancedTeams && balancedTeams.team1 && balancedTeams.team2) {
       const team1 = balancedTeams.team1;
       const team2 = balancedTeams.team2;
       const team1MMR = averageMMR?.team1 || 1200;
       const team2MMR = averageMMR?.team2 || 1200;
+
+      console.log('🎯 [MatchFound] === DADOS BALANCEADOS ENCONTRADOS ===');
+      console.log('🎯 [MatchFound] team1:', team1.map((p: any) => ({ name: p.summonerName, lane: p.assignedLane, mmr: p.mmr })));
+      console.log('🎯 [MatchFound] team2:', team2.map((p: any) => ({ name: p.summonerName, lane: p.assignedLane, mmr: p.mmr })));
+      console.log('🎯 [MatchFound] MMRs:', { team1: team1MMR, team2: team2MMR });
 
       matchFoundData.data = {
         ...matchFoundData.data,
@@ -650,6 +661,10 @@ export class MatchFoundService {
     console.log(`📤 [MatchFound] Enviando mensagem match_found:`, JSON.stringify(message, null, 2));
 
     // ✅ USAR RETRY
+    console.log('🎯 [MatchFound] === ENVIANDO NOTIFICAÇÃO ===');
+    console.log('🎯 [MatchFound] Mensagem final:', JSON.stringify(message, null, 2));
+    console.log('🎯 [MatchFound] Jogadores para notificar:', allPlayersInMatch);
+
     await this.sendNotificationWithRetry(message, allPlayersInMatch);
 
     // ✅ ESTRATÉGIA 4: Log final com métricas

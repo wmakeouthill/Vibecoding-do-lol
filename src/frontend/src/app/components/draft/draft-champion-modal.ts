@@ -165,7 +165,7 @@ export class DraftChampionModalComponent implements OnInit, OnDestroy, OnChanges
     }
 
     const bannedPhases = this.session.phases.filter(phase => phase.action === 'ban' && phase.champion);
-    
+
     const bannedChampions = bannedPhases
       .map(phase => phase.champion!)
       .filter((champion, index, self) =>
@@ -204,9 +204,9 @@ export class DraftChampionModalComponent implements OnInit, OnDestroy, OnChanges
 
   isChampionBanned(champion: Champion): boolean {
     const bannedChampions = this.getBannedChampions();
-    
+
     const isBanned = bannedChampions.some(c => c.id === champion.id);
-    
+
     return isBanned;
   }
 
@@ -229,13 +229,13 @@ export class DraftChampionModalComponent implements OnInit, OnDestroy, OnChanges
           championId: p.champion?.id
         }))
       });
-      
+
       if (sessionHash !== this._lastSessionHash) {
         this._lastSessionHash = sessionHash;
         this.invalidateCache();
       }
     }
-    
+
     if (this.isCacheValid() && this._cachedModalFilteredChampions) {
       return this._cachedModalFilteredChampions;
     }
@@ -289,15 +289,29 @@ export class DraftChampionModalComponent implements OnInit, OnDestroy, OnChanges
   }
 
   selectChampion(champion: Champion): void {
+    // ✅ CORREÇÃO: Log detalhado da seleção
+    console.log('🎯 [DraftChampionModal] === SELECIONANDO CAMPEÃO ===');
+    console.log('🎯 [DraftChampionModal] Campeão clicado:', champion.name);
+    console.log('🎯 [DraftChampionModal] ID do campeão:', champion.id);
+    console.log('🎯 [DraftChampionModal] Está banido?', this.isChampionBanned(champion));
+    console.log('🎯 [DraftChampionModal] Está escolhido?', this.isChampionPicked(champion));
+
     if (this.isChampionBanned(champion)) {
+      console.log('❌ [DraftChampionModal] Campeão banido - não pode ser selecionado');
       return;
     }
-    
+
     if (this.isChampionPicked(champion)) {
+      console.log('❌ [DraftChampionModal] Campeão já escolhido - não pode ser selecionado');
       return;
     }
-    
+
+    // ✅ CORREÇÃO: Definir seleção
     this.selectedChampion = champion;
+    console.log('✅ [DraftChampionModal] Campeão selecionado:', champion.name);
+
+    // ✅ CORREÇÃO: Forçar atualização da interface
+    this.changeDetectorRef.markForCheck();
   }
 
   // MÉTODOS PARA CONFIRMAÇÃO
@@ -305,19 +319,32 @@ export class DraftChampionModalComponent implements OnInit, OnDestroy, OnChanges
     if (!this.selectedChampion) {
       return;
     }
-    
+
     if (this.isChampionBanned(this.selectedChampion) || this.isChampionPicked(this.selectedChampion)) {
       return;
     }
 
+    // ✅ CORREÇÃO: Log detalhado da seleção para debug
+    console.log('🎯 [DraftChampionModal] === CONFIRMANDO SELEÇÃO ===');
+    console.log('🎯 [DraftChampionModal] Campeão selecionado:', this.selectedChampion.name);
+    console.log('🎯 [DraftChampionModal] ID do campeão:', this.selectedChampion.id);
+    console.log('🎯 [DraftChampionModal] Sessão atual:', this.session?.currentAction);
+    console.log('🎯 [DraftChampionModal] Fase atual:', this.session?.phases?.[this.session?.currentAction || 0]);
+
+    // ✅ CORREÇÃO: Emitir o campeão selecionado
     this.onChampionSelected.emit(this.selectedChampion);
-    
+
+    // ✅ CORREÇÃO: Limpar seleção e cache
     this.selectedChampion = null;
     this.invalidateCache();
-    
+
+    // ✅ CORREÇÃO: Fechar modal
     this.closeModal();
-    
+
+    // ✅ CORREÇÃO: Forçar atualização
     this.changeDetectorRef.markForCheck();
+
+    console.log('✅ [DraftChampionModal] Seleção confirmada e modal fechado');
   }
 
   cancelModalSelection(): void {
@@ -327,25 +354,25 @@ export class DraftChampionModalComponent implements OnInit, OnDestroy, OnChanges
   // MÉTODOS PARA CONTROLE DO MODAL
   openModal(): void {
     this.isVisible = true;
-    
+
     this.invalidateCache();
-    
+
     this.loadChampions();
     this.startModalTimer();
-    
+
     this.changeDetectorRef.markForCheck();
   }
 
   closeModal(): void {
     this.isVisible = false;
     this.stopModalTimer();
-    
+
     this.selectedChampion = null;
     this.searchFilter = '';
     this.selectedRole = 'all';
-    
+
     this.onClose.emit();
-    
+
     this.changeDetectorRef.markForCheck();
   }
 
