@@ -3404,7 +3404,7 @@ app.get('/api/sync/status', (async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'summonerName é obrigatório' });
     }
 
-    // ✅ OTIMIZADO: Buscar apenas partidas em draft para reduzir latência
+    // ✅ CORRIGIDO: Buscar apenas partidas em draft para reduzir latência
     const draftMatches = await dbManager.getCustomMatchesByStatus('draft');
 
     for (const match of draftMatches) {
@@ -3416,7 +3416,7 @@ app.get('/api/sync/status', (async (req: Request, res: Response) => {
       } catch { }
 
       if (allPlayers.includes(summonerName)) {
-        // ✅ OTIMIZADO: Processar dados de draft rapidamente
+        // ✅ CORRIGIDO: Processar dados de draft rapidamente
         let pickBanData = null;
         let totalActions = 0;
         let lastAction = null;
@@ -3427,13 +3427,23 @@ app.get('/api/sync/status', (async (req: Request, res: Response) => {
               ? JSON.parse(match.pick_ban_data)
               : match.pick_ban_data;
 
-            totalActions = pickBanData.actions?.length || 0;
+            // ✅ CORRIGIDO: Calcular totalActions baseado no maior actionIndex
+            if (pickBanData.actions && pickBanData.actions.length > 0) {
+              const maxActionIndex = Math.max(...pickBanData.actions.map((a: any) => a.actionIndex || 0));
+              totalActions = maxActionIndex + 1; // Próxima ação esperada
+            } else {
+              totalActions = 0; // Draft inicial
+            }
+
             lastAction = pickBanData.actions?.[pickBanData.actions.length - 1] || null;
           } catch (parseError) {
+            console.error('❌ [API] Erro ao parsear pick_ban_data:', parseError);
             pickBanData = null;
             totalActions = 0;
           }
         }
+
+        console.log(`🔍 [API] Status sync para ${summonerName}: totalActions=${totalActions}, actions=${pickBanData?.actions?.length || 0}`);
 
         return res.json({
           status: 'draft',
@@ -3446,7 +3456,7 @@ app.get('/api/sync/status', (async (req: Request, res: Response) => {
       }
     }
 
-    // ✅ OTIMIZADO: Resposta rápida se não estiver em draft
+    // ✅ CORRIGIDO: Resposta rápida se não estiver em draft
     return res.json({
       status: 'none',
       totalActions: 0

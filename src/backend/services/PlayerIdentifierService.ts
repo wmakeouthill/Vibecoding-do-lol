@@ -152,6 +152,7 @@ export class PlayerIdentifierService {
 
     /**
      * Valida se um jogador pode executar uma ação específica no draft
+     * ✅ MELHORADO: Agora valida turno específico baseado no fluxo do draft
      */
     static validateDraftAction(
         match: any,
@@ -159,6 +160,8 @@ export class PlayerIdentifierService {
         action: 'pick' | 'ban',
         currentActionIndex: number
     ): { valid: boolean; reason?: string } {
+
+        console.log(`🔍 [PlayerIdentifier] Validando ação ${action} para ${playerId} na posição ${currentActionIndex}`);
 
         // Extrair jogadores dos times
         const team1Players = typeof match.team1_players === 'string'
@@ -176,15 +179,117 @@ export class PlayerIdentifierService {
         );
 
         if (!playerInMatch) {
+            console.log(`❌ [PlayerIdentifier] Jogador ${playerId} não encontrado na partida`);
             return {
                 valid: false,
                 reason: `Jogador ${playerId} não encontrado na partida`
             };
         }
 
-        // TODO: Implementar validação de turno específico
-        // Por enquanto, aceitar qualquer jogador do time
+        // ✅ NOVO: Verificar se é o turno correto do jogador
+        const expectedPlayer = this.getExpectedPlayerForAction(match, currentActionIndex);
+
+        if (!expectedPlayer) {
+            console.log(`❌ [PlayerIdentifier] Ação ${currentActionIndex} não encontrada no fluxo do draft`);
+            return {
+                valid: false,
+                reason: `Ação ${currentActionIndex} não encontrada no fluxo do draft`
+            };
+        }
+
+        const isCorrectPlayer = this.comparePlayerWithId(
+            { summonerName: expectedPlayer },
+            playerId
+        );
+
+        if (!isCorrectPlayer) {
+            console.log(`❌ [PlayerIdentifier] Não é o turno de ${playerId}. Esperado: ${expectedPlayer}`);
+            return {
+                valid: false,
+                reason: `Não é o turno de ${playerId}. Esperado: ${expectedPlayer}`
+            };
+        }
+
+        console.log(`✅ [PlayerIdentifier] Validação aprovada para ${playerId} na ação ${currentActionIndex}`);
         return { valid: true };
+    }
+
+    /**
+     * ✅ NOVO: Obtém o jogador esperado para uma ação específica baseado no fluxo do draft
+     */
+    private static getExpectedPlayerForAction(match: any, actionIndex: number): string | null {
+        try {
+            const draftFlow = this.generateDraftFlow(match);
+            const expectedPlayer = draftFlow[actionIndex];
+
+            console.log(`🔍 [PlayerIdentifier] Ação ${actionIndex}: esperado ${expectedPlayer}`);
+            return expectedPlayer || null;
+        } catch (error) {
+            console.error(`❌ [PlayerIdentifier] Erro ao obter jogador esperado para ação ${actionIndex}:`, error);
+            return null;
+        }
+    }
+
+    /**
+     * ✅ NOVO: Gera o fluxo completo do draft baseado nos jogadores da partida
+     * Segue exatamente o padrão da partida ranqueada do LoL
+     */
+    private static generateDraftFlow(match: any): string[] {
+        const team1Players = typeof match.team1_players === 'string'
+            ? JSON.parse(match.team1_players)
+            : (match.team1_players || []);
+
+        const team2Players = typeof match.team2_players === 'string'
+            ? JSON.parse(match.team2_players)
+            : (match.team2_players || []);
+
+        // Garantir que temos exatamente 5 jogadores por time
+        if (team1Players.length !== 5 || team2Players.length !== 5) {
+            console.error(`❌ [PlayerIdentifier] Times inválidos: Blue=${team1Players.length}, Red=${team2Players.length}`);
+            return [];
+        }
+
+        // ✅ FLUXO DO DRAFT RANQUEADO (20 ações):
+        // Ações 0-5: Primeira fase de bans (3 por time)
+        // Ações 6-11: Primeira fase de picks (3 por time)  
+        // Ações 12-15: Segunda fase de bans (2 por time)
+        // Ações 16-19: Segunda fase de picks (2 por time)
+
+        const draftFlow = [
+            // Primeira Fase de Banimento (6 bans - 3 por time)
+            team1Players[0], // Ação 0: Jogador 1 Blue (Top) - Ban
+            team2Players[0], // Ação 1: Jogador 1 Red (Top) - Ban
+            team1Players[1], // Ação 2: Jogador 2 Blue (Jungle) - Ban
+            team2Players[1], // Ação 3: Jogador 2 Red (Jungle) - Ban
+            team1Players[2], // Ação 4: Jogador 3 Blue (Mid) - Ban
+            team2Players[2], // Ação 5: Jogador 3 Red (Mid) - Ban
+
+            // Primeira Fase de Picks (6 picks - 3 por time)
+            team1Players[0], // Ação 6: Jogador 1 Blue (Top) - Pick (First Pick)
+            team2Players[0], // Ação 7: Jogador 1 Red (Top) - Pick
+            team2Players[1], // Ação 8: Jogador 2 Red (Jungle) - Pick
+            team1Players[1], // Ação 9: Jogador 2 Blue (Jungle) - Pick
+            team1Players[2], // Ação 10: Jogador 3 Blue (Mid) - Pick
+            team2Players[2], // Ação 11: Jogador 3 Red (Mid) - Pick
+
+            // Segunda Fase de Banimento (4 bans - 2 por time)
+            team2Players[3], // Ação 12: Jogador 4 Red (ADC) - Ban
+            team1Players[3], // Ação 13: Jogador 4 Blue (ADC) - Ban
+            team2Players[4], // Ação 14: Jogador 5 Red (Support) - Ban
+            team1Players[4], // Ação 15: Jogador 5 Blue (Support) - Ban
+
+            // Segunda Fase de Picks (4 picks - 2 por time)
+            team2Players[3], // Ação 16: Jogador 4 Red (ADC) - Pick
+            team1Players[3], // Ação 17: Jogador 4 Blue (ADC) - Pick
+            team1Players[4], // Ação 18: Jogador 5 Blue (Support) - Pick
+            team2Players[4]  // Ação 19: Jogador 5 Red (Support) - Pick (Last Pick)
+        ];
+
+        console.log(`✅ [PlayerIdentifier] Fluxo do draft gerado: ${draftFlow.length} ações`);
+        console.log(`🔍 [PlayerIdentifier] Primeiras 5 ações:`, draftFlow.slice(0, 5));
+        console.log(`🔍 [PlayerIdentifier] Últimas 5 ações:`, draftFlow.slice(-5));
+
+        return draftFlow;
     }
 
     /**

@@ -199,7 +199,7 @@ export class BotService {
 
     /**
      * Verifica se uma fase deve ter ação automática de bot
-     * ✅ CORREÇÃO: Agora requer validação de special user
+     * ✅ MELHORADO: Agora verifica se é realmente o turno do bot baseado no fluxo do draft
      */
     shouldPerformBotAction(phase: PickBanPhase, session: CustomPickBanSession, currentPlayer?: any): boolean {
         console.log('🤖 [BotService] === VERIFICANDO AÇÃO AUTOMÁTICA ===');
@@ -262,8 +262,31 @@ export class BotService {
                 action: phase.action
             });
 
-            // ✅ CORREÇÃO: Só executar se for bot E special user estiver logado
-            const shouldExecute = isBotPlayer && isSpecialUser;
+            // ✅ MELHORADO: Verificar se é realmente o turno do bot
+            const currentActionIndex = session.currentAction;
+            const expectedPlayer = this.getExpectedPlayerForAction(session, currentActionIndex);
+
+            if (!expectedPlayer) {
+                console.log('⚠️ [BotService] Jogador esperado não encontrado para ação', currentActionIndex);
+                return false;
+            }
+
+            const isBotTurn = this.comparePlayerWithId(
+                { summonerName: expectedPlayer },
+                phasePlayer.summonerName || phasePlayer.name
+            );
+
+            console.log('🤖 [BotService] Verificações:', {
+                isBotPlayer,
+                isSpecialUser,
+                isBotTurn,
+                expectedPlayer,
+                currentPlayer: phasePlayer.summonerName || phasePlayer.name,
+                currentActionIndex
+            });
+
+            // ✅ MELHORADO: Só executar se for bot E special user E for realmente o turno do bot
+            const shouldExecute = isBotPlayer && isSpecialUser && isBotTurn;
             console.log('🤖 [BotService] Deve executar ação de bot?', shouldExecute);
             return shouldExecute;
         } else {
@@ -452,5 +475,70 @@ export class BotService {
             totalBots: totalBots,
             botPercentage: totalPlayers > 0 ? (totalBots / totalPlayers) * 100 : 0
         };
+    }
+
+    /**
+     * ✅ NOVO: Obtém o jogador esperado para uma ação específica baseado no fluxo do draft
+     */
+    private getExpectedPlayerForAction(session: CustomPickBanSession, actionIndex: number): string | null {
+        try {
+            const draftFlow = this.generateDraftFlow(session);
+            const expectedPlayer = draftFlow[actionIndex];
+
+            console.log(`🔍 [BotService] Ação ${actionIndex}: esperado ${expectedPlayer}`);
+            return expectedPlayer || null;
+        } catch (error) {
+            console.error(`❌ [BotService] Erro ao obter jogador esperado para ação ${actionIndex}:`, error);
+            return null;
+        }
+    }
+
+    /**
+     * ✅ NOVO: Gera o fluxo completo do draft baseado nos jogadores da sessão
+     * Segue exatamente o padrão da partida ranqueada do LoL
+     */
+    private generateDraftFlow(session: CustomPickBanSession): string[] {
+        const team1Players = session.blueTeam || [];
+        const team2Players = session.redTeam || [];
+
+        // Garantir que temos exatamente 5 jogadores por time
+        if (team1Players.length !== 5 || team2Players.length !== 5) {
+            console.error(`❌ [BotService] Times inválidos: Blue=${team1Players.length}, Red=${team2Players.length}`);
+            return [];
+        }
+
+        // ✅ FLUXO DO DRAFT RANQUEADO (20 ações):
+        const draftFlow = [
+            // Primeira Fase de Banimento (6 bans - 3 por time)
+            team1Players[0]?.summonerName || team1Players[0]?.name, // Ação 0: Jogador 1 Blue (Top) - Ban
+            team2Players[0]?.summonerName || team2Players[0]?.name, // Ação 1: Jogador 1 Red (Top) - Ban
+            team1Players[1]?.summonerName || team1Players[1]?.name, // Ação 2: Jogador 2 Blue (Jungle) - Ban
+            team2Players[1]?.summonerName || team2Players[1]?.name, // Ação 3: Jogador 2 Red (Jungle) - Ban
+            team1Players[2]?.summonerName || team1Players[2]?.name, // Ação 4: Jogador 3 Blue (Mid) - Ban
+            team2Players[2]?.summonerName || team2Players[2]?.name, // Ação 5: Jogador 3 Red (Mid) - Ban
+
+            // Primeira Fase de Picks (6 picks - 3 por time)
+            team1Players[0]?.summonerName || team1Players[0]?.name, // Ação 6: Jogador 1 Blue (Top) - Pick (First Pick)
+            team2Players[0]?.summonerName || team2Players[0]?.name, // Ação 7: Jogador 1 Red (Top) - Pick
+            team2Players[1]?.summonerName || team2Players[1]?.name, // Ação 8: Jogador 2 Red (Jungle) - Pick
+            team1Players[1]?.summonerName || team1Players[1]?.name, // Ação 9: Jogador 2 Blue (Jungle) - Pick
+            team1Players[2]?.summonerName || team1Players[2]?.name, // Ação 10: Jogador 3 Blue (Mid) - Pick
+            team2Players[2]?.summonerName || team2Players[2]?.name, // Ação 11: Jogador 3 Red (Mid) - Pick
+
+            // Segunda Fase de Banimento (4 bans - 2 por time)
+            team2Players[3]?.summonerName || team2Players[3]?.name, // Ação 12: Jogador 4 Red (ADC) - Ban
+            team1Players[3]?.summonerName || team1Players[3]?.name, // Ação 13: Jogador 4 Blue (ADC) - Ban
+            team2Players[4]?.summonerName || team2Players[4]?.name, // Ação 14: Jogador 5 Red (Support) - Ban
+            team1Players[4]?.summonerName || team1Players[4]?.name, // Ação 15: Jogador 5 Blue (Support) - Ban
+
+            // Segunda Fase de Picks (4 picks - 2 por time)
+            team2Players[3]?.summonerName || team2Players[3]?.name, // Ação 16: Jogador 4 Red (ADC) - Pick
+            team1Players[3]?.summonerName || team1Players[3]?.name, // Ação 17: Jogador 4 Blue (ADC) - Pick
+            team1Players[4]?.summonerName || team1Players[4]?.name, // Ação 18: Jogador 5 Blue (Support) - Pick
+            team2Players[4]?.summonerName || team2Players[4]?.name  // Ação 19: Jogador 5 Red (Support) - Pick (Last Pick)
+        ];
+
+        console.log(`✅ [BotService] Fluxo do draft gerado: ${draftFlow.length} ações`);
+        return draftFlow;
     }
 }
