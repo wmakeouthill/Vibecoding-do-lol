@@ -209,7 +209,7 @@ const matchmakingService = new MatchmakingService(dbManager, wss, discordService
 const playerService = new PlayerService(globalRiotAPI, dbManager);
 const matchHistoryService = new MatchHistoryService(globalRiotAPI, dbManager);
 const dataDragonService = new DataDragonService();
-const draftService = new DraftService(dbManager, wss, discordService);
+const draftService = new DraftService(dbManager, wss, discordService, matchmakingService);
 
 // matchFoundService agora está dentro do matchmakingService - removido para evitar duplicação
 
@@ -1464,6 +1464,26 @@ app.post('/api/queue/add-bot', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('❌ [API] Erro ao adicionar bot:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// ✅ NOVO: Rota para resetar contador de bots
+app.post('/api/queue/reset-bot-counter', async (req: Request, res: Response) => {
+  try {
+    console.log('🔄 [API] Resetando contador de bots...');
+    matchmakingService.resetBotCounter();
+
+    res.json({
+      success: true,
+      message: 'Contador de bots resetado com sucesso',
+      currentCounter: matchmakingService.getBotCounter()
+    });
+  } catch (error: any) {
+    console.error('❌ [API] Erro ao resetar contador de bots:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -3376,7 +3396,7 @@ app.get('/api/debug/matchfound-status', (async (req: Request, res: Response) => 
   }
 }) as RequestHandler);
 
-// ✅ NOVO: Endpoint para polling de status de sincronização
+// ✅ OTIMIZADO: Endpoint para polling de status de sincronização com latência baixa
 app.get('/api/sync/status', (async (req: Request, res: Response) => {
   try {
     const summonerName = req.query.summonerName as string;
@@ -3384,29 +3404,9 @@ app.get('/api/sync/status', (async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'summonerName é obrigatório' });
     }
 
-    console.log(`🔄 [API] Verificando status de sincronização para: ${summonerName}`);
-
-    // 1. Verificar se o jogador está em partida pendente de aceitação
-    const pendingMatches = await dbManager.getCustomMatchesByStatus('pending');
-    for (const match of pendingMatches) {
-      let allPlayers: string[] = [];
-      try {
-        const team1 = typeof match.team1_players === 'string' ? JSON.parse(match.team1_players) : (match.team1_players || []);
-        const team2 = typeof match.team2_players === 'string' ? JSON.parse(match.team2_players) : (match.team2_players || []);
-        allPlayers = [...team1, ...team2];
-      } catch { }
-      if (allPlayers.includes(summonerName)) {
-        return res.json({
-          status: 'match_found',
-          matchId: match.id,
-          match,
-          totalActions: 0
-        });
-      }
-    }
-
-    // 2. Verificar se o jogador está em partida em draft (status 'draft')
+    // ✅ OTIMIZADO: Buscar apenas partidas em draft para reduzir latência
     const draftMatches = await dbManager.getCustomMatchesByStatus('draft');
+
     for (const match of draftMatches) {
       let allPlayers: string[] = [];
       try {
@@ -3414,8 +3414,9 @@ app.get('/api/sync/status', (async (req: Request, res: Response) => {
         const team2 = typeof match.team2_players === 'string' ? JSON.parse(match.team2_players) : (match.team2_players || []);
         allPlayers = [...team1, ...team2];
       } catch { }
+
       if (allPlayers.includes(summonerName)) {
-        // ✅ CORREÇÃO: Incluir dados de pick_ban_data para sincronização
+        // ✅ OTIMIZADO: Processar dados de draft rapidamente
         let pickBanData = null;
         let totalActions = 0;
         let lastAction = null;
@@ -3426,22 +3427,9 @@ app.get('/api/sync/status', (async (req: Request, res: Response) => {
               ? JSON.parse(match.pick_ban_data)
               : match.pick_ban_data;
 
-            // ✅ CORREÇÃO: Calcular totalActions baseado nas ações
             totalActions = pickBanData.actions?.length || 0;
             lastAction = pickBanData.actions?.[pickBanData.actions.length - 1] || null;
-
-            console.log(`🔄 [API] Dados de draft encontrados:`, {
-              matchId: match.id,
-              totalActions,
-              lastAction: lastAction ? `${lastAction.action} - ${lastAction.playerName}` : 'Nenhuma',
-              picksAzul: pickBanData.team1Picks?.length || 0,
-              picksVermelho: pickBanData.team2Picks?.length || 0,
-              bansAzul: pickBanData.team1Bans?.length || 0,
-              bansVermelho: pickBanData.team2Bans?.length || 0
-            });
-
           } catch (parseError) {
-            console.error('❌ [API] Erro ao parsear pick_ban_data:', parseError);
             pickBanData = null;
             totalActions = 0;
           }
@@ -3458,45 +3446,7 @@ app.get('/api/sync/status', (async (req: Request, res: Response) => {
       }
     }
 
-    // 3. Verificar se o jogador está em partida aceita (aguardando draft)
-    const acceptedMatches = await dbManager.getCustomMatchesByStatus('accepted');
-    for (const match of acceptedMatches) {
-      let allPlayers: string[] = [];
-      try {
-        const team1 = typeof match.team1_players === 'string' ? JSON.parse(match.team1_players) : (match.team1_players || []);
-        const team2 = typeof match.team2_players === 'string' ? JSON.parse(match.team2_players) : (match.team2_players || []);
-        allPlayers = [...team1, ...team2];
-      } catch { }
-      if (allPlayers.includes(summonerName)) {
-        return res.json({
-          status: 'match_found',
-          matchId: match.id,
-          match,
-          totalActions: 0
-        });
-      }
-    }
-
-    // 4. Verificar se o jogador está em partida em andamento
-    const inProgressMatches = await dbManager.getCustomMatchesByStatus('in_progress');
-    for (const match of inProgressMatches) {
-      let allPlayers: string[] = [];
-      try {
-        const team1 = typeof match.team1_players === 'string' ? JSON.parse(match.team1_players) : (match.team1_players || []);
-        const team2 = typeof match.team2_players === 'string' ? JSON.parse(match.team2_players) : (match.team2_players || []);
-        allPlayers = [...team1, ...team2];
-      } catch { }
-      if (allPlayers.includes(summonerName)) {
-        return res.json({
-          status: 'game_in_progress',
-          matchId: match.id,
-          match,
-          totalActions: 0
-        });
-      }
-    }
-
-    // 5. Caso não esteja em nenhum fluxo
+    // ✅ OTIMIZADO: Resposta rápida se não estiver em draft
     return res.json({
       status: 'none',
       totalActions: 0

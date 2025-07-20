@@ -836,24 +836,26 @@ export class App implements OnInit, OnDestroy {
 
   // ✅ NOVO: Converter dados do backend para PlayerInfo
   private convertPlayersToPlayerInfo(players: any[]): any[] {
-    console.log('🔄 [App] Convertendo players para PlayerInfo:', players);
+    console.log('🔄 [App] === CONVERTENDO PLAYERS PARA PLAYERINFO ===');
+    console.log('🔄 [App] Players recebidos:', players);
     console.log('🔄 [App] Dados brutos dos players:', players.map(p => ({
       summonerName: p.summonerName,
       assignedLane: p.assignedLane,
       primaryLane: p.primaryLane,
       secondaryLane: p.secondaryLane,
       teamIndex: p.teamIndex,
-      isAutofill: p.isAutofill
+      isAutofill: p.isAutofill,
+      mmr: p.mmr
     })));
 
-    return players.map((player: any, index: number) => {
+    const convertedPlayers = players.map((player: any, index: number) => {
       const playerInfo = {
         id: player.teamIndex || index, // ✅ USAR teamIndex do backend
         summonerName: player.summonerName,
         mmr: player.mmr || 1200,
         primaryLane: player.primaryLane || 'fill',
         secondaryLane: player.secondaryLane || 'fill',
-        assignedLane: player.assignedLane || 'FILL', // ✅ Lane já vem correta do backend
+        assignedLane: player.assignedLane || 'fill', // ✅ CORREÇÃO: Usar 'fill' em vez de 'FILL'
         teamIndex: player.teamIndex || index, // ✅ Índice correto do backend
         isAutofill: player.isAutofill || false,
         riotIdGameName: player.gameName,
@@ -866,11 +868,23 @@ export class App implements OnInit, OnDestroy {
         lane: playerInfo.assignedLane,
         teamIndex: playerInfo.teamIndex,
         autofill: playerInfo.isAutofill,
-        originalAssignedLane: player.assignedLane
+        originalAssignedLane: player.assignedLane,
+        primaryLane: playerInfo.primaryLane,
+        secondaryLane: playerInfo.secondaryLane
       });
 
       return playerInfo;
     });
+
+    console.log('🔄 [App] === RESULTADO DA CONVERSÃO ===');
+    console.log('🔄 [App] Players convertidos:', convertedPlayers.map(p => ({
+      name: p.summonerName,
+      assignedLane: p.assignedLane,
+      teamIndex: p.teamIndex,
+      isAutofill: p.isAutofill
+    })));
+
+    return convertedPlayers;
   }
 
   private handleAcceptanceProgress(data: any): void {
@@ -1742,6 +1756,16 @@ export class App implements OnInit, OnDestroy {
       this.addNotification('success', 'Bot Adicionado', 'Bot adicionado à fila com sucesso');
     } catch (error) {
       this.addNotification('error', 'Erro', 'Falha ao adicionar bot');
+    }
+  }
+
+  // ✅ NOVO: Resetar contador de bots
+  async resetBotCounter(): Promise<void> {
+    try {
+      await this.apiService.resetBotCounter().toPromise();
+      this.addNotification('success', 'Contador Resetado', 'Contador de bots resetado com sucesso');
+    } catch (error) {
+      this.addNotification('error', 'Erro', 'Falha ao resetar contador de bots');
     }
   }
 

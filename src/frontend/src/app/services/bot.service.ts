@@ -58,25 +58,20 @@ export class BotService {
 
         // Verificar se é um bot baseado no nome
         const playerName = player.name || player.summonerName || player.displayName || player.gameName || '';
-        const hasBot = playerName.toLowerCase().includes('bot');
-        const hasAI = playerName.toLowerCase().includes('ai');
-        const hasComputer = playerName.toLowerCase().includes('computer');
-        const hasCPU = playerName.toLowerCase().includes('cpu');
-        const hasBOTTag = playerName.includes('#BOT'); // ✅ NOVO: Verificar tag específica
 
-        const isBotPlayer = hasBot || hasAI || hasComputer || hasCPU || hasBOTTag;
+        // ✅ SIMPLIFICADO: Apenas padrão Bot1, Bot2, Bot3, etc.
+        const botPattern = /^Bot\d+$/i;
+        const isBotPlayer = botPattern.test(playerName);
 
         console.log(`🤖 [BotService] === isBot check ===`, {
             playerName: playerName,
-            hasBot, hasAI, hasComputer, hasCPU, hasBOTTag,
             isBotPlayer,
             id: player.id,
             summonerName: player.summonerName,
             name: player.name,
             displayName: player.displayName,
             gameName: player.gameName,
-            tagLine: player.tagLine,
-            fullPlayer: player
+            tagLine: player.tagLine
         });
 
         return isBotPlayer;

@@ -150,7 +150,7 @@ export class DraftConfirmationModalComponent implements OnChanges {
     if (name1 && name2) {
       const gameName1 = name1.includes('#') ? name1.split('#')[0] : name1;
       const gameName2 = name2.includes('#') ? name2.split('#')[0] : name2;
-      
+
       if (gameName1 === gameName2) {
         console.log('✅ [comparePlayers] Match por gameName');
         return true;
@@ -254,14 +254,14 @@ export class DraftConfirmationModalComponent implements OnChanges {
     console.log(`🎯 [getTeamByLane] Organizando time ${team}...`);
     const teamPlayers = this.getSortedTeamByLane(team);
     const teamPicks = this.getTeamPicks(team);
-    
+
     console.log(`🎯 [getTeamByLane] Time ${team}:`, {
       playersCount: teamPlayers.length,
       picksCount: teamPicks.length,
       players: teamPlayers.map(p => ({ name: p.summonerName || p.name, lane: p.lane })),
       picks: teamPicks.map(c => c.name)
     });
-    
+
     const organizedTeam = this.organizeTeamByLanes(teamPlayers, teamPicks);
 
     if (team === 'blue') {
@@ -284,7 +284,7 @@ export class DraftConfirmationModalComponent implements OnChanges {
         phaseIndex: phaseIndex,
         hasChampion: !!teamPicks[index]
       });
-      
+
       return {
         player,
         champion: teamPicks[index] || undefined,
@@ -314,7 +314,7 @@ export class DraftConfirmationModalComponent implements OnChanges {
           champion: phase.champion?.name,
           isMatch: isMatch
         });
-        
+
         if (isMatch) {
           console.log(`✅ [getPhaseIndexForPlayer] Encontrada fase ${i} para jogador ${player.summonerName || player.name}`);
           return i;
@@ -341,12 +341,12 @@ export class DraftConfirmationModalComponent implements OnChanges {
       player: player,
       playerName: player?.summonerName || player?.name
     });
-    
+
     if (!this.currentPlayer || !player) {
       console.log('❌ [isCurrentPlayer] currentPlayer ou player é null');
       return false;
     }
-    
+
     const result = this.comparePlayers(this.currentPlayer, player);
     console.log('🔍 [isCurrentPlayer] Resultado:', result);
     return result;
@@ -381,8 +381,9 @@ export class DraftConfirmationModalComponent implements OnChanges {
       }
     }
 
+    // ✅ ATUALIZADO: Padrões de bot (incluindo novo padrão sequencial)
     const botPatterns = [
-      /^bot\d+$/i,
+      /^bot\d+$/i,           // ✅ NOVO: Bot1, Bot2, etc (padrão sequencial)
       /^bot\s*\d+$/i,
       /^ai\s*bot$/i,
       /^computer\s*\d*$/i,
@@ -455,17 +456,17 @@ export class DraftConfirmationModalComponent implements OnChanges {
   shouldShowEditButton(slot: any): boolean {
     const isCurrentPlayerResult = this.isCurrentPlayer(slot.player);
     const isBotResult = this.isPlayerBot(slot.player);
-    
+
     // ✅ CORREÇÃO: Mostrar botão APENAS para o jogador atual (não para bots)
     const shouldShow = isCurrentPlayerResult && !isBotResult;
-    
+
     console.log('🔍 [shouldShowEditButton] Verificando botão para:', {
       playerName: slot.player.summonerName || slot.player.name,
       isCurrentPlayer: isCurrentPlayerResult,
       isBot: isBotResult,
       shouldShow: shouldShow
     });
-    
+
     return shouldShow;
   }
 
@@ -476,7 +477,7 @@ export class DraftConfirmationModalComponent implements OnChanges {
     console.log('🎯 [onButtonClick] player:', slot.player);
     console.log('🎯 [onButtonClick] phaseIndex:', slot.phaseIndex);
     console.log('🎯 [onButtonClick] isBot:', this.isPlayerBot(slot.player));
-    
+
     if (this.isPlayerBot(slot.player)) {
       this.confirmBotPick(slot.player.id || slot.player.summonerName, slot.phaseIndex);
     } else {
@@ -485,71 +486,71 @@ export class DraftConfirmationModalComponent implements OnChanges {
   }
 
   // MÉTODOS PARA EDIÇÃO
-      startEditingPick(playerId: string, phaseIndex: number): void {
-        console.log('🎯 [startEditingPick] === INICIANDO EDIÇÃO ===');
-        console.log('🎯 [startEditingPick] playerId:', playerId);
-        console.log('🎯 [startEditingPick] phaseIndex:', phaseIndex);
-        console.log('🎯 [startEditingPick] currentPlayer:', this.currentPlayer);
-        console.log('🎯 [startEditingPick] session:', this.session);
-        
-        this.onEditPick.emit({ playerId, phaseIndex });
-        console.log('🎯 [startEditingPick] Evento emitido');
+  startEditingPick(playerId: string, phaseIndex: number): void {
+    console.log('🎯 [startEditingPick] === INICIANDO EDIÇÃO ===');
+    console.log('🎯 [startEditingPick] playerId:', playerId);
+    console.log('🎯 [startEditingPick] phaseIndex:', phaseIndex);
+    console.log('🎯 [startEditingPick] currentPlayer:', this.currentPlayer);
+    console.log('🎯 [startEditingPick] session:', this.session);
+
+    this.onEditPick.emit({ playerId, phaseIndex });
+    console.log('🎯 [startEditingPick] Evento emitido');
+  }
+
+  // ✅ NOVO: Método para editar o pick do jogador atual via botão principal
+  startEditingCurrentPlayer(): void {
+    console.log('🎯 [startEditingCurrentPlayer] === INICIANDO EDIÇÃO DO JOGADOR ATUAL ===');
+    console.log('🎯 [startEditingCurrentPlayer] currentPlayer:', this.currentPlayer);
+    console.log('🎯 [startEditingCurrentPlayer] session:', this.session);
+
+    if (!this.currentPlayer || !this.session) {
+      console.log('❌ [startEditingCurrentPlayer] currentPlayer ou session não disponível');
+      return;
     }
 
-    // ✅ NOVO: Método para editar o pick do jogador atual via botão principal
-    startEditingCurrentPlayer(): void {
-        console.log('🎯 [startEditingCurrentPlayer] === INICIANDO EDIÇÃO DO JOGADOR ATUAL ===');
-        console.log('🎯 [startEditingCurrentPlayer] currentPlayer:', this.currentPlayer);
-        console.log('🎯 [startEditingCurrentPlayer] session:', this.session);
+    // Procurar o pick do jogador atual
+    const currentPlayerFormatted = this.currentPlayer.gameName && this.currentPlayer.tagLine
+      ? `${this.currentPlayer.gameName}#${this.currentPlayer.tagLine}`
+      : this.currentPlayer.summonerName || this.currentPlayer.name;
 
-        if (!this.currentPlayer || !this.session) {
-            console.log('❌ [startEditingCurrentPlayer] currentPlayer ou session não disponível');
-            return;
-        }
+    console.log('🎯 [startEditingCurrentPlayer] currentPlayer formatado:', currentPlayerFormatted);
 
-        // Procurar o pick do jogador atual
-        const currentPlayerFormatted = this.currentPlayer.gameName && this.currentPlayer.tagLine
-            ? `${this.currentPlayer.gameName}#${this.currentPlayer.tagLine}`
-            : this.currentPlayer.summonerName || this.currentPlayer.name;
-
-        console.log('🎯 [startEditingCurrentPlayer] currentPlayer formatado:', currentPlayerFormatted);
-
-        // Procurar a fase de pick do jogador atual
-        let playerPhaseIndex = -1;
-        for (let i = 0; i < this.session.phases.length; i++) {
-            const phase = this.session.phases[i];
-            if (phase.action === 'pick' && phase.locked && phase.champion) {
-                console.log('🔍 [startEditingCurrentPlayer] Verificando fase', i, ':', {
-                    playerId: phase.playerId,
-                    playerName: phase.playerName,
-                    champion: phase.champion?.name,
-                    isMatch: this.comparePlayerWithId(this.currentPlayer, phase.playerId || '')
-                });
-
-                if (this.comparePlayerWithId(this.currentPlayer, phase.playerId || '')) {
-                    playerPhaseIndex = i;
-                    console.log('✅ [startEditingCurrentPlayer] Encontrada fase do jogador atual:', i);
-                    break;
-                }
-            }
-        }
-
-        if (playerPhaseIndex === -1) {
-            console.log('❌ [startEditingCurrentPlayer] Fase de pick do jogador atual não encontrada');
-            return;
-        }
-
-        // Usar o ID formatado do currentPlayer para garantir consistência
-        const playerIdForEdit = this.currentPlayer.id?.toString() || currentPlayerFormatted;
-
-        console.log('🎯 [startEditingCurrentPlayer] Iniciando edição:', {
-            playerId: playerIdForEdit,
-            phaseIndex: playerPhaseIndex,
-            playerFormatted: currentPlayerFormatted
+    // Procurar a fase de pick do jogador atual
+    let playerPhaseIndex = -1;
+    for (let i = 0; i < this.session.phases.length; i++) {
+      const phase = this.session.phases[i];
+      if (phase.action === 'pick' && phase.locked && phase.champion) {
+        console.log('🔍 [startEditingCurrentPlayer] Verificando fase', i, ':', {
+          playerId: phase.playerId,
+          playerName: phase.playerName,
+          champion: phase.champion?.name,
+          isMatch: this.comparePlayerWithId(this.currentPlayer, phase.playerId || '')
         });
 
-        this.startEditingPick(playerIdForEdit, playerPhaseIndex);
+        if (this.comparePlayerWithId(this.currentPlayer, phase.playerId || '')) {
+          playerPhaseIndex = i;
+          console.log('✅ [startEditingCurrentPlayer] Encontrada fase do jogador atual:', i);
+          break;
+        }
+      }
     }
+
+    if (playerPhaseIndex === -1) {
+      console.log('❌ [startEditingCurrentPlayer] Fase de pick do jogador atual não encontrada');
+      return;
+    }
+
+    // Usar o ID formatado do currentPlayer para garantir consistência
+    const playerIdForEdit = this.currentPlayer.id?.toString() || currentPlayerFormatted;
+
+    console.log('🎯 [startEditingCurrentPlayer] Iniciando edição:', {
+      playerId: playerIdForEdit,
+      phaseIndex: playerPhaseIndex,
+      playerFormatted: currentPlayerFormatted
+    });
+
+    this.startEditingPick(playerIdForEdit, playerPhaseIndex);
+  }
 
   confirmBotPick(playerId: string, phaseIndex: number): void {
     // Para bots, apenas confirmar (não editar)

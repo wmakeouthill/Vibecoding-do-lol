@@ -1,208 +1,266 @@
 /**
- * Serviço centralizado para padronizar identificação de jogadores
- * Usado por todos os serviços do backend para garantir consistência
+ * Serviço centralizado para padronizar a identificação de jogadores e bots
+ * Garante consistência entre frontend e backend
  */
+
+export interface PlayerIdentifier {
+    id: string;
+    name: string;
+    isBot: boolean;
+    teamIndex: number;
+    lane: string;
+    gameName?: string;
+    tagLine?: string;
+    summonerName?: string;
+}
+
 export class PlayerIdentifierService {
 
-    // Constante para o special user - centralizada para fácil manutenção
-    private static readonly SPECIAL_USER_ID = 'popcorn seller#coup';
     /**
-     * Padroniza identificador do jogador (igual em backend e frontend)
-     * SEMPRE retorna lowercase para consistência
-     * Retorna null se não conseguir normalizar (padronizado)
+     * Padroniza a identificação de um jogador
+     * Usado tanto no frontend quanto no backend para garantir consistência
      */
-    static normalizePlayerIdentifier(playerInfo: any): string | null {
-        // Validação robusta de entrada
-        if (!playerInfo || typeof playerInfo !== 'object') {
-            console.warn('⚠️ [PlayerIdentifier] playerInfo inválido:', playerInfo);
-            return null;
+    static normalizePlayerIdentifier(playerInfo: any): PlayerIdentifier {
+        if (!playerInfo) {
+            return {
+                id: '',
+                name: '',
+                isBot: false,
+                teamIndex: 0,
+                lane: 'unknown'
+            };
         }
 
-        // Prioridade 1: gameName#tagLine (padrão) - COM VALIDAÇÃO
+        // Extrair nome do jogador com prioridade
+        let name = '';
+        let gameName = '';
+        let tagLine = '';
+        let summonerName = '';
+
+        // Prioridade 1: gameName#tagLine (padrão Riot)
         if (playerInfo.gameName && playerInfo.tagLine) {
-            const gameName = playerInfo.gameName.toString().trim();
-            const tagLine = playerInfo.tagLine.toString().trim();
-
-            // Validação: ambos devem ter conteúdo
-            if (gameName.length > 0 && tagLine.length > 0) {
-                const identifier = `${gameName}#${tagLine}`.toLowerCase();
-                console.log(`🔍 [PlayerIdentifier] Normalizado gameName#tagLine: ${identifier}`);
-                return identifier;
-            }
+            gameName = playerInfo.gameName;
+            tagLine = playerInfo.tagLine;
+            name = `${gameName}#${tagLine}`;
+        }
+        // Prioridade 2: displayName (se já está no formato correto)
+        else if (playerInfo.displayName && playerInfo.displayName.includes('#')) {
+            name = playerInfo.displayName;
+            const parts = name.split('#');
+            gameName = parts[0];
+            tagLine = parts[1] || '';
+        }
+        // Prioridade 3: summonerName (fallback)
+        else if (playerInfo.summonerName) {
+            summonerName = playerInfo.summonerName;
+            name = summonerName;
+        }
+        // Prioridade 4: name (fallback)
+        else if (playerInfo.name) {
+            name = playerInfo.name;
         }
 
-        // Prioridade 2displayName (se já está no formato correto gameName#tagLine)
-        if (playerInfo.displayName && typeof playerInfo.displayName === 'string') {
-            const displayName = playerInfo.displayName.trim();
-            if (displayName.includes('#')) {
-                const parts = displayName.split('#');
-                // Validação: deve ter exatamente 2 partes e ambas com conteúdo
-                if (parts.length === 2 && parts[0].trim().length > 0 && parts[1].trim().length > 0) {
-                    const identifier = displayName.toLowerCase();
-                    console.log(`🔍 [PlayerIdentifier] Normalizado displayName: ${identifier}`);
-                    return identifier;
-                }
-            }
-        }
+        // Normalizar nome para comparações
+        const normalizedName = name.toLowerCase().trim();
 
-        // Prioridade3summonerName (fallback) - COM VALIDAÇÃO
-        if (playerInfo.summonerName && typeof playerInfo.summonerName === 'string') {
-            const summonerName = playerInfo.summonerName.trim();
-            if (summonerName.length > 0) {
-                const identifier = summonerName.toLowerCase();
-                console.log(`🔍 [PlayerIdentifier] Normalizado summonerName: ${identifier}`);
-                return identifier;
-            }
-        }
+        // Identificar se é bot usando padrão padronizado
+        const isBot = this.isBotPlayer(normalizedName);
 
-        // Prioridade 4 name (fallback) - COM VALIDAÇÃO
-        if (playerInfo.name && typeof playerInfo.name === 'string') {
-            const name = playerInfo.name.trim();
-            if (name.length > 0) {
-                const identifier = name.toLowerCase();
-                console.log(`🔍 [PlayerIdentifier] Normalizado name: ${identifier}`);
-                return identifier;
-            }
-        }
-
-        console.warn('⚠️ [PlayerIdentifier] Nenhum identificador válido encontrado:', playerInfo);
-        return null;
+        return {
+            id: playerInfo.id?.toString() || name,
+            name: normalizedName,
+            isBot,
+            teamIndex: playerInfo.teamIndex || 0,
+            lane: playerInfo.lane || playerInfo.assignedLane || 'unknown',
+            gameName,
+            tagLine,
+            summonerName
+        };
     }
 
     /**
-     * Verifica se um jogador está na partida
-     * COMPARAÇÃO EXATA APENAS - sem fallbacks problemáticos
-     */
-    static isPlayerInMatch(playerInfo: any, playersInMatch: string[]): boolean {
-        // Validação robusta
-        if (!playerInfo || !Array.isArray(playersInMatch) || playersInMatch.length === 0) {
-            console.warn('⚠️ [PlayerIdentifier] Parâmetros inválidos para isPlayerInMatch:', { playerInfo, playersInMatch });
-            return false;
-        }
+ * Verifica se um jogador é bot baseado no nome
+ * Padrão padronizado usado tanto no frontend quanto no backend
+ * Bots têm nomes simples: Bot1, Bot2, Bot3, etc.
+ */
+    static isBotPlayer(playerName: string): boolean {
+        if (!playerName) return false;
 
-        const playerIdentifier = this.normalizePlayerIdentifier(playerInfo);
-        if (!playerIdentifier) {
-            console.warn('⚠️ [PlayerIdentifier] Não foi possível obter identificador do jogador:', playerInfo);
-            return false;
-        }
+        const name = playerName.trim();
 
-        // Normalizar todos os playersInMatch para comparação consistente
-        const normalizedMatchPlayers = playersInMatch
-            .filter(p => p && typeof p === 'string')
-            .map(p => p.toLowerCase().trim())
-            .filter(p => p.length > 0);
+        // ✅ SIMPLIFICADO: Apenas padrão Bot1, Bot2, Bot3, etc.
+        const botPattern = /^Bot\d+$/i;
+        const isBot = botPattern.test(name);
 
-        // Comparação exata apenas
-        const isInMatch = normalizedMatchPlayers.includes(playerIdentifier);
-
-        if (isInMatch) {
-            console.log(`✅ [PlayerIdentifier] Match exato encontrado: ${playerIdentifier}`);
-        } else {
-            console.log(`❌ [PlayerIdentifier] Nenhum match exato para: ${playerIdentifier}`);
-            console.log(`📋 [PlayerIdentifier] Players na partida:`, normalizedMatchPlayers);
-        }
-
-        return isInMatch;
+        console.log(`🤖 [PlayerIdentifier] Verificando bot: "${name}" = ${isBot}`);
+        return isBot;
     }
 
     /**
-     * Verifica se é o special user autorizado
-     * COMPARAÇÃO EXATA E SEGURA
-     */
-    static isSpecialUser(playerInfo: any): boolean {
-        if (!playerInfo) return false;
-
-        const normalizedId = this.normalizePlayerIdentifier(playerInfo);
-        if (!normalizedId) return false;
-
-        // Comparação exata e case-insensitive
-        const isSpecial = normalizedId === this.SPECIAL_USER_ID.toLowerCase();
-
-        console.log('🔐 [PlayerIdentifier] Verificação de special user:', {
-            normalizedId,
-            isSpecial,
-            expected: this.SPECIAL_USER_ID.toLowerCase()
-        });
-
-        return isSpecial;
-    }
-
-    /**
-     * Compara dois jogadores
+     * Compara dois jogadores para verificar se são o mesmo
      */
     static comparePlayers(player1: any, player2: any): boolean {
         if (!player1 || !player2) return false;
 
-        const id1 = this.normalizePlayerIdentifier(player1);
-        const id2 = this.normalizePlayerIdentifier(player2);
+        const normalized1 = this.normalizePlayerIdentifier(player1);
+        const normalized2 = this.normalizePlayerIdentifier(player2);
 
-        if (!id1 || !id2) return false;
-
-        const isEqual = id1 === id2;
-        console.log(`🔄 [PlayerIdentifier] Comparação de jogadores: ${id1} === ${id2} = ${isEqual}`);
-
-        return isEqual;
-    }
-
-    /**
-     * Compara jogador com ID específico
-     */
-    static comparePlayerWithId(player: any, targetId: string): boolean {
-        if (!player || !targetId || typeof targetId !== 'string') return false;
-
-        const playerNormalized = this.normalizePlayerIdentifier(player);
-        const targetNormalized = targetId.toLowerCase().trim();
-
-        if (!playerNormalized || !targetNormalized) return false;
-
-        const isEqual = playerNormalized === targetNormalized;
-        console.log(`🎯 [PlayerIdentifier] Comparação com ID: ${playerNormalized} === ${targetNormalized} = ${isEqual}`);
-
-        return isEqual;
-    }
-
-    /**
-     * Obtém identificador único do jogador para logs
-     * SEMPRE retorna lowercase para consistência com normalizePlayerIdentifier
-     * @deprecated Use normalizePlayerIdentifier diretamente
-     */
-    static getPlayerIdentifier(playerInfo: any): string | null {
-        // Método mantido para compatibilidade, mas agora apenas chama normalizePlayerIdentifier
-        return this.normalizePlayerIdentifier(playerInfo);
-    }
-
-    /**
-     * Valida se um identificador está no formato correto
-     */
-    static isValidPlayerIdentifier(identifier: string): boolean {
-        if (!identifier || typeof identifier !== 'string') return false;
-
-        // Deve ter pelo menos1aractere e não ser só espaços
-        const trimmed = identifier.trim();
-        if (trimmed.length === 0) return false;
-
-        // Se contém #, deve ter formato gameName#tagLine
-        if (trimmed.includes('#')) {
-            const parts = trimmed.split('#');
-            if (parts.length !== 2 || parts[0].trim().length === 0 || parts[1].trim().length === 0) {
-                return false;
-            }
+        // Comparar por ID se disponível
+        if (normalized1.id && normalized2.id && normalized1.id === normalized2.id) {
+            return true;
         }
 
-        return true;
+        // Comparar por nome normalizado
+        if (normalized1.name && normalized2.name && normalized1.name === normalized2.name) {
+            return true;
+        }
+
+        // Comparar por gameName#tagLine se disponível
+        if (normalized1.gameName && normalized1.tagLine &&
+            normalized2.gameName && normalized2.tagLine) {
+            return normalized1.gameName === normalized2.gameName &&
+                normalized1.tagLine === normalized2.tagLine;
+        }
+
+        return false;
     }
 
     /**
-     * Valida se um objeto playerInfo tem dados suficientes para identificação
+     * Compara um jogador com um ID específico
      */
-    static hasValidPlayerData(playerInfo: any): boolean {
-        if (!playerInfo || typeof playerInfo !== 'object') return false;
+    static comparePlayerWithId(player: any, targetId: string): boolean {
+        if (!player || !targetId) return false;
 
-        // Verifica se tem pelo menos um dos campos necessários
-        const hasGameNameTagLine = playerInfo.gameName && playerInfo.tagLine;
-        const hasDisplayName = playerInfo.displayName && typeof playerInfo.displayName === 'string' && playerInfo.displayName.trim().length > 0;
-        const hasSummonerName = playerInfo.summonerName && typeof playerInfo.summonerName === 'string' && playerInfo.summonerName.trim().length > 0;
-        const hasName = playerInfo.name && typeof playerInfo.name === 'string' && playerInfo.name.trim().length > 0;
-        return hasGameNameTagLine || hasDisplayName || hasSummonerName || hasName;
+        const normalized = this.normalizePlayerIdentifier(player);
+        const targetNormalized = targetId.toLowerCase().trim();
+
+        return normalized.name === targetNormalized ||
+            normalized.id === targetNormalized;
+    }
+
+    /**
+     * Extrai informações de lane de um jogador
+     */
+    static getPlayerLaneInfo(player: any): { lane: string; isAutofill: boolean } {
+        const normalized = this.normalizePlayerIdentifier(player);
+
+        return {
+            lane: normalized.lane,
+            isAutofill: player.isAutofill || false
+        };
+    }
+
+    /**
+     * Valida se um jogador pode executar uma ação específica no draft
+     */
+    static validateDraftAction(
+        match: any,
+        playerId: string,
+        action: 'pick' | 'ban',
+        currentActionIndex: number
+    ): { valid: boolean; reason?: string } {
+
+        // Extrair jogadores dos times
+        const team1Players = typeof match.team1_players === 'string'
+            ? JSON.parse(match.team1_players)
+            : (match.team1_players || []);
+
+        const team2Players = typeof match.team2_players === 'string'
+            ? JSON.parse(match.team2_players)
+            : (match.team2_players || []);
+
+        // Verificar se jogador está em algum dos times
+        const allPlayers = [...team1Players, ...team2Players];
+        const playerInMatch = allPlayers.some(p =>
+            this.comparePlayerWithId({ summonerName: p }, playerId)
+        );
+
+        if (!playerInMatch) {
+            return {
+                valid: false,
+                reason: `Jogador ${playerId} não encontrado na partida`
+            };
+        }
+
+        // TODO: Implementar validação de turno específico
+        // Por enquanto, aceitar qualquer jogador do time
+        return { valid: true };
+    }
+
+    /**
+     * Gera um identificador único para uma ação de draft
+     */
+    static generateDraftActionKey(
+        matchId: number,
+        playerId: string,
+        championId: number,
+        action: 'pick' | 'ban'
+    ): string {
+        return `${matchId}-${playerId}-${championId}-${action}`;
+    }
+
+    /**
+     * Loga informações de debug sobre identificação de jogadores
+     */
+    static logPlayerIdentification(player: any, context: string = ''): void {
+        const normalized = this.normalizePlayerIdentifier(player);
+
+        console.log(`🔍 [PlayerIdentifier] ${context}:`, {
+            original: {
+                id: player.id,
+                name: player.name,
+                summonerName: player.summonerName,
+                gameName: player.gameName,
+                tagLine: player.tagLine,
+                displayName: player.displayName
+            },
+            normalized: {
+                id: normalized.id,
+                name: normalized.name,
+                isBot: normalized.isBot,
+                teamIndex: normalized.teamIndex,
+                lane: normalized.lane
+            }
+        });
+    }
+
+    /**
+     * Obtém o identificador único de um jogador
+     * Usado para comparações e validações
+     */
+    static getPlayerIdentifier(playerInfo: any): string | null {
+        if (!playerInfo) return null;
+
+        const normalized = this.normalizePlayerIdentifier(playerInfo);
+
+        // Priorizar gameName#tagLine se disponível
+        if (normalized.gameName && normalized.tagLine) {
+            return `${normalized.gameName}#${normalized.tagLine}`;
+        }
+
+        // Fallback para nome normalizado
+        return normalized.name || null;
+    }
+
+    /**
+     * Verifica se um jogador está na lista de jogadores da partida
+     * Usado para validação de notificações
+     */
+    static isPlayerInMatch(playerInfo: any, playersInMatch: string[]): boolean {
+        if (!playerInfo || !playersInMatch || playersInMatch.length === 0) {
+            return false;
+        }
+
+        const playerIdentifier = this.getPlayerIdentifier(playerInfo);
+        if (!playerIdentifier) return false;
+
+        // Normalizar identificador do jogador
+        const normalizedPlayerId = playerIdentifier.toLowerCase().trim();
+
+        // Verificar se está na lista de jogadores da partida
+        return playersInMatch.some(matchPlayer => {
+            const normalizedMatchPlayer = matchPlayer.toLowerCase().trim();
+            return normalizedMatchPlayer === normalizedPlayerId;
+        });
     }
 } 

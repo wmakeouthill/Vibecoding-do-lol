@@ -1168,9 +1168,9 @@ export class MatchmakingService {
 
   async addBotToQueue(): Promise<void> {
     try {
-      // ✅ CORREÇÃO: Usar IDs menores e mais seguros para bots
-      const botNumber = Math.floor(Math.random() * 1000000) + 100000; // 6 dígitos
-      const botName = `Bot${botNumber}#BOT`;
+      // ✅ NOVO: Usar contador sequencial para bots
+      const botNumber = this.getNextBotNumber();
+      const botName = `Bot${botNumber}`;
       const randomMMR = Math.floor(Math.random() * 1200) + 800;
       const lanes = ['top', 'jungle', 'mid', 'bot', 'support'];
       const primaryLane = lanes[Math.floor(Math.random() * lanes.length)];
@@ -1196,7 +1196,7 @@ export class MatchmakingService {
 
       // ✅ SIMPLIFICADO: Adicionar diretamente à fila (sem FOREIGN KEY)
       await this.dbManager.addPlayerToQueue(
-        -botNumber, // ID negativo para bots (agora menor)
+        -botNumber, // ID negativo para bots
         botName,
         'br1',
         randomMMR,
@@ -1221,7 +1221,24 @@ export class MatchmakingService {
     }
   }
 
+  // ✅ NOVO: Contador sequencial para bots
+  private botCounter = 0;
 
+  private getNextBotNumber(): number {
+    this.botCounter++;
+    return this.botCounter;
+  }
+
+  // ✅ NOVO: Resetar contador de bots (útil para testes ou reinicialização)
+  public resetBotCounter(): void {
+    this.botCounter = 0;
+    console.log('🔄 [Matchmaking] Contador de bots resetado para 0');
+  }
+
+  // ✅ NOVO: Obter contador atual de bots
+  public getBotCounter(): number {
+    return this.botCounter;
+  }
 
   async cancelDraft(matchId: number, reason: string): Promise<void> {
     console.log(`🚫 [Matchmaking] Redirecionando cancelamento de draft para DraftService`);
@@ -1817,17 +1834,15 @@ export class MatchmakingService {
     return team1[0]?.summonerName || 'Sistema';
   }
 
-  // ✅ NOVO: Função para verificar se um jogador é bot
+  // ✅ SIMPLIFICADO: Função para verificar se um jogador é bot
   private isPlayerBot(playerName: string): boolean {
     if (!playerName) return false;
 
-    const nameCheck = playerName.toLowerCase();
-    const isBot = nameCheck.includes('bot') ||
-      nameCheck.includes('ai') ||
-      nameCheck.includes('computer') ||
-      nameCheck.includes('cpu') ||
-      playerName.includes('#BOT'); // Padrão específico dos bots
+    // ✅ SIMPLIFICADO: Apenas padrão Bot1, Bot2, Bot3, etc.
+    const botPattern = /^Bot\d+$/i;
+    const isBot = botPattern.test(playerName);
 
+    console.log(`🤖 [Matchmaking] Verificando bot: "${playerName}" = ${isBot}`);
     return isBot;
   }
 

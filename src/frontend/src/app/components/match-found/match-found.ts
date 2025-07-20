@@ -154,13 +154,47 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   private updateSortedTeams(): void {
+    console.log('🎯 [MatchFound] === updateSortedTeams CHAMADO ===');
+    console.log('🎯 [MatchFound] matchData presente:', !!this.matchData);
+
     if (!this.matchData) {
+      console.log('🎯 [MatchFound] matchData é null - limpando times');
       this.sortedBlueTeam = [];
       this.sortedRedTeam = [];
       return;
     }
-    this.sortedBlueTeam = this.getSortedPlayersByLane(this.getBlueTeamPlayers());
-    this.sortedRedTeam = this.getSortedPlayersByLane(this.getRedTeamPlayers());
+
+    console.log('🎯 [MatchFound] Dados do matchData:', {
+      matchId: this.matchData.matchId,
+      playerSide: this.matchData.playerSide,
+      teammatesCount: this.matchData.teammates?.length || 0,
+      enemiesCount: this.matchData.enemies?.length || 0
+    });
+
+    const blueTeamPlayers = this.getBlueTeamPlayers();
+    const redTeamPlayers = this.getRedTeamPlayers();
+
+    console.log('🎯 [MatchFound] Blue team players:', blueTeamPlayers.map(p => ({
+      name: p.summonerName,
+      assignedLane: p.assignedLane,
+      teamIndex: p.teamIndex,
+      isAutofill: p.isAutofill
+    })));
+
+    console.log('🎯 [MatchFound] Red team players:', redTeamPlayers.map(p => ({
+      name: p.summonerName,
+      assignedLane: p.assignedLane,
+      teamIndex: p.teamIndex,
+      isAutofill: p.isAutofill
+    })));
+
+    this.sortedBlueTeam = this.getSortedPlayersByLane(blueTeamPlayers);
+    this.sortedRedTeam = this.getSortedPlayersByLane(redTeamPlayers);
+
+    console.log('🎯 [MatchFound] Times ordenados:', {
+      blueTeam: this.sortedBlueTeam.map(p => ({ name: p.summonerName, lane: p.assignedLane })),
+      redTeam: this.sortedRedTeam.map(p => ({ name: p.summonerName, lane: p.assignedLane }))
+    });
   }
 
   // ✅ NOVO: Configurar listener para atualizações de timer do backend
@@ -332,7 +366,17 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   getAssignedLaneDisplay(player: PlayerInfo): string {
-    // ✅ LOG FORÇADO: Este log DEVE aparecer
+    console.log('🎯 [MatchFound] getAssignedLaneDisplay chamado para:', {
+      name: player.summonerName,
+      assignedLane: player.assignedLane,
+      isAutofill: player.isAutofill,
+      teamIndex: player.teamIndex
+    });
+
+    if (!player.assignedLane) {
+      console.warn('⚠️ [MatchFound] assignedLane está vazio para:', player.summonerName);
+      return '❓ Desconhecido';
+    }
 
     if (player.isAutofill) {
       return `${this.getLaneIcon(player.assignedLane)} ${this.getLaneName(player.assignedLane)} (Auto)`;
@@ -350,10 +394,18 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
    * Ordena jogadores por teamIndex (0-4) conforme o draft espera
    */
   getSortedPlayersByLane(players: PlayerInfo[]): PlayerInfo[] {
+    console.log('🎯 [MatchFound] Ordenando jogadores por lane:', players.map(p => ({
+      name: p.summonerName,
+      teamIndex: p.teamIndex,
+      assignedLane: p.assignedLane,
+      primaryLane: p.primaryLane
+    })));
+
     // ✅ CORREÇÃO: Usar teamIndex se disponível, senão ordenar por lane
     return [...players].sort((a, b) => {
       // Se ambos têm teamIndex, usar ele para ordenação
       if (a.teamIndex !== undefined && b.teamIndex !== undefined) {
+        console.log(`🎯 [MatchFound] Ordenando por teamIndex: ${a.summonerName}(${a.teamIndex}) vs ${b.summonerName}(${b.teamIndex})`);
         return a.teamIndex - b.teamIndex;
       }
 
@@ -366,7 +418,17 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
       const laneA = normalizeAndMapLane(a.assignedLane || a.primaryLane || 'fill');
       const laneB = normalizeAndMapLane(b.assignedLane || b.primaryLane || 'fill');
 
-      return 0;
+      // ✅ CORREÇÃO: Ordenar por ordem das lanes (top, jungle, mid, bot, support)
+      const laneOrder = ['top', 'jungle', 'mid', 'bot', 'support'];
+      const indexA = laneOrder.indexOf(laneA);
+      const indexB = laneOrder.indexOf(laneB);
+
+      console.log(`🎯 [MatchFound] Ordenando por lane: ${a.summonerName}(${laneA}:${indexA}) vs ${b.summonerName}(${laneB}:${indexB})`);
+
+      if (indexA === -1 && indexB === -1) return 0;
+      if (indexA === -1) return 1;
+      if (indexB === -1) return -1;
+      return indexA - indexB;
     });
   }
 

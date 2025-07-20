@@ -116,9 +116,9 @@ export class CustomPickBanComponent implements OnInit, OnDestroy {
       }
     }
 
-    // Verificar por padrões de nome de bot (mais específicos e abrangentes)
+    // ✅ ATUALIZADO: Padrões de nome de bot (incluindo novo padrão sequencial)
     const botPatterns = [
-      /^bot\d+$/i,           // Bot1, Bot2, etc
+      /^bot\d+$/i,           // ✅ NOVO: Bot1, Bot2, etc (padrão sequencial)
       /^bot\s*\d+$/i,        // Bot 1, Bot 2, etc
       /^ai\s*bot$/i,         // AI Bot
       /^computer\s*\d*$/i,   // Computer, Computer1, etc

@@ -977,6 +977,15 @@ export class ApiService {
         catchError(this.handleError)
       );
   }
+
+  // ✅ NOVO: Resetar contador de bots
+  resetBotCounter(): Observable<any> {
+    return this.http.post(`${this.baseUrl}/queue/reset-bot-counter`, {})
+      .pipe(
+        retry(1),
+        catchError(this.handleError)
+      );
+  }
   // Métodos para sistema de partidas
   acceptMatch(matchId: number, playerId?: number, summonerName?: string): Observable<any> {
     const body: any = { matchId };

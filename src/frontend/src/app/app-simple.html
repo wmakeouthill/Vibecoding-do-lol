@@ -303,6 +303,11 @@
                   🤖 Adicionar Bot à Fila
                 </button>
 
+                <button type="button" (click)="resetBotCounter()"
+                  style="background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%); color: #ffffff; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(155, 89, 182, 0.3); display: flex; align-items: center; gap: 0.5rem; font-size: 1rem;">
+                  🔄 Resetar Contador de Bots
+                </button>
+
                 <button type="button" (click)="simulateLastMatch()"
                   style="background: linear-gradient(135deg, #5865f2 0%, #7289da 100%); color: #ffffff; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(88, 101, 242, 0.3); display: flex; align-items: center; gap: 0.5rem; font-size: 1rem;">
                   🎮 Simular Última Partida Ranqueada

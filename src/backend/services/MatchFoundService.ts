@@ -553,10 +553,15 @@ export class MatchFoundService {
   }
 
   private isBot(playerName: string): boolean {
-    return playerName.toLowerCase().includes('bot') ||
-      playerName.toLowerCase().includes('ai') ||
-      playerName.toLowerCase().includes('computer') ||
-      playerName.toLowerCase().includes('cpu');
+    if (!playerName) return false;
+
+    const nameCheck = playerName.toLowerCase();
+    return nameCheck.includes('bot') ||
+      nameCheck.includes('ai') ||
+      nameCheck.includes('computer') ||
+      nameCheck.includes('cpu') ||
+      playerName.includes('#BOT') || // Padrão antigo (compatibilidade)
+      /^bot\d+$/i.test(playerName); // ✅ NOVO: Padrão sequencial (Bot1, Bot2, etc.)
   }
 
   // ✅ MELHORADO: Sistema de notificação com múltiplas estratégias de entrega
@@ -594,29 +599,55 @@ export class MatchFoundService {
       console.log('🎯 [MatchFound] team2:', team2.map((p: any) => ({ name: p.summonerName, lane: p.assignedLane, mmr: p.mmr })));
       console.log('🎯 [MatchFound] MMRs:', { team1: team1MMR, team2: team2MMR });
 
+      console.log('🎯 [MatchFound] === PREPARANDO DADOS PARA FRONTEND ===');
+      console.log('🎯 [MatchFound] Team1 dados originais:', team1.map((p: any) => ({
+        name: p.summonerName,
+        assignedLane: p.assignedLane,
+        primaryLane: p.primaryLane,
+        secondaryLane: p.secondaryLane,
+        isAutofill: p.isAutofill,
+        teamIndex: p.teamIndex
+      })));
+      console.log('🎯 [MatchFound] Team2 dados originais:', team2.map((p: any) => ({
+        name: p.summonerName,
+        assignedLane: p.assignedLane,
+        primaryLane: p.primaryLane,
+        secondaryLane: p.secondaryLane,
+        isAutofill: p.isAutofill,
+        teamIndex: p.teamIndex
+      })));
+
       matchFoundData.data = {
         ...matchFoundData.data,
         // ✅ CORREÇÃO: Incluir todas as informações necessárias para o frontend
-        teammates: team1.map((p: any, index: number) => ({
-          summonerName: p.summonerName,
-          mmr: p.mmr,
-          primaryLane: p.primaryLane,
-          secondaryLane: p.secondaryLane,
-          assignedLane: p.assignedLane, // ✅ NOVO: Lane atribuída após balanceamento
-          teamIndex: index, // ✅ NOVO: Índice no time (0-4)
-          isAutofill: p.isAutofill || false, // ✅ NOVO: Se foi autofill
-          team: 'blue' // ✅ NOVO: Identificação do time
-        })),
-        enemies: team2.map((p: any, index: number) => ({
-          summonerName: p.summonerName,
-          mmr: p.mmr,
-          primaryLane: p.primaryLane,
-          secondaryLane: p.secondaryLane,
-          assignedLane: p.assignedLane, // ✅ NOVO: Lane atribuída após balanceamento
-          teamIndex: index + 5, // ✅ NOVO: Índice no time (5-9)
-          isAutofill: p.isAutofill || false, // ✅ NOVO: Se foi autofill
-          team: 'red' // ✅ NOVO: Identificação do time
-        })),
+        teammates: team1.map((p: any, index: number) => {
+          const playerData = {
+            summonerName: p.summonerName,
+            mmr: p.mmr,
+            primaryLane: p.primaryLane,
+            secondaryLane: p.secondaryLane,
+            assignedLane: p.assignedLane, // ✅ NOVO: Lane atribuída após balanceamento
+            teamIndex: index, // ✅ NOVO: Índice no time (0-4)
+            isAutofill: p.isAutofill || false, // ✅ NOVO: Se foi autofill
+            team: 'blue' // ✅ NOVO: Identificação do time
+          };
+          console.log(`🎯 [MatchFound] Team1 player ${index}:`, playerData);
+          return playerData;
+        }),
+        enemies: team2.map((p: any, index: number) => {
+          const playerData = {
+            summonerName: p.summonerName,
+            mmr: p.mmr,
+            primaryLane: p.primaryLane,
+            secondaryLane: p.secondaryLane,
+            assignedLane: p.assignedLane, // ✅ NOVO: Lane atribuída após balanceamento
+            teamIndex: index + 5, // ✅ NOVO: Índice no time (5-9)
+            isAutofill: p.isAutofill || false, // ✅ NOVO: Se foi autofill
+            team: 'red' // ✅ NOVO: Identificação do time
+          };
+          console.log(`🎯 [MatchFound] Team2 player ${index}:`, playerData);
+          return playerData;
+        }),
         // ✅ CORREÇÃO: Estatísticas detalhadas dos times
         teamStats: {
           team1: {
