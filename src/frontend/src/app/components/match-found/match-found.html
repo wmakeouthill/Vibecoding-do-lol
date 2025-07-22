@@ -20,8 +20,14 @@
           <div class="player-card" *ngFor="let player of sortedBlueTeam"
             [class.current-player]="isCurrentPlayer(player)">
             <div class="player-avatar">
-              <img [src]="getPlayerProfileIconUrl(player) | async" alt="Avatar" class="avatar-image"
-                (error)="onProfileIconError($event, player)">
+              <ng-container *ngIf="!(botService.isBot(player)); else botIcon">
+                <img *ngIf="getPlayerProfileIconUrlIfHuman(player) | async as iconUrl" [src]="iconUrl" alt="Avatar"
+                  class="avatar-image" (error)="onProfileIconError($event, player)">
+              </ng-container>
+              <ng-template #botIcon>
+                <img src="/assets/images/champion-placeholder.svg" alt="Bot" class="avatar-image"
+                  style="opacity:0.5;" />
+              </ng-template>
             </div>
             <div class="player-info">
               <div class="player-main-info">
@@ -60,8 +66,14 @@
           <div class="player-card" *ngFor="let player of sortedRedTeam"
             [class.current-player]="isCurrentPlayer(player)">
             <div class="player-avatar">
-              <img [src]="getPlayerProfileIconUrl(player) | async" alt="Avatar" class="avatar-image"
-                (error)="onProfileIconError($event, player)">
+              <ng-container *ngIf="!(botService.isBot(player)); else botIcon">
+                <img *ngIf="getPlayerProfileIconUrlIfHuman(player) | async as iconUrl" [src]="iconUrl" alt="Avatar"
+                  class="avatar-image" (error)="onProfileIconError($event, player)">
+              </ng-container>
+              <ng-template #botIcon>
+                <img src="/assets/images/champion-placeholder.svg" alt="Bot" class="avatar-image"
+                  style="opacity:0.5;" />
+              </ng-template>
             </div>
             <div class="player-info">
               <div class="player-main-info">

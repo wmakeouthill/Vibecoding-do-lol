@@ -33,7 +33,7 @@
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:electron:wait\"",
     "dev:full": "echo 🚀 Iniciando TUDO (Backend + Frontend + Electron)... && npm run dev",
     "dev:fast": "concurrently \"npm run dev:frontend\" \"npm run dev:electron:wait\"",
-    "dev:backend": "nodemon --exec ts-node src/backend/server.ts",
+    "dev:backend": "nodemon --exec ts-node src/backend/server.ts > backend.log 2>&1",
     "dev:discord": "node discord-bot.js",
     "dev:frontend": "cd src/frontend && ng serve",
     "dev:electron": "npm run build:electron && cross-env NODE_ENV=development electron .",

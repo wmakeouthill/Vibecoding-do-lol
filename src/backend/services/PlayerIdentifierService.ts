@@ -163,50 +163,44 @@ export class PlayerIdentifierService {
 
         console.log(`🔍 [PlayerIdentifier] Validando ação ${action} para ${playerId} na posição ${currentActionIndex}`);
 
-        // Extrair jogadores dos times
-        const team1Players = typeof match.team1_players === 'string'
-            ? JSON.parse(match.team1_players)
-            : (match.team1_players || []);
+        // Extrair pick_ban_data
+        let pickBanData: any = {};
+        if (match.pick_ban_data) {
+            pickBanData = typeof match.pick_ban_data === 'string' ? JSON.parse(match.pick_ban_data) : match.pick_ban_data;
+        }
 
-        const team2Players = typeof match.team2_players === 'string'
-            ? JSON.parse(match.team2_players)
-            : (match.team2_players || []);
-
-        // Verificar se jogador está em algum dos times
-        const allPlayers = [...team1Players, ...team2Players];
-        const playerInMatch = allPlayers.some(p =>
-            this.comparePlayerWithId({ summonerName: p }, playerId)
-        );
-
-        if (!playerInMatch) {
-            console.log(`❌ [PlayerIdentifier] Jogador ${playerId} não encontrado na partida`);
+        // Extrair fase atual
+        const phase = pickBanData.phases && Array.isArray(pickBanData.phases)
+            ? pickBanData.phases[currentActionIndex]
+            : null;
+        if (!phase) {
+            console.log(`❌ [PlayerIdentifier] Fase ${currentActionIndex} não encontrada no fluxo do draft`);
             return {
                 valid: false,
-                reason: `Jogador ${playerId} não encontrado na partida`
+                reason: `Fase ${currentActionIndex} não encontrada no fluxo do draft`
             };
         }
 
-        // ✅ NOVO: Verificar se é o turno correto do jogador
-        const expectedPlayer = this.getExpectedPlayerForAction(match, currentActionIndex);
-
-        if (!expectedPlayer) {
-            console.log(`❌ [PlayerIdentifier] Ação ${currentActionIndex} não encontrada no fluxo do draft`);
+        // Buscar jogador esperado pelo playerIndex e team
+        const teamArr = phase.team === 1 ? pickBanData.team1 : pickBanData.team2;
+        const expectedPlayerObj = teamArr && teamArr[phase.playerIndex];
+        if (!expectedPlayerObj) {
+            console.log(`❌ [PlayerIdentifier] Jogador esperado não encontrado para team=${phase.team}, playerIndex=${phase.playerIndex}`);
             return {
                 valid: false,
-                reason: `Ação ${currentActionIndex} não encontrada no fluxo do draft`
+                reason: `Jogador esperado não encontrado para team=${phase.team}, playerIndex=${phase.playerIndex}`
             };
         }
+        const expectedPlayerName = expectedPlayerObj.summonerName;
+        // Permitir também gameName#tagLine se disponível
+        const expectedRiotId = expectedPlayerObj.riotId || expectedPlayerObj.gameName && expectedPlayerObj.tagLine ? `${expectedPlayerObj.gameName}#${expectedPlayerObj.tagLine}` : null;
 
-        const isCorrectPlayer = this.comparePlayerWithId(
-            { summonerName: expectedPlayer },
-            playerId
-        );
-
-        if (!isCorrectPlayer) {
-            console.log(`❌ [PlayerIdentifier] Não é o turno de ${playerId}. Esperado: ${expectedPlayer}`);
+        // Validar se playerId bate com o esperado
+        if (playerId !== expectedPlayerName && (!expectedRiotId || playerId !== expectedRiotId)) {
+            console.log(`❌ [PlayerIdentifier] Não é o turno de ${playerId}. Esperado: ${expectedPlayerName}${expectedRiotId ? ' ou ' + expectedRiotId : ''}`);
             return {
                 valid: false,
-                reason: `Não é o turno de ${playerId}. Esperado: ${expectedPlayer}`
+                reason: `Não é o turno de ${playerId}. Esperado: ${expectedPlayerName}${expectedRiotId ? ' ou ' + expectedRiotId : ''}`
             };
         }
 

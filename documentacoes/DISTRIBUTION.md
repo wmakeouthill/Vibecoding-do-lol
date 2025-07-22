@@ -51,7 +51,7 @@ npm run build:standalone
 
 Após o build, você encontrará na pasta `release/`:
 
-```
+```mermaid
 release/
 ├── LoL Matchmaking Setup 1.0.0.exe    # Instalador Windows
 ├── LoL Matchmaking Portable 1.0.0.exe # Versão portable

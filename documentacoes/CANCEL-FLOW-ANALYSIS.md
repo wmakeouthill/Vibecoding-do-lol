@@ -13,7 +13,8 @@ Após uma análise profunda do código, **ambos os fluxos de cancelamento (draft
 ## Fluxo de Cancelamento do Draft
 
 ### Frontend
-```
+
+```mermaid
 1. Usuário clica "Cancelar" no modal de confirmação
 2. draft-confirmation-modal.ts: cancelFinalDraft() → onCancel.emit()
 3. custom-pick-ban.ts: cancelFinalDraft() → onPickBanCancel.emit()
@@ -21,7 +22,8 @@ Após uma análise profunda do código, **ambos os fluxos de cancelamento (draft
 ```
 
 ### Backend
-```
+
+```mermaid
 1. server.ts: handleWebSocketMessage('cancel_draft')
 2. matchmakingService.cancelDraft(matchId, reason)
 3. draftService.cancelDraft(matchId, reason)
@@ -32,15 +34,17 @@ Após uma análise profunda do código, **ambos os fluxos de cancelamento (draft
 
 ## Fluxo de Cancelamento do Game-in-Progress
 
-### Frontend
-```
+### Frontend2
+
+```mermaid
 1. Usuário clica "Cancelar Partida" no game-in-progress
 2. game-in-progress.ts: cancelGame() → onGameCancel.emit()
 3. app.ts: onGameCancel() → WebSocket 'cancel_game_in_progress'
 ```
 
-### Backend
-```
+### Backend2
+
+```mermaid
 1. server.ts: handleWebSocketMessage('cancel_game_in_progress')
 2. matchmakingService.cancelGameInProgress(matchId, reason)
 3. gameInProgressService.cancelGame(matchId, reason)
@@ -52,6 +56,7 @@ Após uma análise profunda do código, **ambos os fluxos de cancelamento (draft
 ## Detalhes da Implementação
 
 ### DiscordService.cleanupMatchByCustomId()
+
 ```typescript
 async cleanupMatchByCustomId(matchId: number): Promise<void> {
   // 1. Buscar match no tracking local
@@ -63,6 +68,7 @@ async cleanupMatchByCustomId(matchId: number): Promise<void> {
 ```
 
 ### DiscordService.performCleanup()
+
 ```typescript
 private async performCleanup(matchIdString: string, match: DiscordMatch): Promise<void> {
   // 1. Mover jogadores de volta aos canais de origem
@@ -79,6 +85,7 @@ private async performCleanup(matchIdString: string, match: DiscordMatch): Promis
 ```
 
 ### DiscordService.movePlayersBackToOrigin()
+
 ```typescript
 private async movePlayersBackToOrigin(matchId: string): Promise<void> {
   // Para cada jogador no match:
@@ -95,6 +102,7 @@ private async movePlayersBackToOrigin(matchId: string): Promise<void> {
 ## Verificações de Segurança
 
 ### Frontend (app.ts)
+
 ```typescript
 onGameCancel(): void {
   // Busca robusta por matchId em múltiplas localizações:
@@ -114,6 +122,7 @@ onGameCancel(): void {
 ```
 
 ### Backend (GameInProgressService)
+
 ```typescript
 async cancelGame(matchId: number, reason: string): Promise<void> {
   try {
@@ -140,8 +149,9 @@ async cancelGame(matchId: number, reason: string): Promise<void> {
 
 ## Logs Detalhados
 
-### Frontend
-```
+### Frontend3
+
+```mermaid
 🚪 [App] ========== INÍCIO DO onGameCancel ==========
 🔍 [App] DEBUG - gameData: {...}
 📤 [App] Usando originalMatchId: 123
@@ -149,8 +159,9 @@ async cancelGame(matchId: number, reason: string): Promise<void> {
 ✅ [App] Mensagem de cancelamento enviada para backend
 ```
 
-### Backend
-```
+### Backend3
+
+```mermaid
 ❌ [WebSocket] Recebida mensagem cancel_game_in_progress: {matchId: 123, reason: "Cancelado pelo usuário"}
 🔄 [WebSocket] Chamando matchmakingService.cancelGameInProgress...
 🚫 [GameInProgress] ========== INÍCIO DO CANCELAMENTO ==========
@@ -197,4 +208,4 @@ Execute o script de teste para verificar se o fluxo está funcionando:
 node test-discord-cleanup.js
 ```
 
-Este script simula um cancelamento de jogo e verifica se o servidor responde corretamente. 
+Este script simula um cancelamento de jogo e verifica se o servidor responde corretamente.

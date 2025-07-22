@@ -950,10 +950,24 @@ export class App implements OnInit, OnDestroy {
         lastAction: data.lastAction?.action || 'none'
       });
 
+      // ✅ CORREÇÃO: Mapear team1/team2 para blueTeam/redTeam conforme esperado pelo frontend
+      const pickBanData = typeof data.pickBanData === 'string'
+        ? JSON.parse(data.pickBanData)
+        : data.pickBanData;
+
       // Mergear dados de pick/ban mantendo estrutura existente
       this.draftData = {
         ...this.draftData,
-        pickBanData: data.pickBanData,
+        blueTeam: pickBanData.team1 || this.draftData.blueTeam || [], // ✅ CORREÇÃO: Mapear team1 para blueTeam
+        redTeam: pickBanData.team2 || this.draftData.redTeam || [], // ✅ CORREÇÃO: Mapear team2 para redTeam
+        phases: pickBanData.phases || this.draftData.phases || [],
+        currentAction: pickBanData.currentAction || this.draftData.currentAction || 0,
+        phase: pickBanData.phase || this.draftData.phase || 'bans',
+        actions: pickBanData.actions || this.draftData.actions || [],
+        team1Picks: pickBanData.team1Picks || this.draftData.team1Picks || [],
+        team1Bans: pickBanData.team1Bans || this.draftData.team1Bans || [],
+        team2Picks: pickBanData.team2Picks || this.draftData.team2Picks || [],
+        team2Bans: pickBanData.team2Bans || this.draftData.team2Bans || [],
         totalActions: data.totalActions,
         totalPicks: data.totalPicks,
         totalBans: data.totalBans,
@@ -2859,10 +2873,26 @@ export class App implements OnInit, OnDestroy {
     // ✅ NOVO: Se vier pick_ban_data do backend, usar diretamente
     if (response.pick_ban_data) {
       console.log('✅ [App] Usando pick_ban_data do backend para inicializar draft:', response.pick_ban_data);
+
+      // ✅ CORREÇÃO: Mapear team1/team2 para blueTeam/redTeam conforme esperado pelo frontend
+      const pickBanData = typeof response.pick_ban_data === 'string'
+        ? JSON.parse(response.pick_ban_data)
+        : response.pick_ban_data;
+
       this.draftData = {
         matchId: response.matchId,
-        ...response.pick_ban_data // Inclui phases, currentAction, blueTeam, redTeam, etc.
+        blueTeam: pickBanData.team1 || [], // ✅ CORREÇÃO: Mapear team1 para blueTeam
+        redTeam: pickBanData.team2 || [], // ✅ CORREÇÃO: Mapear team2 para redTeam
+        phases: pickBanData.phases || [],
+        currentAction: pickBanData.currentAction || 0,
+        phase: pickBanData.phase || 'bans',
+        actions: pickBanData.actions || [],
+        team1Picks: pickBanData.team1Picks || [],
+        team1Bans: pickBanData.team1Bans || [],
+        team2Picks: pickBanData.team2Picks || [],
+        team2Bans: pickBanData.team2Bans || []
       };
+
       this.inDraftPhase = true;
       this.showMatchFound = false;
       this.isInQueue = false;
@@ -2898,8 +2928,8 @@ export class App implements OnInit, OnDestroy {
       matchId: response.matchId,
       teammates: this.convertBasicPlayersToPlayerInfo(isInTeam1 ? team1Players : team2Players),
       enemies: this.convertBasicPlayersToPlayerInfo(isInTeam1 ? team2Players : team1Players),
-      team1: this.convertBasicPlayersToPlayerInfo(team1Players),
-      team2: this.convertBasicPlayersToPlayerInfo(team2Players),
+      blueTeam: this.convertBasicPlayersToPlayerInfo(team1Players), // ✅ CORREÇÃO: Mapear para blueTeam
+      redTeam: this.convertBasicPlayersToPlayerInfo(team2Players), // ✅ CORREÇÃO: Mapear para redTeam
       phase: 'draft',
       phases: [],
       currentAction: 0

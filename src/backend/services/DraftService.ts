@@ -11,6 +11,10 @@ interface DraftData {
   balanceQuality: number;
   autofillCount: number;
   createdAt: string;
+  currentAction?: number;
+  phases?: DraftPhase[];
+  actions?: any[];
+  phase?: string;
 }
 
 interface DraftPlayer {
@@ -68,6 +72,7 @@ export class DraftService {
 
   // ✅ MELHORADO: Processamento único de ação com controle de ordem sequencial
   async processDraftAction(matchId: number, playerId: string, championId: number, action: 'pick' | 'ban'): Promise<void> {
+    console.log(`[DraftPickBan] processDraftAction chamada:`, { matchId, playerId, championId, action });
     console.log(`🎯 [DraftPickBan] === PROCESSANDO AÇÃO DE DRAFT ===`);
     console.log(`🎯 [DraftPickBan] Parâmetros: matchId=${matchId}, playerId=${playerId}, championId=${championId}, action=${action}`);
 
@@ -93,6 +98,7 @@ export class DraftService {
       // ✅ VALIDAÇÃO: Verificar se partida existe e está em draft
       const match = await this.dbManager.getCustomMatchById(matchId);
       if (!match) {
+        console.error(`[DraftPickBan] processDraftAction: partida ${matchId} não encontrada`);
         throw new Error(`Partida ${matchId} não encontrada`);
       }
 
@@ -109,18 +115,28 @@ export class DraftService {
         throw new Error(`Ação fora de ordem. Esperado: ${currentActionIndex}, mas recebido fora de sequência`);
       }
 
+      // Antes da validação:
+      const esperado = this.getExpectedPlayerId(match, currentActionIndex);
+      console.log(`[DraftPickBan] processDraftAction: playerId recebido='${playerId}', esperado='${esperado}' (posição ${currentActionIndex})`);
       // ✅ MELHORADO: Validar se jogador está autorizado para esta ação específica
       if (!this.validatePlayerAction(match, playerId, action, currentActionIndex)) {
+        console.error(`[DraftPickBan] Validação falhou: playerId recebido='${playerId}', esperado='${esperado}'`);
         throw new Error(`Jogador ${playerId} não autorizado para esta ação na posição ${currentActionIndex}`);
       }
 
       // ✅ PROCESSAMENTO: Salvar ação no MySQL
       await this.saveActionToDatabase(matchId, playerId, championId, action, match, currentActionIndex);
 
+      // Após salvar no MySQL:
+      console.log(`[DraftPickBan] Ação salva no MySQL:`, { matchId, playerId, championId, action, actionIndex: currentActionIndex });
+
       // ✅ NOTIFICAÇÃO: Enviar via WebSocket
       this.notifyAction(matchId, playerId, championId, action, currentActionIndex);
 
       console.log(`✅ [DraftPickBan] Ação ${action} processada com sucesso para ${playerId} na posição ${currentActionIndex}`);
+
+      // NOVO: Após cada ação, tentar executar ações automáticas de bot
+      await this.autoBotDraftLoop(matchId);
 
     } catch (error) {
       console.error(`❌ [DraftPickBan] Erro ao processar ação:`, error);
@@ -138,22 +154,26 @@ export class DraftService {
         pickBanData = typeof match.pick_ban_data === 'string' ? JSON.parse(match.pick_ban_data) : match.pick_ban_data;
       }
 
-      // ✅ CORRIGIDO: O actionIndex deve ser baseado na posição no fluxo do draft (0-19)
-      // Não no número de ações já processadas
-      const currentActions = pickBanData.actions?.length || 0;
-
-      // ✅ CORRIGIDO: Verificar se há ações com actionIndex específico
-      if (pickBanData.actions && pickBanData.actions.length > 0) {
-        // Encontrar o maior actionIndex já processado
-        const maxActionIndex = Math.max(...pickBanData.actions.map((a: any) => a.actionIndex || 0));
-        const nextActionIndex = maxActionIndex + 1;
-
-        console.log(`🔍 [DraftPickBan] Ações processadas: ${currentActions}, Maior actionIndex: ${maxActionIndex}, Próximo: ${nextActionIndex}`);
-        return nextActionIndex;
+      // ✅ CORREÇÃO: O actionIndex deve ser baseado na posição no fluxo do draft (0-19)
+      // Se não há ações, a próxima ação é a 0
+      if (!pickBanData.actions || pickBanData.actions.length === 0) {
+        console.log(`🔍 [DraftPickBan] Primeira ação do draft (actionIndex: 0)`);
+        return 0;
       }
 
-      console.log(`🔍 [DraftPickBan] Primeira ação do draft (actionIndex: 0)`);
-      return 0;
+      // ✅ CORREÇÃO: Encontrar o maior actionIndex já processado e retornar o próximo
+      const maxActionIndex = Math.max(...pickBanData.actions.map((a: any) => a.actionIndex || 0));
+      const nextActionIndex = maxActionIndex + 1;
+
+      console.log(`🔍 [DraftPickBan] Ações processadas: ${pickBanData.actions.length}, Maior actionIndex: ${maxActionIndex}, Próximo: ${nextActionIndex}`);
+
+      // ✅ CORREÇÃO: Verificar se o draft já foi completado
+      if (nextActionIndex >= 20) {
+        console.log(`🎉 [DraftPickBan] Draft completado (${nextActionIndex}/20 ações)`);
+        return 20; // Draft completado
+      }
+
+      return nextActionIndex;
     } catch (error) {
       console.error(`❌ [DraftPickBan] Erro ao determinar índice da ação:`, error);
       return 0;
@@ -172,7 +192,25 @@ export class DraftService {
     return true;
   }
 
-  // ✅ ATUALIZADO: Validar se jogador está autorizado para a ação usando PlayerIdentifierService
+  // ✅ NOVO: Obter o playerId esperado para a ação
+  private getExpectedPlayerId(match: any, actionIndex: number): string {
+    try {
+      let pickBanData: any = {};
+      if (match.pick_ban_data) {
+        pickBanData = typeof match.pick_ban_data === 'string' ? JSON.parse(match.pick_ban_data) : match.pick_ban_data;
+      }
+      const phases = pickBanData.phases || this.generateDraftPhases();
+      if (!phases[actionIndex]) return '';
+      const phase = phases[actionIndex];
+      const teamPlayers = phase.team === 1
+        ? (typeof match.team1_players === 'string' ? JSON.parse(match.team1_players) : match.team1_players)
+        : (typeof match.team2_players === 'string' ? JSON.parse(match.team2_players) : match.team2_players);
+      return teamPlayers[phase.playerIndex] || '';
+    } catch {
+      return '';
+    }
+  }
+
   private validatePlayerAction(match: any, playerId: string, action: 'pick' | 'ban', actionIndex: number): boolean {
     try {
       console.log(`🔍 [DraftPickBan] Validando ação: ${action} para jogador: ${playerId} (posição: ${actionIndex})`);
@@ -230,15 +268,43 @@ export class DraftService {
     const team1Players = typeof match.team1_players === 'string' ? JSON.parse(match.team1_players) : (match.team1_players || []);
     const team2Players = typeof match.team2_players === 'string' ? JSON.parse(match.team2_players) : (match.team2_players || []);
 
-    const isTeam1 = team1Players.some((p: string) => p === playerId || p.includes(playerId) || playerId.includes(p));
+    // NOVO: Função robusta para comparar playerId
+    function normalizeId(id: string) {
+      return (id || '').toLowerCase().trim();
+    }
+    const normPlayerId = normalizeId(playerId);
+    let isTeam1 = false;
+    let playerTeamIndex = -1;
+    for (let i = 0; i < team1Players.length; i++) {
+      if (normalizeId(team1Players[i]) === normPlayerId) {
+        isTeam1 = true;
+        playerTeamIndex = i;
+        break;
+      }
+    }
+    if (!isTeam1) {
+      for (let i = 0; i < team2Players.length; i++) {
+        if (normalizeId(team2Players[i]) === normPlayerId) {
+          isTeam1 = false;
+          playerTeamIndex = i;
+          break;
+        }
+      }
+    }
     const teamIndex = isTeam1 ? 1 : 2;
-    const playerTeamIndex = isTeam1 ?
-      team1Players.findIndex((p: string) => p === playerId || p.includes(playerId) || playerId.includes(p)) :
-      team2Players.findIndex((p: string) => p === playerId || p.includes(playerId) || playerId.includes(p));
-
     // Determinar lane baseada no índice
     const lanes = ['top', 'jungle', 'mid', 'adc', 'support'];
     const playerLane = lanes[playerTeamIndex] || 'unknown';
+    console.log('💡 [DraftPickBan] Identificação de jogador:', {
+      playerId,
+      normPlayerId,
+      isTeam1,
+      playerTeamIndex,
+      teamIndex,
+      playerLane,
+      team1Players,
+      team2Players
+    });
 
     // ✅ CORRIGIDO: Criar dados da ação com actionIndex correto
     const actionData = {
@@ -272,6 +338,9 @@ export class DraftService {
 
     // ✅ CORRIGIDO: Ordenar ações por actionIndex para garantir ordem
     pickBanData.actions.sort((a: any, b: any) => (a.actionIndex || 0) - (b.actionIndex || 0));
+
+    // ✅ NOVO: Atualizar currentAction para refletir o número de ações já realizadas
+    pickBanData.currentAction = pickBanData.actions.length;
 
     // Salvar no banco
     await this.dbManager.updateCustomMatch(matchId, {
@@ -432,25 +501,148 @@ export class DraftService {
 
       console.log(`✅ [DraftPickBan] Draft ${matchId} iniciado com sucesso`);
 
+      // NOVO: Iniciar execução automática de bots se for a vez de um bot
+      await this.autoBotDraftLoop(matchId);
+
     } catch (error) {
       console.error(`❌ [DraftPickBan] Erro ao iniciar draft:`, error);
       throw error;
     }
   }
 
+  // NOVO: Executar ações automáticas de bot, respeitando a ordem do draft, com delay de 5s entre cada ação
+  private async autoBotDraftLoop(matchId: number): Promise<void> {
+    try {
+      console.log(`[DraftPickBan] 🤖 Iniciando loop de bots para partida ${matchId}`);
+
+      const match = await this.dbManager.getCustomMatchById(matchId);
+      if (!match) {
+        console.log(`[DraftPickBan] ❌ Partida ${matchId} não encontrada`);
+        return;
+      }
+
+      const pickBanData = await this.prepareDraftData(matchId, match);
+      if (!pickBanData) {
+        console.log(`[DraftPickBan] ❌ Dados do draft não preparados para partida ${matchId}`);
+        return;
+      }
+
+      console.log(`[DraftPickBan] 🔍 Dados do draft preparados:`, {
+        currentAction: pickBanData.currentAction,
+        phasesLength: pickBanData.phases?.length || 0,
+        team1Length: pickBanData.team1?.length || 0,
+        team2Length: pickBanData.team2?.length || 0,
+        actionsLength: pickBanData.actions?.length || 0
+      });
+
+      const currentActionIndex = this.getCurrentActionIndex(pickBanData);
+      if (currentActionIndex >= (pickBanData.phases?.length || 0)) {
+        console.log(`[DraftPickBan] ✅ Draft completado - todas as ações foram realizadas`);
+        return;
+      }
+
+      const currentPhase = pickBanData.phases?.[currentActionIndex];
+      if (!currentPhase) {
+        console.log(`[DraftPickBan] ❌ Fase atual não encontrada no índice ${currentActionIndex}`);
+        return;
+      }
+
+      console.log(`[DraftPickBan] 🔍 Fase atual:`, {
+        actionIndex: currentActionIndex,
+        phase: currentPhase.phase,
+        team: currentPhase.team,
+        action: currentPhase.action,
+        playerIndex: currentPhase.playerIndex
+      });
+
+      // Encontrar o jogador da vez
+      const teamPlayers = currentPhase.team === 1 ? pickBanData.team1 : pickBanData.team2;
+      const currentPlayer = teamPlayers[currentPhase.playerIndex];
+
+      if (!currentPlayer) {
+        console.log(`[DraftPickBan] ❌ Jogador não encontrado no índice ${currentPhase.playerIndex}`);
+        return;
+      }
+
+      console.log(`[DraftPickBan] 🔍 Jogador da vez:`, {
+        summonerName: currentPlayer.summonerName,
+        isBot: this.isPlayerBot(currentPlayer.summonerName),
+        team: currentPhase.team,
+        playerIndex: currentPhase.playerIndex
+      });
+
+      // Verificar se é um bot
+      if (!this.isPlayerBot(currentPlayer.summonerName)) {
+        console.log(`[DraftPickBan] ⏳ Aguardando ação humana de ${currentPlayer.summonerName}`);
+        return;
+      }
+
+      console.log(`[DraftPickBan] 🤖 Executando ação de bot para ${currentPlayer.summonerName}`);
+
+      // Simular delay para ação do bot
+      await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 3000));
+
+      // Selecionar campeão aleatório para o bot
+      const championId = await this.selectRandomChampion();
+
+      console.log(`[DraftPickBan] 🤖 Bot ${currentPlayer.summonerName} selecionou campeão ${championId}`);
+
+      // Salvar ação do bot usando o método existente
+      await this.saveActionToDatabase(matchId, currentPlayer.summonerName, championId, currentPhase.action, match, currentActionIndex);
+
+      console.log(`[DraftPickBan] ✅ Ação do bot salva com sucesso`);
+
+      // Notificar sobre a ação usando o método existente
+      this.notifyAction(matchId, currentPlayer.summonerName, championId, currentPhase.action, currentActionIndex);
+
+      console.log(`[DraftPickBan] 🔄 Agendando próxima verificação em 1 segundo`);
+
+      // Agendar próxima verificação
+      setTimeout(() => this.autoBotDraftLoop(matchId), 1000);
+
+    } catch (error) {
+      console.error(`[DraftPickBan] ❌ Erro no loop de bots:`, error);
+    }
+  }
+
+  // NOVO: Buscar todos os championIds válidos (mock simples, pode ser melhorado)
+  private async getAllChampionIds(): Promise<number[]> {
+    // Ideal: buscar do banco ou cache, aqui mock simples para LoL
+    // Exemplo: 1 a 200 (ajuste conforme necessário)
+    return Array.from({ length: 200 }, (_, i) => i + 1);
+  }
+
   // ✅ SIMPLIFICADO: Preparar dados do draft
   private async prepareDraftData(matchId: number, match: any): Promise<DraftData | null> {
     try {
-      const team1Players = typeof match.team1_players === 'string' ? JSON.parse(match.team1_players) : (match.team1_players || []);
-      const team2Players = typeof match.team2_players === 'string' ? JSON.parse(match.team2_players) : (match.team2_players || []);
+      const team1PlayersRaw = typeof match.team1_players === 'string' ? JSON.parse(match.team1_players) : (match.team1_players || []);
+      const team2PlayersRaw = typeof match.team2_players === 'string' ? JSON.parse(match.team2_players) : (match.team2_players || []);
 
-      // Buscar dados dos jogadores na fila
-      const queuePlayers = await this.dbManager.getActiveQueuePlayers();
+      // Função para garantir que cada jogador seja um objeto com pelo menos summonerName
+      function normalizePlayer(p: any, idx: number): any {
+        if (typeof p === 'string') {
+          return { summonerName: p };
+        }
+        if (typeof p === 'object' && p !== null) {
+          // Se já tem summonerName, retorna como está
+          if (p.summonerName) return p;
+          // Se tem name, usa como summonerName
+          if (p.name) return { ...p, summonerName: p.name };
+        }
+        // Fallback
+        return { summonerName: `Jogador${idx + 1}` };
+      }
+
+      const team1Players = team1PlayersRaw.map(normalizePlayer);
+      const team2Players = team2PlayersRaw.map(normalizePlayer);
+
+      // Buscar dados dos jogadores na fila (não usado diretamente aqui)
+      // const queuePlayers = await this.dbManager.getActiveQueuePlayers();
 
       const draftData: DraftData = {
         matchId,
-        team1: team1Players.map((p: string, index: number) => ({
-          summonerName: p,
+        team1: team1Players.map((p: any, index: number) => ({
+          summonerName: p.summonerName,
           assignedLane: this.getLaneForIndex(index),
           teamIndex: index,
           mmr: 1200, // Default MMR
@@ -458,8 +650,8 @@ export class DraftService {
           secondaryLane: 'fill',
           isAutofill: false
         })),
-        team2: team2Players.map((p: string, index: number) => ({
-          summonerName: p,
+        team2: team2Players.map((p: any, index: number) => ({
+          summonerName: p.summonerName,
           assignedLane: this.getLaneForIndex(index),
           teamIndex: index + 5,
           mmr: 1200, // Default MMR
@@ -743,5 +935,16 @@ export class DraftService {
     // Limpar dados
     this.activeDrafts.clear();
     this.processingActions.clear();
+  }
+
+  // ✅ NOVO: Verificar se um jogador é bot
+  private isPlayerBot(playerName: string): boolean {
+    return typeof playerName === 'string' && playerName.toLowerCase().includes('bot');
+  }
+
+  // ✅ NOVO: Selecionar campeão aleatório
+  private async selectRandomChampion(): Promise<number> {
+    const allChampions = await this.getAllChampionIds();
+    return allChampions[Math.floor(Math.random() * allChampions.length)];
   }
 }

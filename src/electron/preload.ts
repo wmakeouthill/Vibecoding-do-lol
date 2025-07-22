@@ -1,28 +1,32 @@
-import { contextBridge, ipcRenderer } from 'electron';
+const { contextBridge } = require('electron');
+const fs = require('fs');
+const path = require('path');
+const process = require('process');
 
-// API exposta para o frontend Angular
-const electronAPI = {
-  // Informações do app
-  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
-  getUserDataPath: () => ipcRenderer.invoke('get-user-data-path'),
+const logPath = path.join(process.cwd(), 'frontend.log');
 
-  // Controles da janela
-  minimizeWindow: () => ipcRenderer.invoke('minimize-window'),
-  maximizeWindow: () => ipcRenderer.invoke('maximize-window'),
-  closeWindow: () => ipcRenderer.invoke('close-window'),
+function appendLog(type: string, ...args: unknown[]): void {
+  const logLine = `[${new Date().toISOString()}] [${type}] ${args.map(a => (typeof a === 'object' ? JSON.stringify(a) : a)).join(' ')}\n`;
+  fs.appendFile(logPath, logLine, (err: unknown) => {
+    if (err) {
+      // Não logue erro aqui para evitar loop infinito
+    }
+  });
+}
 
-  // Eventos da aplicação
-  onOpenSettings: (callback: () => void) => ipcRenderer.on('open-settings', callback),
-  onJoinQueue: (callback: () => void) => ipcRenderer.on('join-queue', callback),
-  onLeaveQueue: (callback: () => void) => ipcRenderer.on('leave-queue', callback),
-  onShowAbout: (callback: () => void) => ipcRenderer.on('show-about', callback),
+(['log', 'warn', 'error', 'info'] as const).forEach((method) => {
+  const orig = (console as any)[method];
+  (console as any)[method] = function (...args: unknown[]) {
+    appendLog(method, ...args);
+    orig.apply(console, args);
+  };
+});
 
-  // Remover listeners
-  removeAllListeners: (channel: string) => ipcRenderer.removeAllListeners(channel),
-};
-
-// Expor a API para o contexto do frontend
-contextBridge.exposeInMainWorld('electronAPI', electronAPI);
+contextBridge.exposeInMainWorld('electronAPI', {
+  fs: fs,
+  path: path,
+  process: process
+});
 
 // TypeScript declarations para o frontend usar
 export interface ElectronAPI {

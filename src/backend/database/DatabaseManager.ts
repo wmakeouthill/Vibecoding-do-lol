@@ -596,6 +596,8 @@ export class DatabaseManager {
     createdBy: string;
     gameMode?: string;
     matchLeader?: string; // Novo campo opcional para definir o líder
+    draft_data?: string;
+    pick_ban_data?: string;
   }): Promise<number> {
     if (!this.pool) throw new Error('Pool de conexão não inicializado');
 
@@ -608,8 +610,8 @@ export class DatabaseManager {
 
       const [result] = await this.pool.execute(
         `INSERT INTO custom_matches (
-          title, description, team1_players, team2_players, created_by, game_mode, match_leader
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          title, description, team1_players, team2_players, created_by, game_mode, match_leader, draft_data, pick_ban_data
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           matchData.title || null,
           matchData.description || null,
@@ -617,7 +619,9 @@ export class DatabaseManager {
           JSON.stringify(matchData.team2Players),
           matchData.createdBy,
           matchData.gameMode || '5v5',
-          matchLeader
+          matchLeader,
+          matchData.draft_data || null,
+          matchData.pick_ban_data || null
         ]
       );
 

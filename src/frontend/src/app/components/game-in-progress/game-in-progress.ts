@@ -3,7 +3,9 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api';
 import { ChampionService } from '../../services/champion.service';
-import { interval, Subscription } from 'rxjs';
+import { interval, Subscription, Observable, of } from 'rxjs';
+import { ProfileIconService } from '../../services/profile-icon.service';
+import { BotService } from '../../services/bot.service';
 
 interface GameData {
   sessionId: string;
@@ -32,6 +34,18 @@ interface GameResult {
   originalMatchId?: any;
   originalMatchData?: any;
   riotId?: string | null;
+}
+
+function logGameInProgress(...args: any[]) {
+  const fs = (window as any).electronAPI?.fs;
+  const path = (window as any).electronAPI?.path;
+  const process = (window as any).electronAPI?.process;
+  const logPath = path && process ? path.join(process.cwd(), 'frontend.log') : '';
+  const logLine = `[${new Date().toISOString()}] [GameInProgress] ` + args.map(a => (typeof a === 'object' ? JSON.stringify(a) : a)).join(' ') + '\n';
+  if (fs && logPath) {
+    fs.appendFile(logPath, logLine, (err: any) => { });
+  }
+  console.log('[GameInProgress]', ...args);
 }
 
 @Component({
@@ -80,9 +94,14 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
   // Game tracking
   private currentGameSession: any = null;
 
-  constructor(private apiService: ApiService, private championService: ChampionService) { } ngOnInit() {
-    console.log('🚀 [GameInProgress] Inicializando componente...');
-    console.log('📊 [GameInProgress] gameData recebido:', {
+  constructor(
+    private apiService: ApiService,
+    private championService: ChampionService,
+    private profileIconService: ProfileIconService,
+    public botService: BotService
+  ) { } ngOnInit() {
+    logGameInProgress('🚀 [GameInProgress] Inicializando componente...');
+    logGameInProgress('📊 [GameInProgress] gameData recebido:', {
       hasGameData: !!this.gameData,
       originalMatchId: this.gameData?.originalMatchId, // ✅ VERIFICAR ESTE VALOR
       gameDataKeys: this.gameData ? Object.keys(this.gameData) : [],
@@ -92,22 +111,22 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
       team2Length: this.gameData?.team2?.length || 0,
       fullGameData: this.gameData // ✅ LOG COMPLETO
     });
-    console.log('👤 [GameInProgress] currentPlayer:', this.currentPlayer);
+    logGameInProgress('👤 [GameInProgress] currentPlayer:', this.currentPlayer);
 
     // ✅ CORREÇÃO: Só inicializar se temos gameData
     if (this.gameData) {
       this.initializeGame();
     } else {
-      console.log('⏳ [GameInProgress] Aguardando gameData...');
+      logGameInProgress('⏳ [GameInProgress] Aguardando gameData...');
     }
   }
 
   ngOnChanges(changes: SimpleChanges) {
-    console.log('🔄 [GameInProgress] ngOnChanges detectado:', changes);
+    logGameInProgress('🔄 [GameInProgress] ngOnChanges detectado:', changes);
 
     // ✅ CORREÇÃO: Detectar quando gameData é recebido
     if (changes['gameData'] && changes['gameData'].currentValue && !changes['gameData'].previousValue) {
-      console.log('🎮 [GameInProgress] gameData recebido via ngOnChanges, inicializando jogo...');
+      logGameInProgress('🎮 [GameInProgress] gameData recebido via ngOnChanges, inicializando jogo...');
       this.initializeGame();
     }
   }
@@ -115,8 +134,8 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
   ngOnDestroy() {
     this.stopTimers();
   } private initializeGame() {
-    console.log('🎮 [GameInProgress] Inicializando jogo...');
-    console.log('📊 [GameInProgress] gameData atual:', {
+    logGameInProgress('🎮 [GameInProgress] Inicializando jogo...');
+    logGameInProgress('📊 [GameInProgress] gameData atual:', {
       gameData: this.gameData,
       hasGameData: !!this.gameData,
       sessionId: this.gameData?.sessionId,
@@ -127,13 +146,13 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
     });
 
     if (!this.gameData) {
-      console.error('❌ [GameInProgress] gameData não está disponível');
+      logGameInProgress('❌ [GameInProgress] gameData não está disponível');
       return;
     }
 
     // ✅ CORREÇÃO: Verificar se temos os dados mínimos necessários
     if (!this.gameData.team1 || !this.gameData.team2) {
-      console.error('❌ [GameInProgress] Dados dos times não estão disponíveis:', {
+      logGameInProgress('❌ [GameInProgress] Dados dos times não estão disponíveis:', {
         hasTeam1: !!this.gameData.team1,
         hasTeam2: !!this.gameData.team2,
         gameDataKeys: Object.keys(this.gameData)
@@ -142,7 +161,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
     }
 
     if (this.gameData.team1.length === 0 || this.gameData.team2.length === 0) {
-      console.error('❌ [GameInProgress] Times estão vazios:', {
+      logGameInProgress('❌ [GameInProgress] Times estão vazios:', {
         team1Length: this.gameData.team1.length,
         team2Length: this.gameData.team2.length
       });
@@ -153,7 +172,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
     this.gameStatus = 'waiting';
     this.linkingStartTime = Date.now(); // Inicializar tempo para vinculação
 
-    console.log('✅ [GameInProgress] Partida inicializada com sucesso:', {
+    logGameInProgress('✅ [GameInProgress] Partida inicializada com sucesso:', {
       sessionId: this.gameData.sessionId,
       team1: this.gameData.team1?.length || 0,
       team2: this.gameData.team2?.length || 0,
@@ -421,7 +440,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
       riotId: this.gameData.riotId || (lcuMatchData.platformId ? `${lcuMatchData.platformId}_${lcuMatchData.gameId}` : `BR1_${lcuMatchData.gameId}`)
     };
 
-    console.log('✅ Partida concluída automaticamente com dados reais do LCU:', result);
+    logGameInProgress('✅ Partida concluída automaticamente com dados reais do LCU:', result);
     this.onGameComplete.emit(result);
   }
 
@@ -434,10 +453,10 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
 
     // Se temos dados da partida detectada do LCU, incluir eles
     if (this.detectedLCUMatch) {
-      console.log('✅ Confirmando vencedor com dados reais do LCU');
+      logGameInProgress('✅ Confirmando vencedor com dados reais do LCU');
       this.autoCompleteGameWithRealData(this.selectedWinner, true, this.detectedLCUMatch);
     } else {
-      console.log('✅ Confirmando vencedor sem dados do LCU (manual)');
+      logGameInProgress('✅ Confirmando vencedor sem dados do LCU (manual)');
       const result: GameResult = {
         sessionId: this.gameData.sessionId,
         gameId: this.generateGameId(),
@@ -458,7 +477,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
     }
   }  // Cancel game
   async cancelGame() {
-    console.log('❌ [GameInProgress] Cancelando partida...');
+    logGameInProgress('❌ [GameInProgress] Cancelando partida...');
 
     // ✅ CORREÇÃO: Remover chamada HTTP duplicada - o cancelamento será tratado via WebSocket no app component
     // O app component agora envia mensagem WebSocket 'cancel_game_in_progress' que inclui Discord cleanup e retorno à fila
@@ -489,7 +508,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
     // console.log('⚠️ Não foi possível auto-resolver o vencedor');
   }  // Enhanced method to detect winner with automatic confirmation
   async retryAutoDetection() {
-    console.log('[DEBUG-SIMULATE] 🔄 Detectando vencedor via comparação com LCU...');
+    logGameInProgress('[DEBUG-SIMULATE] 🔄 Detectando vencedor via comparação com LCU...');
 
     // Set loading state
     this.isAutoDetecting = true;
@@ -499,37 +518,37 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
       const historyResponse = await this.apiService.getLCUMatchHistoryAll(0, 30, false).toPromise();
 
       if (!historyResponse || !historyResponse.success || !historyResponse.matches || historyResponse.matches.length === 0) {
-        console.log('[DEBUG-SIMULATE] ⚠️ Nenhuma partida encontrada no histórico do LCU');
+        logGameInProgress('[DEBUG-SIMULATE] ⚠️ Nenhuma partida encontrada no histórico do LCU');
         alert('Nenhuma partida encontrada no histórico do LCU. Certifique-se de que o League of Legends está aberto.');
         return;
       }
 
-      console.log('[DEBUG-SIMULATE] 🔍 Histórico LCU obtido:', historyResponse.matches.length, 'partidas');
+      logGameInProgress('[DEBUG-SIMULATE] 🔍 Histórico LCU obtido:', historyResponse.matches.length, 'partidas');
 
       // Try to find matching game
       const matchResult = this.findMatchingLCUGame(historyResponse.matches);
 
       if (!matchResult.match) {
-        console.log('[DEBUG-SIMULATE] ⚠️ Nenhuma partida correspondente encontrada');
-        console.log('[DEBUG-SIMULATE] 🔍 Dados da partida atual para comparação:');
-        console.log('[DEBUG-SIMULATE] 🔍 Team1:', this.gameData?.team1?.map(p => ({ name: p.summonerName, champion: p.champion, lane: p.lane })));
-        console.log('[DEBUG-SIMULATE] 🔍 Team2:', this.gameData?.team2?.map(p => ({ name: p.summonerName, champion: p.champion, lane: p.lane })));
+        logGameInProgress('[DEBUG-SIMULATE] ⚠️ Nenhuma partida correspondente encontrada');
+        logGameInProgress('[DEBUG-SIMULATE] 🔍 Dados da partida atual para comparação:');
+        logGameInProgress('[DEBUG-SIMULATE] 🔍 Team1:', this.gameData?.team1?.map(p => ({ name: p.summonerName, champion: p.champion, lane: p.lane })));
+        logGameInProgress('[DEBUG-SIMULATE] 🔍 Team2:', this.gameData?.team2?.map(p => ({ name: p.summonerName, champion: p.champion, lane: p.lane })));
         alert('Nenhuma partida correspondente foi encontrada no histórico do LCU. Verifique se a partida foi concluída no League of Legends.');
         return;
       }
 
-      console.log('[DEBUG-SIMULATE] ✅ Partida correspondente encontrada:', matchResult);
+      logGameInProgress('[DEBUG-SIMULATE] ✅ Partida correspondente encontrada:', matchResult);
 
       // Store detected match data
       this.detectedLCUMatch = matchResult.match;
       this.matchComparisonResult = matchResult;
 
       // Automatically confirm the match without showing modal
-      console.log('[DEBUG-SIMULATE] ⚡ Confirmando partida automaticamente...');
+      logGameInProgress('[DEBUG-SIMULATE] ⚡ Confirmando partida automaticamente...');
       this.confirmDetectedMatch();
 
     } catch (error) {
-      console.log('[DEBUG-SIMULATE] ❌ Erro ao detectar via histórico do LCU:', error);
+      logGameInProgress('[DEBUG-SIMULATE] ❌ Erro ao detectar via histórico do LCU:', error);
       alert('Erro ao acessar o histórico do LCU. Certifique-se de que o League of Legends está aberto.');
     } finally {
       // Reset loading state
@@ -542,8 +561,8 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
       return { match: null, confidence: 0, reason: 'Nenhum dado de jogo disponível' };
     }
 
-    console.log('[DEBUG-SIMULATE] 🔍 Procurando partida correspondente entre', lcuMatches.length, 'partidas do LCU');
-    console.log('[DEBUG-SIMULATE] 🔍 GameData atual:', {
+    logGameInProgress('[DEBUG-SIMULATE] 🔍 Procurando partida correspondente entre', lcuMatches.length, 'partidas do LCU');
+    logGameInProgress('[DEBUG-SIMULATE] 🔍 GameData atual:', {
       sessionId: this.gameData.sessionId,
       gameId: this.gameData.gameId,
       originalMatchId: this.gameData.originalMatchId,
@@ -555,7 +574,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
     if (this.currentLiveMatchId) {
       const linkedMatch = lcuMatches.find((match: any) => match.gameId.toString() === this.currentLiveMatchId);
       if (linkedMatch) {
-        console.log('🎯 Partida encontrada por vinculação automática:', linkedMatch.gameId);
+        logGameInProgress('🎯 Partida encontrada por vinculação automática:', linkedMatch.gameId);
         return {
           match: linkedMatch,
           confidence: 100,
@@ -568,7 +587,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
     if (this.gameData.originalMatchId) {
       const exactMatch = lcuMatches.find((match: any) => match.gameId === this.gameData?.originalMatchId);
       if (exactMatch) {
-        console.log('✅ Partida encontrada por ID exato:', exactMatch.gameId);
+        logGameInProgress('✅ Partida encontrada por ID exato:', exactMatch.gameId);
         return {
           match: exactMatch,
           confidence: 100,
@@ -583,9 +602,9 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
     let bestReason = '';
 
     // ✅ NOVO: Log das primeiras partidas para debug
-    console.log('[DEBUG-SIMULATE] 🔍 Primeiras 3 partidas do LCU para debug:');
+    logGameInProgress('[DEBUG-SIMULATE] 🔍 Primeiras 3 partidas do LCU para debug:');
     lcuMatches.slice(0, 3).forEach((match, index) => {
-      console.log(`[DEBUG-SIMULATE] 🔍 LCU Match ${index + 1}:`, {
+      logGameInProgress(`[DEBUG-SIMULATE] 🔍 LCU Match ${index + 1}:`, {
         gameId: match.gameId,
         queueId: match.queueId,
         gameCreation: match.gameCreation,
@@ -600,7 +619,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
 
       // ✅ NOVO: Log do score de cada partida
       if (similarity.confidence > 20) { // Só logar partidas com score > 20
-        console.log(`[DEBUG-SIMULATE] 🔍 LCU Match ${lcuMatch.gameId}: score=${similarity.confidence}, reason="${similarity.reason}"`);
+        logGameInProgress(`[DEBUG-SIMULATE] 🔍 LCU Match ${lcuMatch.gameId}: score=${similarity.confidence}, reason="${similarity.reason}"`);
       }
 
       if (similarity.confidence > bestScore) {
@@ -612,7 +631,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
 
     // Only accept matches with reasonable confidence
     if (bestScore >= 70) {
-      console.log('[DEBUG-SIMULATE] ✅ Partida correspondente encontrada por similaridade:', { match: bestMatch.gameId, score: bestScore });
+      logGameInProgress('[DEBUG-SIMULATE] ✅ Partida correspondente encontrada por similaridade:', { match: bestMatch.gameId, score: bestScore });
       return {
         match: bestMatch,
         confidence: bestScore,
@@ -621,7 +640,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
     }
 
     // No good match found
-    console.log('[DEBUG-SIMULATE] ⚠️ Nenhuma partida correspondente encontrada');
+    logGameInProgress('[DEBUG-SIMULATE] ⚠️ Nenhuma partida correspondente encontrada');
     return {
       match: null,
       confidence: 0,
@@ -647,12 +666,12 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
     const lcuChampions = this.extractChampionsFromLCUMatch(lcuMatch);
 
     // ✅ NOVO: Logs para debug da comparação
-    console.log('[DEBUG-SIMULATE] 🔍 Comparando partidas:');
-    console.log('[DEBUG-SIMULATE] 🔍 Current Team1 Champions:', currentTeam1Champions);
-    console.log('[DEBUG-SIMULATE] 🔍 Current Team2 Champions:', currentTeam2Champions);
-    console.log('[DEBUG-SIMULATE] 🔍 LCU Team1 Champions:', lcuChampions.team1);
-    console.log('[DEBUG-SIMULATE] 🔍 LCU Team2 Champions:', lcuChampions.team2);
-    console.log('[DEBUG-SIMULATE] 🔍 LCU Match ID:', lcuMatch.gameId);
+    logGameInProgress('[DEBUG-SIMULATE] 🔍 Comparando partidas:');
+    logGameInProgress('[DEBUG-SIMULATE] 🔍 Current Team1 Champions:', currentTeam1Champions);
+    logGameInProgress('[DEBUG-SIMULATE] 🔍 Current Team2 Champions:', currentTeam2Champions);
+    logGameInProgress('[DEBUG-SIMULATE] 🔍 LCU Team1 Champions:', lcuChampions.team1);
+    logGameInProgress('[DEBUG-SIMULATE] 🔍 LCU Team2 Champions:', lcuChampions.team2);
+    logGameInProgress('[DEBUG-SIMULATE] 🔍 LCU Match ID:', lcuMatch.gameId);
 
     // Compare team compositions
     if (currentTeam1Champions.length > 0 && currentTeam2Champions.length > 0) {
@@ -728,14 +747,14 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
     const team1: string[] = [];
     const team2: string[] = [];
 
-    console.log('[DEBUG-SIMULATE] 🔍 Extraindo campeões do LCU Match:', lcuMatch.gameId);
-    console.log('[DEBUG-SIMULATE] 🔍 Participants:', lcuMatch.participants?.length || 0);
-    console.log('[DEBUG-SIMULATE] 🔍 ParticipantIdentities:', lcuMatch.participantIdentities?.length || 0);
+    logGameInProgress('[DEBUG-SIMULATE] 🔍 Extraindo campeões do LCU Match:', lcuMatch.gameId);
+    logGameInProgress('[DEBUG-SIMULATE] 🔍 Participants:', lcuMatch.participants?.length || 0);
+    logGameInProgress('[DEBUG-SIMULATE] 🔍 ParticipantIdentities:', lcuMatch.participantIdentities?.length || 0);
 
     if (lcuMatch.participants && lcuMatch.participantIdentities) {
       lcuMatch.participants.forEach((participant: any, index: number) => {
         const championName = this.getChampionNameById(participant.championId);
-        console.log(`[DEBUG-SIMULATE] 🔍 Participant ${index}: championId=${participant.championId}, championName="${championName}", teamId=${participant.teamId}`);
+        logGameInProgress(`[DEBUG-SIMULATE] 🔍 Participant ${index}: championId=${participant.championId}, championName="${championName}", teamId=${participant.teamId}`);
 
         if (championName) {
           if (participant.teamId === 100) {
@@ -747,9 +766,9 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
       });
     }
 
-    console.log('[DEBUG-SIMULATE] 🔍 Resultado final:');
-    console.log('[DEBUG-SIMULATE] 🔍 Team1 champions:', team1);
-    console.log('[DEBUG-SIMULATE] 🔍 Team2 champions:', team2);
+    logGameInProgress('[DEBUG-SIMULATE] 🔍 Resultado final:');
+    logGameInProgress('[DEBUG-SIMULATE] 🔍 Team1 champions:', team1);
+    logGameInProgress('[DEBUG-SIMULATE] 🔍 Team2 champions:', team2);
 
     return { team1, team2 };
   }
@@ -775,14 +794,14 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
 
       if (found) {
         matches++;
-        console.log(`[DEBUG-SIMULATE] ✅ Match encontrado: "${champion}" = "${found}"`);
+        logGameInProgress(`[DEBUG-SIMULATE] ✅ Match encontrado: "${champion}" = "${found}"`);
       } else {
-        console.log(`[DEBUG-SIMULATE] ❌ No match: "${champion}" não encontrado em [${list2.join(', ')}]`);
+        logGameInProgress(`[DEBUG-SIMULATE] ❌ No match: "${champion}" não encontrado em [${list2.join(', ')}]`);
       }
     }
 
     const similarity = (matches / Math.max(list1.length, list2.length)) * 50; // Max 50 points per team
-    console.log(`[DEBUG-SIMULATE] 📊 Similaridade: ${matches}/${Math.max(list1.length, list2.length)} = ${similarity} pontos`);
+    logGameInProgress(`[DEBUG-SIMULATE] 📊 Similaridade: ${matches}/${Math.max(list1.length, list2.length)} = ${similarity} pontos`);
 
     return similarity;
   }
@@ -801,13 +820,13 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
       }
     }
 
-    console.log('🔍 Detecção de vencedor:', {
+    logGameInProgress('🔍 Detecção de vencedor:', {
       teams: lcuMatch.teams?.map((t: any) => ({ teamId: t.teamId, win: t.win })),
       detectedWinner: winner
     });
 
-    console.log('✅ Partida confirmada automaticamente');
-    console.log('🎮 Dados da partida LCU:', lcuMatch.gameId);
+    logGameInProgress('✅ Partida confirmada automaticamente');
+    logGameInProgress('🎮 Dados da partida LCU:', lcuMatch.gameId);
 
     // Fechar modal imediatamente
     this.showMatchConfirmation = false;
@@ -820,13 +839,13 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
     }
 
     if (winner) {
-      console.log('🏆 Vencedor detectado automaticamente via LCU:', winner);
+      logGameInProgress('🏆 Vencedor detectado automaticamente via LCU:', winner);
       this.selectedWinner = winner;
 
       // Completar jogo automaticamente com dados reais - APENAS uma vez via evento onGameComplete
       this.autoCompleteGameWithRealData(winner, true, lcuMatch);
     } else {
-      console.log('⚠️ Partida confirmada mas sem vencedor detectado - completando partida como inconclusiva');
+      logGameInProgress('⚠️ Partida confirmada mas sem vencedor detectado - completando partida como inconclusiva');
 
       // Mesmo sem vencedor detectado, completar a partida automaticamente
       // Marca como null (inconclusivo) mas salva no histórico
@@ -841,7 +860,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   rejectDetectedMatch(): void {
-    console.log('❌ Partida detectada rejeitada pelo usuário');
+    logGameInProgress('❌ Partida detectada rejeitada pelo usuário');
     this.closeMatchConfirmation();
   }
 
@@ -863,7 +882,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
         return championName;
       }
     } catch (error) {
-      console.warn('⚠️ [GameInProgress] Erro ao usar ChampionService:', error);
+      logGameInProgress('⚠️ [GameInProgress] Erro ao usar ChampionService:', error);
     }
 
     // ✅ FALLBACK: Se ChampionService falhar, usar o método do backend
@@ -925,7 +944,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
       const gameState = await this.apiService.getCurrentGame().toPromise();
 
       if (!gameState || !gameState.success || !gameState.data) {
-        console.log('📡 Nenhum jogo ativo no LCU');
+        logGameInProgress('📡 Nenhum jogo ativo no LCU');
         return null;
       }
 
@@ -941,7 +960,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
 
       return null;
     } catch (error) {
-      console.log('❌ Erro ao verificar LCU:', error);
+      logGameInProgress('❌ Erro ao verificar LCU:', error);
       return null;
     }
   }
@@ -950,11 +969,11 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
   private async tryGetWinnerFromHistory(): Promise<'blue' | 'red' | null> {
     try {
       if (!this.currentPlayer?.id) {
-        console.log('❌ ID do jogador atual não encontrado');
+        logGameInProgress('❌ ID do jogador atual não encontrado');
         return null;
       }
 
-      console.log('🔍 Buscando histórico para player ID:', this.currentPlayer.id);
+      logGameInProgress('🔍 Buscando histórico para player ID:', this.currentPlayer.id);
 
       // Para o sistema buscar corretamente, vamos usar múltiplos identificadores
       let playerIdentifiers = [this.currentPlayer.id.toString()];
@@ -967,45 +986,45 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
       if (this.currentPlayer?.summonerName === 'popcorn seller' && this.currentPlayer?.tagLine === 'coup') {
         playerIdentifiers.push('1'); // ID numérico
         playerIdentifiers.push('popcorn seller'); // Nome do summoner
-        console.log('🎯 Usando múltiplos identificadores para busca:', playerIdentifiers);
+        logGameInProgress('🎯 Usando múltiplos identificadores para busca:', playerIdentifiers);
       }
 
       // Tentar buscar com cada identificador até encontrar partidas
       let history: any = null;
       for (const identifier of playerIdentifiers) {
-        console.log(`🔍 Tentando buscar com identificador: ${identifier}`);
+        logGameInProgress(`🔍 Tentando buscar com identificador: ${identifier}`);
         history = await this.apiService.getCustomMatches(identifier, 0, 30).toPromise();
 
         if (history && history.success && history.matches && history.matches.length > 0) {
-          console.log(`✅ Encontrado histórico com identificador: ${identifier}`);
+          logGameInProgress(`✅ Encontrado histórico com identificador: ${identifier}`);
           break;
         }
       }
 
-      console.log('📋 Resposta do histórico de partidas:', history);
+      logGameInProgress('📋 Resposta do histórico de partidas:', history);
 
       if (!history || !history.success || !history.matches || history.matches.length === 0) {
-        console.log('📝 Nenhum histórico de partidas customizadas encontrado');
+        logGameInProgress('📝 Nenhum histórico de partidas customizadas encontrado');
         return null;
       }
 
       // Compare with the last custom match to find potential winner
       const lastMatch = history.matches[0];
-      console.log('🔍 Última partida customizada:', lastMatch);
+      logGameInProgress('🔍 Última partida customizada:', lastMatch);
 
       // This is a simplified comparison - you might want to enhance this
       if (this.compareGameWithMatch(lastMatch)) {
         // Try to extract winner from match data
         const winner = this.extractWinnerFromMatch(lastMatch);
         if (winner) {
-          console.log('🏆 Vencedor encontrado via histórico:', winner);
+          logGameInProgress('🏆 Vencedor encontrado via histórico:', winner);
           return winner;
         }
       }
 
       return null;
     } catch (error) {
-      console.log('❌ Erro ao buscar histórico:', error);
+      logGameInProgress('❌ Erro ao buscar histórico:', error);
       return null;
     }
   }
@@ -1022,7 +1041,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
   }
   // Toggle LCU detection
   toggleLCUDetection(): void {
-    console.log('🔄 LCU Detection toggled:', this.lcuDetectionEnabled);
+    logGameInProgress('🔄 LCU Detection toggled:', this.lcuDetectionEnabled);
 
     if (this.lcuDetectionEnabled) {
       // Start LCU detection if enabled
@@ -1042,7 +1061,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
 
   // Simulate last match method (if needed)
   simulateLastMatch(): void {
-    console.log('🎭 Simulando última partida...');
+    logGameInProgress('🎭 Simulando última partida...');
     alert('Funcionalidade de simular última partida. Esta funcionalidade pode ser implementada para carregar dados da última partida jogada.');
   }
 
@@ -1081,13 +1100,13 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
 
   getTeamPlayers(team: 'blue' | 'red'): any[] {
     if (!this.gameData) {
-      console.warn('⚠️ [GameInProgress] gameData não disponível');
+      logGameInProgress('⚠️ [GameInProgress] gameData não disponível');
       return [];
     }
 
     const players = team === 'blue' ? this.gameData.team1 : this.gameData.team2;
 
-    console.log(`🔍 [GameInProgress] Buscando jogadores do time ${team}:`, {
+    logGameInProgress(`🔍 [GameInProgress] Buscando jogadores do time ${team}:`, {
       gameDataKeys: Object.keys(this.gameData),
       hasTeam1: !!this.gameData.team1,
       hasTeam2: !!this.gameData.team2,
@@ -1129,6 +1148,18 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
     return myTeam === this.selectedWinner;
   }
 
+  /**
+   * Retorna o Observable da URL do ícone de perfil se for humano, ou null se for bot
+   */
+  getProfileIconUrlIfHuman(player: any): Observable<string | null> {
+    if (this.botService.isBot(player)) {
+      return of(null);
+    }
+    const identifier = player.summonerName || player.name || player.displayName || player.gameName;
+    if (!identifier) return of(null);
+    return this.profileIconService.getProfileIconUrl(identifier);
+  }
+
   // Métodos de notificação simplificados (podem ser integrados com um serviço de notificações mais complexo)
   private showSuccessNotification(title: string, message: string): void {
     // Por enquanto usar alert, mas pode ser substituído por um toast/notification service
@@ -1143,13 +1174,13 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
   // ✅ NOVO: Métodos para obter bans dos times
   getTeamBans(team: 'blue' | 'red'): any[] {
     if (!this.gameData?.pickBanData) {
-      console.warn('⚠️ [GameInProgress] pickBanData não disponível para bans');
+      logGameInProgress('⚠️ [GameInProgress] pickBanData não disponível para bans');
       return [];
     }
 
     try {
       const pickBanData = this.gameData.pickBanData;
-      console.log(`🔍 [GameInProgress] Buscando bans do time ${team}:`, {
+      logGameInProgress(`🔍 [GameInProgress] Buscando bans do time ${team}:`, {
         hasPickBanData: !!pickBanData,
         hasPhases: !!pickBanData.phases,
         phasesLength: pickBanData.phases?.length || 0,
@@ -1171,7 +1202,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
             championId: phase.champion?.id
           }));
 
-        console.log(`✅ [GameInProgress] Bans encontrados para time ${team}:`, teamBans);
+        logGameInProgress(`✅ [GameInProgress] Bans encontrados para time ${team}:`, teamBans);
         return teamBans;
       }
 
@@ -1193,14 +1224,14 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
             championId: ban.championId
           }));
 
-        console.log(`✅ [GameInProgress] Bans da partida real encontrados para time ${team}:`, teamBans);
+        logGameInProgress(`✅ [GameInProgress] Bans da partida real encontrados para time ${team}:`, teamBans);
         return teamBans;
       }
 
-      console.log(`⚠️ [GameInProgress] Nenhum ban encontrado para time ${team}`);
+      logGameInProgress(`⚠️ [GameInProgress] Nenhum ban encontrado para time ${team}`);
       return [];
     } catch (error) {
-      console.error('❌ [GameInProgress] Erro ao obter bans do time:', error);
+      logGameInProgress('❌ [GameInProgress] Erro ao obter bans do time:', error);
       return [];
     }
   }
@@ -1208,13 +1239,13 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
   // ✅ NOVO: Método para obter picks dos times
   getTeamPicks(team: 'blue' | 'red'): any[] {
     if (!this.gameData?.pickBanData) {
-      console.warn('⚠️ [GameInProgress] pickBanData não disponível para picks');
+      logGameInProgress('⚠️ [GameInProgress] pickBanData não disponível para picks');
       return [];
     }
 
     try {
       const pickBanData = this.gameData.pickBanData;
-      console.log(`🔍 [GameInProgress] Buscando picks do time ${team}:`, {
+      logGameInProgress(`🔍 [GameInProgress] Buscando picks do time ${team}:`, {
         hasPickBanData: !!pickBanData,
         hasPhases: !!pickBanData.phases,
         phasesLength: pickBanData.phases?.length || 0,
@@ -1237,7 +1268,7 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
             player: phase.playerName || phase.player
           }));
 
-        console.log(`✅ [GameInProgress] Picks encontrados para time ${team}:`, teamPicks);
+        logGameInProgress(`✅ [GameInProgress] Picks encontrados para time ${team}:`, teamPicks);
         return teamPicks;
       }
 
@@ -1260,14 +1291,14 @@ export class GameInProgressComponent implements OnInit, OnDestroy, OnChanges {
             player: pick.playerName || pick.summonerName
           }));
 
-        console.log(`✅ [GameInProgress] Picks da partida real encontrados para time ${team}:`, teamPicks);
+        logGameInProgress(`✅ [GameInProgress] Picks da partida real encontrados para time ${team}:`, teamPicks);
         return teamPicks;
       }
 
-      console.log(`⚠️ [GameInProgress] Nenhum pick encontrado para time ${team}`);
+      logGameInProgress(`⚠️ [GameInProgress] Nenhum pick encontrado para time ${team}`);
       return [];
     } catch (error) {
-      console.error('❌ [GameInProgress] Erro ao obter picks do time:', error);
+      logGameInProgress('❌ [GameInProgress] Erro ao obter picks do time:', error);
       return [];
     }
   }

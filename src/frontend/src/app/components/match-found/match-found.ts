@@ -1,7 +1,8 @@
 import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ProfileIconService } from '../../services/profile-icon.service';
-import { Observable } from 'rxjs';
+import { Observable, of } from 'rxjs';
+import { BotService } from '../../services/bot.service';
 
 export interface MatchFoundData {
   matchId: number;
@@ -35,6 +36,18 @@ export interface PlayerInfo {
   profileIconId?: number;
 }
 
+function logMatchFound(...args: any[]) {
+  const fs = (window as any).electronAPI?.fs;
+  const path = (window as any).electronAPI?.path;
+  const process = (window as any).electronAPI?.process;
+  const logPath = path && process ? path.join(process.cwd(), 'frontend.log') : '';
+  const logLine = `[${new Date().toISOString()}] [MatchFound] ` + args.map(a => (typeof a === 'object' ? JSON.stringify(a) : a)).join(' ') + '\n';
+  if (fs && logPath) {
+    fs.appendFile(logPath, logLine, (err: any) => { });
+  }
+  console.log('[MatchFound]', ...args);
+}
+
 @Component({
   selector: 'app-match-found',
   imports: [CommonModule],
@@ -55,7 +68,7 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
 
   private playerIconMap = new Map<string, number>();
 
-  constructor(private profileIconService: ProfileIconService) { }
+  constructor(private profileIconService: ProfileIconService, public botService: BotService) { }
 
   ngOnInit() {
     if (this.matchData && this.matchData.phase === 'accept') {
@@ -75,18 +88,18 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
       const previousMatchId = previousMatchData?.matchId;
       const currentMatchId = currentMatchData?.matchId;
 
-      console.log('🎮 [MatchFound] === ngOnChanges CHAMADO ===');
-      console.log('🎮 [MatchFound] MatchId anterior:', previousMatchId);
-      console.log('🎮 [MatchFound] MatchId atual:', currentMatchId);
-      console.log('🎮 [MatchFound] Timer ativo:', !!this.countdownTimer);
-      console.log('🎮 [MatchFound] Accept time atual:', this.acceptTimeLeft);
+      logMatchFound('🎮 [MatchFound] === ngOnChanges CHAMADO ===');
+      logMatchFound('🎮 [MatchFound] MatchId anterior:', previousMatchId);
+      logMatchFound('🎮 [MatchFound] MatchId atual:', currentMatchId);
+      logMatchFound('🎮 [MatchFound] Timer ativo:', !!this.countdownTimer);
+      logMatchFound('🎮 [MatchFound] Accept time atual:', this.acceptTimeLeft);
 
       // ✅ CORREÇÃO: Verificações mais rigorosas para evitar reprocessamento
       const isExactSameData = previousMatchData && currentMatchData &&
         JSON.stringify(previousMatchData) === JSON.stringify(currentMatchData);
 
       if (isExactSameData) {
-        console.log('🎮 [MatchFound] Dados idênticos - ignorando ngOnChanges');
+        logMatchFound('🎮 [MatchFound] Dados idênticos - ignorando ngOnChanges');
         return;
       }
 
@@ -94,7 +107,7 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
       const isNewMatch = previousMatchId !== currentMatchId && currentMatchId !== undefined;
       const isFirstTime = !previousMatchId && currentMatchId && !this.countdownTimer;
 
-      console.log('🎮 [MatchFound] Análise de mudança:', {
+      logMatchFound('🎮 [MatchFound] Análise de mudança:', {
         isNewMatch,
         isFirstTime,
         sameId: previousMatchId === currentMatchId,
@@ -102,11 +115,11 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
       });
 
       if (isNewMatch || isFirstTime) {
-        console.log('🎮 [MatchFound] ✅ NOVA PARTIDA CONFIRMADA - configurando timer');
+        logMatchFound('🎮 [MatchFound] ✅ NOVA PARTIDA CONFIRMADA - configurando timer');
 
         // ✅ CORREÇÃO: Limpar timer anterior se existir
         if (this.countdownTimer) {
-          console.log('🎮 [MatchFound] Limpando timer anterior');
+          logMatchFound('🎮 [MatchFound] Limpando timer anterior');
           clearInterval(this.countdownTimer);
           this.countdownTimer = undefined;
         }
@@ -116,7 +129,7 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
           // ✅ CORREÇÃO: Usar acceptanceTimer do backend primeiro, depois acceptTimeout como fallback
           const backendTimer = this.matchData.acceptanceTimer || this.matchData.acceptTimeout || 30;
 
-          console.log('🎮 [MatchFound] Timer recebido do backend:', backendTimer);
+          logMatchFound('🎮 [MatchFound] Timer recebido do backend:', backendTimer);
           this.acceptTimeLeft = backendTimer;
           this.isTimerUrgent = this.acceptTimeLeft <= 10;
 
@@ -124,7 +137,7 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
           setTimeout(() => {
             const expectedTimer = this.matchData?.acceptanceTimer || this.matchData?.acceptTimeout || 30;
             if (this.acceptTimeLeft === expectedTimer) {
-              console.log('🎮 [MatchFound] Backend não enviou timer, iniciando timer local');
+              logMatchFound('🎮 [MatchFound] Backend não enviou timer, iniciando timer local');
               this.startAcceptCountdown();
             }
           }, 2000);
@@ -132,14 +145,14 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
 
         this.updateSortedTeams();
       } else {
-        console.log('🎮 [MatchFound] ❌ MESMA PARTIDA - ignorando ngOnChanges');
-        console.log('🎮 [MatchFound] Motivo: previousMatchId =', previousMatchId, ', currentMatchId =', currentMatchId);
+        logMatchFound('🎮 [MatchFound] ❌ MESMA PARTIDA - ignorando ngOnChanges');
+        logMatchFound('🎮 [MatchFound] Motivo: previousMatchId =', previousMatchId, ', currentMatchId =', currentMatchId);
       }
     }
   }
 
   ngOnDestroy() {
-    console.log('🧹 [MatchFound] Destruindo componente - limpando recursos');
+    logMatchFound('🧹 [MatchFound] Destruindo componente - limpando recursos');
 
     // ✅ CORREÇÃO: Limpar timer local se existir
     if (this.countdownTimer) {
@@ -150,21 +163,21 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
     // ✅ NOVO: Remover listener de timer
     document.removeEventListener('matchTimerUpdate', this.onTimerUpdate);
 
-    console.log('✅ [MatchFound] Recursos limpos com sucesso');
+    logMatchFound('✅ [MatchFound] Recursos limpos com sucesso');
   }
 
   private updateSortedTeams(): void {
-    console.log('🎯 [MatchFound] === updateSortedTeams CHAMADO ===');
-    console.log('🎯 [MatchFound] matchData presente:', !!this.matchData);
+    logMatchFound('🎯 [MatchFound] === updateSortedTeams CHAMADO ===');
+    logMatchFound('🎯 [MatchFound] matchData presente:', !!this.matchData);
 
     if (!this.matchData) {
-      console.log('🎯 [MatchFound] matchData é null - limpando times');
+      logMatchFound('🎯 [MatchFound] matchData é null - limpando times');
       this.sortedBlueTeam = [];
       this.sortedRedTeam = [];
       return;
     }
 
-    console.log('🎯 [MatchFound] Dados do matchData:', {
+    logMatchFound('🎯 [MatchFound] Dados do matchData:', {
       matchId: this.matchData.matchId,
       playerSide: this.matchData.playerSide,
       teammatesCount: this.matchData.teammates?.length || 0,
@@ -174,14 +187,14 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
     const blueTeamPlayers = this.getBlueTeamPlayers();
     const redTeamPlayers = this.getRedTeamPlayers();
 
-    console.log('🎯 [MatchFound] Blue team players:', blueTeamPlayers.map(p => ({
+    logMatchFound('🎯 [MatchFound] Blue team players:', blueTeamPlayers.map(p => ({
       name: p.summonerName,
       assignedLane: p.assignedLane,
       teamIndex: p.teamIndex,
       isAutofill: p.isAutofill
     })));
 
-    console.log('🎯 [MatchFound] Red team players:', redTeamPlayers.map(p => ({
+    logMatchFound('🎯 [MatchFound] Red team players:', redTeamPlayers.map(p => ({
       name: p.summonerName,
       assignedLane: p.assignedLane,
       teamIndex: p.teamIndex,
@@ -191,7 +204,7 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
     this.sortedBlueTeam = this.getSortedPlayersByLane(blueTeamPlayers);
     this.sortedRedTeam = this.getSortedPlayersByLane(redTeamPlayers);
 
-    console.log('🎯 [MatchFound] Times ordenados:', {
+    logMatchFound('🎯 [MatchFound] Times ordenados:', {
       blueTeam: this.sortedBlueTeam.map(p => ({ name: p.summonerName, lane: p.assignedLane })),
       redTeam: this.sortedRedTeam.map(p => ({ name: p.summonerName, lane: p.assignedLane }))
     });
@@ -205,11 +218,11 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
   // ✅ CORREÇÃO: Handler para atualizações de timer do backend
   private onTimerUpdate = (event: any): void => {
     if (event.detail && this.matchData) {
-      console.log('⏰ [MatchFound] Timer atualizado pelo backend:', event.detail);
+      logMatchFound('⏰ [MatchFound] Timer atualizado pelo backend:', event.detail);
 
       // Verificar se a atualização é para esta partida
       if (event.detail.matchId && event.detail.matchId !== this.matchData.matchId) {
-        console.log('⏰ [MatchFound] Timer para partida diferente - ignorando');
+        logMatchFound('⏰ [MatchFound] Timer para partida diferente - ignorando');
         return;
       }
 
@@ -218,20 +231,20 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
       const timeDifference = Math.abs(this.acceptTimeLeft - newTimeLeft);
 
       if (timeDifference > 0) {
-        console.log(`⏰ [MatchFound] Atualizando timer: ${this.acceptTimeLeft} → ${newTimeLeft}`);
+        logMatchFound(`⏰ [MatchFound] Atualizando timer: ${this.acceptTimeLeft} → ${newTimeLeft}`);
         this.acceptTimeLeft = newTimeLeft;
         this.isTimerUrgent = event.detail.isUrgent || newTimeLeft <= 10;
 
         // ✅ NOVO: Parar timer local se backend está controlando
         if (this.countdownTimer) {
-          console.log('⏰ [MatchFound] Backend assumiu controle - parando timer local');
+          logMatchFound('⏰ [MatchFound] Backend assumiu controle - parando timer local');
           clearInterval(this.countdownTimer);
           this.countdownTimer = undefined;
         }
 
         // Auto-decline se tempo esgotar
         if (this.acceptTimeLeft <= 0) {
-          console.log('⏰ [MatchFound] Timer expirou via backend - auto-decline');
+          logMatchFound('⏰ [MatchFound] Timer expirou via backend - auto-decline');
           this.onDeclineMatch();
         }
       }
@@ -249,6 +262,20 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   /**
+   * Retorna o Observable da URL do ícone de perfil se for humano, ou null se for bot
+   */
+  getPlayerProfileIconUrlIfHuman(player: PlayerInfo): Observable<string | null> {
+    // Checa se é bot pelo nome
+    if (this.botService.isBot(player)) {
+      return of(null);
+    }
+    const identifier = (player.riotIdGameName && player.riotIdTagline)
+      ? `${player.riotIdGameName}#${player.riotIdTagline}`
+      : player.summonerName;
+    return this.profileIconService.getProfileIconUrl(identifier);
+  }
+
+  /**
    * Handler para erro de carregamento de imagem de perfil
    */
   onProfileIconError(event: Event, player: PlayerInfo): void {
@@ -258,7 +285,7 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
   private startAcceptCountdown(): void {
     // ✅ CORREÇÃO: Não iniciar se já existe timer ou se backend está controlando
     if (this.countdownTimer) {
-      console.log('⏰ [MatchFound] Timer já existe - não iniciando novo');
+      logMatchFound('⏰ [MatchFound] Timer já existe - não iniciando novo');
       return;
     }
 
@@ -269,23 +296,23 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
     this.acceptTimeLeft = typeof backendTimer === 'number' ? backendTimer : 30;
     this.isTimerUrgent = this.acceptTimeLeft <= 10;
 
-    console.log('⏰ [MatchFound] Iniciando timer local como fallback com', this.acceptTimeLeft, 'segundos');
+    logMatchFound('⏰ [MatchFound] Iniciando timer local como fallback com', this.acceptTimeLeft, 'segundos');
 
     // ✅ CORREÇÃO: Timer local apenas como fallback quando backend não responde
     this.countdownTimer = window.setInterval(() => {
       // ✅ NOVO: Verificar se backend assumiu controle
       if (!this.countdownTimer) {
-        console.log('⏰ [MatchFound] Timer local cancelado - backend assumiu controle');
+        logMatchFound('⏰ [MatchFound] Timer local cancelado - backend assumiu controle');
         return;
       }
 
       this.acceptTimeLeft--;
       this.isTimerUrgent = this.acceptTimeLeft <= 10;
 
-      console.log('⏰ [MatchFound] Timer local (fallback):', this.acceptTimeLeft, 'segundos restantes');
+      logMatchFound('⏰ [MatchFound] Timer local (fallback):', this.acceptTimeLeft, 'segundos restantes');
 
       if (this.acceptTimeLeft <= 0) {
-        console.log('⏰ [MatchFound] Timer local expirou - auto-decline');
+        logMatchFound('⏰ [MatchFound] Timer local expirou - auto-decline');
         this.onDeclineMatch();
         if (this.countdownTimer) {
           clearInterval(this.countdownTimer);
@@ -297,7 +324,7 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
 
   onAcceptMatch(): void {
     if (this.matchData) {
-      console.log('✅ [MatchFound] Emitindo aceitação para:', this.matchData.matchId);
+      logMatchFound('✅ [MatchFound] Emitindo aceitação para:', this.matchData.matchId);
       this.acceptMatch.emit(this.matchData.matchId);
 
       // ✅ CORREÇÃO: Parar timer imediatamente após aceitar
@@ -310,7 +337,7 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
 
   onDeclineMatch(): void {
     if (this.matchData) {
-      console.log('❌ [MatchFound] Emitindo recusa para:', this.matchData.matchId);
+      logMatchFound('❌ [MatchFound] Emitindo recusa para:', this.matchData.matchId);
       this.declineMatch.emit(this.matchData.matchId);
 
       // ✅ CORREÇÃO: Parar timer imediatamente após recusar
@@ -366,7 +393,7 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   getAssignedLaneDisplay(player: PlayerInfo): string {
-    console.log('🎯 [MatchFound] getAssignedLaneDisplay chamado para:', {
+    logMatchFound('🎯 [MatchFound] getAssignedLaneDisplay chamado para:', {
       name: player.summonerName,
       assignedLane: player.assignedLane,
       isAutofill: player.isAutofill,
@@ -394,7 +421,7 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
    * Ordena jogadores por teamIndex (0-4) conforme o draft espera
    */
   getSortedPlayersByLane(players: PlayerInfo[]): PlayerInfo[] {
-    console.log('🎯 [MatchFound] Ordenando jogadores por lane:', players.map(p => ({
+    logMatchFound('🎯 [MatchFound] Ordenando jogadores por lane:', players.map(p => ({
       name: p.summonerName,
       teamIndex: p.teamIndex,
       assignedLane: p.assignedLane,
@@ -405,7 +432,7 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
     return [...players].sort((a, b) => {
       // Se ambos têm teamIndex, usar ele para ordenação
       if (a.teamIndex !== undefined && b.teamIndex !== undefined) {
-        console.log(`🎯 [MatchFound] Ordenando por teamIndex: ${a.summonerName}(${a.teamIndex}) vs ${b.summonerName}(${b.teamIndex})`);
+        logMatchFound(`🎯 [MatchFound] Ordenando por teamIndex: ${a.summonerName}(${a.teamIndex}) vs ${b.summonerName}(${b.teamIndex})`);
         return a.teamIndex - b.teamIndex;
       }
 
@@ -423,7 +450,7 @@ export class MatchFoundComponent implements OnInit, OnDestroy, OnChanges {
       const indexA = laneOrder.indexOf(laneA);
       const indexB = laneOrder.indexOf(laneB);
 
-      console.log(`🎯 [MatchFound] Ordenando por lane: ${a.summonerName}(${laneA}:${indexA}) vs ${b.summonerName}(${laneB}:${indexB})`);
+      logMatchFound(`🎯 [MatchFound] Ordenando por lane: ${a.summonerName}(${laneA}:${indexA}) vs ${b.summonerName}(${laneB}:${indexB})`);
 
       if (indexA === -1 && indexB === -1) return 0;
       if (indexA === -1) return 1;

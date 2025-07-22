@@ -55,7 +55,7 @@
                 {{ player.summonerName || player.name || 'Jogador' }}
                 <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
               </span>
-              <span class="player-lane">{{ getLaneDisplay(player.lane) }}</span>
+              <span class="player-lane">{{ this.getLaneDisplay(player.lane || player.assignedLane) }}</span>
             </div>
           </ng-container>
           <ng-template #emptySlot>
@@ -66,7 +66,7 @@
                 {{ player.summonerName || player.name || 'Jogador' }}
                 <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
               </span>
-              <span class="player-lane">{{ getLaneDisplay(player.lane) }}</span>
+              <span class="player-lane">{{ this.getLaneDisplay(player.lane || player.assignedLane) }}</span>
             </div>
           </ng-template>
         </div>
@@ -113,7 +113,7 @@
                 {{ player.summonerName || player.name || 'Jogador' }}
                 <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
               </span>
-              <span class="player-lane">{{ getLaneDisplay(player.lane) }}</span>
+              <span class="player-lane">{{ this.getLaneDisplay(player.lane || player.assignedLane) }}</span>
             </div>
           </ng-container>
           <ng-template #emptySlot>
@@ -124,7 +124,7 @@
                 {{ player.summonerName || player.name || 'Jogador' }}
                 <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
               </span>
-              <span class="player-lane">{{ getLaneDisplay(player.lane) }}</span>
+              <span class="player-lane">{{ this.getLaneDisplay(player.lane || player.assignedLane) }}</span>
             </div>
           </ng-template>
         </div>
@@ -135,15 +135,13 @@
   <!-- Action Buttons -->
   <div class="action-buttons" *ngIf="session">
     <div class="buttons-container">
-      <button class="btn btn-success btn-lg"
-              (click)="openConfirmationModal()"
-              [disabled]="session.phase !== 'completed'">
+      <button class="btn btn-success btn-lg" (click)="openConfirmationModal()"
+        [disabled]="session.phase !== 'completed'">
         <span class="btn-icon">✅</span>
         <span class="btn-text">Ir para Confirmação</span>
       </button>
 
-      <button class="btn btn-danger btn-lg"
-              (click)="cancelPickBan()">
+      <button class="btn btn-danger btn-lg" (click)="cancelPickBan()">
         <span class="btn-icon">❌</span>
         <span class="btn-text">Cancelar</span>
       </button>
@@ -151,22 +149,13 @@
   </div>
 
   <!-- Champion Selection Modal -->
-  <app-draft-champion-modal
-    [isVisible]="showChampionModal"
-    [session]="session"
-    [currentPlayer]="currentPlayer"
-    (onChampionSelected)="onChampionSelected($event)"
-    (onClose)="showChampionModal = false">
+  <app-draft-champion-modal [isVisible]="showChampionModal" [session]="session" [currentPlayer]="currentPlayer"
+    (onChampionSelected)="onChampionSelected($event)" (onClose)="showChampionModal = false">
   </app-draft-champion-modal>
 
   <!-- Confirmation Modal -->
-  <app-draft-confirmation-modal
-    #confirmationModal
-    [isVisible]="showConfirmationModal"
-    [session]="session"
-    [currentPlayer]="currentPlayer"
-    (onConfirm)="completePickBan()"
-    (onEditPick)="onEditRequested($event)"
+  <app-draft-confirmation-modal #confirmationModal [isVisible]="showConfirmationModal" [session]="session"
+    [currentPlayer]="currentPlayer" (onConfirm)="completePickBan()" (onEditPick)="onEditRequested($event)"
     (onClose)="showConfirmationModal = false">
   </app-draft-confirmation-modal>
 </div>

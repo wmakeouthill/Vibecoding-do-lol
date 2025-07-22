@@ -57,37 +57,37 @@ setTimeout(() => {
 
 ### **Quando Special User Faz Pick/Ban**
 
-```
+```mermaid
 🎯 Jogador confirma → Envia para MySQL (100ms) → Sincroniza com MySQL → Atualiza interface
 ```
 
 ### **Quando Bot Age (Special User Logado)**
 
-```
+```mermaid
 🤖 Bot detectado → Executa ação local → Envia para MySQL (200ms) → Sincroniza com MySQL → Atualiza interface
 ```
 
 ### **Quando Timeout Ocorre**
 
-```
+```mermaid
 ⏰ Timeout → Executa ação automática → Envia para MySQL (200ms) → Sincroniza com MySQL → Atualiza interface
 ```
 
 ## 🛡️ Benefícios das Correções
 
-### **1. Detecção de Bots Melhorada**
+### **1. Detecção de Bots Melhorada**2
 
 - ✅ **Padrão #BOT**: Detecta bots criados pelo backend
 - ✅ **Logs detalhados**: Facilita debug de detecção
 - ✅ **Case insensitive**: Funciona independente de maiúsculas/minúsculas
 
-### **2. Sincronização Mais Rápida**
+### **2. Sincronização Mais Rápida**2
 
 - ✅ **100ms**: Sincronização após picks/bans normais
 - ✅ **200ms**: Sincronização após ações de bot/timeout
 - ✅ **Imediata**: Interface atualizada rapidamente
 
-### **3. Bots Mais Responsivos**
+### **3. Bots Mais Responsivos**2
 
 - ✅ **0.5-1.5s**: Tempo para bots agirem (era 1-3s)
 - ✅ **Aleatório**: Evita ações simultâneas

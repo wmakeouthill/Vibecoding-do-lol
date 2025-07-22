@@ -928,7 +928,24 @@ export class MatchmakingService {
         team2Players: team2.map(p => p.summonerName),
         createdBy: 'Sistema',
         gameMode: 'Ranked 5v5',
-        matchLeader: this.selectHumanLeader(team1, team2) // ✅ NOVO: Escolher líder humano
+        draft_data: JSON.stringify({
+          team1: team1,
+          team2: team2,
+          averageMMR: { team1: team1MMR, team2: team2MMR },
+          phase: 'bans',
+          currentAction: 0,
+          phases: [],
+          actions: []
+        }),
+        pick_ban_data: JSON.stringify({
+          team1: team1,
+          team2: team2,
+          team1Picks: [],
+          team2Picks: [],
+          team1Bans: [],
+          team2Bans: [],
+          actions: []
+        })
       });
 
       if (matchId) {
