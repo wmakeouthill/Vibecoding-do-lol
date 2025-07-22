@@ -955,11 +955,11 @@ export class App implements OnInit, OnDestroy {
         ? JSON.parse(data.pickBanData)
         : data.pickBanData;
 
-      // Mergear dados de pick/ban mantendo estrutura existente
+      // Sempre: blueTeam = team1, redTeam = team2
       this.draftData = {
         ...this.draftData,
-        blueTeam: pickBanData.team1 || this.draftData.blueTeam || [], // ✅ CORREÇÃO: Mapear team1 para blueTeam
-        redTeam: pickBanData.team2 || this.draftData.redTeam || [], // ✅ CORREÇÃO: Mapear team2 para redTeam
+        blueTeam: pickBanData.team1 || [],
+        redTeam: pickBanData.team2 || [],
         phases: pickBanData.phases || this.draftData.phases || [],
         currentAction: pickBanData.currentAction || this.draftData.currentAction || 0,
         phase: pickBanData.phase || this.draftData.phase || 'bans',
@@ -2881,8 +2881,8 @@ export class App implements OnInit, OnDestroy {
 
       this.draftData = {
         matchId: response.matchId,
-        blueTeam: pickBanData.team1 || [], // ✅ CORREÇÃO: Mapear team1 para blueTeam
-        redTeam: pickBanData.team2 || [], // ✅ CORREÇÃO: Mapear team2 para redTeam
+        blueTeam: pickBanData.team1 || [], // Sempre: blueTeam = team1
+        redTeam: pickBanData.team2 || [],  // Sempre: redTeam = team2
         phases: pickBanData.phases || [],
         currentAction: pickBanData.currentAction || 0,
         phase: pickBanData.phase || 'bans',
