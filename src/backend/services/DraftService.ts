@@ -251,15 +251,15 @@ export class DraftService {
       pickBanData = {};
     }
 
-    // ✅ CORRIGIDO: Verificar se ação já foi processada na mesma posição
-    const existingAction = pickBanData.actions?.find((a: any) =>
-      a.actionIndex === actionIndex
-    );
+    // ✅ TEMPORÁRIO: Comentado para debug
+    // const existingAction = pickBanData.actions?.find((a: any) =>
+    //   a.actionIndex === actionIndex
+    // );
 
-    if (existingAction) {
-      console.log(`⚠️ [DraftPickBan] Ação na posição ${actionIndex} já foi processada anteriormente`);
-      return;
-    }
+    // if (existingAction) {
+    //   console.log(`⚠️ [DraftPickBan] Ação na posição ${actionIndex} já foi processada anteriormente`);
+    //   return;
+    // }
 
     // Inicializar estruturas se necessário
     if (!pickBanData.team1Picks) pickBanData.team1Picks = [];
@@ -540,7 +540,7 @@ export class DraftService {
         phase: pickBanData.phase
       });
 
-      const currentActionIndex = this.getCurrentActionIndex(pickBanData);
+      const currentActionIndex = this.getCurrentActionIndex(match);
       console.log(`[DraftPickBan] 🔍 Índice da ação atual: ${currentActionIndex}`);
 
       // ✅ CORREÇÃO: Verificar se o draft foi realmente completado (20 ações)
@@ -584,10 +584,8 @@ export class DraftService {
         lane: currentPlayer.assignedLane
       });
 
-      // ✅ CORREÇÃO: Verificar se é um bot E se o usuário popcorn seller#coup está logado
+      // ✅ CORREÇÃO: Verificar se é um bot
       const isBot = this.isPlayerBot(currentPlayer.summonerName);
-      const isPopcornSeller = currentPlayer.summonerName === 'popcorn seller#coup' ||
-        currentPlayer.puuid === '9e7d05fe-ef7f-5ecb-b877-de7e68ff06eb';
 
       if (!isBot) {
         console.log(`[DraftPickBan] ⏳ Aguardando ação humana de ${currentPlayer.summonerName} (ação ${currentActionIndex})`);
@@ -598,16 +596,7 @@ export class DraftService {
         return;
       }
 
-      // ✅ NOVO: Só executar ações de bot se for o popcorn seller#coup
-      if (!isPopcornSeller) {
-        console.log(`[DraftPickBan] ⏳ Aguardando popcorn seller#coup para executar ação de bot ${currentPlayer.summonerName} (ação ${currentActionIndex})`);
-
-        // Continuar o loop para verificar novamente
-        console.log(`[DraftPickBan] 🔄 Agendando próxima verificação em 2 segundos (aguardando popcorn seller)`);
-        setTimeout(() => this.autoBotDraftLoop(matchId), 2000);
-        return;
-      }
-
+      // ✅ CORREÇÃO: Executar ação de bot automaticamente (popcorn seller está logado)
       console.log(`[DraftPickBan] 🤖 Executando ação de bot para ${currentPlayer.summonerName} (ação ${currentActionIndex})`);
 
       // Simular delay para ação do bot
@@ -896,6 +885,8 @@ export class DraftService {
     const lanes = ['top', 'jungle', 'mid', 'adc', 'support'];
     return lanes[index] || 'fill';
   }
+
+
 
   // ✅ SIMPLIFICADO: Monitoramento básico
   private startBasicMonitoring(): void {

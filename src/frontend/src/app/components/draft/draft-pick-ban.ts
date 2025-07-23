@@ -1180,7 +1180,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
                 if (response.status === 'draft' && (response.pick_ban_data || response.totalActions > 0)) {
                     let pickBanData = response.pick_ban_data || { actions: [] };
 
-                    // ✅ CORREÇÃO: Parsear pick_ban_data se for string
+                    // ✅ Parsear pick_ban_data se for string
                     if (typeof pickBanData === 'string') {
                         try {
                             pickBanData = JSON.parse(pickBanData);
@@ -1191,47 +1191,48 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
                         }
                     }
 
-                    // ✅ CORREÇÃO: Garantir que actions seja um array
+                    // ✅ Garantir que actions seja um array
                     if (!pickBanData.actions) {
                         pickBanData.actions = [];
                     }
 
-                    // ✅ CORREÇÃO: Mapear team1/team2 para blueTeam/redTeam conforme esperado pelo frontend
-                    const mappedData = {
+                    // ✅ Mapear team1/team2 para blueTeam/redTeam
+                    const blueTeam = pickBanData.team1 || response.team1 || [];
+                    const redTeam = pickBanData.team2 || response.team2 || [];
+                    const phases = pickBanData.phases || [];
+                    const currentAction = pickBanData.currentAction ?? response.currentAction ?? 0;
+
+                    // ✅ Sobrescrever completamente o estado local
+                    this.session = {
+                        ...this.session,
                         ...response,
-                        phases: pickBanData.phases || [],
-                        blueTeam: pickBanData.team1 || response.team1 || response.blueTeam || [], // ✅ CORREÇÃO: Mapear team1 para blueTeam
-                        redTeam: pickBanData.team2 || response.team2 || response.redTeam || [], // ✅ CORREÇÃO: Mapear team2 para redTeam
-                        currentAction: pickBanData.currentAction || 0,
-                        phase: pickBanData.phase || 'bans',
+                        blueTeam,
+                        redTeam,
+                        phases,
+                        currentAction,
                         actions: pickBanData.actions || [],
+                        phase: pickBanData.phase || 'bans',
                         team1Picks: pickBanData.team1Picks || [],
                         team1Bans: pickBanData.team1Bans || [],
                         team2Picks: pickBanData.team2Picks || [],
                         team2Bans: pickBanData.team2Bans || []
                     };
 
-                    logDraft('🔄 [DraftPickBan] Dados mapeados para sincronização:', {
-                        blueTeamLength: mappedData.blueTeam.length,
-                        redTeamLength: mappedData.redTeam.length,
-                        phasesLength: mappedData.phases.length,
-                        actionsLength: mappedData.actions.length,
-                        currentAction: mappedData.currentAction
+                    logDraft('🔄 [DraftPickBan] Estado local sobrescrito com dados do backend:', {
+                        blueTeamLength: blueTeam.length,
+                        redTeamLength: redTeam.length,
+                        phasesLength: phases.length,
+                        actionsLength: pickBanData.actions.length,
+                        currentAction: currentAction
                     });
 
-                    // ✅ CORREÇÃO: Sempre sobrescrever o estado local com dados do MySQL
-                    this.session = {
-                        ...this.session,
-                        ...mappedData
-                    };
-
-                    // ✅ NOVO: Aplicar ações sincronizadas se houver
-                    if (mappedData.actions && mappedData.actions.length > 0) {
+                    // ✅ Aplicar ações sincronizadas se houver
+                    if (pickBanData.actions && pickBanData.actions.length > 0) {
                         logDraft('🔄 [DraftPickBan] Aplicando ações sincronizadas do MySQL');
-                        this.applySyncedActions(mappedData.actions);
+                        this.applySyncedActions(pickBanData.actions);
                     }
 
-                    // ✅ NOVO: Forçar atualização da interface
+                    // ✅ Forçar atualização da interface
                     this.forceInterfaceUpdate();
 
                     logDraft('✅ [DraftPickBan] Sincronização MySQL aplicada com sucesso');
@@ -1241,14 +1242,10 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
             },
             error: (error) => {
                 logDraft('❌ [DraftPickBan] Erro na sincronização MySQL:', error);
-                // ✅ NOVO: Incrementar contador de erros para possível fallback
                 this.syncErrorCount++;
-
-                // ✅ NOVO: Se muitos erros consecutivos, tentar reconectar
                 if (this.syncErrorCount > 5) {
                     logDraft('⚠️ [DraftPickBan] Muitos erros de sincronização, tentando reconectar...');
                     this.syncErrorCount = 0;
-                    // Aqui poderia implementar uma lógica de reconexão se necessário
                 }
             }
         });
