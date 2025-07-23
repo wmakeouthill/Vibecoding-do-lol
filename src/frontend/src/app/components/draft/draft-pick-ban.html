@@ -19,6 +19,7 @@
       <div class="current-player" *ngIf="session">
         <span class="current-player-text">
           {{ getCurrentPlayerName() }}
+          <span class="current-action-text">{{ getCurrentActionText() }}</span>
         </span>
       </div>
     </div>
@@ -46,7 +47,8 @@
 
       <div class="team-picks">
         <!-- Picks mapeados às posições corretas dos jogadores -->
-        <div class="pick-slot" *ngFor="let player of getSortedTeamByLaneForDisplay('blue'); let i = index">
+        <div class="pick-slot" *ngFor="let player of getSortedTeamByLaneForDisplay('blue'); let i = index"
+          [class.current-turn]="isCurrentPlayer(player) && checkIfMyTurn(session.phases[session.currentAction])">
           <ng-container *ngIf="getPlayerPick('blue', player) as playerPick; else emptySlot">
             <img [src]="playerPick.image" [alt]="playerPick.name" class="champion-img">
             <div class="pick-info">
@@ -55,7 +57,9 @@
                 {{ player.summonerName || player.name || 'Jogador' }}
                 <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
               </span>
-              <span class="player-lane">{{ this.getLaneDisplay(player.lane || player.assignedLane) }}</span>
+              <span class="player-lane" [class]="getAutofillClass(player)">
+                {{ getLaneDisplayWithAutofill(player) }}
+              </span>
             </div>
           </ng-container>
           <ng-template #emptySlot>
@@ -66,7 +70,9 @@
                 {{ player.summonerName || player.name || 'Jogador' }}
                 <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
               </span>
-              <span class="player-lane">{{ this.getLaneDisplay(player.lane || player.assignedLane) }}</span>
+              <span class="player-lane" [class]="getAutofillClass(player)">
+                {{ getLaneDisplayWithAutofill(player) }}
+              </span>
             </div>
           </ng-template>
         </div>
@@ -104,7 +110,8 @@
 
       <div class="team-picks">
         <!-- Picks mapeados às posições corretas dos jogadores -->
-        <div class="pick-slot" *ngFor="let player of getSortedTeamByLaneForDisplay('red'); let i = index">
+        <div class="pick-slot" *ngFor="let player of getSortedTeamByLaneForDisplay('red'); let i = index"
+          [class.current-turn]="isCurrentPlayer(player) && checkIfMyTurn(session.phases[session.currentAction])">
           <ng-container *ngIf="getPlayerPick('red', player) as playerPick; else emptySlot">
             <img [src]="playerPick.image" [alt]="playerPick.name" class="champion-img">
             <div class="pick-info">
@@ -113,7 +120,9 @@
                 {{ player.summonerName || player.name || 'Jogador' }}
                 <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
               </span>
-              <span class="player-lane">{{ this.getLaneDisplay(player.lane || player.assignedLane) }}</span>
+              <span class="player-lane" [class]="getAutofillClass(player)">
+                {{ getLaneDisplayWithAutofill(player) }}
+              </span>
             </div>
           </ng-container>
           <ng-template #emptySlot>
@@ -124,7 +133,9 @@
                 {{ player.summonerName || player.name || 'Jogador' }}
                 <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
               </span>
-              <span class="player-lane">{{ this.getLaneDisplay(player.lane || player.assignedLane) }}</span>
+              <span class="player-lane" [class]="getAutofillClass(player)">
+                {{ getLaneDisplayWithAutofill(player) }}
+              </span>
             </div>
           </ng-template>
         </div>

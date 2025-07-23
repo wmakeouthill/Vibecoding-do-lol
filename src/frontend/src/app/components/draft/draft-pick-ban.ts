@@ -257,31 +257,67 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
             return false;
         }
 
-        if (!phase.playerId) {
-            logDraft('❌ [checkIfMyTurn] phase.playerId é null/undefined');
+        // ✅ MELHORADO: Verificar se phase.playerId existe, senão usar playerName ou playerIndex
+        let expectedPlayerId = phase.playerId;
+
+        if (!expectedPlayerId) {
+            logDraft('⚠️ [checkIfMyTurn] phase.playerId é null/undefined, tentando fallback');
+
+            // ✅ NOVO: Fallback para quando playerId não está definido
+            if (phase.playerName) {
+                expectedPlayerId = phase.playerName;
+                logDraft('✅ [checkIfMyTurn] Usando phase.playerName como fallback:', expectedPlayerId);
+            } else if (phase.playerIndex !== undefined && this.session) {
+                // ✅ NOVO: Usar playerIndex para identificar o jogador
+                const team = phase.team === 'blue' ? this.session.blueTeam : this.session.redTeam;
+                const player = team?.[phase.playerIndex];
+                expectedPlayerId = player?.summonerName || player?.name || `player_${phase.team}_${phase.playerIndex}`;
+                logDraft('✅ [checkIfMyTurn] Usando playerIndex como fallback:', expectedPlayerId);
+            }
+        }
+
+        if (!expectedPlayerId) {
+            logDraft('❌ [checkIfMyTurn] Não foi possível identificar o jogador esperado');
             return false;
         }
 
-        // ✅ NOVO: Verificar se o currentPlayer tem o formato correto
-        const currentPlayerFormatted = this.currentPlayer.gameName && this.currentPlayer.tagLine
-            ? `${this.currentPlayer.gameName}#${this.currentPlayer.tagLine}`
-            : this.currentPlayer.summonerName || this.currentPlayer.name;
+        // ✅ MELHORADO: Comparar usando lógica específica para bots vs jogadores reais
+        let isMyTurn = false;
 
-        logDraft('🎯 [checkIfMyTurn] currentPlayer formatado para comparação:', currentPlayerFormatted);
+        // ✅ CORREÇÃO: Verificar se o jogador esperado é um bot
+        const isExpectedPlayerBot = expectedPlayerId.toLowerCase().startsWith('bot');
+        const isCurrentPlayerBot = this.botService.isBot(this.currentPlayer);
 
-        const isMyTurn = this.botService.comparePlayerWithId(this.currentPlayer, phase.playerId);
+        if (isExpectedPlayerBot && isCurrentPlayerBot) {
+            // ✅ Para bots: comparar por nome
+            isMyTurn = expectedPlayerId === this.currentPlayer.summonerName ||
+                expectedPlayerId === this.currentPlayer.name ||
+                expectedPlayerId === this.currentPlayer.gameName;
+        } else if (!isExpectedPlayerBot && !isCurrentPlayerBot) {
+            // ✅ Para jogadores reais: comparar por puuid ou summonerName
+            isMyTurn = expectedPlayerId === this.currentPlayer.puuid ||
+                expectedPlayerId === this.currentPlayer.summonerName ||
+                expectedPlayerId === `${this.currentPlayer.gameName}#${this.currentPlayer.tagLine}` ||
+                this.botService.comparePlayerWithId(this.currentPlayer, expectedPlayerId);
+        }
+
+        // ✅ FALLBACK: Usar método genérico se a lógica específica não funcionar
+        if (!isMyTurn) {
+            isMyTurn = this.botService.comparePlayerWithId(this.currentPlayer, expectedPlayerId);
+        }
 
         logDraft('🎯 [checkIfMyTurn] Resultado da comparação:', isMyTurn);
         logDraft('🎯 [checkIfMyTurn] Detalhes da comparação:', {
+            expectedPlayerId,
             currentPlayerId: this.currentPlayer.id,
             currentPlayerName: this.currentPlayer.summonerName || this.currentPlayer.name,
             currentPlayerGameName: this.currentPlayer.gameName,
             currentPlayerTagLine: this.currentPlayer.tagLine,
-            currentPlayerFormatted: currentPlayerFormatted,
             currentPlayerSummonerId: this.currentPlayer.summonerId,
             currentPlayerPuuid: this.currentPlayer.puuid,
             phasePlayerId: phase.playerId,
             phasePlayerName: phase.playerName,
+            phasePlayerIndex: phase.playerIndex,
             isMyTurn: isMyTurn
         });
 
@@ -290,6 +326,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
             logDraft('🔍 [DEBUG AÇÃO 6 - checkIfMyTurn] === DETALHES ESPECÍFICAS ===');
             logDraft('🔍 [DEBUG AÇÃO 6 - checkIfMyTurn] currentPlayer:', this.currentPlayer);
             logDraft('🔍 [DEBUG AÇÃO 6 - checkIfMyTurn] phase:', phase);
+            logDraft('🔍 [DEBUG AÇÃO 6 - checkIfMyTurn] expectedPlayerId:', expectedPlayerId);
             logDraft('🔍 [DEBUG AÇÃO 6 - checkIfMyTurn] isMyTurn:', isMyTurn);
             logDraft('🔍 [DEBUG AÇÃO 6 - checkIfMyTurn] === FIM DOS DETALHES ===');
         }
@@ -449,9 +486,12 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
 
         // Encontrar o jogador pelo ID ou nome
         const foundPlayer = teamPlayers.find(p => this.botService.comparePlayers(p, player));
-        if (!foundPlayer) return null;
+        if (!foundPlayer) {
+            logDraft(`⚠️ [getPlayerPick] Jogador não encontrado no time ${team}:`, player);
+            return null;
+        }
 
-        // ✅ NOVO: Buscar pick diretamente nas fases baseado no nome do jogador
+        // ✅ CORREÇÃO: Buscar pick diretamente nas fases baseado no nome do jogador
         const playerName = foundPlayer.summonerName || foundPlayer.name;
 
         logDraft(`🔍 [getPlayerPick] Buscando pick para ${team} team player:`, {
@@ -472,21 +512,30 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
             pickPhases.map(p => ({
                 playerName: p.playerName,
                 playerId: p.playerId,
-                champion: p.champion?.name
+                champion: p.champion?.name,
+                playerIndex: p.playerIndex
             }))
         );
 
-        // Buscar pick que corresponde ao jogador
+        // ✅ MELHORADO: Buscar pick que corresponde ao jogador usando múltiplos critérios
         for (const pickPhase of pickPhases) {
-            // Comparar usando o mesmo método do BotService
             const phasePlayerName = pickPhase.playerName || pickPhase.playerId || '';
 
-            // Verificar se é o mesmo jogador
-            if (phasePlayerName === playerName ||
-                pickPhase.playerId === playerName ||
-                this.botService.comparePlayerWithId(foundPlayer, pickPhase.playerId || '')) {
+            // ✅ CRITÉRIO 1: Comparar por nome exato
+            if (phasePlayerName === playerName) {
+                logDraft(`✅ [getPlayerPick] Pick encontrado por nome exato para ${playerName}: ${pickPhase.champion?.name}`);
+                return pickPhase.champion || null;
+            }
 
-                logDraft(`✅ [getPlayerPick] Pick encontrado para ${playerName}: ${pickPhase.champion?.name}`);
+            // ✅ CRITÉRIO 2: Comparar usando BotService
+            if (this.botService.comparePlayerWithId(foundPlayer, pickPhase.playerId || '')) {
+                logDraft(`✅ [getPlayerPick] Pick encontrado por BotService para ${playerName}: ${pickPhase.champion?.name}`);
+                return pickPhase.champion || null;
+            }
+
+            // ✅ CRITÉRIO 3: Comparar por playerIndex se disponível
+            if (pickPhase.playerIndex !== undefined && foundPlayer.teamIndex === pickPhase.playerIndex) {
+                logDraft(`✅ [getPlayerPick] Pick encontrado por playerIndex para ${playerName}: ${pickPhase.champion?.name}`);
                 return pickPhase.champion || null;
             }
         }
@@ -496,13 +545,22 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
     }
 
     getCurrentPlayerName(): string {
-        // ✅ CORREÇÃO: Sempre retornar o nome atualizado sem cache
         if (!this.session) return '';
 
         const currentPhase = this.session.phases[this.session.currentAction];
         if (!currentPhase) return '';
 
-        // ✅ CORREÇÃO: Garantir que o nome seja atualizado corretamente
+        // ✅ CORREÇÃO: Buscar o jogador diretamente no array do time usando playerIndex
+        const teamPlayers = currentPhase.team === 'blue' ? this.session.blueTeam : this.session.redTeam;
+
+        // ✅ CORREÇÃO: Verificar se playerIndex existe antes de usar como índice
+        if (currentPhase.playerIndex !== undefined && teamPlayers[currentPhase.playerIndex]) {
+            const player = teamPlayers[currentPhase.playerIndex];
+            // ✅ PRIORIDADE: Usar summonerName, depois name, depois id
+            return player.summonerName || player.name || player.id || 'Jogador Desconhecido';
+        }
+
+        // ✅ FALLBACK: Se não encontrou pelo playerIndex, tentar pelo playerName/playerId da fase
         return currentPhase.playerName || currentPhase.playerId || 'Jogador Desconhecido';
     }
 
@@ -856,6 +914,9 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
 
     // ✅ NOVO: Método para forçar atualização completa da interface
     private forceInterfaceUpdate(): void {
+        // ✅ NOVO: Forçar atualização do isMyTurn
+        this.forceUpdateMyTurn();
+
         // Marcar para detecção de mudanças uma única vez
         this.cdr.markForCheck();
 
@@ -923,53 +984,25 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
             return;
         }
 
-        // Lógica: bots usam nome, jogadores reais usam puuid
+        // ✅ CORREÇÃO: Lógica simplificada - bots usam nome, jogadores reais usam puuid
         let playerId = '';
-        const team1 = this.matchData.team1 || this.matchData.blueTeam || [];
-        const team2 = this.matchData.team2 || this.matchData.redTeam || [];
-        const allPlayers = [...team1, ...team2];
-        let isBot = false;
-        for (const p of allPlayers) {
-            if (typeof p === 'object') {
-                if ((p.summonerName || p.name || '').toLowerCase().startsWith('bot')) {
-                    playerId = p.summonerName || p.name;
-                    isBot = true;
-                    break;
-                }
-                if (forcePlayerId && p.puuid && p.puuid === forcePlayerId) {
-                    playerId = p.puuid;
-                    break;
-                }
-                if (p.puuid && this.currentPlayer?.puuid && p.puuid === this.currentPlayer.puuid) {
-                    playerId = p.puuid;
-                    break;
-                }
-                if (
-                    (p.summonerName && this.normalizePlayerIdentifier(p) === this.normalizePlayerIdentifier(this.currentPlayer)) ||
-                    (p.name && this.normalizePlayerIdentifier(p) === this.normalizePlayerIdentifier(this.currentPlayer))
-                ) {
-                    playerId = p.puuid || p.summonerName || p.name;
-                    break;
-                }
-            } else if (typeof p === 'string') {
-                if (p.toLowerCase().startsWith('bot')) {
-                    playerId = p;
-                    isBot = true;
-                    break;
-                }
-                if (this.normalizePlayerIdentifier({ name: p }) === this.normalizePlayerIdentifier(this.currentPlayer)) {
-                    playerId = p;
-                    break;
-                }
-            }
+
+        // ✅ CORREÇÃO: Verificar se o currentPlayer é um bot
+        const isCurrentPlayerBot = this.botService.isBot(this.currentPlayer);
+
+        if (isCurrentPlayerBot) {
+            // ✅ Para bots: usar o nome do bot
+            playerId = this.currentPlayer.summonerName || this.currentPlayer.name || this.currentPlayer.gameName || '';
+        } else {
+            // ✅ Para jogadores reais: usar puuid
+            playerId = this.currentPlayer.puuid || this.currentPlayer.summonerName || '';
         }
-        if (!playerId && this.currentPlayer?.puuid && !isBot) {
-            playerId = this.currentPlayer.puuid;
-        }
+
+        // ✅ FALLBACK: Se não conseguiu determinar, usar o playerId da fase
         if (!playerId) {
-            playerId = currentPhase.playerId;
+            playerId = currentPhase.playerId || currentPhase.playerName || '';
         }
-        logDraft('🎯 [sendDraftActionToBackend] playerId determinado:', { playerId, isBot, forcePlayerId });
+        logDraft('🎯 [sendDraftActionToBackend] playerId determinado:', { playerId, isCurrentPlayerBot, forcePlayerId });
 
         const requestKey = `${this.matchData.id}-${playerId}-${champion.id}-${action}`;
         if ((this as any).sentRequests?.has(requestKey)) {
@@ -1129,51 +1162,96 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         if (this.showChampionModal) {
             return;
         }
-        if (this.currentPlayer?.summonerName) {
-            this.apiService.checkSyncStatus(this.currentPlayer.summonerName).subscribe({
-                next: (response) => {
-                    if (response.status === 'draft' && (response.pick_ban_data || response.totalActions > 0)) {
-                        let pickBanData = response.pick_ban_data || { actions: [] };
-                        if (typeof pickBanData === 'string') {
-                            try {
-                                pickBanData = JSON.parse(pickBanData);
-                            } catch (error) {
-                                logDraft('❌ [Draft] Erro ao parsear pick_ban_data:', error);
-                                return;
-                            }
-                        }
-                        if (!pickBanData.actions) {
-                            pickBanData.actions = [];
-                        }
 
-                        // ✅ CORREÇÃO: Mapear team1/team2 para blueTeam/redTeam conforme esperado pelo frontend
-                        const mappedData = {
-                            ...response,
-                            phases: pickBanData.phases || [],
-                            blueTeam: pickBanData.team1 || response.team1 || response.blueTeam || [], // ✅ CORREÇÃO: Mapear team1 para blueTeam
-                            redTeam: pickBanData.team2 || response.team2 || response.redTeam || [], // ✅ CORREÇÃO: Mapear team2 para redTeam
-                            currentAction: pickBanData.currentAction || 0,
-                            phase: pickBanData.phase || 'bans',
-                            actions: pickBanData.actions || [],
-                            team1Picks: pickBanData.team1Picks || [],
-                            team1Bans: pickBanData.team1Bans || [],
-                            team2Picks: pickBanData.team2Picks || [],
-                            team2Bans: pickBanData.team2Bans || []
-                        };
-
-                        // SEMPRE sobrescrever o estado local
-                        this.session = {
-                            ...this.session,
-                            ...mappedData
-                        };
-                        this.forceInterfaceUpdate();
-                    }
-                },
-                error: (error) => {
-                    logDraft('❌ [Draft] Erro na sincronização MySQL:', error);
-                }
-            });
+        if (!this.currentPlayer?.summonerName) {
+            logDraft('⚠️ [DraftPickBan] currentPlayer.summonerName não disponível para sincronização');
+            return;
         }
+
+        this.apiService.checkSyncStatus(this.currentPlayer.summonerName).subscribe({
+            next: (response) => {
+                logDraft('🔄 [DraftPickBan] Resposta da sincronização MySQL:', {
+                    status: response.status,
+                    hasPickBanData: !!response.pick_ban_data,
+                    totalActions: response.totalActions,
+                    currentAction: response.currentAction
+                });
+
+                if (response.status === 'draft' && (response.pick_ban_data || response.totalActions > 0)) {
+                    let pickBanData = response.pick_ban_data || { actions: [] };
+
+                    // ✅ CORREÇÃO: Parsear pick_ban_data se for string
+                    if (typeof pickBanData === 'string') {
+                        try {
+                            pickBanData = JSON.parse(pickBanData);
+                            logDraft('✅ [DraftPickBan] pick_ban_data parseado com sucesso');
+                        } catch (error) {
+                            logDraft('❌ [DraftPickBan] Erro ao parsear pick_ban_data:', error);
+                            return;
+                        }
+                    }
+
+                    // ✅ CORREÇÃO: Garantir que actions seja um array
+                    if (!pickBanData.actions) {
+                        pickBanData.actions = [];
+                    }
+
+                    // ✅ CORREÇÃO: Mapear team1/team2 para blueTeam/redTeam conforme esperado pelo frontend
+                    const mappedData = {
+                        ...response,
+                        phases: pickBanData.phases || [],
+                        blueTeam: pickBanData.team1 || response.team1 || response.blueTeam || [], // ✅ CORREÇÃO: Mapear team1 para blueTeam
+                        redTeam: pickBanData.team2 || response.team2 || response.redTeam || [], // ✅ CORREÇÃO: Mapear team2 para redTeam
+                        currentAction: pickBanData.currentAction || 0,
+                        phase: pickBanData.phase || 'bans',
+                        actions: pickBanData.actions || [],
+                        team1Picks: pickBanData.team1Picks || [],
+                        team1Bans: pickBanData.team1Bans || [],
+                        team2Picks: pickBanData.team2Picks || [],
+                        team2Bans: pickBanData.team2Bans || []
+                    };
+
+                    logDraft('🔄 [DraftPickBan] Dados mapeados para sincronização:', {
+                        blueTeamLength: mappedData.blueTeam.length,
+                        redTeamLength: mappedData.redTeam.length,
+                        phasesLength: mappedData.phases.length,
+                        actionsLength: mappedData.actions.length,
+                        currentAction: mappedData.currentAction
+                    });
+
+                    // ✅ CORREÇÃO: Sempre sobrescrever o estado local com dados do MySQL
+                    this.session = {
+                        ...this.session,
+                        ...mappedData
+                    };
+
+                    // ✅ NOVO: Aplicar ações sincronizadas se houver
+                    if (mappedData.actions && mappedData.actions.length > 0) {
+                        logDraft('🔄 [DraftPickBan] Aplicando ações sincronizadas do MySQL');
+                        this.applySyncedActions(mappedData.actions);
+                    }
+
+                    // ✅ NOVO: Forçar atualização da interface
+                    this.forceInterfaceUpdate();
+
+                    logDraft('✅ [DraftPickBan] Sincronização MySQL aplicada com sucesso');
+                } else {
+                    logDraft('⚠️ [DraftPickBan] Status não é draft ou não há dados para sincronizar');
+                }
+            },
+            error: (error) => {
+                logDraft('❌ [DraftPickBan] Erro na sincronização MySQL:', error);
+                // ✅ NOVO: Incrementar contador de erros para possível fallback
+                this.syncErrorCount++;
+
+                // ✅ NOVO: Se muitos erros consecutivos, tentar reconectar
+                if (this.syncErrorCount > 5) {
+                    logDraft('⚠️ [DraftPickBan] Muitos erros de sincronização, tentando reconectar...');
+                    this.syncErrorCount = 0;
+                    // Aqui poderia implementar uma lógica de reconexão se necessário
+                }
+            }
+        });
     }
 
     // ✅ CORRIGIDO: Aplicar ações sincronizadas do MySQL nas fases locais na ordem correta
@@ -1193,7 +1271,12 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
 
         // ✅ CORRIGIDO: Ordenar ações por actionIndex para garantir ordem sequencial
         const sortedActions = actions.sort((a, b) => (a.actionIndex || 0) - (b.actionIndex || 0));
-        logDraft('🔄 [DraftPickBan] Ações ordenadas por actionIndex:', sortedActions.map(a => ({ actionIndex: a.actionIndex, playerName: a.playerName, action: a.action })));
+        logDraft('🔄 [DraftPickBan] Ações ordenadas por actionIndex:', sortedActions.map(a => ({
+            actionIndex: a.actionIndex,
+            playerName: a.playerName,
+            action: a.action,
+            championId: a.championId
+        })));
 
         let actionsApplied = 0;
         let newCurrentAction = this.session.currentAction;
@@ -1202,13 +1285,13 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         for (const action of sortedActions) {
             const actionIndex = action.actionIndex || 0;
 
-            // ✅ CORRIGIDO: Verificar se a ação já foi aplicada
+            // ✅ CORREÇÃO: Verificar se a ação já foi aplicada
             if (actionIndex < newCurrentAction) {
                 logDraft(`⚠️ [DraftPickBan] Ação ${actionIndex} já foi aplicada (currentAction: ${newCurrentAction}) - pulando`);
                 continue;
             }
 
-            // ✅ CORRIGIDO: Verificar se é a próxima ação esperada
+            // ✅ CORREÇÃO: Verificar se é a próxima ação esperada
             if (actionIndex !== newCurrentAction) {
                 logDraft(`⚠️ [DraftPickBan] Ação ${actionIndex} não é a próxima esperada (currentAction: ${newCurrentAction}) - aguardando`);
                 break; // Aguardar ações anteriores
@@ -1223,7 +1306,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
                     continue;
                 }
 
-                // ✅ CORRIGIDO: Verificar se a fase já está com campeão definido
+                // ✅ CORREÇÃO: Verificar se a fase já está com campeão definido
                 if (phase.champion && phase.locked) {
                     logDraft(`⚠️ [DraftPickBan] Fase ${actionIndex} já tem campeão definido (${phase.champion.name}) - pulando`);
                     newCurrentAction++;
@@ -1236,17 +1319,34 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
                 if (champion) {
                     logDraft(`✅ [DraftPickBan] Aplicando ação ${action.action} para ${champion.name} na fase ${actionIndex}`);
 
-                    // ✅ CORRIGIDO: Aplicar ação na fase
+                    // ✅ CORRIGIDO: Aplicar ação na fase com dados completos do MySQL
                     phase.champion = champion;
                     phase.locked = true;
                     phase.playerName = action.playerName || action.playerId || 'Unknown';
                     phase.playerId = action.playerName || action.playerId || 'Unknown';
+
+                    // ✅ NOVO: Garantir que o time seja mapeado corretamente (1=blue, 2=red)
+                    if (action.teamIndex) {
+                        phase.team = action.teamIndex === 1 ? 'blue' : 'red';
+                    }
+
+                    // ✅ NOVO: Garantir que o playerIndex seja definido
+                    if (action.playerIndex !== undefined) {
+                        phase.playerIndex = action.playerIndex;
+                    }
 
                     // ✅ CORRIGIDO: Incrementar currentAction apenas se a ação foi aplicada com sucesso
                     newCurrentAction++;
                     actionsApplied++;
 
                     logDraft(`✅ [DraftPickBan] Ação aplicada com sucesso na fase ${actionIndex}. Novo currentAction: ${newCurrentAction}`);
+                    logDraft(`✅ [DraftPickBan] Detalhes da ação aplicada:`, {
+                        playerName: phase.playerName,
+                        playerId: phase.playerId,
+                        champion: champion.name,
+                        team: phase.team,
+                        playerIndex: phase.playerIndex
+                    });
                 } else {
                     logDraft(`⚠️ [DraftPickBan] Campeão não encontrado para ID ${action.championId}`);
                 }
@@ -1260,6 +1360,11 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         }
 
         logDraft(`✅ [DraftPickBan] Sincronização aplicada. Ações aplicadas: ${actionsApplied}, CurrentAction final: ${this.session.currentAction}`);
+
+        // ✅ NOVO: Forçar atualização da interface após sincronização
+        this.forceInterfaceUpdate();
+
+        // ✅ NOVO: Verificar se é turno de bot após sincronização
         this.checkForBotAutoAction();
     }
 
@@ -1373,5 +1478,22 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
             // Aqui você pode chamar a função que executa a ação automática do bot
             // Exemplo: this.botService.performBotAction(currentPhase, this.session, this.champions);
         }
+    }
+
+    // ✅ NOVO: Método para verificar se um jogador é autofill
+    isPlayerAutofill(player: any): boolean {
+        return player.isAutofill === true;
+    }
+
+    // ✅ NOVO: Método para obter texto de lane com autofill
+    getLaneDisplayWithAutofill(player: any): string {
+        const lane = this.getLaneDisplay(player.lane || player.assignedLane);
+        const autofillText = this.isPlayerAutofill(player) ? ' (Autofill)' : '';
+        return lane + autofillText;
+    }
+
+    // ✅ NOVO: Método para obter classe CSS baseada no autofill
+    getAutofillClass(player: any): string {
+        return this.isPlayerAutofill(player) ? 'autofill-player' : '';
     }
 }

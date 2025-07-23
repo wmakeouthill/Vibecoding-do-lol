@@ -25,6 +25,7 @@ interface DraftPlayer {
   primaryLane: string;
   secondaryLane: string;
   isAutofill: boolean;
+  puuid?: string; // ✅ NOVO: Adicionado para verificação do popcorn seller
 }
 
 interface DraftPhase {
@@ -32,6 +33,9 @@ interface DraftPhase {
   team: number; // 1 ou 2
   action: 'ban' | 'pick';
   playerIndex: number;
+  actionIndex?: number; // Adicionado para facilitar a ordenação
+  playerId?: string; // ✅ NOVO: ID do jogador para identificação no frontend
+  playerName?: string; // ✅ NOVO: Nome do jogador para exibição
 }
 
 export class DraftService {
@@ -167,7 +171,7 @@ export class DraftService {
 
       console.log(`🔍 [DraftPickBan] Ações processadas: ${pickBanData.actions.length}, Maior actionIndex: ${maxActionIndex}, Próximo: ${nextActionIndex}`);
 
-      // ✅ CORREÇÃO: Verificar se o draft já foi completado
+      // ✅ CORREÇÃO: Verificar se o draft já foi completado (20 ações)
       if (nextActionIndex >= 20) {
         console.log(`🎉 [DraftPickBan] Draft completado (${nextActionIndex}/20 ações)`);
         return 20; // Draft completado
@@ -199,7 +203,7 @@ export class DraftService {
       if (match.pick_ban_data) {
         pickBanData = typeof match.pick_ban_data === 'string' ? JSON.parse(match.pick_ban_data) : match.pick_ban_data;
       }
-      const phases = pickBanData.phases || this.generateDraftPhases();
+      const phases = pickBanData.phases || this.generateDraftPhases([], []);
       if (!phases[actionIndex]) return '';
       const phase = phases[actionIndex];
       const teamPlayers = phase.team === 1
@@ -485,7 +489,7 @@ export class DraftService {
           team2: draftData.team2,
           currentAction: 0,
           phase: 'bans',
-          phases: this.generateDraftPhases(),
+          phases: this.generateDraftPhases(draftData.team1, draftData.team2),
           actions: []
         })
       });
@@ -510,10 +514,10 @@ export class DraftService {
     }
   }
 
-  // NOVO: Executar ações automáticas de bot, respeitando a ordem do draft, com delay de 5s entre cada ação
+  // ✅ MELHORADO: Executar ações automáticas de bot, respeitando a ordem do draft
   private async autoBotDraftLoop(matchId: number): Promise<void> {
     try {
-      console.log(`[DraftPickBan] 🤖 Iniciando loop de bots para partida ${matchId}`);
+      console.log(`[DraftPickBan] 🤖 === INICIANDO LOOP DE BOTS PARA PARTIDA ${matchId} ===`);
 
       const match = await this.dbManager.getCustomMatchById(matchId);
       if (!match) {
@@ -532,16 +536,23 @@ export class DraftService {
         phasesLength: pickBanData.phases?.length || 0,
         team1Length: pickBanData.team1?.length || 0,
         team2Length: pickBanData.team2?.length || 0,
-        actionsLength: pickBanData.actions?.length || 0
+        actionsLength: pickBanData.actions?.length || 0,
+        phase: pickBanData.phase
       });
 
       const currentActionIndex = this.getCurrentActionIndex(pickBanData);
-      if (currentActionIndex >= (pickBanData.phases?.length || 0)) {
-        console.log(`[DraftPickBan] ✅ Draft completado - todas as ações foram realizadas`);
+      console.log(`[DraftPickBan] 🔍 Índice da ação atual: ${currentActionIndex}`);
+
+      // ✅ CORREÇÃO: Verificar se o draft foi realmente completado (20 ações)
+      if (currentActionIndex >= 20) {
+        console.log(`[DraftPickBan] ✅ Draft completado - todas as 20 ações foram realizadas`);
         return;
       }
 
-      const currentPhase = pickBanData.phases?.[currentActionIndex];
+      // ✅ CORREÇÃO: Gerar fases se não existirem
+      const phases = pickBanData.phases || this.generateDraftPhases(pickBanData.team1 || [], pickBanData.team2 || []);
+      const currentPhase = phases[currentActionIndex];
+
       if (!currentPhase) {
         console.log(`[DraftPickBan] ❌ Fase atual não encontrada no índice ${currentActionIndex}`);
         return;
@@ -560,7 +571,8 @@ export class DraftService {
       const currentPlayer = teamPlayers[currentPhase.playerIndex];
 
       if (!currentPlayer) {
-        console.log(`[DraftPickBan] ❌ Jogador não encontrado no índice ${currentPhase.playerIndex}`);
+        console.log(`[DraftPickBan] ❌ Jogador não encontrado no índice ${currentPhase.playerIndex} do time ${currentPhase.team}`);
+        console.log(`[DraftPickBan] 🔍 Jogadores do time ${currentPhase.team}:`, teamPlayers.map(p => p.summonerName));
         return;
       }
 
@@ -568,16 +580,35 @@ export class DraftService {
         summonerName: currentPlayer.summonerName,
         isBot: this.isPlayerBot(currentPlayer.summonerName),
         team: currentPhase.team,
-        playerIndex: currentPhase.playerIndex
+        playerIndex: currentPhase.playerIndex,
+        lane: currentPlayer.assignedLane
       });
 
-      // Verificar se é um bot
-      if (!this.isPlayerBot(currentPlayer.summonerName)) {
-        console.log(`[DraftPickBan] ⏳ Aguardando ação humana de ${currentPlayer.summonerName}`);
+      // ✅ CORREÇÃO: Verificar se é um bot E se o usuário popcorn seller#coup está logado
+      const isBot = this.isPlayerBot(currentPlayer.summonerName);
+      const isPopcornSeller = currentPlayer.summonerName === 'popcorn seller#coup' ||
+        currentPlayer.puuid === '9e7d05fe-ef7f-5ecb-b877-de7e68ff06eb';
+
+      if (!isBot) {
+        console.log(`[DraftPickBan] ⏳ Aguardando ação humana de ${currentPlayer.summonerName} (ação ${currentActionIndex})`);
+
+        // ✅ NOVO: Continuar o loop mesmo quando não é turno de bot
+        console.log(`[DraftPickBan] 🔄 Agendando próxima verificação em 2 segundos (aguardando humano)`);
+        setTimeout(() => this.autoBotDraftLoop(matchId), 2000);
         return;
       }
 
-      console.log(`[DraftPickBan] 🤖 Executando ação de bot para ${currentPlayer.summonerName}`);
+      // ✅ NOVO: Só executar ações de bot se for o popcorn seller#coup
+      if (!isPopcornSeller) {
+        console.log(`[DraftPickBan] ⏳ Aguardando popcorn seller#coup para executar ação de bot ${currentPlayer.summonerName} (ação ${currentActionIndex})`);
+
+        // Continuar o loop para verificar novamente
+        console.log(`[DraftPickBan] 🔄 Agendando próxima verificação em 2 segundos (aguardando popcorn seller)`);
+        setTimeout(() => this.autoBotDraftLoop(matchId), 2000);
+        return;
+      }
+
+      console.log(`[DraftPickBan] 🤖 Executando ação de bot para ${currentPlayer.summonerName} (ação ${currentActionIndex})`);
 
       // Simular delay para ação do bot
       await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 3000));
@@ -585,7 +616,7 @@ export class DraftService {
       // Selecionar campeão aleatório para o bot
       const championId = await this.selectRandomChampion();
 
-      console.log(`[DraftPickBan] 🤖 Bot ${currentPlayer.summonerName} selecionou campeão ${championId}`);
+      console.log(`[DraftPickBan] 🤖 Bot ${currentPlayer.summonerName} selecionou campeão ${championId} para ${currentPhase.action}`);
 
       // Salvar ação do bot usando o método existente
       await this.saveActionToDatabase(matchId, currentPlayer.summonerName, championId, currentPhase.action, match, currentActionIndex);
@@ -595,13 +626,17 @@ export class DraftService {
       // Notificar sobre a ação usando o método existente
       this.notifyAction(matchId, currentPlayer.summonerName, championId, currentPhase.action, currentActionIndex);
 
-      console.log(`[DraftPickBan] 🔄 Agendando próxima verificação em 1 segundo`);
+      console.log(`[DraftPickBan] 🔄 Agendando próxima verificação em 1 segundo (bot agiu)`);
 
       // Agendar próxima verificação
       setTimeout(() => this.autoBotDraftLoop(matchId), 1000);
 
     } catch (error) {
       console.error(`[DraftPickBan] ❌ Erro no loop de bots:`, error);
+
+      // ✅ NOVO: Continuar o loop mesmo com erro
+      console.log(`[DraftPickBan] 🔄 Agendando próxima verificação em 3 segundos (após erro)`);
+      setTimeout(() => this.autoBotDraftLoop(matchId), 3000);
     }
   }
 
@@ -648,7 +683,8 @@ export class DraftService {
           mmr: 1200, // Default MMR
           primaryLane: this.getLaneForIndex(index),
           secondaryLane: 'fill',
-          isAutofill: false
+          isAutofill: false,
+          puuid: p.puuid || (p.summonerName === 'popcorn seller#coup' ? '9e7d05fe-ef7f-5ecb-b877-de7e68ff06eb' : undefined)
         })),
         team2: team2Players.map((p: any, index: number) => ({
           summonerName: p.summonerName,
@@ -657,7 +693,8 @@ export class DraftService {
           mmr: 1200, // Default MMR
           primaryLane: this.getLaneForIndex(index),
           secondaryLane: 'fill',
-          isAutofill: false
+          isAutofill: false,
+          puuid: p.puuid || (p.summonerName === 'popcorn seller#coup' ? '9e7d05fe-ef7f-5ecb-b877-de7e68ff06eb' : undefined)
         })),
         averageMMR: { team1: 1200, team2: 1200 },
         balanceQuality: 0,
@@ -673,21 +710,146 @@ export class DraftService {
     }
   }
 
-  // ✅ SIMPLIFICADO: Gerar fases do draft
-  private generateDraftPhases(): DraftPhase[] {
+  // ✅ CORRIGIDO: Gerar fases do draft no formato correto da ranqueada do LoL (20 ações)
+  private generateDraftPhases(team1Players: DraftPlayer[], team2Players: DraftPlayer[]): DraftPhase[] {
     const phases: DraftPhase[] = [];
 
-    // Fase de bans (3 bans por time)
-    for (let i = 0; i < 3; i++) {
-      phases.push({ phase: 'bans', team: 1, action: 'ban', playerIndex: i });
-      phases.push({ phase: 'bans', team: 2, action: 'ban', playerIndex: i });
-    }
+    // ✅ CORREÇÃO: Fase 1 - Primeira Rodada de Banimentos (6 ações: 0-5)
+    // Ordem: Blue Ban 1, Red Ban 1, Blue Ban 2, Red Ban 2, Blue Ban 3, Red Ban 3
+    const firstBanOrder = [
+      { team: 1, playerIndex: 0 }, // Blue Ban 1 (Top)
+      { team: 2, playerIndex: 0 }, // Red Ban 1 (Top)
+      { team: 1, playerIndex: 1 }, // Blue Ban 2 (Jungle)
+      { team: 2, playerIndex: 1 }, // Red Ban 2 (Jungle)
+      { team: 1, playerIndex: 2 }, // Blue Ban 3 (Mid)
+      { team: 2, playerIndex: 2 }  // Red Ban 3 (Mid)
+    ];
 
-    // Fase de picks (5 picks por time)
-    for (let i = 0; i < 5; i++) {
-      phases.push({ phase: 'picks', team: 1, action: 'pick', playerIndex: i });
-      phases.push({ phase: 'picks', team: 2, action: 'pick', playerIndex: i });
-    }
+    // ✅ CORREÇÃO: Fase 2 - Primeira Rodada de Escolhas (6 ações: 6-11)
+    // Ordem: Blue Pick 1, Red Pick 1, Red Pick 2, Blue Pick 2, Blue Pick 3, Red Pick 3
+    const firstPickOrder = [
+      { team: 1, playerIndex: 0 }, // Blue Pick 1 (Top) - First Pick
+      { team: 2, playerIndex: 0 }, // Red Pick 1 (Top)
+      { team: 2, playerIndex: 1 }, // Red Pick 2 (Jungle) - Red faz 2 consecutivos
+      { team: 1, playerIndex: 1 }, // Blue Pick 2 (Jungle)
+      { team: 1, playerIndex: 2 }, // Blue Pick 3 (Mid) - Blue faz 2 consecutivos
+      { team: 2, playerIndex: 2 }  // Red Pick 3 (Mid)
+    ];
+
+    // ✅ CORREÇÃO: Fase 3 - Segunda Rodada de Banimentos (4 ações: 12-15)
+    // Ordem: Red Ban 4, Blue Ban 4, Red Ban 5, Blue Ban 5
+    const secondBanOrder = [
+      { team: 2, playerIndex: 3 }, // Red Ban 4 (ADC)
+      { team: 1, playerIndex: 3 }, // Blue Ban 4 (ADC)
+      { team: 2, playerIndex: 4 }, // Red Ban 5 (Support)
+      { team: 1, playerIndex: 4 }  // Blue Ban 5 (Support)
+    ];
+
+    // ✅ CORREÇÃO: Fase 4 - Segunda Rodada de Escolhas (4 ações: 16-19)
+    // Ordem: Red Pick 4, Blue Pick 4, Blue Pick 5, Red Pick 5
+    const secondPickOrder = [
+      { team: 2, playerIndex: 3 }, // Red Pick 4 (ADC)
+      { team: 1, playerIndex: 3 }, // Blue Pick 4 (ADC)
+      { team: 1, playerIndex: 4 }, // Blue Pick 5 (Support)
+      { team: 2, playerIndex: 4 }  // Red Pick 5 (Support) - Last Pick
+    ];
+
+    // ✅ CORREÇÃO: Função auxiliar para obter dados do jogador
+    const getPlayerData = (team: number, playerIndex: number) => {
+      const players = team === 1 ? team1Players : team2Players;
+      const player = players[playerIndex];
+
+      // ✅ CORREÇÃO: Para bots, usar o nome do bot; para jogadores reais, usar puuid
+      let playerId = '';
+      let playerName = '';
+
+      if (player) {
+        const isBot = this.isPlayerBot(player.summonerName);
+
+        if (isBot) {
+          // ✅ Para bots: usar o nome do bot como playerId
+          playerId = player.summonerName;
+          playerName = player.summonerName;
+        } else {
+          // ✅ Para jogadores reais: usar puuid como playerId, summonerName como playerName
+          playerId = player.puuid || player.summonerName;
+          playerName = player.summonerName;
+        }
+      } else {
+        // Fallback para jogador não encontrado
+        playerId = `player_${team}_${playerIndex}`;
+        playerName = `Player ${playerIndex + 1}`;
+      }
+
+      return { playerId, playerName };
+    };
+
+    // ✅ CORREÇÃO: Gerar fases de ban inicial (ações 0-5)
+    firstBanOrder.forEach((order, index) => {
+      const playerData = getPlayerData(order.team, order.playerIndex);
+      phases.push({
+        phase: 'bans',
+        team: order.team,
+        action: 'ban',
+        playerIndex: order.playerIndex,
+        actionIndex: index, // 0-5
+        playerId: playerData.playerId,
+        playerName: playerData.playerName
+      });
+    });
+
+    // ✅ CORREÇÃO: Gerar fases de pick inicial (ações 6-11)
+    firstPickOrder.forEach((order, index) => {
+      const playerData = getPlayerData(order.team, order.playerIndex);
+      phases.push({
+        phase: 'picks',
+        team: order.team,
+        action: 'pick',
+        playerIndex: order.playerIndex,
+        actionIndex: index + 6, // 6-11
+        playerId: playerData.playerId,
+        playerName: playerData.playerName
+      });
+    });
+
+    // ✅ CORREÇÃO: Gerar fases de ban final (ações 12-15)
+    secondBanOrder.forEach((order, index) => {
+      const playerData = getPlayerData(order.team, order.playerIndex);
+      phases.push({
+        phase: 'bans',
+        team: order.team,
+        action: 'ban',
+        playerIndex: order.playerIndex,
+        actionIndex: index + 12, // 12-15
+        playerId: playerData.playerId,
+        playerName: playerData.playerName
+      });
+    });
+
+    // ✅ CORREÇÃO: Gerar fases de pick final (ações 16-19)
+    secondPickOrder.forEach((order, index) => {
+      const playerData = getPlayerData(order.team, order.playerIndex);
+      phases.push({
+        phase: 'picks',
+        team: order.team,
+        action: 'pick',
+        playerIndex: order.playerIndex,
+        actionIndex: index + 16, // 16-19
+        playerId: playerData.playerId,
+        playerName: playerData.playerName
+      });
+    });
+
+    console.log('[DraftService] ✅ Fases do draft geradas (20 ações - formato ranqueada):', phases.map((p, i) => ({
+      actionIndex: i,
+      team: p.team === 1 ? 'Blue' : 'Red',
+      action: p.action,
+      playerIndex: p.playerIndex,
+      playerId: p.playerId,
+      playerName: p.playerName,
+      lane: this.getLaneForIndex(p.playerIndex),
+      phase: p.phase
+    })));
 
     return phases;
   }
@@ -702,7 +864,7 @@ export class DraftService {
         matchId,
         team1: draftData.team1,
         team2: draftData.team2,
-        phases: this.generateDraftPhases(),
+        phases: this.generateDraftPhases(draftData.team1, draftData.team2),
         averageMMR: draftData.averageMMR,
         balanceQuality: draftData.balanceQuality,
         autofillCount: draftData.autofillCount

@@ -102,6 +102,13 @@
   font-weight: 500;
 }
 
+.current-action-text {
+  color: #c9aa71;
+  font-size: 12px;
+  margin-left: 8px;
+  font-style: italic;
+}
+
 // ========== CONTAINER DOS TIMES ==========
 .teams-container {
   display: grid;
@@ -295,6 +302,33 @@
   font-size: 10px;
   color: #888;
   line-height: 1.2;
+}
+
+// ✅ NOVO: Estilo para jogadores autofill
+.autofill-player {
+  color: #d9534f !important;
+  font-weight: bold;
+  font-style: italic;
+}
+
+// ✅ NOVO: Estilo para slot do jogador atual na vez
+.pick-slot.current-turn {
+  background: rgba(240, 192, 64, 0.2);
+  border-color: #f0c040;
+  box-shadow: 0 0 10px rgba(240, 192, 64, 0.3);
+  animation: currentTurnPulse 2s infinite;
+}
+
+@keyframes currentTurnPulse {
+
+  0%,
+  100% {
+    box-shadow: 0 0 10px rgba(240, 192, 64, 0.3);
+  }
+
+  50% {
+    box-shadow: 0 0 20px rgba(240, 192, 64, 0.6);
+  }
 }
 
 // ========== SEÇÃO DE BANS GERAIS ==========
