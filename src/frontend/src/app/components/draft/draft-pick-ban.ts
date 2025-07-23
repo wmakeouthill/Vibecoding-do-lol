@@ -900,6 +900,18 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
             logDraft(`🔄 [forceUpdateMyTurn] isMyTurn mudou: ${oldIsMyTurn} -> ${this.isMyTurn}`);
         }
 
+        // ✅ NOVO: Abrir modal automaticamente se for a vez do jogador real
+        if (
+            this.isMyTurn &&
+            !this.showChampionModal &&
+            !this.botService.isBot(this.currentPlayer) &&
+            !currentPhase.locked &&
+            (currentPhase.action === 'pick' || currentPhase.action === 'ban')
+        ) {
+            logDraft('🎯 [forceUpdateMyTurn] É a vez do jogador real, abrindo modal de seleção de campeão automaticamente');
+            this.openChampionModal();
+        }
+
         // Forçar detecção de mudanças
         this.cdr.markForCheck();
     }
