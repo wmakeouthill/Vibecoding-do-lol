@@ -48,6 +48,8 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
     championsByRole: any = {};
     timeRemaining: number = 30;
     isMyTurn: boolean = false;
+    // Flag para evitar loop do modal enquanto aguarda backend
+    isWaitingBackend: boolean = false;
 
     // Controle de modais
     showChampionModal: boolean = false;
@@ -61,6 +63,8 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
     public botPickTimer: number | null = null;
     private realTimeSyncTimer: number | null = null;
     private syncErrorCount: number = 0;
+    // NOVO: Guardar matchId localmente para nunca perder
+    private matchId: string | null = null;
 
     @ViewChild('confirmationModal') confirmationModal!: DraftConfirmationModalComponent;
     private baseUrl: string;
@@ -108,10 +112,6 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
     ngOnChanges(changes: SimpleChanges) {
         if (changes['matchData']) {
             const currentValue = changes['matchData'].currentValue;
-            logDraft('[DraftPickBan] 🔍 Dados recebidos no ngOnChanges:', {
-                blueTeam: currentValue?.blueTeam,
-                redTeam: currentValue?.redTeam
-            });
             const previousValue = changes['matchData'].previousValue;
 
             logDraft('[DraftPickBan] 🔍 Dados recebidos no ngOnChanges:', {
@@ -121,8 +121,20 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
                 blueTeamLength: currentValue?.blueTeam?.length || 0,
                 redTeamLength: currentValue?.redTeam?.length || 0,
                 phasesLength: currentValue?.phases?.length || 0,
-                currentAction: currentValue?.currentAction || 0
+                currentAction: currentValue?.currentAction || 0,
+                currentMatchId: currentValue?.id,
+                storedMatchId: this.matchId
             });
+
+            // NOVO: Guardar matchId se disponível
+            if (currentValue?.id) {
+                this.matchId = currentValue.id;
+                logDraft('[DraftPickBan] ✅ matchId guardado:', this.matchId);
+            } else if (this.matchId) {
+                logDraft('[DraftPickBan] ⚠️ matchData.id não disponível, usando matchId guardado:', this.matchId);
+            } else {
+                logDraft('[DraftPickBan] ❌ matchData.id não disponível e nenhum matchId guardado');
+            }
 
             if (currentValue && previousValue) {
                 const currentHash = JSON.stringify({
@@ -785,24 +797,32 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         currentPhase.timeRemaining = 0;
         this.showChampionModal = false;
 
+        // NOVO: Sinalizar que está aguardando backend (apenas para jogador real)
+        if (!this.botService.isBot(this.currentPlayer)) {
+            this.isWaitingBackend = true;
+        }
+
         if (this.isEditingMode) {
-            // ... existing code for edit mode ...
             this.checkForBotAutoAction();
             return;
         }
 
-        if (this.matchData?.id) {
+        // NOVO: Usar matchId guardado como fallback
+        const effectiveMatchId = this.matchData?.id || this.matchId;
+        if (effectiveMatchId) {
             logDraft('🎯 [onChampionSelected] Enviando ação para MySQL e aguardando confirmação...');
+            logDraft('🟦 [onChampionSelected] Usando matchId:', effectiveMatchId);
             try {
-                // Logar antes do envio
                 logDraft('🟦 [onChampionSelected] Enviando para backend:', {
-                    matchId: this.matchData.id,
+                    matchId: effectiveMatchId,
                     playerId: this.currentPlayer?.puuid,
                     championId: champion.id,
                     action: currentPhase.action
                 });
                 await this.sendDraftActionToBackend(champion, currentPhase.action, this.currentPlayer?.puuid);
                 logDraft('✅ [onChampionSelected] Ação enviada para MySQL com sucesso (aguardando sync)');
+                // Forçar sync imediatamente após ação
+                this.forceMySQLSync();
                 for (let i = 0; i < 3; i++) {
                     setTimeout(() => {
                         this.forceMySQLSync();
@@ -817,7 +837,9 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
                 logDraft('❌ [onChampionSelected] Erro ao enviar para MySQL:', error);
             }
         } else {
-            logDraft('⚠️ [onChampionSelected] matchData.id não disponível - não enviando para MySQL');
+            logDraft('❌ [onChampionSelected] Nenhum matchId disponível - não enviando para MySQL');
+            logDraft('❌ [onChampionSelected] matchData.id:', this.matchData?.id);
+            logDraft('❌ [onChampionSelected] matchId guardado:', this.matchId);
         }
         this.checkForBotAutoAction();
         logDraft('✅ [Draft] Atualização completa - aguardando sincronização do MySQL');
@@ -900,19 +922,19 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
             logDraft(`🔄 [forceUpdateMyTurn] isMyTurn mudou: ${oldIsMyTurn} -> ${this.isMyTurn}`);
         }
 
-        // ✅ NOVO: Abrir modal automaticamente se for a vez do jogador real
+        // NOVO: Só abrir modal se não estiver aguardando backend
         if (
             this.isMyTurn &&
             !this.showChampionModal &&
             !this.botService.isBot(this.currentPlayer) &&
             !currentPhase.locked &&
+            !this.isWaitingBackend &&
             (currentPhase.action === 'pick' || currentPhase.action === 'ban')
         ) {
             logDraft('🎯 [forceUpdateMyTurn] É a vez do jogador real, abrindo modal de seleção de campeão automaticamente');
             this.openChampionModal();
         }
 
-        // Forçar detecção de mudanças
         this.cdr.markForCheck();
     }
 
@@ -977,10 +999,15 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
 
     // ✅ OTIMIZADO: Método para enviar ação de draft para o backend com latência baixa
     private async sendDraftActionToBackend(champion: Champion, action: 'pick' | 'ban', forcePlayerId?: string): Promise<void> {
-        if (!this.session || !this.matchData || !this.currentPlayer) {
+        // NOVO: Usar matchId guardado como fallback
+        const effectiveMatchId = this.matchData?.id || this.matchId;
+
+        if (!this.session || !effectiveMatchId || !this.currentPlayer) {
             logDraft('❌ [sendDraftActionToBackend] Dados insuficientes:', {
                 hasSession: !!this.session,
                 hasMatchData: !!this.matchData,
+                hasMatchId: !!this.matchId,
+                effectiveMatchId: effectiveMatchId,
                 hasCurrentPlayer: !!this.currentPlayer
             });
             return;
@@ -1016,7 +1043,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         }
         logDraft('🎯 [sendDraftActionToBackend] playerId determinado:', { playerId, isCurrentPlayerBot, forcePlayerId });
 
-        const requestKey = `${this.matchData.id}-${playerId}-${champion.id}-${action}`;
+        const requestKey = `${effectiveMatchId}-${playerId}-${champion.id}-${action}`;
         if ((this as any).sentRequests?.has(requestKey)) {
             logDraft(`⚠️ [sendDraftActionToBackend] Ação já enviada: ${requestKey}`);
             return;
@@ -1027,7 +1054,7 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         (this as any).sentRequests.add(requestKey);
 
         const requestData = {
-            matchId: this.matchData.id,
+            matchId: effectiveMatchId,
             playerId: playerId,
             championId: parseInt(champion.id),
             action: action
@@ -1251,6 +1278,14 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
                 } else {
                     logDraft('⚠️ [DraftPickBan] Status não é draft ou não há dados para sincronizar');
                 }
+                // NOVO: Se estava aguardando backend e avançou a ação, libera o modal
+                if (this.isWaitingBackend) {
+                    const currentPhase = this.session?.phases?.[this.session?.currentAction];
+                    if (!currentPhase || !this.isMyTurn || currentPhase.locked) {
+                        logDraft('✅ [DraftPickBan] Backend confirmou ação, liberando modal');
+                        this.isWaitingBackend = false;
+                    }
+                }
             },
             error: (error) => {
                 logDraft('❌ [DraftPickBan] Erro na sincronização MySQL:', error);
@@ -1432,9 +1467,27 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
         const teamPlayers = currentPhase.team === 'blue' ? this.session.blueTeam : this.session.redTeam;
         const phasePlayer = teamPlayers.find(p => this.botService.comparePlayerWithId(p, currentPhase.playerId || ''));
         if (phasePlayer && phasePlayer.isBot) {
-            logDraft('[Bot] É turno de bot, acionando ação automática...');
-            // Aqui você pode chamar a função que executa a ação automática do bot
-            // Exemplo: this.botService.performBotAction(currentPhase, this.session, this.champions);
+            logDraft('[Bot] É turno de bot, agendando ação automática...');
+            // Agendar ação do bot (delay máximo 1.5s)
+            if (this.botPickTimer) {
+                this.botService.cancelScheduledAction(this.botPickTimer);
+            }
+            this.botPickTimer = this.botService.scheduleBotAction(
+                currentPhase,
+                this.session,
+                this.champions,
+                async () => {
+                    logDraft('[Bot] Executando ação automática do bot, enviando ao backend...');
+                    // Enviar ação do bot ao backend
+                    if (currentPhase.champion) {
+                        await this.sendDraftActionToBackend(currentPhase.champion, currentPhase.action, currentPhase.playerId);
+                        // Forçar sync imediatamente
+                        this.forceMySQLSync();
+                    } else {
+                        logDraft('[Bot] Erro: currentPhase.champion está indefinido, não enviando ao backend.');
+                    }
+                }
+            );
         }
     }
 
