@@ -1255,113 +1255,62 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
     private applySyncedActions(actions: any[]): void {
         logDraft('🔄 [DraftPickBan] Aplicando ações sincronizadas:', actions);
 
+        // ✅ NOVO: Garantir que os campeões estejam carregados antes de aplicar ações
+        if (!this.champions || this.champions.length === 0) {
+            logDraft('⚠️ [applySyncedActions] Campeões ainda não carregados, agendando retry...');
+            setTimeout(() => this.applySyncedActions(actions), 200);
+            return;
+        }
+
         if (!this.session?.phases) {
             logDraft('❌ [DraftPickBan] Fases não inicializadas');
             return;
         }
 
-        // ✅ CORRIGIDO: Verificar se há uma seleção em andamento
-        if (this.showChampionModal) {
-            logDraft('⚠️ [DraftPickBan] Modal aberto - não aplicando sincronização para evitar interferência');
-            return;
-        }
-
-        // ✅ CORRIGIDO: Ordenar ações por actionIndex para garantir ordem sequencial
-        const sortedActions = actions.sort((a, b) => (a.actionIndex || 0) - (b.actionIndex || 0));
-        logDraft('🔄 [DraftPickBan] Ações ordenadas por actionIndex:', sortedActions.map(a => ({
-            actionIndex: a.actionIndex,
-            playerName: a.playerName,
-            action: a.action,
-            championId: a.championId
-        })));
-
+        // ✅ NOVO: Sempre sobrescrever as fases locais com os dados do backend
+        let maxActionIndex = -1;
         let actionsApplied = 0;
-        let newCurrentAction = this.session.currentAction;
-
-        // ✅ CORRIGIDO: Aplicar ações uma por uma na ordem sequencial correta
-        for (const action of sortedActions) {
+        for (const action of actions) {
             const actionIndex = action.actionIndex || 0;
-
-            // ✅ CORREÇÃO: Verificar se a ação já foi aplicada
-            if (actionIndex < newCurrentAction) {
-                logDraft(`⚠️ [DraftPickBan] Ação ${actionIndex} já foi aplicada (currentAction: ${newCurrentAction}) - pulando`);
+            maxActionIndex = Math.max(maxActionIndex, actionIndex);
+            const phase = this.session.phases[actionIndex];
+            if (!phase) {
+                logDraft(`❌ [DraftPickBan] Fase ${actionIndex} não encontrada`);
                 continue;
             }
-
-            // ✅ CORREÇÃO: Verificar se é a próxima ação esperada
-            if (actionIndex !== newCurrentAction) {
-                logDraft(`⚠️ [DraftPickBan] Ação ${actionIndex} não é a próxima esperada (currentAction: ${newCurrentAction}) - aguardando`);
-                break; // Aguardar ações anteriores
-            }
-
-            // ✅ CORRIGIDO: Aplicar ação do MySQL na fase local
-            if (action.championId && action.action) {
-                const phase = this.session.phases[actionIndex];
-
-                if (!phase) {
-                    logDraft(`❌ [DraftPickBan] Fase ${actionIndex} não encontrada`);
-                    continue;
+            // Encontrar o campeão pelo ID
+            const champion = this.champions.find(c => c.id === action.championId?.toString());
+            if (champion) {
+                // Sobrescrever SEMPRE os dados da fase
+                phase.champion = champion;
+                phase.locked = true;
+                phase.playerName = action.playerName || action.playerId || 'Unknown';
+                phase.playerId = action.playerName || action.playerId || 'Unknown';
+                if (action.teamIndex) {
+                    phase.team = action.teamIndex === 1 ? 'blue' : 'red';
                 }
-
-                // ✅ CORREÇÃO: Verificar se a fase já está com campeão definido
-                if (phase.champion && phase.locked) {
-                    logDraft(`⚠️ [DraftPickBan] Fase ${actionIndex} já tem campeão definido (${phase.champion.name}) - pulando`);
-                    newCurrentAction++;
-                    actionsApplied++;
-                    continue;
+                if (action.playerIndex !== undefined) {
+                    phase.playerIndex = action.playerIndex;
                 }
-
-                // Encontrar o campeão pelo ID
-                const champion = this.champions.find(c => c.id === action.championId.toString());
-                if (champion) {
-                    logDraft(`✅ [DraftPickBan] Aplicando ação ${action.action} para ${champion.name} na fase ${actionIndex}`);
-
-                    // ✅ CORRIGIDO: Aplicar ação na fase com dados completos do MySQL
-                    phase.champion = champion;
-                    phase.locked = true;
-                    phase.playerName = action.playerName || action.playerId || 'Unknown';
-                    phase.playerId = action.playerName || action.playerId || 'Unknown';
-
-                    // ✅ NOVO: Garantir que o time seja mapeado corretamente (1=blue, 2=red)
-                    if (action.teamIndex) {
-                        phase.team = action.teamIndex === 1 ? 'blue' : 'red';
-                    }
-
-                    // ✅ NOVO: Garantir que o playerIndex seja definido
-                    if (action.playerIndex !== undefined) {
-                        phase.playerIndex = action.playerIndex;
-                    }
-
-                    // ✅ CORRIGIDO: Incrementar currentAction apenas se a ação foi aplicada com sucesso
-                    newCurrentAction++;
-                    actionsApplied++;
-
-                    logDraft(`✅ [DraftPickBan] Ação aplicada com sucesso na fase ${actionIndex}. Novo currentAction: ${newCurrentAction}`);
-                    logDraft(`✅ [DraftPickBan] Detalhes da ação aplicada:`, {
-                        playerName: phase.playerName,
-                        playerId: phase.playerId,
-                        champion: champion.name,
-                        team: phase.team,
-                        playerIndex: phase.playerIndex
-                    });
-                } else {
-                    logDraft(`⚠️ [DraftPickBan] Campeão não encontrado para ID ${action.championId}`);
-                }
+                actionsApplied++;
+                logDraft(`✅ [DraftPickBan] Fase ${actionIndex} sobrescrita com ação do backend:`, {
+                    playerName: phase.playerName,
+                    playerId: phase.playerId,
+                    champion: champion.name,
+                    team: phase.team,
+                    playerIndex: phase.playerIndex
+                });
+            } else {
+                logDraft(`⚠️ [DraftPickBan] Campeão não encontrado para ID ${action.championId}`);
             }
         }
-
-        // ✅ CORRIGIDO: Atualizar currentAction apenas uma vez no final
-        if (newCurrentAction !== this.session.currentAction) {
-            logDraft(`🔄 [DraftPickBan] Atualizando currentAction de ${this.session.currentAction} para ${newCurrentAction}`);
-            this.session.currentAction = newCurrentAction;
+        // Atualizar currentAction para o maior actionIndex + 1
+        if (maxActionIndex + 1 !== this.session.currentAction) {
+            logDraft(`🔄 [DraftPickBan] Atualizando currentAction de ${this.session.currentAction} para ${maxActionIndex + 1}`);
+            this.session.currentAction = maxActionIndex + 1;
         }
-
         logDraft(`✅ [DraftPickBan] Sincronização aplicada. Ações aplicadas: ${actionsApplied}, CurrentAction final: ${this.session.currentAction}`);
-
-        // ✅ NOVO: Forçar atualização da interface após sincronização
         this.forceInterfaceUpdate();
-
-        // ✅ NOVO: Verificar se é turno de bot após sincronização
         this.checkForBotAutoAction();
     }
 
