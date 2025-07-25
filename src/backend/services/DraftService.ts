@@ -343,8 +343,12 @@ export class DraftService {
     // ✅ CORRIGIDO: Ordenar ações por actionIndex para garantir ordem
     pickBanData.actions.sort((a: any, b: any) => (a.actionIndex || 0) - (b.actionIndex || 0));
 
-    // ✅ NOVO: Atualizar currentAction para refletir o número de ações já realizadas
-    pickBanData.currentAction = pickBanData.actions.length;
+    // ✅ NOVO: Atualizar draft_current_action no banco para refletir o número de ações já realizadas
+    await this.dbManager.updateCustomMatch(matchId, {
+      draft_current_action: pickBanData.actions.length
+    });
+    // Remover currentAction do objeto salvo
+    if (pickBanData.currentAction !== undefined) delete pickBanData.currentAction;
 
     // Salvar no banco
     await this.dbManager.updateCustomMatch(matchId, {

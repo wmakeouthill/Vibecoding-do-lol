@@ -718,7 +718,8 @@ export class DatabaseManager {
       const allowedFields = [
         'title', 'description', 'status', 'winner_team', 'duration',
         'pick_ban_data', 'participants_data', 'riot_game_id', 'detected_by_lcu',
-        'notes', 'draft_data', 'game_data', 'game_mode', 'match_leader'
+        'notes', 'draft_data', 'game_data', 'game_mode', 'match_leader',
+        'draft_current_action' // Adicionado suporte para draft_current_action
       ];
 
       for (const [key, value] of Object.entries(updateData)) {
