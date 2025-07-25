@@ -31,6 +31,7 @@ interface TeamSlot {
 
 @Component({
   selector: 'app-draft-confirmation-modal',
+  standalone: true,
   imports: [CommonModule],
   templateUrl: './draft-confirmation-modal.html',
   styleUrl: './draft-confirmation-modal.scss'

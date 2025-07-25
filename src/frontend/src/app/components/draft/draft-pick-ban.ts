@@ -23,6 +23,7 @@ function logDraft(...args: any[]) {
 
 @Component({
     selector: 'app-draft-pick-ban',
+    standalone: true,
     imports: [
         CommonModule,
         FormsModule,
@@ -1235,9 +1236,19 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
                         pickBanData.actions = [];
                     }
 
-                    // ✅ Mapear team1/team2 para blueTeam/redTeam
-                    const blueTeam = pickBanData.team1 || response.team1 || [];
-                    const redTeam = pickBanData.team2 || response.team2 || [];
+                    // ✅ Mapear team1/team2 para blueTeam/redTeam (CORRIGIDO: garantir alinhamento com backend)
+                    let blueTeam = pickBanData.team1 || response.team1 || [];
+                    let redTeam = pickBanData.team2 || response.team2 || [];
+
+                    // Validação extra: se os nomes dos jogadores de blueTeam estão com teamIndex >= 5, provavelmente está invertido
+                    if (blueTeam.length > 0 && blueTeam[0].teamIndex >= 5) {
+                        // Inverter para garantir alinhamento
+                        logDraft('[DraftPickBan] ⚠️ Detected blueTeam com teamIndex >= 5, invertendo times para alinhar com backend!');
+                        const temp = blueTeam;
+                        blueTeam = redTeam;
+                        redTeam = temp;
+                    }
+
                     const phases = pickBanData.phases || [];
                     const currentAction = pickBanData.currentAction ?? response.currentAction ?? 0;
 
@@ -1257,9 +1268,9 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
                         team2Bans: pickBanData.team2Bans || []
                     };
 
-                    logDraft('🔄 [DraftPickBan] Estado local sobrescrito com dados do backend:', {
-                        blueTeamLength: blueTeam.length,
-                        redTeamLength: redTeam.length,
+                    logDraft('🔄 [DraftPickBan] Estado local sobrescrito com dados do backend (após validação de times):', {
+                        blueTeam: (this.session?.blueTeam || []).map(p => ({ name: p.summonerName, teamIndex: p.teamIndex })),
+                        redTeam: (this.session?.redTeam || []).map(p => ({ name: p.summonerName, teamIndex: p.teamIndex })),
                         phasesLength: phases.length,
                         actionsLength: pickBanData.actions.length,
                         currentAction: currentAction
@@ -1506,5 +1517,14 @@ export class DraftPickBanComponent implements OnInit, OnDestroy, OnChanges {
     // ✅ NOVO: Método para obter classe CSS baseada no autofill
     getAutofillClass(player: any): string {
         return this.isPlayerAutofill(player) ? 'autofill-player' : '';
+    }
+
+    // ✅ NOVO: Métodos trackBy para otimizar ngFor
+    trackByPlayer(index: number, player: any): string {
+        return player.summonerName || player.name || index.toString();
+    }
+
+    trackByChampion(index: number, champion: Champion): string {
+        return champion.id || champion.key || index.toString();
     }
 }

@@ -50,6 +50,7 @@ function logGameInProgress(...args: any[]) {
 
 @Component({
   selector: 'app-game-in-progress',
+  standalone: true,
   imports: [CommonModule, FormsModule],
   templateUrl: './game-in-progress.html',
   styleUrl: './game-in-progress.scss'

@@ -7,6 +7,7 @@ import { interval, Subject, Subscription, takeUntil } from 'rxjs';
 
 @Component({
   selector: 'app-match-history',
+  standalone: true,
   imports: [CommonModule],
   templateUrl: './match-history.html',
   styleUrl: './match-history.scss'

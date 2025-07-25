@@ -12,6 +12,7 @@ import { ProfileIconService } from '../../services/profile-icon.service';
 
 @Component({
   selector: 'app-queue',
+  standalone: true,
   imports: [CommonModule, FormsModule, LaneSelectorComponent],
   templateUrl: './queue.html',
   styleUrl: './queue.scss',

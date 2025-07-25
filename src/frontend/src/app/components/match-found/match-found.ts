@@ -50,6 +50,7 @@ function logMatchFound(...args: any[]) {
 
 @Component({
   selector: 'app-match-found',
+  standalone: true,
   imports: [CommonModule],
   templateUrl: './match-found.html',
   styleUrl: './match-found.scss'

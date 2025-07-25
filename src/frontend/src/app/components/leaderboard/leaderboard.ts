@@ -43,6 +43,7 @@ interface CacheData {
 
 @Component({
   selector: 'app-leaderboard',
+  standalone: true,
   imports: [CommonModule],
   templateUrl: './leaderboard.html',
   styleUrl: './leaderboard.scss'

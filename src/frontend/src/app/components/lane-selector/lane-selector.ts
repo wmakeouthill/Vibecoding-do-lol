@@ -5,6 +5,7 @@ import { Lane, QueuePreferences } from '../../interfaces';
 
 @Component({
   selector: 'app-lane-selector',
+  standalone: true,
   imports: [CommonModule, FormsModule],
   templateUrl: './lane-selector.html',
   styleUrl: './lane-selector.scss'

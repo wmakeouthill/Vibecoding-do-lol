@@ -1,172 +1,162 @@
+<!-- Draft Pick & Ban - Visual clássico estilo LoL -->
 <div class="draft-pick-ban" *ngIf="session">
-  <!-- Header -->
-  <div class="pick-ban-header">
-    <div class="session-info">
-      <h2>🏆 Seleção de Campeões</h2>
-      <div class="phase-indicator">
-        <span class="current-phase">{{ getCurrentPhaseText(session) }}</span>
-        <div class="progress-bar">
-          <div class="progress-fill" [style.width.%]="getPhaseProgress(session)"></div>
-        </div>
-      </div>
-    </div>
-    <div class="timer-section">
-      <div class="timer" [class.warning]="timeRemaining <= 10">
-        ⏱️ {{ timeRemaining }}s
-      </div>
-
-      <!-- Current Player Indicator -->
-      <div class="current-player" *ngIf="session">
-        <span class="current-player-text">
-          {{ getCurrentPlayerName() }}
-          <span class="current-action-text">{{ getCurrentActionText() }}</span>
-        </span>
-      </div>
-    </div>
-  </div>
-
-  <!-- Teams Display -->
-  <div class="teams-container">
-    <!-- Blue Team -->
-    <div class="team blue-team">
-      <div class="team-header">
-        <span class="team-name">🔵 Time Azul</span>
-      </div>
-
-      <!-- Bans do Time Azul -->
-      <div class="team-bans compact">
-        <div class="banned-champions-row compact">
-          <div class="banned-champion compact" *ngFor="let ban of getTeamBans('blue')">
-            <img [src]="ban.image" [alt]="ban.name" class="banned-img compact">
-          </div>
-          <div class="banned-placeholder compact" *ngFor="let i of [1,2,3,4,5].slice(getTeamBans('blue').length)">
-            <div class="ban-placeholder compact">?</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="team-picks">
-        <!-- Picks mapeados às posições corretas dos jogadores -->
-        <div class="pick-slot" *ngFor="let player of getSortedTeamByLaneForDisplay('blue'); let i = index"
-          [class.current-turn]="isCurrentPlayer(player) && checkIfMyTurn(session.phases[session.currentAction])">
-          <ng-container *ngIf="getPlayerPick('blue', player) as playerPick; else emptySlot">
-            <img [src]="playerPick.image" [alt]="playerPick.name" class="champion-img">
-            <div class="pick-info">
-              <span class="champion-name">{{ playerPick.name }}</span>
-              <span class="player-name">
-                {{ player.summonerName || player.name || 'Jogador' }}
-                <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
-              </span>
-              <span class="player-lane" [class]="getAutofillClass(player)">
-                {{ getLaneDisplayWithAutofill(player) }}
-              </span>
+    <div class="pick-ban-header">
+        <div class="session-info">
+            <h2>Draft - Pick & Ban</h2>
+            <div class="phase-indicator">
+                <span class="current-phase">{{ getCurrentPhaseText(session) }}</span>
+                <div class="progress-bar">
+                    <div class="progress-fill" [style.width]="getPhaseProgress(session) + '%'">
+                    </div>
+                </div>
             </div>
-          </ng-container>
-          <ng-template #emptySlot>
-            <div class="champion-placeholder">?</div>
-            <div class="pick-info">
-              <span class="champion-name">Aguardando...</span>
-              <span class="player-name">
-                {{ player.summonerName || player.name || 'Jogador' }}
-                <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
-              </span>
-              <span class="player-lane" [class]="getAutofillClass(player)">
-                {{ getLaneDisplayWithAutofill(player) }}
-              </span>
+        </div>
+        <div class="timer-section">
+            <span class="timer" [class.warning]="timeRemaining <= 10">{{ timeRemaining }}s</span>
+            <span class="current-player-text">Jogador da vez: <span class="current-player">{{ getCurrentPlayerName()
+                    }}</span></span>
+            <span class="current-action-text">{{ getCurrentActionText() }}</span>
+        </div>
+    </div>
+
+    <div class="teams-container">
+        <!-- Blue Team -->
+        <div class="team blue-team">
+            <div class="team-header">
+                <span class="team-name">Time Azul</span>
             </div>
-          </ng-template>
-        </div>
-      </div>
-    </div>
-
-    <!-- Center - Bans Gerais -->
-    <div class="bans-section">
-      <h3>🚫 Banidos</h3>
-      <div class="banned-champions">
-        <div class="banned-champion" *ngFor="let ban of getBannedChampions()">
-          <img [src]="ban.image" [alt]="ban.name" class="banned-img">
-          <span class="banned-name">{{ ban.name }}</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Red Team -->
-    <div class="team red-team">
-      <div class="team-header">
-        <span class="team-name">🔴 Time Vermelho</span>
-      </div>
-
-      <!-- Bans do Time Vermelho -->
-      <div class="team-bans compact">
-        <div class="banned-champions-row compact">
-          <div class="banned-champion compact" *ngFor="let ban of getTeamBans('red')">
-            <img [src]="ban.image" [alt]="ban.name" class="banned-img compact">
-          </div>
-          <div class="banned-placeholder compact" *ngFor="let i of [1,2,3,4,5].slice(getTeamBans('red').length)">
-            <div class="ban-placeholder compact">?</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="team-picks">
-        <!-- Picks mapeados às posições corretas dos jogadores -->
-        <div class="pick-slot" *ngFor="let player of getSortedTeamByLaneForDisplay('red'); let i = index"
-          [class.current-turn]="isCurrentPlayer(player) && checkIfMyTurn(session.phases[session.currentAction])">
-          <ng-container *ngIf="getPlayerPick('red', player) as playerPick; else emptySlot">
-            <img [src]="playerPick.image" [alt]="playerPick.name" class="champion-img">
-            <div class="pick-info">
-              <span class="champion-name">{{ playerPick.name }}</span>
-              <span class="player-name">
-                {{ player.summonerName || player.name || 'Jogador' }}
-                <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
-              </span>
-              <span class="player-lane" [class]="getAutofillClass(player)">
-                {{ getLaneDisplayWithAutofill(player) }}
-              </span>
+            <div class="team-bans">
+                <h4>Bans</h4>
+                <div class="banned-champions-row">
+                    <ng-container *ngFor="let ban of getTeamBans('blue'); let i = index; trackBy: trackByChampion">
+                        <div class="banned-champion">
+                            <img class="banned-img"
+                                [src]="ban.image || ('https://ddragon.leagueoflegends.com/cdn/15.14.1/img/champion/' + ban.id + '.png')"
+                                [alt]="ban.name" />
+                            <span class="banned-name">{{ ban.name }}</span>
+                        </div>
+                    </ng-container>
+                    <ng-container *ngFor="let empty of [].constructor(5 - getTeamBans('blue').length)">
+                        <div class="banned-placeholder">
+                            <div class="ban-placeholder">?</div>
+                            <span class="banned-name">Ban</span>
+                        </div>
+                    </ng-container>
+                </div>
             </div>
-          </ng-container>
-          <ng-template #emptySlot>
-            <div class="champion-placeholder">?</div>
-            <div class="pick-info">
-              <span class="champion-name">Aguardando...</span>
-              <span class="player-name">
-                {{ player.summonerName || player.name || 'Jogador' }}
-                <span class="you-indicator" *ngIf="isCurrentPlayer(player)">(Você)</span>
-              </span>
-              <span class="player-lane" [class]="getAutofillClass(player)">
-                {{ getLaneDisplayWithAutofill(player) }}
-              </span>
+            <div class="team-picks">
+                <ng-container
+                    *ngFor="let player of getSortedTeamByLaneForDisplay('blue'); let i = index; trackBy: trackByPlayer">
+                    <div class="pick-slot" [class.current-turn]="isCurrentPlayer(player)">
+                        <ng-container *ngIf="getPlayerPick('blue', player) as champ; else pickPlaceholder">
+                            <img class="champion-img"
+                                [src]="champ.image || ('https://ddragon.leagueoflegends.com/cdn/15.14.1/img/champion/' + champ.id + '.png')"
+                                [alt]="champ.name" />
+                            <div class="pick-info">
+                                <span class="champion-name">{{ champ.name }}</span>
+                                <span class="player-name">{{ player.summonerName }}</span>
+                                <span class="player-lane">{{ getLaneDisplayWithAutofill(player) }}</span>
+                            </div>
+                        </ng-container>
+                        <ng-template #pickPlaceholder>
+                            <div class="champion-placeholder">?</div>
+                            <div class="pick-info">
+                                <span class="champion-name">Aguardando Pick</span>
+                                <span class="player-name">{{ player.summonerName }}</span>
+                                <span class="player-lane">{{ getLaneDisplayWithAutofill(player) }}</span>
+                            </div>
+                        </ng-template>
+                    </div>
+                </ng-container>
             </div>
-          </ng-template>
         </div>
-      </div>
+
+        <!-- Espaço central (pode ser usado para mostrar fase, timer, etc) -->
+        <div></div>
+
+        <!-- Red Team -->
+        <div class="team red-team">
+            <div class="team-header">
+                <span class="team-name">Time Vermelho</span>
+            </div>
+            <div class="team-bans">
+                <h4>Bans</h4>
+                <div class="banned-champions-row">
+                    <ng-container *ngFor="let ban of getTeamBans('red'); let i=index; trackBy: trackByChampion">
+                        <div class="banned-champion">
+                            <img class="banned-img"
+                                [src]="ban.image || ('https://ddragon.leagueoflegends.com/cdn/15.14.1/img/champion/' + ban.id + '.png')"
+                                [alt]="ban.name" />
+                            <span class="banned-name">{{ ban.name }}</span>
+                        </div>
+                    </ng-container>
+                    <ng-container *ngFor="let empty of [].constructor(5 - getTeamBans('red').length)">
+                        <div class="banned-placeholder">
+                            <div class="ban-placeholder">?</div>
+                            <span class="banned-name">Ban</span>
+                        </div>
+                    </ng-container>
+                </div>
+            </div>
+            <div class="team-picks">
+                <ng-container
+                    *ngFor="let player of getSortedTeamByLaneForDisplay('red'); let i = index; trackBy: trackByPlayer">
+                    <div class="pick-slot" [class.current-turn]="isCurrentPlayer(player)">
+                        <ng-container *ngIf="getPlayerPick('red', player) as champ; else pickPlaceholderRed">
+                            <img class="champion-img"
+                                [src]="champ.image || ('https://ddragon.leagueoflegends.com/cdn/15.14.1/img/champion/' + champ.id + '.png')"
+                                [alt]="champ.name" />
+                            <div class="pick-info">
+                                <span class="champion-name">{{ champ.name }}</span>
+                                <span class="player-name">{{ player.summonerName }}</span>
+                                <span class="player-lane">{{ getLaneDisplayWithAutofill(player) }}</span>
+                            </div>
+                        </ng-container>
+                        <ng-template #pickPlaceholderRed>
+                            <div class="champion-placeholder">?</div>
+                            <div class="pick-info">
+                                <span class="champion-name">Aguardando Pick</span>
+                                <span class="player-name">{{ player.summonerName }}</span>
+                                <span class="player-lane">{{ getLaneDisplayWithAutofill(player) }}</span>
+                            </div>
+                        </ng-template>
+                    </div>
+                </ng-container>
+            </div>
+        </div>
     </div>
-  </div>
 
-  <!-- Action Buttons -->
-  <div class="action-buttons" *ngIf="session">
-    <div class="buttons-container">
-      <button class="btn btn-success btn-lg" (click)="openConfirmationModal()"
-        [disabled]="session.phase !== 'completed'">
-        <span class="btn-icon">✅</span>
-        <span class="btn-text">Ir para Confirmação</span>
-      </button>
-
-      <button class="btn btn-danger btn-lg" (click)="cancelPickBan()">
-        <span class="btn-icon">❌</span>
-        <span class="btn-text">Cancelar</span>
-      </button>
+    <div class="action-buttons" *ngIf="isMyTurn && !isWaitingBackend">
+        <button class="btn btn-primary btn-lg" (click)="openChampionModal()">
+            <span class="btn-icon">🎯</span>
+            <span class="btn-text">Selecionar Campeão</span>
+        </button>
     </div>
-  </div>
 
-  <!-- Champion Selection Modal -->
-  <app-draft-champion-modal [isVisible]="showChampionModal" [session]="session" [currentPlayer]="currentPlayer"
-    (onChampionSelected)="onChampionSelected($event)" (onClose)="showChampionModal = false">
-  </app-draft-champion-modal>
+    <!-- Botões de Cancelar e Confirmar Draft -->
+    <div class="action-buttons" style="margin-top: 32px; justify-content: center;">
+        <button class="btn btn-danger btn-lg" (click)="cancelPickBan()">
+            <span class="btn-icon">✖️</span>
+            <span class="btn-text">Cancelar Draft</span>
+        </button>
+        <button class="btn btn-success btn-lg" (click)="completePickBan()">
+            <span class="btn-icon">✔️</span>
+            <span class="btn-text">Confirmar Draft</span>
+        </button>
+    </div>
 
-  <!-- Confirmation Modal -->
-  <app-draft-confirmation-modal #confirmationModal [isVisible]="showConfirmationModal" [session]="session"
-    [currentPlayer]="currentPlayer" (onConfirm)="completePickBan()" (onEditPick)="onEditRequested($event)"
-    (onClose)="showConfirmationModal = false">
-  </app-draft-confirmation-modal>
+    <!-- Modals -->
+    <app-draft-champion-modal [session]="session" [currentPlayer]="currentPlayer" [isVisible]="showChampionModal"
+        (onClose)="showChampionModal = false" (onChampionSelected)="onChampionSelected($event)">
+    </app-draft-champion-modal>
+
+    <app-draft-confirmation-modal [session]="session" [currentPlayer]="currentPlayer"
+        [isVisible]="showConfirmationModal" (onClose)="showConfirmationModal = false" (onConfirm)="completePickBan()"
+        (onCancel)="cancelPickBan()">
+    </app-draft-confirmation-modal>
+</div>
+
+<!-- Loading state -->
+<div class="draft-loading" *ngIf="!session">
+    <p>Carregando draft...</p>
 </div>

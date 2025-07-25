@@ -27,6 +27,7 @@ interface CustomPickBanSession {
 
 @Component({
   selector: 'app-draft-champion-modal',
+  standalone: true,
   imports: [CommonModule, FormsModule],
   templateUrl: './draft-champion-modal.html',
   styleUrl: './draft-champion-modal.scss',

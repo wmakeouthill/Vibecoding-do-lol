@@ -21,6 +21,7 @@ import type { Notification } from './interfaces';
 
 @Component({
   selector: 'app-root',
+  standalone: true,
   imports: [
     CommonModule,
     FormsModule,
